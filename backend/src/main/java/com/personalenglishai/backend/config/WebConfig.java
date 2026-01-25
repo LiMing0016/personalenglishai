@@ -7,6 +7,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
  * Web配置类
+ * JWT 拦截器仅作用于 /api/**，/health 不在其内，始终无鉴权可访问。
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
