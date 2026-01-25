@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: backend
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:personal_english_ai}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:}   # 建议默认留空，避免把真实密码写死进仓库
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.personalenglishai.backend.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期可以开，后续建议按 profile 控制
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+jwt:
+  secret: ${JWT_SECRET:your-secret-key-must-be-at-least-32-bytes-long-for-security}
+  expireSeconds: ${JWT_EXPIRE_SECONDS:86400}

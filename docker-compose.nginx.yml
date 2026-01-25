@@ -1,0 +1,35 @@
+version: '3.8'
+
+# 包含 Nginx 反向代理的完整部署方案
+# 使用方式：docker-compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: personal-english-ai-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 如果使用 SSL 证书，取消下面的注释并挂载证书目录
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
+      # - /etc/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 后端服务不直接暴露 8080 端口（通过 Nginx 访问）
+  backend:
+    ports: []  # 覆盖 docker-compose.yml 中的端口映射
+
+networks:
+  app-network:
+    driver: bridge

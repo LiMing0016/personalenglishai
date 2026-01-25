@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # 方案 A：仅后端服务（数据库使用外部 RDS/MySQL）
+  # ============================================
+  backend:
+    image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-your-namespace}/personal-english-ai-backend:latest
+    container_name: personal-english-ai-backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Spring Profile
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      
+      # 数据库配置（使用外部 RDS 或 MySQL）
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/personal_english_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME:-root}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD:-}
+      
+      # 数据库环境变量（兼容现有配置）
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-personal_english_ai}
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      
+      # JWT 配置
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-must-be-at-least-32-bytes-long-for-security}
+      - JWT_EXPIRE_SECONDS=${JWT_EXPIRE_SECONDS:-86400}
+      
+      # Resend API Key（预留，未配置不影响启动）
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080/api/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================
+  # 方案 B：MySQL 容器（仅用于快速验证，生产环境建议使用 RDS）
+  # ============================================
+  # 如需使用方案 B，取消下面的注释，并确保后端服务的 DB_HOST 指向 mysql
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: personal-english-ai-mysql
+  #   restart: always
+  #   environment:
+  #     - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
+  #     - MYSQL_DATABASE=${MYSQL_DATABASE:-personal_english_ai}
+  #     - MYSQL_USER=${MYSQL_USER:-appuser}
+  #     - MYSQL_PASSWORD=${MYSQL_PASSWORD:-apppassword}
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #   networks:
+  #     - app-network
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  app-network:
+    driver: bridge
+
+# volumes:
+#   mysql_data:

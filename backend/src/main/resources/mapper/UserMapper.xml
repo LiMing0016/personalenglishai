@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.UserMapper">
+
+    <resultMap id="UserResultMap" type="com.personalenglishai.backend.entity.User">
+        <id column="id" property="id"/>
+        <result column="email" property="email"/>
+        <result column="phone" property="phone"/>
+        <result column="password_hash" property="passwordHash"/>
+        <result column="nickname" property="nickname"/>
+        <result column="avatar_url" property="avatarUrl"/>
+        <result column="role" property="role"/>
+        <result column="status" property="status"/>
+        <result column="register_source" property="registerSource"/>
+        <result column="last_active_at" property="lastActiveAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findByEmail" resultMap="UserResultMap">
+        SELECT id, email, phone, password_hash, nickname, avatar_url, role, status, 
+               register_source, last_active_at, created_at, updated_at
+        FROM users
+        WHERE email = #{email}
+    </select>
+
+    <select id="findByNickname" resultMap="UserResultMap">
+        SELECT id, email, phone, password_hash, nickname, avatar_url, role, status, 
+               register_source, last_active_at, created_at, updated_at
+        FROM users
+        WHERE nickname = #{nickname}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO users (email, password_hash, nickname, created_at, updated_at)
+        VALUES (#{email}, #{passwordHash}, #{nickname}, NOW(), NOW())
+    </insert>
+
+</mapper>
+
