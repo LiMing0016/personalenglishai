@@ -16,6 +16,11 @@ public interface UserMapper {
     User findByEmail(@Param("email") String email);
 
     /**
+     * 根据主键查询用户（用于 /api/users/me/profile 等）
+     */
+    User findById(@Param("id") Long id);
+
+    /**
      * 根据昵称查询用户（登录时username对应nickname）
      */
     User findByNickname(@Param("nickname") String nickname);

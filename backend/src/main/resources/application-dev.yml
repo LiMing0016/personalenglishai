@@ -1,0 +1,15 @@
+﻿spring:
+  config:
+    activate:
+      on-profile: dev
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+
+logging:
+  level:
+    com.personalenglishai.backend.ai.client.OpenAiClient: DEBUG
+    # 或者更粗一点：
+    com.personalenglishai.backend.ai.client: DEBUG

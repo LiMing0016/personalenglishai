@@ -1,5 +1,6 @@
 <template>
   <button
+    :type="type ?? 'button'"
     :class="['btn', `btn-${variant}`, { 'btn-loading': loading, 'btn-disabled': disabled }]"
     :disabled="disabled || loading"
     @click="$emit('click', $event)"
@@ -11,6 +12,7 @@
 
 <script setup lang="ts">
 defineProps<{
+  type?: 'button' | 'submit'
   variant?: 'primary' | 'secondary' | 'outline'
   loading?: boolean
   disabled?: boolean

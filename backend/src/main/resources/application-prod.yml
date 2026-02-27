@@ -1,45 +1,22 @@
-spring:
-  application:
-    name: backend
-
-  # 生产环境数据源配置（通过环境变量注入）
+﻿spring:
+  config:
+    activate:
+      on-profile: prod
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:personal_english_ai}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
-    username: ${SPRING_DATASOURCE_USERNAME:${DB_USER:root}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:}}
-    driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # 连接池配置优化
       maximum-pool-size: 10
       minimum-idle: 5
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
-
-  # 生产环境日志配置
   output:
     ansi:
       enabled: never
 
-# MyBatis 配置
 mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.personalenglishai.backend.entity
   configuration:
-    map-underscore-to-camel-case: true
-    # 生产环境关闭 SQL 日志输出
-    log-impl: org.apache.ibatis.logging.nop.NoLoggingImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
-# JWT 配置（通过环境变量注入）
-jwt:
-  secret: ${JWT_SECRET:your-secret-key-must-be-at-least-32-bytes-long-for-security}
-  expireSeconds: ${JWT_EXPIRE_SECONDS:86400}
-
-# Resend 配置（预留，未配置不影响启动）
-resend:
-  api-key: ${RESEND_API_KEY:}
-
-# 日志配置
 logging:
   level:
     root: INFO

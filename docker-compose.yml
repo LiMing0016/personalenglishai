@@ -66,9 +66,41 @@ services:
   #     timeout: 5s
   #     retries: 5
 
+  redis:
+    image: redis:7
+    container_name: peai-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - peai_redis_data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  context-sidecar:
+    build:
+      context: ./python/context_sidecar
+    container_name: peai-context-sidecar
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      - CONTEXT_SIDECAR_REDIS_URL=redis://redis:6379/0
+      - CONTEXT_SIDECAR_REDIS_TTL_SECONDS=${CONTEXT_SIDECAR_REDIS_TTL_SECONDS:-86400}
+      - CONTEXT_SIDECAR_REDIS_MAX_MESSAGES=${CONTEXT_SIDECAR_REDIS_MAX_MESSAGES:-50}
+      - CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS=${CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS:-8}
+    ports:
+      - "8001:8001"
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  peai_redis_data:
 
 # volumes:
 #   mysql_data:

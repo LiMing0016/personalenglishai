@@ -18,10 +18,15 @@
     </resultMap>
 
     <select id="findByEmail" resultMap="UserResultMap">
-        SELECT id, email, phone, password_hash, nickname, avatar_url, role, status, 
-               register_source, last_active_at, created_at, updated_at
+        SELECT id, email, password_hash, nickname
         FROM users
         WHERE email = #{email}
+    </select>
+
+    <select id="findById" resultMap="UserResultMap">
+        SELECT id, email, password_hash, nickname
+        FROM users
+        WHERE id = #{id}
     </select>
 
     <select id="findByNickname" resultMap="UserResultMap">

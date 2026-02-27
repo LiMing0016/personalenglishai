@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.DocumentMapper">
+
+    <resultMap id="DocumentResultMap" type="com.personalenglishai.backend.entity.Document">
+        <id column="id" property="id"/>
+        <result column="public_id" property="publicId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="workspace_id" property="workspaceId"/>
+        <result column="owner_user_id" property="ownerUserId"/>
+        <result column="title" property="title"/>
+        <result column="status" property="status"/>
+        <result column="latest_revision" property="latestRevision"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="RevisionResultMap" type="com.personalenglishai.backend.entity.DocumentRevision">
+        <id column="id" property="id"/>
+        <result column="document_id" property="documentId"/>
+        <result column="revision" property="revision"/>
+        <result column="content" property="content"/>
+        <result column="content_hash" property="contentHash"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO documents (public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, created_at, updated_at)
+        VALUES (#{publicId}, #{tenantId}, #{workspaceId}, #{ownerUserId}, #{title}, #{status}, #{latestRevision}, NOW(), NOW())
+    </insert>
+
+    <select id="findByPublicIdAndTenantAndWorkspace" resultMap="DocumentResultMap">
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, deleted_at, created_at, updated_at
+        FROM documents
+        WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId} AND deleted_at IS NULL
+    </select>
+
+    <select id="findByPublicIdAndTenantAndWorkspaceIncludeDeleted" resultMap="DocumentResultMap">
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, deleted_at, created_at, updated_at
+        FROM documents
+        WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
+    </select>
+
+    <update id="updateLatestRevision">
+        UPDATE documents SET latest_revision = #{newLatestRevision}, updated_at = NOW()
+        WHERE id = #{id} AND latest_revision = #{expectedLatestRevision}
+    </update>
+
+    <insert id="insertRevision" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO document_revisions (document_id, revision, content, content_hash, created_by, created_at)
+        VALUES (#{documentId}, #{revision}, #{content}, #{contentHash}, #{createdBy}, NOW())
+    </insert>
+
+    <select id="findRevisionByDocumentIdAndRevision" resultMap="RevisionResultMap">
+        SELECT id, document_id, revision, content, content_hash, created_by, created_at
+        FROM document_revisions
+        WHERE document_id = #{documentId} AND revision = #{revision}
+    </select>
+
+    <update id="softDelete">
+        UPDATE documents SET deleted_at = #{deletedAt}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="restore">
+        UPDATE documents SET deleted_at = NULL, updated_at = NOW() WHERE id = #{id}
+    </update>
+</mapper>

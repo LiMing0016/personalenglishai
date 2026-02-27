@@ -47,9 +47,8 @@ import { useRouter } from 'vue-router'
 import Card from '@/components/Card.vue'
 import Input from '@/components/Input.vue'
 import Button from '@/components/Button.vue'
-import { authApi } from '@/api/authApi'
+import { authApi } from '@/api/auth'
 import { isValidEmail, isValidPassword, getErrorMessage } from '@/utils/validation'
-import { showToast } from '@/utils/toast'
 
 const router = useRouter()
 
@@ -119,22 +118,16 @@ const handleSubmit = async () => {
   try {
     const response = await authApi.register({
       email: formData.email,
-      password: formData.password
+      password: formData.password,
+      nickname: formData.email?.split('@')[0] ?? ''
     })
 
-    if (response.success) {
-      if (response.needEmailVerify) {
-        router.push({
-          path: '/check-email',
-          query: { email: formData.email }
-        })
-      } else {
-        router.push('/login')
-      }
+    if (response.code === '0' || response.data?.userId != null) {
+      router.push('/login')
     } else {
-      errorMessage.value = getErrorMessage(response.code)
+      errorMessage.value = response.message ?? getErrorMessage(response.code)
     }
-  } catch (error) {
+  } catch (_error) {
     errorMessage.value = getErrorMessage()
   } finally {
     loading.value = false

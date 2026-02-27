@@ -1,34 +1,12 @@
 package com.personalenglishai.backend.config;
 
-import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Web配置类
- * JWT 拦截器仅作用于 /api/**，/health 不在其内，始终无鉴权可访问。
+ * Web 配置
+ * JWT 鉴权仅由 JwtAuthenticationFilter 处理，不使用 Interceptor。
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
-
-    private final JwtInterceptor jwtInterceptor;
-
-    public WebConfig(JwtInterceptor jwtInterceptor) {
-        this.jwtInterceptor = jwtInterceptor;
-    }
-
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtInterceptor)
-                .addPathPatterns("/api/**")
-                .excludePathPatterns(
-                        "/api/ping",
-                        "/api/db/ping",
-                        "/api/auth/register",
-                        "/api/auth/login"
-                );
-    }
 }
-
-

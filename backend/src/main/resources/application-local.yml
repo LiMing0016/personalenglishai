@@ -1,0 +1,12 @@
+﻿spring:
+  config:
+    activate:
+      on-profile: local
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    reactor.netty: DEBUG

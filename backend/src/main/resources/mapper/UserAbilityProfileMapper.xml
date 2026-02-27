@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.UserAbilityProfileMapper">
+
+    <resultMap id="UserAbilityProfileResultMap" type="com.personalenglishai.backend.entity.UserAbilityProfile">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="stage" property="stage"/>
+        <result column="task_score" property="taskScore"/>
+        <result column="coherence_score" property="coherenceScore"/>
+        <result column="grammar_score" property="grammarScore"/>
+        <result column="vocabulary_score" property="vocabularyScore"/>
+        <result column="structure_score" property="structureScore"/>
+        <result column="variety_score" property="varietyScore"/>
+        <result column="assessed_score" property="assessedScore"/>
+        <result column="confidence" property="confidence"/>
+        <result column="sample_count" property="sampleCount"/>
+        <result column="model_version" property="modelVersion"/>
+        <result column="rubric_version" property="rubricVersion"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectByUserId" resultMap="UserAbilityProfileResultMap">
+        SELECT id,
+               user_id,
+               stage,
+               task_score,
+               coherence_score,
+               grammar_score,
+               vocabulary_score,
+               structure_score,
+               variety_score,
+               assessed_score,
+               confidence,
+               sample_count,
+               model_version,
+               rubric_version,
+               updated_at
+        FROM user_ability_profile
+        WHERE user_id = #{userId}
+        LIMIT 1
+    </select>
+</mapper>

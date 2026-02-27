@@ -1,31 +1,8 @@
-import { http, type ApiResponse } from './http'
-
-export interface RegisterRequest {
-  email: string
-  password: string
-}
-
-export interface RegisterResponse {
-  success: boolean
-  needEmailVerify?: boolean
-  code?: string
-  message?: string
-}
-
-export interface LoginRequest {
-  email: string
-  password: string
-}
-
-export interface LoginResponse {
-  success: boolean
-  user?: {
-    email: string
-    emailVerified: boolean
-  }
-  code?: string
-  message?: string
-}
+/**
+ * 认证相关扩展 API（如邮箱验证）
+ * 登录/注册请使用 @/api/auth 的 authApi
+ */
+import { http } from './http'
 
 export interface ResendVerificationResponse {
   success: boolean
@@ -41,37 +18,15 @@ export interface VerifyEmailResponse {
 }
 
 export const authApi = {
-  /**
-   * 用户注册
-   */
-  async register(data: RegisterRequest): Promise<RegisterResponse> {
-    const response = await http.post<RegisterResponse>('/api/auth/register', data)
-    return response as RegisterResponse
-  },
-
-  /**
-   * 用户登录
-   */
-  async login(data: LoginRequest): Promise<LoginResponse> {
-    const response = await http.post<LoginResponse>('/api/auth/login', data)
-    return response as LoginResponse
-  },
-
-  /**
-   * 重新发送验证邮件
-   */
   async resendVerification(email?: string): Promise<ResendVerificationResponse> {
-    const response = await http.post<ResendVerificationResponse>('/api/auth/resend-verification', { email })
-    return response as ResendVerificationResponse
+    const res = await http.post<ResendVerificationResponse>('/auth/resend-verification', { email })
+    return res.data
   },
 
-  /**
-   * 验证邮箱
-   */
   async verifyEmail(token: string): Promise<VerifyEmailResponse> {
-    const response = await http.get<VerifyEmailResponse>(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)
-    return response as VerifyEmailResponse
-  }
+    const res = await http.get<VerifyEmailResponse>(
+      `/auth/verify-email?token=${encodeURIComponent(token)}`
+    )
+    return res.data
+  },
 }
-
-
