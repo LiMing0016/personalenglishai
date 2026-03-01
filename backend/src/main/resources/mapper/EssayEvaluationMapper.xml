@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.EssayEvaluationMapper">
+
+    <resultMap id="BaseResultMap" type="com.personalenglishai.backend.entity.EssayEvaluation">
+        <id     property="id"           column="id"/>
+        <result property="userId"       column="user_id"/>
+        <result property="mode"         column="mode"/>
+        <result property="essayText"    column="essay_text"/>
+        <result property="gaokaoScore"  column="gaokao_score"/>
+        <result property="maxScore"     column="max_score"/>
+        <result property="band"         column="band"/>
+        <result property="overallScore" column="overall_score"/>
+        <result property="resultJson"   column="result_json"/>
+        <result property="createdAt"    column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.EssayEvaluation"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO essay_evaluation
+            (user_id, mode, essay_text, gaokao_score, max_score, band, overall_score, result_json)
+        VALUES
+            (#{userId}, #{mode}, #{essayText}, #{gaokaoScore}, #{maxScore}, #{band}, #{overallScore}, #{resultJson})
+    </insert>
+
+    <!-- 列表查询：不返回大字段 essay_text 和 result_json，保持响应轻量 -->
+    <select id="selectByUserId" resultMap="BaseResultMap">
+        SELECT id, user_id, mode, gaokao_score, max_score, band, overall_score, created_at,
+               LEFT(essay_text, 100) AS essay_text
+        FROM essay_evaluation
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM essay_evaluation WHERE user_id = #{userId}
+    </select>
+
+    <!-- 详情查询：返回完整 result_json + essay_text -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT id, user_id, mode, gaokao_score, max_score, band, overall_score, result_json, created_at,
+               essay_text
+        FROM essay_evaluation
+        WHERE id = #{id}
+    </select>
+
+</mapper>

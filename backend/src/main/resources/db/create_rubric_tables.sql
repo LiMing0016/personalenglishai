@@ -1,0 +1,237 @@
+-- HighSchool Rubric v1 — 高考英语写作评分标准
+-- 对齐 2024 年高考英语写作阅卷原则（应用文15分 / 读后续写25分）
+-- MySQL 8 compatible
+
+CREATE TABLE IF NOT EXISTS rubric_version (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rubric_key VARCHAR(64) NOT NULL,
+  stage VARCHAR(32) NOT NULL,
+  is_active TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rubric_dimension (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rubric_version_id BIGINT NOT NULL,
+  mode VARCHAR(16) NOT NULL,
+  dimension_key VARCHAR(32) NOT NULL,
+  display_name VARCHAR(32) NOT NULL,
+  sort_order INT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_dimension (rubric_version_id, mode, dimension_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS rubric_level (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rubric_version_id BIGINT NOT NULL,
+  mode VARCHAR(16) NOT NULL,
+  dimension_key VARCHAR(32) NOT NULL,
+  `level` CHAR(1) NOT NULL,
+  level_score INT NOT NULL,
+  criteria TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_level (rubric_version_id, mode, dimension_key, `level`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -------------------------------------------------------
+-- rubric_version
+-- -------------------------------------------------------
+INSERT INTO rubric_version (rubric_key, stage, is_active)
+SELECT 'highschool-v1', 'highschool', 1
+WHERE NOT EXISTS (
+  SELECT 1 FROM rubric_version
+  WHERE rubric_key = 'highschool-v1' AND stage = 'highschool' AND is_active = 1
+);
+
+SET @rv_id = (
+  SELECT id FROM rubric_version
+  WHERE rubric_key = 'highschool-v1' AND stage = 'highschool' AND is_active = 1
+  ORDER BY id DESC LIMIT 1
+);
+
+-- -------------------------------------------------------
+-- rubric_dimension
+-- free mode: 应用文（书信/通知/邀请函等，满分15分）
+-- exam mode: 考试写作（读后续写/命题作文，满分25分）
+-- -------------------------------------------------------
+INSERT INTO rubric_dimension (rubric_version_id, mode, dimension_key, display_name, sort_order)
+SELECT @rv_id, src.mode, src.dimension_key, src.display_name, src.sort_order
+FROM (
+  SELECT 'free' AS mode, 'content_quality'   AS dimension_key, '内容质量'   AS display_name, 1 AS sort_order UNION ALL
+  SELECT 'free',         'structure',         '篇章结构',                                      2              UNION ALL
+  SELECT 'free',         'vocabulary',        '词汇丰富度',                                    3              UNION ALL
+  SELECT 'free',         'grammar',           '语法准确性',                                    4              UNION ALL
+  SELECT 'free',         'expression',        '语言自然度',                                    5              UNION ALL
+  SELECT 'exam',         'content_quality',   '内容质量',                                      1              UNION ALL
+  SELECT 'exam',         'task_achievement',  '任务完成度',                                    2              UNION ALL
+  SELECT 'exam',         'structure',         '篇章结构',                                      3              UNION ALL
+  SELECT 'exam',         'vocabulary',        '词汇丰富度',                                    4              UNION ALL
+  SELECT 'exam',         'grammar',           '语法准确性',                                    5              UNION ALL
+  SELECT 'exam',         'expression',        '语言自然度',                                    6
+) src
+ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), sort_order = VALUES(sort_order);
+
+-- -------------------------------------------------------
+-- rubric_level — 真实高考水平描述
+-- level_score: A=90 B=75 C=60 D=42 E=20
+--   free/应用文对应档位：A≈13-15/15  B≈10-12/15  C≈7-9/15  D≈4-6/15  E≈0-3/15
+--   exam/读后续写对应：  A≈21-25/25  B≈16-20/25  C≈11-15/25  D≈6-10/25  E≈0-5/25
+-- -------------------------------------------------------
+
+-- ============ free mode ============
+
+-- grammar (free)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'free','grammar','A',90,
+ 'Expert grammatical control. Accurately and naturally uses varied complex structures (relative clauses, adverbial clauses, non-finite verbs, inversion). Errors, if any, are minor slips that do not affect comprehension. Corresponds to near-perfect gaokao essay quality.'),
+(@rv_id,'free','grammar','B',75,
+ 'Good grammatical control. Mostly accurate with occasional minor errors that do not impede communication. Mix of simple and complex sentences with reasonable variety. Occasional tense or agreement slip but overall clear.'),
+(@rv_id,'free','grammar','C',60,
+ 'Adequate grammatical control. Noticeable errors in tense, subject-verb agreement, or preposition use; meaning is generally clear. Relies mainly on simple sentences. Typical of a passing gaokao essay around the average mark range.'),
+(@rv_id,'free','grammar','D',42,
+ 'Limited grammatical control. Frequent errors including tense confusion, wrong prepositions, and subject-verb disagreement that regularly impede understanding. Heavy reliance on simple sentence patterns. Chinese-learner errors are prominent.'),
+(@rv_id,'free','grammar','E',20,
+ 'Very limited grammatical control. Pervasive errors throughout the essay. Almost no correct complete sentences. Meaning is largely unintelligible due to grammatical breakdown.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- vocabulary (free)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'free','vocabulary','A',90,
+ 'Rich, accurate, and natural vocabulary range. Uses precise higher-register words and idiomatic phrases appropriate to context. No misspellings. Avoids over-reliance on basic words (get/have/very/good). Word choice feels native-like.'),
+(@rv_id,'free','vocabulary','B',75,
+ 'Good vocabulary with some variety. Generally accurate word choice with occasional errors in collocation or spelling that do not obscure meaning. Some higher-level words attempted, mostly correctly.'),
+(@rv_id,'free','vocabulary','C',60,
+ 'Limited vocabulary. Over-reliance on basic words (e.g., good/bad/very/have/make/get/big/small). Noticeable repetition and some misspellings, but the main message is still largely conveyed.'),
+(@rv_id,'free','vocabulary','D',42,
+ 'Very limited vocabulary. Heavy reliance on a small set of basic words. Multiple misspellings. Chinglish word choices are frequent (e.g., "I very like", "have a very good time to do"). Often obscures meaning.'),
+(@rv_id,'free','vocabulary','E',20,
+ 'Extremely limited vocabulary. Pervasive misspellings and wrong word selections. Unable to convey basic meaning. Vocabulary is a major barrier to understanding.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- structure (free)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'free','structure','A',90,
+ 'Well-organized with clear introduction, body, and conclusion. Logical flow throughout. Smooth and varied transitions that enhance readability. Each paragraph has a clear topic sentence and relevant supporting details.'),
+(@rv_id,'free','structure','B',75,
+ 'Generally well-organized with a recognizable structure. Mostly logical flow with some effective transitions. Minor issues with paragraph coherence or topic sentence clarity, but overall organization is evident.'),
+(@rv_id,'free','structure','C',60,
+ 'Basic structure is present but transitions are mechanical or repetitive (e.g., overuse of "Firstly... Secondly... Thirdly..."). Paragraph organization is uneven. Logic can be followed but requires effort.'),
+(@rv_id,'free','structure','D',42,
+ 'Poorly organized. Paragraphs lack clear focus or are missing entirely. Little or no effective use of transitional devices. Ideas are jumbled or disconnected, making the essay hard to follow.'),
+(@rv_id,'free','structure','E',20,
+ 'No discernible structure. Disconnected sentences with no logical progression. Paragraphing is absent or random. Impossible to identify a clear line of argument or narrative.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- content_quality (free)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'free','content_quality','A',90,
+ 'Fully develops the topic with specific, relevant details and examples. Ideas are clear, nuanced, and compelling. Stays tightly on topic throughout. Content demonstrates genuine engagement with the prompt.'),
+(@rv_id,'free','content_quality','B',75,
+ 'Develops the topic adequately with some supporting details. Ideas are generally clear and relevant. Minor lapses in focus or depth, but the overall argument or narrative is coherent and on topic.'),
+(@rv_id,'free','content_quality','C',60,
+ 'Addresses the topic at a surface level. Ideas are present but not well-developed. Supporting details are vague or insufficient. Occasional off-topic sentences, but the reader can still identify the main point.'),
+(@rv_id,'free','content_quality','D',42,
+ 'Underdeveloped content. Ideas are unclear or contradictory. Little supporting evidence or examples. Significant portions are off-topic or irrelevant.'),
+(@rv_id,'free','content_quality','E',20,
+ 'Does not meaningfully address the topic. Almost no relevant content. Fails to communicate a clear central idea. The essay appears unrelated to the prompt.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- expression (free)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'free','expression','A',90,
+ 'Highly natural and fluent expression. Varied sentence patterns that hold the reader''s attention. Effectively avoids Chinglish and Chinese-to-English literal translation. Reads like writing by a proficient English user.'),
+(@rv_id,'free','expression','B',75,
+ 'Mostly natural expression with occasional awkward phrasing or mild Chinglish. Minor unnaturalness does not significantly disrupt reading flow. The overall style is acceptable for a high school essay.'),
+(@rv_id,'free','expression','C',60,
+ 'Somewhat unnatural expression. Noticeable Chinglish or literal translation from Chinese thought patterns. The writing often feels stilted, but meaning is generally understood with some effort.'),
+(@rv_id,'free','expression','D',42,
+ 'Unnatural and stiff expression. Heavy Chinglish throughout. Reads as if translated word-for-word from Chinese. Frequently disrupts understanding and detracts significantly from the essay quality.'),
+(@rv_id,'free','expression','E',20,
+ 'Extremely unnatural expression. Almost entirely Chinglish. Reading is very difficult due to non-English phrasing patterns. The essay cannot be followed without significant guessing.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- ============ exam mode ============
+
+-- grammar (exam)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','grammar','A',90,
+ 'Expert grammatical control. Accurately and naturally uses varied complex structures (relative clauses, adverbial clauses, non-finite verbs, inversion). Errors, if any, are minor slips that do not affect comprehension.'),
+(@rv_id,'exam','grammar','B',75,
+ 'Good grammatical control. Mostly accurate with occasional minor errors that do not impede communication. Mix of simple and complex sentences with reasonable variety.'),
+(@rv_id,'exam','grammar','C',60,
+ 'Adequate grammatical control. Noticeable errors in tense, subject-verb agreement, or preposition use; meaning is generally clear. Relies mainly on simple sentences.'),
+(@rv_id,'exam','grammar','D',42,
+ 'Limited grammatical control. Frequent errors including tense confusion, wrong prepositions, and subject-verb disagreement that regularly impede understanding.'),
+(@rv_id,'exam','grammar','E',20,
+ 'Very limited grammatical control. Pervasive errors throughout the essay. Almost no correct complete sentences. Meaning is largely unintelligible.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- vocabulary (exam)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','vocabulary','A',90,
+ 'Rich, accurate, and natural vocabulary range. Uses precise higher-register words and idiomatic phrases. No misspellings. Avoids over-reliance on basic words. Word choice feels natural for the exam task.'),
+(@rv_id,'exam','vocabulary','B',75,
+ 'Good vocabulary with some variety. Generally accurate word choice with occasional errors in collocation or spelling that do not obscure meaning.'),
+(@rv_id,'exam','vocabulary','C',60,
+ 'Limited vocabulary. Over-reliance on basic words. Noticeable repetition and some misspellings, but the main message is still largely conveyed.'),
+(@rv_id,'exam','vocabulary','D',42,
+ 'Very limited vocabulary. Heavy reliance on a small set of basic words. Multiple misspellings. Chinglish word choices frequent and often obscure meaning.'),
+(@rv_id,'exam','vocabulary','E',20,
+ 'Extremely limited vocabulary. Pervasive misspellings and wrong word selections. Unable to convey basic meaning.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- structure (exam)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','structure','A',90,
+ 'Well-organized with clear and logical progression. Smooth and varied transitions. Each paragraph has a clear focus and relevant supporting details. Overall coherence is excellent.'),
+(@rv_id,'exam','structure','B',75,
+ 'Generally well-organized with mostly logical flow and some effective transitions. Minor issues with paragraph coherence, but overall organization is clear.'),
+(@rv_id,'exam','structure','C',60,
+ 'Basic structure is present but transitions are mechanical or repetitive. Paragraph organization is uneven. Logic can be followed but requires effort.'),
+(@rv_id,'exam','structure','D',42,
+ 'Poorly organized. Paragraphs lack clear focus. Little or no effective transitions. Ideas are jumbled or disconnected.'),
+(@rv_id,'exam','structure','E',20,
+ 'No discernible structure. Disconnected sentences with no logical progression. Impossible to identify a clear line of argument.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- content_quality (exam)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','content_quality','A',90,
+ 'Fully develops the topic with specific, relevant details. Ideas are clear and compelling. Stays tightly on topic throughout. Content demonstrates genuine engagement with the prompt.'),
+(@rv_id,'exam','content_quality','B',75,
+ 'Develops the topic adequately with some supporting details. Ideas are generally clear and relevant. Minor lapses in focus or depth.'),
+(@rv_id,'exam','content_quality','C',60,
+ 'Addresses the topic at a surface level. Ideas are present but not well-developed. Supporting details are vague or insufficient.'),
+(@rv_id,'exam','content_quality','D',42,
+ 'Underdeveloped content. Ideas are unclear or contradictory. Little supporting evidence. Significant portions are off-topic.'),
+(@rv_id,'exam','content_quality','E',20,
+ 'Does not meaningfully address the topic. Almost no relevant content. Fails to communicate a clear central idea.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- expression (exam)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','expression','A',90,
+ 'Highly natural and fluent expression. Varied sentence patterns. Effectively avoids Chinglish. Reads like writing by a proficient English user.'),
+(@rv_id,'exam','expression','B',75,
+ 'Mostly natural expression with occasional awkward phrasing or mild Chinglish. Minor unnaturalness does not significantly disrupt reading flow.'),
+(@rv_id,'exam','expression','C',60,
+ 'Somewhat unnatural expression. Noticeable Chinglish or literal translation from Chinese thought patterns. Meaning is generally understood with some effort.'),
+(@rv_id,'exam','expression','D',42,
+ 'Unnatural and stiff expression. Heavy Chinglish throughout. Reads as if translated word-for-word from Chinese.'),
+(@rv_id,'exam','expression','E',20,
+ 'Extremely unnatural expression. Almost entirely Chinglish. Reading is very difficult due to non-English phrasing patterns.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- task_achievement (exam only)
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria) VALUES
+(@rv_id,'exam','task_achievement','A',90,
+ 'Fully addresses ALL required writing points with no omissions. Correct format throughout (salutation, closing, appropriate paragraphing for letters/notices). Word count meets requirements. Perfectly fits the task scenario and register.'),
+(@rv_id,'exam','task_achievement','B',75,
+ 'Addresses most required writing points with only minor omissions of secondary details. Format is mostly correct. Word count approximately meets requirements. Fits the task scenario well.'),
+(@rv_id,'exam','task_achievement','C',60,
+ 'Addresses some required writing points but with notable gaps (e.g., missing one key point). Format is partially correct (e.g., missing salutation OR closing). Word count slightly below requirement.'),
+(@rv_id,'exam','task_achievement','D',42,
+ 'Addresses only a few required writing points. Significant omissions of key content. Format has multiple errors (e.g., missing both salutation and closing). Word count clearly insufficient.'),
+(@rv_id,'exam','task_achievement','E',20,
+ 'Fails to address the required writing points. Format is wrong or completely absent. Word count is far below requirement. The response does not fit the task scenario at all.')
+ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);

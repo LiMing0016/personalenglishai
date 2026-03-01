@@ -1,0 +1,11 @@
+* text=auto
+
+*.java text working-tree-encoding=UTF-8
+*.ts text working-tree-encoding=UTF-8
+*.vue text working-tree-encoding=UTF-8
+*.yml text working-tree-encoding=UTF-8
+*.yaml text working-tree-encoding=UTF-8
+*.sql text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8
+*.json text working-tree-encoding=UTF-8
+*.env text working-tree-encoding=UTF-8

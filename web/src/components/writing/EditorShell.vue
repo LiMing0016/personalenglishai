@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="writing-root">
     <ToolRail class="toolrail-fixed-overlay" :active-panel="activePanel" @select="onToolSelect" />
     <div class="workspace-layout" :style="layoutStyle">
@@ -9,10 +9,13 @@
           :submitting="submitting"
           :cursor-placement="cursorPlacement"
           :selection-capture-enabled="assistantOpen"
+          :errors="evaluateResult?.errors"
+          :active-error-id="activeErrorId"
           @submit="onSubmit"
           @clear="onClear"
           @selection-change="onSelectionChange"
           @cursor-placed="cursorPlacement = null"
+          @error-click="onEditorErrorClick"
         />
       </div>
 
@@ -42,15 +45,25 @@
           :last-chat-result="lastChatResult"
           :conversation-id="aiConversationId"
           :ai-generating="aiGenerating"
+          :writing-mode="writingMode"
+          :task-prompt="taskPrompt"
           :ai-note="aiNote"
           :evaluate-result="evaluateResult"
+          :active-error-id="activeErrorId"
+          :submitting="submitting"
+          :evaluate-error="evaluateError"
           @close="activePanel = null"
           @start-fix="onStartFix"
+          @error-click="onPanelErrorClick"
+          @retry="onSubmit"
           @apply-rewrite="onApplyRewrite"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
           @archived="onArchived"
+          @load-history-result="onLoadHistoryResult"
           @update:ai-note="aiNote = $event"
+          @update:writing-mode="writingMode = $event"
+          @update:task-prompt="taskPrompt = $event"
           @ai-note-send="onAiNoteSend"
           @ai-note-stop="onAiNoteStop"
           @ai-chat-cleared="onAiChatCleared"
@@ -67,8 +80,8 @@ import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
-import { evaluateWriting } from '@/api/writing'
-import type { WritingEvaluateResponse } from '@/api/writing'
+import { getEvaluateTask, submitEvaluateWriting } from '@/api/writing'
+import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse } from '@/api/writing'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
@@ -80,6 +93,8 @@ const DRAFT_KEY = 'peai:writing:draft'
 const LEGACY_DRAFT_KEY = 'peai:draft:writing'
 const AI_NOTE_DRAFT_KEY = 'peai:writing:aiNoteDraft'
 const AI_CHAT_CONVERSATION_ID_KEY = 'peai:writing:aiConversationId'
+const WRITING_MODE_KEY = 'peai:writing:mode'
+const TASK_PROMPT_KEY = 'peai:writing:taskPrompt'
 const SPLIT_RATIO_KEY = 'writing.split.ratio'
 const DEFAULT_SPLIT_RATIO = 0.3
 const MIN_PANEL_WIDTH = 420
@@ -139,6 +154,23 @@ function loadConversationId(): string {
     if (saved) return saved
   } catch (_) {}
   return createConversationId()
+}
+
+function loadWritingMode(): 'free' | 'exam' {
+  try {
+    const saved = localStorage.getItem(WRITING_MODE_KEY)?.trim()
+    return saved === 'exam' ? 'exam' : 'free'
+  } catch (_) {
+    return 'free'
+  }
+}
+
+function loadTaskPrompt(): string {
+  try {
+    return localStorage.getItem(TASK_PROMPT_KEY) ?? ''
+  } catch (_) {
+    return ''
+  }
 }
 
 function computePanelWidthByRatio(ratio: number, viewportWidth = window.innerWidth): number {
@@ -259,12 +291,18 @@ const cursorPlacement = ref<{ at: number } | null>(null)
 const aiNote = ref('')
 const aiConversationId = ref(loadConversationId())
 const aiGenerating = ref(false)
+const writingMode = ref<'free' | 'exam'>(loadWritingMode())
+const taskPrompt = ref(loadTaskPrompt())
 let aiAbortController: AbortController | null = null
 const correctionMode = ref(false)
 const submitting = ref(false)
+const evaluateError = ref<string | null>(null)
+let evaluatePollToken = 0
 const resizing = ref(false)
 const archivedList = ref<unknown[]>([])
 const evaluateResult = ref<WritingEvaluateResponse | null>(null)
+const activeErrorId = ref<string | null>(null)
+const evaluatedText = ref<string | null>(null)
 const selectionStore = createWritingSelectionStore()
 
 provide(writingSelectionStoreKey, selectionStore)
@@ -449,6 +487,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  evaluatePollToken += 1
   leftPaneRef.value?.removeEventListener('scroll', onLeftPaneScroll)
   leftPaneRef.value?.removeEventListener('mouseup', syncSelectionStoreFromLeftMouseup)
   if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout)
@@ -462,6 +501,26 @@ onBeforeUnmount(() => {
 })
 
 watch(activePanel, () => saveLayoutState(), { flush: 'post' })
+
+watch(
+  writingMode,
+  (val) => {
+    try {
+      localStorage.setItem(WRITING_MODE_KEY, val)
+    } catch (_) {}
+  },
+  { immediate: true }
+)
+
+watch(
+  taskPrompt,
+  (val) => {
+    try {
+      localStorage.setItem(TASK_PROMPT_KEY, val)
+    } catch (_) {}
+  },
+  { immediate: true }
+)
 
 function onDockWidthChange(width: number) {
   const viewportWidth = window.innerWidth
@@ -485,9 +544,44 @@ function onToolSelect(mode: PanelMode) {
   activePanel.value = mode
 }
 
+// 评分完成时记住被评分的文本，文本变化时自动清除评分结果
+watch(evaluateResult, (result) => {
+  if (result) {
+    evaluatedText.value = draftText.value
+  } else {
+    evaluatedText.value = null
+    activeErrorId.value = null
+  }
+})
+
+watch(draftText, (newText) => {
+  if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
+    evaluateResult.value = null
+  }
+})
+
+function onEditorErrorClick(errorId: string) {
+  activeErrorId.value = activeErrorId.value === errorId ? null : errorId
+  if (activeErrorId.value) {
+    activePanel.value = 'score'
+  }
+}
+
+function onPanelErrorClick(errorId: string) {
+  activeErrorId.value = activeErrorId.value === errorId ? null : errorId
+}
+
 function onStartFix() {
   correctionMode.value = true
   activePanel.value = 'revise'
+}
+
+function onLoadHistoryResult(detail: EvaluationDetailResponse) {
+  evaluateResult.value = detail.result
+  if (detail.essayText) {
+    draftText.value = detail.essayText
+  }
+  activePanel.value = 'score'
 }
 
 function onArchived() {
@@ -502,20 +596,60 @@ function onArchived() {
 async function onSubmit() {
   submitting.value = true
   evaluateResult.value = null
+  evaluateError.value = null
+  const currentPollToken = ++evaluatePollToken
+  const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
+  const examTaskPrompt =
+    normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
   try {
-    const res = await evaluateWriting({
+    const submitRes = await submitEvaluateWriting({
       essay: draftText.value.trim(),
       aiHint: aiNote.value.trim() || undefined,
-      mode: 'free',
+      mode: normalizedMode,
+      taskPrompt: examTaskPrompt,
+      draftText: draftText.value.trim() || undefined,
       lang: 'en',
     })
-    evaluateResult.value = res
+    if (!submitRes.requestId) {
+      throw new Error('评估任务提交失败：缺少 requestId')
+    }
+
+    const startedAt = Date.now()
+    const pollIntervalMs = 1200
+    const pollTimeoutMs = 120000
+
+    let task: WritingEvaluateTaskStatusResponse | null = null
+    while (Date.now() - startedAt < pollTimeoutMs) {
+      if (currentPollToken !== evaluatePollToken) {
+        return
+      }
+
+      task = await getEvaluateTask(submitRes.requestId)
+      if (task.status === 'succeeded' && task.result) {
+        evaluateResult.value = task.result
+        break
+      }
+      if (task.status === 'failed') {
+        throw new Error(task.error || '评估任务失败')
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+    }
+
+    if (!task || task.status !== 'succeeded' || !task.result) {
+      throw new Error('评估超时，请稍后再试')
+    }
+
     activePanel.value = 'score'
     showToast('评估完成', 'success')
   } catch (e) {
-    showToast(e instanceof Error ? e.message : '评估失败', 'error')
+    const msg = e instanceof Error ? e.message : '评估失败'
+    evaluateError.value = msg
+    showToast(msg, 'error')
   } finally {
-    submitting.value = false
+    if (currentPollToken === evaluatePollToken) {
+      submitting.value = false
+    }
   }
 }
 
@@ -543,6 +677,7 @@ function onClear() {
   cursorPlacement.value = null
   correctionMode.value = false
   evaluateResult.value = null
+  activeErrorId.value = null
   try {
     localStorage.removeItem(DRAFT_KEY)
     localStorage.removeItem(LEGACY_DRAFT_KEY)
@@ -599,6 +734,9 @@ async function onAiNoteSend() {
   const selectedText = selectionStore.selectedText.value.trim()
   const hasSelectedText = Boolean(selectedText)
   const hasDraftText = Boolean(draftText.value.trim())
+  const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
+  const examTaskPrompt =
+    normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
   const contextScope = hasSelectedText ? 'selection' : 'auto'
   const actionOrigin = 'chat_input'
   const recentMessages = getRecentAiMessages(8)
@@ -607,6 +745,8 @@ async function onAiNoteSend() {
     instruction,
     hasSelectedText,
     hasDraftText,
+    writingMode: normalizedMode,
+    hasTaskPrompt: Boolean(examTaskPrompt),
     contextScope,
     actionOrigin,
     recentMessagesCount: recentMessages.length,
@@ -635,6 +775,8 @@ async function onAiNoteSend() {
       constraints: {
         contextScope,
         actionOrigin,
+        mode: normalizedMode,
+        taskPrompt: examTaskPrompt,
         conversationId: aiConversationId.value,
         selectedText: selectedText || undefined,
         draftText: draftText.value || undefined,

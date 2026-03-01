@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.RubricMapper">
+
+    <resultMap id="RubricVersionResultMap" type="com.personalenglishai.backend.entity.RubricVersion">
+        <id column="id" property="id"/>
+        <result column="rubric_key" property="rubricKey"/>
+        <result column="stage" property="stage"/>
+        <result column="is_active" property="isActive"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <resultMap id="RubricDimensionResultMap" type="com.personalenglishai.backend.entity.RubricDimension">
+        <id column="id" property="id"/>
+        <result column="rubric_version_id" property="rubricVersionId"/>
+        <result column="mode" property="mode"/>
+        <result column="dimension_key" property="dimensionKey"/>
+        <result column="display_name" property="displayName"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <resultMap id="RubricLevelResultMap" type="com.personalenglishai.backend.entity.RubricLevel">
+        <id column="id" property="id"/>
+        <result column="rubric_version_id" property="rubricVersionId"/>
+        <result column="mode" property="mode"/>
+        <result column="dimension_key" property="dimensionKey"/>
+        <result column="level" property="level"/>
+        <result column="level_score" property="levelScore"/>
+        <result column="criteria" property="criteria"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <resultMap id="RubricRuleRowResultMap" type="com.personalenglishai.backend.dto.rubric.RubricRuleRow">
+        <result column="rubric_key" property="rubricKey"/>
+        <result column="dimension_key" property="dimensionKey"/>
+        <result column="display_name" property="displayName"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="level" property="level"/>
+        <result column="criteria" property="criteria"/>
+    </resultMap>
+
+    <select id="selectActiveVersionByStage" resultMap="RubricVersionResultMap">
+        SELECT id, rubric_key, stage, is_active, created_at
+        FROM rubric_version
+        WHERE stage = #{stage}
+          AND is_active = 1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectDimensionsByVersionAndMode" resultMap="RubricDimensionResultMap">
+        SELECT id, rubric_version_id, mode, dimension_key, display_name, sort_order, created_at
+        FROM rubric_dimension
+        WHERE rubric_version_id = #{rubricVersionId}
+          AND mode = #{mode}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="selectLevelsByVersionAndMode" resultMap="RubricLevelResultMap">
+        SELECT id, rubric_version_id, mode, dimension_key, `level`, level_score, criteria, created_at
+        FROM rubric_level
+        WHERE rubric_version_id = #{rubricVersionId}
+          AND mode = #{mode}
+        ORDER BY
+            FIELD(dimension_key, 'content_quality', 'task_achievement', 'structure', 'vocabulary', 'grammar', 'expression'),
+            FIELD(`level`, 'A', 'B', 'C', 'D', 'E')
+    </select>
+
+    <select id="selectActiveRubricRows" resultMap="RubricRuleRowResultMap">
+        SELECT
+            v.rubric_key,
+            d.dimension_key,
+            d.display_name,
+            d.sort_order,
+            l.`level`,
+            l.criteria
+        FROM rubric_version v
+        JOIN rubric_dimension d
+            ON d.rubric_version_id = v.id
+        JOIN rubric_level l
+            ON l.rubric_version_id = v.id
+           AND l.mode = d.mode
+           AND l.dimension_key = d.dimension_key
+        WHERE v.id = (
+            SELECT vv.id
+            FROM rubric_version vv
+            WHERE vv.is_active = 1
+              AND vv.stage = #{stage}
+              AND vv.rubric_key = #{rubricKey}
+            ORDER BY vv.created_at DESC, vv.id DESC
+            LIMIT 1
+        )
+          AND d.mode = #{mode}
+        ORDER BY d.sort_order ASC,
+                 FIELD(l.`level`, 'A', 'B', 'C', 'D', 'E')
+    </select>
+
+</mapper>

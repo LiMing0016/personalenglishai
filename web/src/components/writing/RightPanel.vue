@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <aside class="right-panel">
     <AiNotePanel
       ref="aiNotePanelRef"
@@ -10,7 +10,11 @@
       :last-chat-result="lastChatResult"
       :conversation-id="conversationId"
       :is-generating="aiGenerating"
+      :writing-mode="writingMode"
+      :task-prompt="taskPrompt"
       @update:model-value="$emit('update:aiNote', $event)"
+      @update:writing-mode="$emit('update:writingMode', $event)"
+      @update:task-prompt="$emit('update:taskPrompt', $event)"
       @send="$emit('ai-note-send')"
       @stop="$emit('ai-note-stop')"
       @dismiss-selection="$emit('dismiss-selection')"
@@ -22,7 +26,12 @@
       <ScorePanel
         v-if="panel === 'score'"
         :evaluate-result="evaluateResult"
+        :active-error-id="activeErrorId"
+        :submitting="submitting"
+        :evaluate-error="evaluateError"
         @start-fix="$emit('start-fix')"
+        @error-click="$emit('error-click', $event)"
+        @retry="$emit('retry')"
       />
       <RewritePanel
         v-else-if="panel === 'rewrite'"
@@ -34,14 +43,18 @@
       <PolishPanel v-else-if="panel === 'improve'" />
       <ExplainPanel v-else-if="panel === 'explain'" />
       <TranslatePanel v-else-if="panel === 'translate'" />
-      <ArchivePanel v-else-if="panel === 'archive'" @archived="$emit('archived')" />
+      <ArchivePanel
+        v-else-if="panel === 'archive'"
+        @archived="$emit('archived')"
+        @load-result="$emit('load-history-result', $event)"
+      />
     </ToolPanel>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { WritingEvaluateResponse } from '@/api/writing'
+import type { WritingEvaluateResponse, EvaluationDetailResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
 import ScorePanel from './panels/ScorePanel.vue'
@@ -65,21 +78,31 @@ const props = defineProps<{
   lastChatResult: { displayText: string; replaceText?: string } | null
   conversationId: string
   aiGenerating: boolean
+  writingMode: 'free' | 'exam'
+  taskPrompt: string
   aiNote: string
   evaluateResult: WritingEvaluateResponse | null
+  activeErrorId?: string | null
+  submitting?: boolean
+  evaluateError?: string | null
 }>()
 
 defineEmits<{
   close: []
   'start-fix': []
+  'error-click': [errorId: string]
+  retry: []
   'apply-rewrite': [fullText: string]
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
   archived: []
+  'load-history-result': [detail: EvaluationDetailResponse]
   'update:aiNote': [value: string]
   'ai-note-send': []
   'ai-note-stop': []
   'ai-chat-cleared': []
+  'update:writingMode': [value: 'free' | 'exam']
+  'update:taskPrompt': [value: string]
 }>()
 
 const scorePanelTitle = computed(() =>
