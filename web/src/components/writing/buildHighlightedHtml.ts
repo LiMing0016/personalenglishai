@@ -2,7 +2,7 @@
  * 将纯文本 + 错误 span 数组转换为带 <mark> 高亮标签的 HTML。
  *
  * 处理逻辑：
- * 1. 过滤无效 span（start=0 & end=0、start>=end、越界）
+ * 1. 过滤无效 span（start>=end 即零长度、越界）
  * 2. 收集所有 span 边界点，切分文本为 segments
  * 3. 每个 segment 检查被哪些 error 覆盖，有则包裹 <mark>
  * 4. 重叠 span：同一 segment 被多个 error 覆盖时合并到一个 <mark>
@@ -35,10 +35,9 @@ export function buildHighlightedHtml(text: string, errors: ErrorSpan[]): string 
   if (!text) return ''
   if (!errors || errors.length === 0) return escapeHtml(text)
 
-  // 1. 过滤无效 error
+  // 1. 过滤无效 error（零长度 span 或越界）
   const validErrors = errors.filter((e) => {
     const { start, end } = e.span
-    if (start === 0 && end === 0) return false
     if (start >= end) return false
     if (start < 0 || end > text.length) return false
     return true

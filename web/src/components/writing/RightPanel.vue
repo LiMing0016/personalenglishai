@@ -32,6 +32,7 @@
         @start-fix="$emit('start-fix')"
         @error-click="$emit('error-click', $event)"
         @retry="$emit('retry')"
+        @close="$emit('close')"
       />
       <RewritePanel
         v-else-if="panel === 'rewrite'"

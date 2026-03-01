@@ -1,11 +1,14 @@
 package com.personalenglishai.backend.dto.writing;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class WritingEvaluateTaskResponse {
 
     private String requestId;
+    @JsonIgnore
+    private Long userId;
     private String status;
     private String message;
     private String error;
@@ -22,6 +25,14 @@ public class WritingEvaluateTaskResponse {
 
     public void setRequestId(String requestId) {
         this.requestId = requestId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
 
     public String getStatus() {

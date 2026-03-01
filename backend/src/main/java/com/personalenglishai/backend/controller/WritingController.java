@@ -73,9 +73,13 @@ public class WritingController {
 
     @GetMapping("/evaluate/tasks/{requestId}")
     public ResponseEntity<WritingEvaluateTaskResponse> getEvaluateTask(
-            @PathVariable String requestId) {
+            @PathVariable String requestId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+
         WritingEvaluateTaskResponse response = writingEvaluateTaskService.getTask(requestId);
-        if (response == null) {
+        if (response == null || !userId.equals(response.getUserId())) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(response);
