@@ -1,27 +1,31 @@
 package com.personalenglishai.backend.dto.writing;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * POST /api/writing/evaluate 请求体
+ * POST /api/writing/evaluate request body.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class WritingEvaluateRequest {
 
-    /** 作文正文，必填 */
     @NotBlank(message = "essay is required")
     private String essay;
 
-    /** 给 AI 的补充说明，可选 */
     private String aiHint;
 
-    /** free | guided，默认 free */
+    /** free | exam */
     private String mode = "free";
 
-    /** 语言，默认 en */
     private String lang = "en";
+
+    /** Optional exam task prompt/instruction. */
+    private String taskPrompt;
+
+    /** 由 Controller 从 JWT 注入，不对外暴露 */
+    @JsonIgnore
+    private Long userId;
 
     public WritingEvaluateRequest() {
     }
@@ -57,4 +61,21 @@ public class WritingEvaluateRequest {
     public void setLang(String lang) {
         this.lang = lang;
     }
+
+    public String getTaskPrompt() {
+        return taskPrompt;
+    }
+
+    public void setTaskPrompt(String taskPrompt) {
+        this.taskPrompt = taskPrompt;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 }
+

@@ -193,68 +193,6 @@ class WritingScoreUtilsTest {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // 题目有效性检测
-    // ═══════════════════════════════════════════════════════════════════════
-
-    @Nested
-    @DisplayName("isValidTaskPrompt — 题目有效性检测")
-    class PromptValidationTest {
-
-        @Test
-        @DisplayName("正常中文题目 → 有效")
-        void validChinese() {
-            assertThat(WritingScoreUtils.isValidTaskPrompt(
-                "请以新年为主题写一封给朋友的信，不少于120词。")).isTrue();
-        }
-
-        @Test
-        @DisplayName("正常英文题目 → 有效")
-        void validEnglish() {
-            assertThat(WritingScoreUtils.isValidTaskPrompt(
-                "Write a letter to your friend about your New Year plan.")).isTrue();
-        }
-
-        @Test
-        @DisplayName("无空格单token乱码 → 无效")
-        void pureNumbers() {
-            // Has letters but no spaces and no CJK → single unspaced token → gibberish
-            assertThat(WritingScoreUtils.isValidTaskPrompt("128045325adfafbfd")).isFalse();
-        }
-
-        @Test
-        @DisplayName("随机字符 → 无效")
-        void randomChars() {
-            assertThat(WritingScoreUtils.isValidTaskPrompt("!@#$%^&*()123456")).isFalse();
-        }
-
-        @Test
-        @DisplayName("null → 无效")
-        void nullInput() {
-            assertThat(WritingScoreUtils.isValidTaskPrompt(null)).isFalse();
-        }
-
-        @Test
-        @DisplayName("过短内容 → 无效")
-        void tooShort() {
-            assertThat(WritingScoreUtils.isValidTaskPrompt("写信")).isFalse();
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // 词数要求提取
-    // ═══════════════════════════════════════════════════════════════════════
-
-    @Nested
-    @DisplayName("extractWordCount — 从题目中提取词数要求")
-    class ExtractWordCountTest {
-
-        @Test @DisplayName("中文「120词」") void chinese()  { assertThat(WritingScoreUtils.extractWordCount("不少于120词")).isEqualTo(120); }
-        @Test @DisplayName("英文「150 words」") void english() { assertThat(WritingScoreUtils.extractWordCount("write 150 words")).isEqualTo(150); }
-        @Test @DisplayName("无词数要求 → null") void none()    { assertThat(WritingScoreUtils.extractWordCount("写一篇关于新年的文章")).isNull(); }
-        @Test @DisplayName("null → null")       void nullIn()  { assertThat(WritingScoreUtils.extractWordCount(null)).isNull(); }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
     // 进步消息
     // ═══════════════════════════════════════════════════════════════════════
 

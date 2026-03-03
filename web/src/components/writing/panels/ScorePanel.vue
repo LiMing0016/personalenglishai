@@ -28,6 +28,7 @@
         <div v-for="row in dimensionRows" :key="row.key" class="dim-row">
           <span class="dim-label">{{ row.label }}</span>
           <span class="dim-stars">{{ row.stars }}</span>
+          <span v-if="row.score != null" class="dim-score">{{ row.score }}</span>
           <span class="dim-grade">({{ row.grade }})</span>
         </div>
       </div>
@@ -64,12 +65,12 @@
         <p class="pf-action">{{ focusDetail.action_item }}</p>
       </div>
 
-      <!-- 典型错误 -->
-      <div v-if="evaluateResult.errors?.length" class="insight-block errors-block">
+      <!-- 典型错误（只读展示） -->
+      <div v-if="errorTypeErrors.length" class="insight-block errors-block">
         <span class="insight-title">典型错误 Error Details</span>
         <ul class="errors-list">
           <li
-            v-for="err in evaluateResult.errors"
+            v-for="err in errorTypeErrors"
             :key="err.id"
             class="error-item"
             :class="{ 'error-item--active': err.id === activeErrorId }"
@@ -77,15 +78,21 @@
             @click="emit('error-click', err.id)"
           >
             <span class="error-meta">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
-            <div v-if="err.original" class="error-correction">
+            <div v-if="err.original && hasValidSuggestion(err)" class="error-correction">
               <span class="error-original">{{ err.original }}</span>
               <span class="error-arrow">&rarr;</span>
               <span class="error-fix">{{ err.suggestion }}</span>
             </div>
-            <span v-else-if="err.suggestion" class="error-suggestion">{{ err.suggestion }}</span>
+            <div v-else-if="err.original" class="error-correction">
+              <span class="error-original">{{ err.original }}</span>
+            </div>
             <p v-if="err.reason" class="error-reason">{{ err.reason }}</p>
           </li>
         </ul>
+      </div>
+
+      <div v-if="evaluateResult && !evaluateResult.errors?.length" class="no-errors-hint">
+        未发现典型错误，继续保持！
       </div>
 
       <!-- 讲评 -->
@@ -95,7 +102,7 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="btn btn-primary" @click="$emit('start-fix')">开始订正</button>
+        <button type="button" class="btn btn-primary" @click="emit('start-fix')">开始订正</button>
         <button type="button" class="btn btn-secondary" @click="emit('close')">暂不订正</button>
       </div>
     </template>
@@ -138,8 +145,9 @@ const props = withDefaults(
     activeErrorId?: string | null
     submitting?: boolean
     evaluateError?: string | null
+    dimensionLabels?: Record<string, string> | null
   }>(),
-  { evaluateResult: null, activeErrorId: null, submitting: false, evaluateError: null },
+  { evaluateResult: null, activeErrorId: null, submitting: false, evaluateError: null, dimensionLabels: null },
 )
 
 const emit = defineEmits<{
@@ -166,8 +174,19 @@ const EXAM_DIMENSIONS: DimensionKey[] = ['content_quality', 'task_achievement', 
 const GRADE_STARS: Record<GradeLetter, number> = { A: 5, B: 4, C: 3, D: 2, E: 1 }
 
 const ERROR_TYPE_LABELS: Record<string, string> = {
+  spelling: '拼写',
+  morphology: '词形',
+  subject_verb: '主谓一致',
+  tense: '时态',
+  article: '冠词',
+  preposition: '介词',
+  collocation: '搭配',
+  syntax: '句法',
+  word_choice: '用词',
+  part_of_speech: '词性',
+  punctuation: '标点',
+  logic: '逻辑',
   grammar: '语法',
-  word_choice: '词汇',
   expression: '表达',
   coherence: '连贯',
   format: '格式',
@@ -200,7 +219,7 @@ const displayMaxScore = computed(() => {
 const gaokaoband = computed(() => props.evaluateResult?.gaokao_score?.band ?? null)
 const improvement = computed(() => props.evaluateResult?.improvement ?? null)
 
-// ── 等级计算（grades → 星星） ──
+// ── 等级计算 ──
 
 function normalizeGrade(value: unknown): GradeLetter {
   const upper = String(value ?? '').trim().toUpperCase()
@@ -226,9 +245,7 @@ const gradeMap = computed<Record<DimensionKey, GradeLetter>>(() => {
     }
     return result
   }
-
-  // 从 dimensionScores 或 score 推导
-  const dimScores = props.evaluateResult?.dimensionScores ?? props.evaluateResult?.dimension_scores
+  const dimScores = props.evaluateResult?.dimensionScores
   if (dimScores && Object.keys(dimScores).length > 0) {
     const result = {} as Record<DimensionKey, GradeLetter>
     for (const key of dimensionOrder.value) {
@@ -236,8 +253,6 @@ const gradeMap = computed<Record<DimensionKey, GradeLetter>>(() => {
     }
     return result
   }
-
-  // 全部默认 C
   const result = {} as Record<DimensionKey, GradeLetter>
   for (const key of dimensionOrder.value) result[key] = 'C'
   return result
@@ -246,11 +261,14 @@ const gradeMap = computed<Record<DimensionKey, GradeLetter>>(() => {
 const dimensionRows = computed(() =>
   dimensionOrder.value.map((key) => {
     const grade = gradeMap.value[key]
+    const dimScores = props.evaluateResult?.dimensionScores
+    const score = dimScores?.[key] ?? null
     return {
       key,
-      label: DEFAULT_LABELS[key] ?? key,
+      label: labelOf(key),
       grade,
       stars: '\u2B50'.repeat(GRADE_STARS[grade]),
+      score,
     }
   }),
 )
@@ -264,13 +282,11 @@ interface InsightItem {
 }
 
 function labelOf(key: DimensionKey): string {
-  return DEFAULT_LABELS[key] ?? key
+  return props.dimensionLabels?.[key] ?? DEFAULT_LABELS[key] ?? key
 }
 
 const priorityFocus = computed<DimensionKey[]>(() => {
-  const fromCamel = props.evaluateResult?.priorityFocus ?? []
-  const fromSnake = props.evaluateResult?.priority_focus ?? []
-  const all = [...fromCamel, ...fromSnake]
+  const all = props.evaluateResult?.priority_focus ?? []
   const valid = new Set<string>(dimensionOrder.value)
   return all.filter((k): k is DimensionKey => valid.has(k))
 })
@@ -292,7 +308,6 @@ const strengths = computed<InsightItem[]>(() => {
   }
 
   if (!items.length) {
-    // 取最好的 1-2 个维度
     const sorted = [...dimensionRows.value].sort(
       (a, b) => GRADE_STARS[b.grade] - GRADE_STARS[a.grade],
     )
@@ -312,7 +327,6 @@ const weaknesses = computed<InsightItem[]>(() => {
   const seen = new Set<DimensionKey>()
   const analysisMap = props.evaluateResult?.analysis ?? {}
 
-  // 优先展示 priorityFocus
   for (const key of priorityFocus.value) {
     const a = analysisMap[key]
     const text = (a?.suggestion ?? a?.weakness)?.trim()
@@ -322,7 +336,6 @@ const weaknesses = computed<InsightItem[]>(() => {
     seen.add(key)
   }
 
-  // 补充其他有 weakness/suggestion 的维度
   for (const key of Object.keys(analysisMap) as DimensionKey[]) {
     if (seen.has(key)) continue
     const a = analysisMap[key]
@@ -348,11 +361,22 @@ const focusDimensionLabel = computed(() => {
   return dim ? (DEFAULT_LABELS[dim] ?? dim) : ''
 })
 
-// ── 错误 ──
+// ── 错误（只读，仅 error 类） ──
 
 function errorTypeLabel(type: string): string {
   return ERROR_TYPE_LABELS[type] ?? type
 }
+
+function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
+  const s = err.suggestion?.trim()
+  if (!s || /^n\/?a$/i.test(s)) return false
+  if (err.original && s === err.original.trim()) return false
+  return true
+}
+
+const errorTypeErrors = computed(() =>
+  (props.evaluateResult?.errors ?? []).filter((e) => e.category !== 'suggestion'),
+)
 
 // ── activeErrorId 联动 ──
 
@@ -457,7 +481,7 @@ watch(
   line-height: 1.5;
 }
 
-/* ── 维度（星星 + 等级） ── */
+/* ── 维度 ── */
 .dimensions {
   margin-bottom: 16px;
   border: 1px solid #e5e7eb;
@@ -467,7 +491,7 @@ watch(
 
 .dim-row {
   display: grid;
-  grid-template-columns: 92px 1fr auto;
+  grid-template-columns: 92px 1fr auto auto;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
@@ -475,21 +499,10 @@ watch(
 }
 .dim-row:first-child { border-top: none; }
 
-.dim-label {
-  font-size: 13px;
-  color: #374151;
-}
-
-.dim-stars {
-  font-size: 14px;
-  letter-spacing: 1px;
-  white-space: nowrap;
-}
-
-.dim-grade {
-  font-size: 12px;
-  color: #6b7280;
-}
+.dim-label { font-size: 13px; color: #374151; }
+.dim-stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
+.dim-score { font-size: 12px; font-weight: 600; color: #374151; }
+.dim-grade { font-size: 12px; color: #6b7280; }
 
 /* ── 优点 / 缺点 / 错误 通用 ── */
 .insight-block {
@@ -518,11 +531,7 @@ watch(
 .insight-item { margin-bottom: 10px; }
 .insight-item:last-child { margin-bottom: 0; }
 
-.insight-dim {
-  font-size: 12px;
-  font-weight: 600;
-  color: #374151;
-}
+.insight-dim { font-size: 12px; font-weight: 600; color: #374151; }
 
 .essay-quote {
   margin: 4px 0;
@@ -545,20 +554,9 @@ watch(
   margin-top: 2px;
 }
 
-.strengths-block {
-  background: #f0fdf4;
-  border-color: #dcfce7;
-}
-
-.weaknesses-block {
-  background: #fff7ed;
-  border-color: #fed7aa;
-}
-
-.errors-block {
-  background: #fefce8;
-  border-color: #fde68a;
-}
+.strengths-block { background: #f0fdf4; border-color: #dcfce7; }
+.weaknesses-block { background: #fff7ed; border-color: #fed7aa; }
+.errors-block { background: #fefce8; border-color: #fde68a; }
 
 /* ── 行动建议卡片 ── */
 .priority-focus-card {
@@ -570,41 +568,12 @@ watch(
   background: #eef2ff;
 }
 
-.pf-title {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: #4338ca;
-  margin-bottom: 4px;
-}
+.pf-title { display: block; font-size: 12px; font-weight: 600; color: #4338ca; margin-bottom: 4px; }
+.pf-dimension { display: inline-block; padding: 1px 8px; font-size: 12px; font-weight: 600; border-radius: 20px; background: #c7d2fe; color: #3730a3; margin-bottom: 6px; }
+.pf-reason { margin: 0 0 4px; font-size: 13px; color: #374151; line-height: 1.5; }
+.pf-action { margin: 0; font-size: 13px; font-weight: 500; color: #4338ca; line-height: 1.5; }
 
-.pf-dimension {
-  display: inline-block;
-  padding: 1px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 20px;
-  background: #c7d2fe;
-  color: #3730a3;
-  margin-bottom: 6px;
-}
-
-.pf-reason {
-  margin: 0 0 4px;
-  font-size: 13px;
-  color: #374151;
-  line-height: 1.5;
-}
-
-.pf-action {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: #4338ca;
-  line-height: 1.5;
-}
-
-/* ── 错误条目 ── */
+/* ── 错误条目（只读） ── */
 .errors-list {
   margin: 0;
   padding: 0;
@@ -626,15 +595,9 @@ watch(
   transition: background 0.15s, box-shadow 0.15s;
 }
 .error-item:hover { background: rgba(251, 191, 36, 0.1); }
-.error-item--active {
-  background: #fef3c7;
-  box-shadow: 0 0 0 2px #fbbf24;
-}
+.error-item--active { background: #fef3c7; box-shadow: 0 0 0 2px #fbbf24; }
 
-.error-meta {
-  color: #6b7280;
-  font-size: 12px;
-}
+.error-meta { color: #6b7280; font-size: 12px; }
 
 .error-correction {
   display: flex;
@@ -664,8 +627,6 @@ watch(
   font-size: 12px;
 }
 
-.error-suggestion { color: #374151; }
-
 .error-reason {
   margin: 2px 0 0;
   font-size: 12px;
@@ -673,110 +634,47 @@ watch(
   line-height: 1.4;
 }
 
+.no-errors-hint {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ── 讲评 ── */
 .report-summary { margin-bottom: 12px; }
-
-.summary-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: #6b7280;
-  margin-bottom: 6px;
-}
-
-.summary-text {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #374151;
-}
+.summary-label { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+.summary-text { margin: 0; font-size: 13px; line-height: 1.6; color: #374151; }
 
 /* ── 操作按钮 ── */
-.actions {
-  display: flex;
-  gap: 10px;
-}
-
-.btn {
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  border: none;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
+.actions { display: flex; gap: 10px; }
+.btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border: none; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
 .btn-primary { background: #047857; color: #fff; }
 .btn-primary:hover { background: #065f46; }
 .btn-secondary { background: #f3f4f6; color: #374151; }
 .btn-secondary:hover { background: #e5e7eb; }
 
 /* ── 加载骨架屏 ── */
-.score-loading {
-  padding: 16px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.skeleton-block {
-  border-radius: 10px;
-  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-
+.score-loading { padding: 16px 0; display: flex; flex-direction: column; gap: 12px; }
+.skeleton-block { border-radius: 10px; background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
 .skeleton-score { height: 80px; }
 .skeleton-dims { height: 120px; }
 .skeleton-insight { height: 60px; }
 .skeleton-insight.short { height: 40px; width: 70%; }
-
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.loading-hint {
-  text-align: center;
-  font-size: 13px;
-  color: #6b7280;
-  margin: 4px 0 0;
-}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.loading-hint { text-align: center; font-size: 13px; color: #6b7280; margin: 4px 0 0; }
 
 /* ── 评分失败 ── */
-.score-error {
-  padding: 32px 16px;
-  text-align: center;
-}
+.score-error { padding: 32px 16px; text-align: center; }
+.score-error .error-message { font-size: 14px; color: #991b1b; margin: 0 0 16px; line-height: 1.5; }
 
-.score-error .error-message {
-  font-size: 14px;
-  color: #991b1b;
-  margin: 0 0 16px;
-  line-height: 1.5;
-}
-
-/* ── Fallback 重试按钮 ── */
-.fallback-retry-btn {
-  display: inline-block;
-  margin-top: 8px;
-  padding: 4px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid #d97706;
-  border-radius: 8px;
-  background: #fff;
-  color: #92400e;
-  cursor: pointer;
-  transition: background 0.15s;
-}
+.fallback-retry-btn { display: inline-block; margin-top: 8px; padding: 4px 12px; font-size: 12px; font-weight: 500; border: 1px solid #d97706; border-radius: 8px; background: #fff; color: #92400e; cursor: pointer; transition: background 0.15s; }
 .fallback-retry-btn:hover { background: #fef3c7; }
 
 /* ── 空状态 ── */
-.score-empty {
-  padding: 32px 0;
-  text-align: center;
-  font-size: 14px;
-  color: #9ca3af;
-}
+.score-empty { padding: 32px 0; text-align: center; font-size: 14px; color: #9ca3af; }
 </style>

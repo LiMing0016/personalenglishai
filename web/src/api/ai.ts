@@ -53,6 +53,7 @@ export async function aiCommand(
   try {
     const res = await http.post<AiCommandSuccessResponse>('/ai/command', payload, {
       signal: options.signal,
+      timeout: 60000,
     })
     const data = res.data
     const applyRaw = data.result?.apply ?? data.finalResult?.content ?? ''

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="tool-rail">
     <button
       v-for="item in items"
@@ -36,8 +36,8 @@ defineEmits<{
 
 const items: { mode: PanelMode; label: string; title: string; icon: string }[] = [
   { mode: 'score', label: '评价', title: '作文评价', icon: '◇' },
-  { mode: 'rewrite', label: '改写', title: 'AI 改写', icon: '≡' },
   { mode: 'revise', label: '订正', title: '订正', icon: '✎' },
+  { mode: 'rewrite', label: '润色', title: '分级润色', icon: '≡' },
   { mode: 'improve', label: '提升', title: '润色/高级词', icon: '↑' },
   { mode: 'explain', label: '解释', title: '语法解释', icon: '?' },
   { mode: 'translate', label: '翻译', title: '翻译', icon: '⇄' },

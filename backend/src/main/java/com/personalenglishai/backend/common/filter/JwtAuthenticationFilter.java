@@ -53,20 +53,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (whitelisted) {
             if (authPresent) {
                 String token = authHeader.substring(7);
+                tryAttachPrincipal(request, token);
                 if (!jwtUtil.validateToken(token)) {
-                    send401(response);
-                    return;
-                }
-                try {
-                    Long userId = jwtUtil.getUserIdFromToken(token);
-                    String nickname = jwtUtil.getNicknameFromToken(token);
-                    request.setAttribute("userId", userId);
-                    request.setAttribute("nickname", nickname);
-                    request.setAttribute("tenantId", String.valueOf(userId));
-                    request.setAttribute("workspaceId", "default");
-                } catch (Exception e) {
-                    send401(response);
-                    return;
+                    log.debug("[JWT] ignore invalid token on whitelisted path={}", path);
                 }
             }
             filterChain.doFilter(request, response);
@@ -79,19 +68,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) {
+        if (!jwtUtil.validateToken(token) || !"access".equals(jwtUtil.getTokenType(token))) {
             send401(response);
             return;
         }
 
-        try {
-            Long userId = jwtUtil.getUserIdFromToken(token);
-            String nickname = jwtUtil.getNicknameFromToken(token);
-            request.setAttribute("userId", userId);
-            request.setAttribute("nickname", nickname);
-            request.setAttribute("tenantId", String.valueOf(userId));
-            request.setAttribute("workspaceId", "default");
-        } catch (Exception e) {
+        if (!tryAttachPrincipal(request, token)) {
             send401(response);
             return;
         }
@@ -116,6 +98,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return Arrays.stream(environment.getActiveProfiles())
                 .map(String::toLowerCase)
                 .anyMatch(p -> p.equals("dev") || p.equals("local"));
+    }
+
+    private boolean tryAttachPrincipal(HttpServletRequest request, String token) {
+        try {
+            Long userId = jwtUtil.getUserIdFromToken(token);
+            String nickname = jwtUtil.getNicknameFromToken(token);
+            request.setAttribute("userId", userId);
+            request.setAttribute("nickname", nickname);
+            request.setAttribute("tenantId", String.valueOf(userId));
+            request.setAttribute("workspaceId", "default");
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void send401(HttpServletResponse response) throws IOException {

@@ -8,6 +8,15 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: ${MAIL_SSL_ENABLE:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS_ENABLE:false}
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -17,7 +26,18 @@ mybatis:
 
 jwt:
   secret: ${JWT_SECRET}
-  expireSeconds: ${JWT_EXPIRE_SECONDS:86400}
+  accessTokenSeconds: ${JWT_ACCESS_TOKEN_SECONDS:1800}
+  refreshTokenSeconds: ${JWT_REFRESH_TOKEN_SECONDS:259200}
+
+app:
+  base-url: ${APP_BASE_URL:http://localhost:5173}
+  cookie:
+    secure: ${COOKIE_SECURE:false}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:noreply@personalenglishai.com}
+  sms:
+    enabled: ${SMS_ENABLED:false}
 
 server:
   port: ${SERVER_PORT:18080}
@@ -49,9 +69,15 @@ logging:
   charset:
     console: UTF-8
 
+writing:
+  evaluate:
+    thread-pool-size: ${WRITING_EVALUATE_THREAD_POOL_SIZE:4}
+
 ai:
   prompt:
     debug: ${AI_PROMPT_DEBUG:false}
+    log-raw-enabled: ${AI_PROMPT_LOG_RAW_ENABLED:false}
+    log-raw-max-chars: ${AI_PROMPT_LOG_RAW_MAX_CHARS:12000}
     context:
       selected-text-max: ${AI_PROMPT_CONTEXT_SELECTED_TEXT_MAX:1200}
       recent-each-max: ${AI_PROMPT_CONTEXT_RECENT_EACH_MAX:200}
@@ -67,3 +93,6 @@ ai:
         fallback-enabled: ${AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED:true}
   repair:
     enabled: ${AI_REPAIR_ENABLED:false}
+
+languagetool:
+  enabled: ${LANGUAGETOOL_ENABLED:true}

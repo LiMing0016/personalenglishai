@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="chat-panel">
     <header class="chat-header">
       <div class="chat-title-wrap">
@@ -41,7 +41,141 @@
         </div>
         <div class="selected-chip-content">{{ selectedTextPreview }}</div>
       </div>
+      <div v-if="isExamMode" class="task-prompt-box">
+        <button type="button" class="task-prompt-toggle" @click="toggleTaskPrompt">
+          <span class="task-prompt-title">
+            题目 / 要求
+            <span v-if="auditStatus === 'confirmed'" class="audit-badge audit-ok">✓ 已审核</span>
+            <span v-else-if="draftPrompt.trim() && auditStatus === 'idle'" class="audit-badge audit-pending">待审核</span>
+          </span>
+          <span class="toggle-arrow">{{ taskPromptExpanded ? '▲' : '▼' }}</span>
+        </button>
+
+        <template v-if="taskPromptExpanded">
+
+          <!-- 已确认：显示摘要 -->
+          <div v-if="auditStatus === 'confirmed'" class="confirmed-card">
+            <div class="confirmed-chips">
+              <span v-if="confirmedMeta.format" class="meta-chip chip-format">{{ confirmedMeta.format }}</span>
+              <span v-if="confirmedMeta.wordCount" class="meta-chip chip-words">≥{{ confirmedMeta.wordCount }} 词</span>
+            </div>
+            <p class="confirmed-preview">{{ draftPromptPreview }}</p>
+            <button type="button" class="btn-re-edit" @click="resetAudit">重新编辑</button>
+          </div>
+
+          <!-- 录入 / 审核中 -->
+          <template v-else>
+            <textarea
+              v-model="draftPrompt"
+              class="task-prompt-input"
+              rows="3"
+              placeholder='示例："请以新年为主题写一封给朋友的信，不少于120词。"'
+              @input="onDraftChange"
+            />
+
+            <!-- 无效提示 -->
+            <div v-if="auditStatus === 'invalid'" class="audit-msg audit-err">
+              ❌ {{ auditError }}
+            </div>
+
+            <!-- 补全缺失信息 -->
+            <div v-if="auditStatus === 'needs_info'" class="audit-fields">
+              <template v-if="auditResult?.detectedFormat">
+                <p class="field-ok">✅ 写作形式：{{ auditResult.detectedFormat }}</p>
+              </template>
+              <template v-else>
+                <label class="field-label">⚠️ 未检测到写作形式，请选择：</label>
+                <select v-model="extraFormat" class="field-select">
+                  <option value="">请选择…</option>
+                  <option value="应用文·书信/邮件">应用文·书信/邮件</option>
+                  <option value="应用文·通知/公告">应用文·通知/公告</option>
+                  <option value="应用文·演讲/发言">应用文·演讲/发言</option>
+                  <option value="应用文·日记">应用文·日记</option>
+                  <option value="议论文">议论文</option>
+                  <option value="说明文/介绍文">说明文/介绍文</option>
+                </select>
+              </template>
+
+              <template v-if="auditResult?.detectedWordCount">
+                <p class="field-ok">✅ 字数要求：不少于 {{ auditResult.detectedWordCount }} 词</p>
+              </template>
+              <template v-else>
+                <label class="field-label">⚠️ 未检测到字数要求（选填）：</label>
+                <div class="field-row">
+                  <span class="field-unit">不少于</span>
+                  <input
+                    v-model="extraWordCount"
+                    type="number"
+                    class="field-number"
+                    placeholder="120"
+                    min="50"
+                    max="500"
+                  />
+                  <span class="field-unit">词</span>
+                </div>
+              </template>
+            </div>
+
+            <div class="audit-actions">
+              <button
+                v-if="auditStatus !== 'needs_info'"
+                type="button"
+                class="btn-audit"
+                :disabled="!draftPrompt.trim()"
+                @click="runAudit"
+              >🔍 审核题目</button>
+              <template v-if="auditStatus === 'needs_info'">
+                <button
+                  type="button"
+                  class="btn-confirm"
+                  :disabled="!canConfirm"
+                  @click="confirmPrompt"
+                >✓ 确认题目</button>
+                <button type="button" class="btn-re-edit-sm" @click="resetAudit">重新编辑</button>
+              </template>
+            </div>
+          </template>
+
+        </template>
+      </div>
+      <button
+        type="button"
+        class="draft-toggle"
+        :class="{ active: includeDraft }"
+        @click="includeDraft = !includeDraft"
+      >
+        <span class="draft-toggle-dot">{{ includeDraft ? '\u25CF' : '\u25CB' }}</span>
+        <span class="draft-toggle-label">{{ includeDraft ? '\u5F15\u7528\u4F5C\u6587' : '\u4E0D\u5F15\u7528\u4F5C\u6587' }}</span>
+      </button>
       <div class="composer-input-wrap">
+        <div ref="modeMenuRef" class="mode-plus-wrap">
+          <button
+            type="button"
+            class="mode-plus-btn"
+            title="写作模式"
+            @click.stop="toggleModeMenu"
+          >
+            +
+          </button>
+          <div v-if="modeMenuOpen" class="mode-menu" @click.stop>
+            <button
+              type="button"
+              class="mode-menu-item"
+              :class="{ active: writingMode === 'free' }"
+              @click="selectWritingMode('free')"
+            >
+              自由写作
+            </button>
+            <button
+              type="button"
+              class="mode-menu-item"
+              :class="{ active: writingMode === 'exam' }"
+              @click="selectWritingMode('exam')"
+            >
+              考试写作
+            </button>
+          </div>
+        </div>
         <textarea
           ref="composerInputRef"
           :value="modelValue"
@@ -79,10 +213,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 
 type Mode = 'sm' | 'md' | 'lg'
+type WritingMode = 'free' | 'exam'
 type MessageRole = 'user' | 'assistant'
 type ChatMessage = { role: MessageRole; text: string; at: number }
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
@@ -100,11 +235,15 @@ const props = withDefaults(
     lastChatResult?: { displayText: string; replaceText?: string } | null
     conversationId?: string
     isGenerating?: boolean
+    writingMode?: WritingMode
+    taskPrompt?: string
   }>(),
   {
     selectedTextPinned: '',
     selectionDismissed: false,
     isGenerating: false,
+    writingMode: 'free',
+    taskPrompt: '',
   }
 )
 
@@ -116,18 +255,27 @@ const emit = defineEmits<{
   'replace-selection-with': [resultText: string]
   close: []
   cleared: []
+  'update:writingMode': [value: WritingMode]
+  'update:taskPrompt': [value: string]
 }>()
 
 const modes: Mode[] = ['sm', 'md', 'lg']
 const mode = ref<Mode>('md')
 const messageListRef = ref<HTMLElement | null>(null)
 const composerInputRef = ref<HTMLTextAreaElement | null>(null)
+const modeMenuRef = ref<HTMLElement | null>(null)
+const modeMenuOpen = ref(false)
+const includeDraft = ref(false)
+const taskPromptExpanded = ref(false)
 const messages = ref<ChatMessage[]>([
   { role: 'assistant', text: DEFAULT_ASSISTANT_HINT, at: Date.now() },
 ])
 const lastAssistantPayload = ref('')
 const selectionStore = inject(writingSelectionStoreKey, null)
 const selectedText = computed(() => selectionStore?.selectedText.value ?? '')
+const writingMode = computed<WritingMode>(() => (props.writingMode === 'exam' ? 'exam' : 'free'))
+const isExamMode = computed(() => writingMode.value === 'exam')
+
 const selectedTextPreview = computed(() => {
   const text = selectedText.value
   if (text.length <= 80) return text
@@ -254,6 +402,125 @@ function onInput(e: Event) {
   emit('update:modelValue', value)
 }
 
+// ── Task-prompt audit ──────────────────────────────────────────────
+
+type AuditStatus = 'idle' | 'invalid' | 'needs_info' | 'confirmed'
+
+const draftPrompt = ref(props.taskPrompt ?? '')
+const auditStatus = ref<AuditStatus>(props.taskPrompt ? 'confirmed' : 'idle')
+const auditError = ref('')
+const auditResult = ref<{ detectedFormat?: string; detectedWordCount?: number } | null>(null)
+const extraFormat = ref('')
+const extraWordCount = ref('')
+const confirmedMeta = ref<{ format?: string; wordCount?: number }>({})
+
+const draftPromptPreview = computed(() => {
+  const t = draftPrompt.value.trim()
+  return t.length > 60 ? t.slice(0, 60) + '…' : t
+})
+
+const canConfirm = computed(() =>
+  !!(auditResult.value?.detectedFormat || extraFormat.value.trim())
+)
+
+watch(
+  () => props.taskPrompt,
+  (val) => {
+    if (!val) {
+      draftPrompt.value = ''
+      auditStatus.value = 'idle'
+      auditResult.value = null
+    }
+  }
+)
+
+const WRITING_FORMATS = [
+  { label: '应用文·书信/邮件', pattern: /信|letter|email|邮件|写信/i },
+  { label: '应用文·通知/公告', pattern: /通知|公告|notice|announcement/i },
+  { label: '应用文·演讲/发言', pattern: /演讲|发言|speech/i },
+  { label: '应用文·日记', pattern: /日记|diary/i },
+  { label: '议论文', pattern: /议论|观点|看法|opinion|discuss|argue/i },
+  { label: '说明文/介绍文', pattern: /介绍|描述|explain|describe|introduce/i },
+]
+
+function onDraftChange() {
+  if (auditStatus.value === 'invalid' || auditStatus.value === 'needs_info') {
+    auditStatus.value = 'idle'
+    auditResult.value = null
+    auditError.value = ''
+  }
+}
+
+function runAudit() {
+  const text = draftPrompt.value.trim()
+  if (!text) return
+
+  // 乱码检测：有效字符（字母+汉字）占比
+  const validChars = (text.match(/[a-zA-Z\u4e00-\u9fa5]/g) || []).length
+  const ratio = validChars / text.length
+
+  if (text.length < 8 || ratio < 0.35) {
+    auditStatus.value = 'invalid'
+    auditError.value = '题目内容看起来不是有效的写作要求，请用中文或英文描述考试题目。'
+    return
+  }
+
+  let detectedFormat: string | undefined
+  for (const { label, pattern } of WRITING_FORMATS) {
+    if (pattern.test(text)) { detectedFormat = label; break }
+  }
+
+  const wcMatch = text.match(/(\d+)\s*(词|字|words?)/i)
+  const detectedWordCount = wcMatch ? parseInt(wcMatch[1]) : undefined
+
+  auditResult.value = { detectedFormat, detectedWordCount }
+  extraFormat.value = ''
+  extraWordCount.value = ''
+  auditStatus.value = 'needs_info'
+}
+
+function confirmPrompt() {
+  if (!auditResult.value) return
+  const format = auditResult.value.detectedFormat || extraFormat.value.trim()
+  const wordCount = auditResult.value.detectedWordCount
+    || (extraWordCount.value ? parseInt(extraWordCount.value) : undefined)
+
+  confirmedMeta.value = { format, wordCount }
+
+  const lines: string[] = []
+  if (format) lines.push(`【写作形式】${format}`)
+  lines.push(`【写作要求】${draftPrompt.value.trim()}`)
+  if (wordCount) lines.push(`【字数要求】不少于 ${wordCount} 词`)
+
+  auditStatus.value = 'confirmed'
+  emit('update:taskPrompt', lines.join('\n'))
+}
+
+function resetAudit() {
+  auditStatus.value = 'idle'
+  auditResult.value = null
+  auditError.value = ''
+  extraFormat.value = ''
+  extraWordCount.value = ''
+  emit('update:taskPrompt', '')
+}
+
+function toggleModeMenu() {
+  modeMenuOpen.value = !modeMenuOpen.value
+}
+
+function selectWritingMode(nextMode: WritingMode) {
+  emit('update:writingMode', nextMode)
+  if (nextMode === 'exam') {
+    taskPromptExpanded.value = true
+  }
+  modeMenuOpen.value = false
+}
+
+function toggleTaskPrompt() {
+  taskPromptExpanded.value = !taskPromptExpanded.value
+}
+
 function onSend() {
   const text = props.modelValue.trim()
   if (!text) return
@@ -328,19 +595,53 @@ function getRecentMessages(max = 8): RecentMessageDto[] {
   return normalized.slice(-max)
 }
 
+function isIncludeDraft(): boolean {
+  return includeDraft.value
+}
+
 defineExpose<{
   setComposerText: (text: string) => void
   focusComposer: () => void
   getRecentMessages: (max?: number) => RecentMessageDto[]
+  isIncludeDraft: () => boolean
 }>({
   setComposerText,
   focusComposer: () => focusComposer(),
   getRecentMessages,
+  isIncludeDraft,
 })
 
 onMounted(() => {
   restoreMessages(props.conversationId)
+  taskPromptExpanded.value = props.writingMode === 'exam'
+  document.addEventListener('click', onClickOutsideModeMenu, true)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onClickOutsideModeMenu, true)
+})
+
+watch(
+  () => props.writingMode,
+  (nextMode) => {
+    if (nextMode === 'exam') {
+      taskPromptExpanded.value = true
+    }
+  }
+)
+
+function onClickOutsideModeMenu(e: Event) {
+  if (!modeMenuOpen.value) return
+  const root = modeMenuRef.value
+  const target = e.target as Node | null
+  if (!root || !target) {
+    modeMenuOpen.value = false
+    return
+  }
+  if (!root.contains(target)) {
+    modeMenuOpen.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -458,6 +759,35 @@ onMounted(() => {
   background: #fff;
   padding: 10px var(--assistant-safe-padding-right, 16px) 12px 12px;
 }
+.draft-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  border-radius: 999px;
+  padding: 3px 10px 3px 7px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+.draft-toggle:hover {
+  border-color: #9ca3af;
+}
+.draft-toggle.active {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #047857;
+}
+.draft-toggle-dot {
+  font-size: 10px;
+  line-height: 1;
+}
+.draft-toggle-label {
+  line-height: 1;
+}
 .selected-chip {
   border: 1px solid #d1d5db;
   background: #f9fafb;
@@ -508,7 +838,238 @@ onMounted(() => {
   position: relative;
 }
 .composer-input-wrap .composer-input {
+  padding-left: 52px;
   padding-right: 58px;
+}
+.mode-plus-wrap {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 2;
+}
+.mode-plus-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mode-menu {
+  position: absolute;
+  left: 0;
+  bottom: 38px;
+  width: 136px;
+  padding: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+.mode-menu-item {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #111827;
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.mode-menu-item:hover {
+  background: #f3f4f6;
+}
+.mode-menu-item.active {
+  background: #ecfdf5;
+  color: #047857;
+  font-weight: 600;
+}
+.task-prompt-box {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.task-prompt-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.task-prompt-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.toggle-arrow {
+  font-size: 10px;
+  color: #9ca3af;
+}
+.audit-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+.audit-ok   { background: #d1fae5; color: #065f46; }
+.audit-pending { background: #fef9c3; color: #92400e; }
+
+/* Confirmed card */
+.confirmed-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+}
+.confirmed-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.meta-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.chip-format { background: #dbeafe; color: #1e40af; }
+.chip-words  { background: #ede9fe; color: #5b21b6; }
+.confirmed-preview {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.5;
+}
+.btn-re-edit {
+  font-size: 12px;
+  color: #047857;
+  background: none;
+  border: 1px solid #047857;
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.btn-re-edit:hover { background: #ecfdf5; }
+
+/* Textarea */
+.task-prompt-input {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #111827;
+  background: #fff;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.task-prompt-input::placeholder { color: #9ca3af; }
+
+/* Error / needs_info messages */
+.audit-msg {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+.audit-err { background: #fee2e2; color: #991b1b; }
+
+/* Missing fields */
+.audit-fields {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-ok {
+  margin: 0;
+  font-size: 12px;
+  color: #065f46;
+}
+.field-label {
+  font-size: 12px;
+  color: #92400e;
+  display: block;
+}
+.field-select {
+  margin-top: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.field-unit { font-size: 12px; color: #6b7280; }
+.field-number {
+  width: 70px;
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  text-align: center;
+}
+
+/* Action buttons */
+.audit-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+.btn-audit {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-audit:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-audit:not(:disabled):hover { background: #e5e7eb; }
+.btn-confirm {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #047857;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-confirm:not(:disabled):hover { background: #065f46; }
+.btn-re-edit-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #6b7280;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
 }
 .composer-actions {
   margin-top: 8px;

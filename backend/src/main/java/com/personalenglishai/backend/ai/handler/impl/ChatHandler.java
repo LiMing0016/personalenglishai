@@ -77,7 +77,7 @@ public class ChatHandler implements IntentHandler {
 
         try {
             String output = openAiClient.callWithTraceId(
-                    PromptTemplates.CHAT_SYSTEM_PROMPT,
+                    promptInput.systemPrompt(),
                     promptInput.userPrompt(),
                     traceId,
                     ctx.getXDebugFail()
@@ -89,9 +89,7 @@ public class ChatHandler implements IntentHandler {
         } catch (Exception e) {
             log.error("ChatPrompt result traceId={} success=false latencyMs={} error={}",
                     traceId, System.currentTimeMillis() - start, safeError(e));
-            String fallback = "Chat is temporarily unavailable. Please try again.";
-            appendConversationMemory(conversationId, traceId, req, fallback);
-            return success(fallback);
+            return fail("Chat is temporarily unavailable. Please try again.");
         }
     }
 
@@ -165,6 +163,20 @@ public class ChatHandler implements IntentHandler {
 
         FinalResult legacy = new FinalResult();
         legacy.setContent(chatJson);
+        response.setFinalResult(legacy);
+        return response;
+    }
+
+    private AICommandResponse fail(String message) {
+        AICommandResponse response = new AICommandResponse();
+        response.setStatus("failed");
+
+        AiResult result = new AiResult();
+        result.setApply("");
+        response.setResult(result);
+
+        FinalResult legacy = new FinalResult();
+        legacy.setContent(message);
         response.setFinalResult(legacy);
         return response;
     }

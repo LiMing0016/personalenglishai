@@ -40,4 +40,35 @@
         WHERE user_id = #{userId}
         LIMIT 1
     </select>
+
+    <insert id="upsertAbilityScores">
+        INSERT INTO user_ability_profile (
+            user_id, stage,
+            task_score, coherence_score, grammar_score,
+            vocabulary_score, structure_score, variety_score,
+            assessed_score, confidence, sample_count,
+            model_version, rubric_version, updated_at
+        ) VALUES (
+            #{userId}, #{stage},
+            #{taskScore}, #{coherenceScore}, #{grammarScore},
+            #{vocabularyScore}, #{structureScore}, #{varietyScore},
+            #{assessedScore}, #{confidence}, #{sampleCount},
+            #{modelVersion}, #{rubricVersion}, #{updatedAt}
+        )
+        ON DUPLICATE KEY UPDATE
+            stage           = VALUES(stage),
+            task_score      = VALUES(task_score),
+            coherence_score = VALUES(coherence_score),
+            grammar_score   = VALUES(grammar_score),
+            vocabulary_score= VALUES(vocabulary_score),
+            structure_score = VALUES(structure_score),
+            variety_score   = VALUES(variety_score),
+            assessed_score  = VALUES(assessed_score),
+            confidence      = VALUES(confidence),
+            sample_count    = VALUES(sample_count),
+            model_version   = VALUES(model_version),
+            rubric_version  = VALUES(rubric_version),
+            updated_at      = VALUES(updated_at)
+    </insert>
+
 </mapper>

@@ -7,6 +7,8 @@ import com.personalenglishai.backend.dto.writing.EvaluationDetailResponse;
 import com.personalenglishai.backend.dto.writing.EvaluationHistoryResponse;
 import com.personalenglishai.backend.dto.writing.WritingChatRequest;
 import com.personalenglishai.backend.dto.writing.WritingChatResponse;
+import com.personalenglishai.backend.dto.writing.PolishRequest;
+import com.personalenglishai.backend.dto.writing.PolishResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
@@ -15,6 +17,7 @@ import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
+import com.personalenglishai.backend.service.writing.WritingPolishService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,17 +34,20 @@ public class WritingController {
     private final WritingEvaluateService writingEvaluateService;
     private final WritingEvaluateTaskService writingEvaluateTaskService;
     private final WritingChatService writingChatService;
+    private final WritingPolishService writingPolishService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
                              WritingEvaluateTaskService writingEvaluateTaskService,
                              WritingChatService writingChatService,
+                             WritingPolishService writingPolishService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
         this.writingChatService = writingChatService;
+        this.writingPolishService = writingPolishService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.objectMapper = objectMapper;
     }
@@ -100,6 +106,18 @@ public class WritingController {
             request.setMode("free");
         }
         WritingChatResponse response = writingChatService.chat(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 润色指定片段：按档次（basic/steady/advanced/perfect）返回润色结果
+     */
+    @PostMapping("/polish")
+    public ResponseEntity<PolishResponse> polish(
+            @Valid @RequestBody PolishRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        PolishResponse response = writingPolishService.polish(request);
         return ResponseEntity.ok(response);
     }
 

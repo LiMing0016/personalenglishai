@@ -99,10 +99,23 @@
             <version>0.12.3</version>
             <scope>runtime</scope>
         </dependency>
+        <!-- Mail -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- HTTP Client for OpenAI API -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- LanguageTool — deterministic grammar / spelling checker -->
+        <dependency>
+            <groupId>org.languagetool</groupId>
+            <artifactId>language-en</artifactId>
+            <version>6.6</version>
         </dependency>
     </dependencies>
 

@@ -5,7 +5,7 @@
     </header>
     <div class="dock-body">
       <ScorePanel v-if="mode === 'score'" @start-fix="$emit('switch-mode', 'revise')" />
-      <FixPanel v-else-if="mode === 'revise'" />
+      <FixPanel v-else-if="mode === 'revise'" :errors="[]" :fixed-error-ids="new Set()" :has-suggestions="false" />
       <PolishPanel v-else-if="mode === 'improve'" />
       <ExplainPanel v-else-if="mode === 'explain'" />
       <TranslatePanel v-else-if="mode === 'translate'" />

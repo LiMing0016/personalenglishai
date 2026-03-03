@@ -8,4 +8,6 @@ import org.apache.ibatis.annotations.Param;
 public interface UserAbilityProfileMapper {
 
     UserAbilityProfile selectByUserId(@Param("userId") Long userId);
+
+    void upsertAbilityScores(UserAbilityProfile profile);
 }

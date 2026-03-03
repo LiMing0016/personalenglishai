@@ -1,31 +1,40 @@
--- 用户表
+-- users
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
-    email VARCHAR(100) NOT NULL UNIQUE COMMENT '邮箱',
-    password VARCHAR(255) NOT NULL COMMENT '密码（BCrypt加密后）',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    INDEX idx_username (username),
-    INDEX idx_email (email)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+    email VARCHAR(100) NULL COMMENT 'email',
+    email_verified TINYINT NOT NULL DEFAULT 0 COMMENT '0=unverified,1=verified',
+    phone VARCHAR(20) NULL COMMENT 'phone',
+    phone_verified TINYINT NOT NULL DEFAULT 0 COMMENT '0=unverified,1=verified',
+    password_hash VARCHAR(255) NULL COMMENT 'bcrypt hash',
+    nickname VARCHAR(50) NOT NULL DEFAULT '' COMMENT 'display name',
+    avatar_url VARCHAR(255) NULL COMMENT 'avatar',
+    role VARCHAR(20) NOT NULL DEFAULT 'user' COMMENT 'user/admin',
+    status VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT 'active/disabled',
+    register_source VARCHAR(20) NOT NULL DEFAULT 'email' COMMENT 'email/phone/oauth',
+    token_version INT NOT NULL DEFAULT 0 COMMENT 'jwt token version',
+    last_active_at DATETIME NULL COMMENT 'last active time',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created at',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'updated at',
+    UNIQUE KEY uk_email (email),
+    UNIQUE KEY uk_phone (phone),
+    INDEX idx_email_verified (email_verified),
+    INDEX idx_phone_verified (phone_verified)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='users';
 
--- 用户档案表（1:1 关系，使用 user_id 作为主键）
+-- user profile (1:1)
 CREATE TABLE IF NOT EXISTS user_profile (
-    user_id BIGINT PRIMARY KEY COMMENT '用户ID（主键，外键关联 users.id）',
-    study_stage VARCHAR(50) NULL USE personal_english_ai;
-    SOURCE backend/src/main/resources/db/schema.sql;
-    COMMENT '学段：如"四级"、"六级"、"考研"等',
-    ai_mode INT NOT NULL DEFAULT 0 COMMENT 'AI模式：0=普通模式，1=学段模式',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    user_id BIGINT PRIMARY KEY COMMENT 'users.id',
+    study_stage VARCHAR(50) NULL,
+    ai_mode INT NOT NULL DEFAULT 0 COMMENT '0=normal,1=stage-mode',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户档案表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='user profile';
 
--- documents 文档主表（商用级：多租户/工作区/版本/软删）
+-- documents main table
 CREATE TABLE IF NOT EXISTS documents (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    public_id VARCHAR(64) NOT NULL COMMENT '对外稳定引用',
+    public_id VARCHAR(64) NOT NULL,
     tenant_id VARCHAR(64) NOT NULL,
     workspace_id VARCHAR(64) NOT NULL,
     owner_user_id BIGINT NOT NULL,
@@ -39,9 +48,9 @@ CREATE TABLE IF NOT EXISTS documents (
     INDEX idx_tenant_workspace_owner (tenant_id, workspace_id, owner_user_id),
     INDEX idx_tenant_workspace_updated (tenant_id, workspace_id, updated_at),
     INDEX idx_deleted_at (deleted_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档主表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='documents';
 
--- document_revisions 版本表
+-- document revisions
 CREATE TABLE IF NOT EXISTS document_revisions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     document_id BIGINT NOT NULL,
@@ -53,7 +62,9 @@ CREATE TABLE IF NOT EXISTS document_revisions (
     UNIQUE KEY uk_doc_revision (document_id, revision),
     INDEX idx_document_created (document_id, created_at),
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档版本表';-- document_pins 预留（选区/固定引用）
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='document revisions';
+
+-- document pins
 CREATE TABLE IF NOT EXISTS document_pins (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     document_id BIGINT NOT NULL,
@@ -64,4 +75,52 @@ CREATE TABLE IF NOT EXISTS document_pins (
     UNIQUE KEY uk_doc_pin (document_id, pin_id),
     INDEX idx_document_id (document_id),
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档固定引用';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='document pins';
+
+-- user writing ability profile
+CREATE TABLE IF NOT EXISTS user_ability_profile (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL UNIQUE COMMENT 'users.id',
+    stage INT NOT NULL DEFAULT 1 COMMENT '1=highschool,2=CET4,3=CET6,4=postgrad',
+    task_score DECIMAL(5,2) NULL,
+    coherence_score DECIMAL(5,2) NULL,
+    grammar_score DECIMAL(5,2) NULL,
+    vocabulary_score DECIMAL(5,2) NULL,
+    structure_score DECIMAL(5,2) NULL,
+    variety_score DECIMAL(5,2) NULL,
+    assessed_score DECIMAL(5,2) NULL,
+    confidence DECIMAL(4,3) NULL,
+    sample_count INT NOT NULL DEFAULT 0,
+    model_version VARCHAR(32) NULL,
+    rubric_version VARCHAR(64) NULL,
+    updated_at DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='user ability profile';
+
+-- essay evaluation history
+CREATE TABLE IF NOT EXISTS essay_evaluation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL COMMENT 'users.id',
+    mode VARCHAR(10) NOT NULL DEFAULT 'free' COMMENT 'free | exam',
+    essay_text MEDIUMTEXT NOT NULL,
+    gaokao_score INT NULL,
+    max_score INT NULL,
+    band VARCHAR(20) NULL,
+    overall_score INT NULL,
+    result_json LONGTEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_created (user_id, created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='essay evaluation history';
+
+-- async evaluation tasks
+CREATE TABLE IF NOT EXISTS evaluate_task (
+    request_id VARCHAR(64) PRIMARY KEY,
+    user_id BIGINT NULL COMMENT 'users.id',
+    status VARCHAR(20) NOT NULL DEFAULT 'processing' COMMENT 'processing | succeeded | failed',
+    error VARCHAR(500) NULL,
+    result_json LONGTEXT NULL,
+    submitted_at BIGINT NOT NULL COMMENT 'epoch ms',
+    completed_at BIGINT NULL COMMENT 'epoch ms',
+    INDEX idx_status (status),
+    INDEX idx_submitted (submitted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='evaluate task';

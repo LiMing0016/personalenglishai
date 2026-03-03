@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="auth-split-page">
     <section class="split-pane pane-left" aria-label="Auth poster"></section>
 

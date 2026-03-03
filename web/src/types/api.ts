@@ -37,3 +37,21 @@ export interface RegisterRequest {
   password: string
   nickname: string
 }
+
+export interface SendSmsCodeRequest {
+  phone: string
+  purpose: 'login' | 'register'
+}
+
+export interface PhoneLoginRequest {
+  phone: string
+  mode: 'otp' | 'password'
+  code?: string
+  password?: string
+}
+
+export interface PhoneRegisterRequest {
+  phone: string
+  code: string
+  nickname: string
+}

@@ -107,18 +107,23 @@ public class PromptAssembler {
         ContextDecision contextDecision = decideContext(taskIntent, userMessage, selectedText, recentMessages, reference, draftText, contextScope, actionOrigin, hasDocId);
         String contextBlock = buildContextBlock(contextDecision, target, selectedText, draftText, recentMessages, reference);
 
-        StringBuilder prompt = new StringBuilder();
-        prompt.append("[SYSTEM_PROMPT_V1]\n").append(PromptTemplates.SYSTEM_PROMPT_V1)
-                .append("\n\n[ROLE_CHAT_V1]\n").append(PromptTemplates.ROLE_CHAT_V1);
+        // system prompt: role definition + ability profile + output rules
+        StringBuilder sys = new StringBuilder();
+        sys.append(PromptTemplates.SYSTEM_PROMPT_V1)
+                .append("\n\n").append(PromptTemplates.ROLE_CHAT_V1);
         if (!isBlank(abilityPrompt)) {
-            prompt.append("\n\n[ABILITY_PROMPT_V1]\n").append(abilityPrompt);
+            sys.append("\n\n").append(abilityPrompt);
         }
-        if (!isBlank(contextBlock)) {
-            prompt.append("\n\n[CONTEXT_V1]\n").append(contextBlock);
-        }
-        prompt.append("\n\n[USER_MESSAGE]\n").append(userMessage);
+        sys.append("\n\n").append(PromptTemplates.OUTPUT_RULES_V1);
+        String systemPrompt = sys.toString();
 
-        String finalPrompt = prompt.toString();
+        // user prompt: context + user message
+        StringBuilder user = new StringBuilder();
+        if (!isBlank(contextBlock)) {
+            user.append(contextBlock).append("\n\n");
+        }
+        user.append(userMessage);
+        String finalPrompt = user.toString();
         String scope = isBlank(selectedText) ? "document" : "selection";
 
         boolean hasDraftText = !isBlank(draftText);
@@ -156,7 +161,7 @@ public class PromptAssembler {
             log.info("[PROMPT_BUILD] skipped (ai.prompt.debug=false) traceId={}", traceId);
         }
 
-        return new ChatPromptInput(scope, selectedText, draftText, finalPrompt);
+        return new ChatPromptInput(scope, selectedText, draftText, systemPrompt, finalPrompt);
     }
 
     public String buildRepairUserPrompt(String previousOutput) {
@@ -471,7 +476,8 @@ public class PromptAssembler {
         return value == null || value.trim().isEmpty();
     }
 
-    public record ChatPromptInput(String scope, String selectedText, String fullText, String userPrompt) {
+    public record ChatPromptInput(String scope, String selectedText, String fullText,
+                                    String systemPrompt, String userPrompt) {
         public boolean hasSelectedText() {
             return selectedText != null && !selectedText.isBlank();
         }

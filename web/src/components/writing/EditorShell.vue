@@ -9,7 +9,7 @@
           :submitting="submitting"
           :cursor-placement="cursorPlacement"
           :selection-capture-enabled="assistantOpen"
-          :errors="evaluateResult?.errors"
+          :errors="displayEditorErrors"
           :active-error-id="activeErrorId"
           @submit="onSubmit"
           @clear="onClear"
@@ -52,11 +52,16 @@
           :active-error-id="activeErrorId"
           :submitting="submitting"
           :evaluate-error="evaluateError"
+          :fixed-error-ids="fixedErrorIds"
           @close="activePanel = null"
           @start-fix="onStartFix"
+          @fix-error="onFixError"
+          @fix-all="onFixAll"
+          @exit-correction="onExitCorrection"
           @error-click="onPanelErrorClick"
+          @apply-polish="onApplyPolish"
+          @start-polish="onStartPolish"
           @retry="onSubmit"
-          @apply-rewrite="onApplyRewrite"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
           @archived="onArchived"
@@ -76,6 +81,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
 import type { PanelMode } from './ToolRail.vue'
+
+const props = withDefaults(defineProps<{
+  initialWritingMode?: 'free' | 'exam'
+  studyStage?: string | null
+}>(), {
+  initialWritingMode: undefined,
+  studyStage: null,
+})
 import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
@@ -95,6 +108,7 @@ const AI_NOTE_DRAFT_KEY = 'peai:writing:aiNoteDraft'
 const AI_CHAT_CONVERSATION_ID_KEY = 'peai:writing:aiConversationId'
 const WRITING_MODE_KEY = 'peai:writing:mode'
 const TASK_PROMPT_KEY = 'peai:writing:taskPrompt'
+const EVALUATE_RESULT_KEY = 'peai:writing:evaluateResult'
 const SPLIT_RATIO_KEY = 'writing.split.ratio'
 const DEFAULT_SPLIT_RATIO = 0.3
 const MIN_PANEL_WIDTH = 420
@@ -199,6 +213,27 @@ function loadSplitRatio(): number {
   }
 }
 
+// ── 评分结果持久化 ──
+function saveEvaluateResult(result: WritingEvaluateResponse | null) {
+  try {
+    if (result) {
+      localStorage.setItem(EVALUATE_RESULT_KEY, JSON.stringify(result))
+    } else {
+      localStorage.removeItem(EVALUATE_RESULT_KEY)
+    }
+  } catch (_) {}
+}
+
+function loadEvaluateResult(): WritingEvaluateResponse | null {
+  try {
+    const raw = localStorage.getItem(EVALUATE_RESULT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as WritingEvaluateResponse
+  } catch (_) {
+    return null
+  }
+}
+
 // 立即保存草稿到 localStorage
 function saveDraftNow(text: string) {
   try {
@@ -275,6 +310,7 @@ const leftPaneRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<{
   focusAiComposer: () => boolean
   getAiRecentMessages?: (max?: number) => RecentMessageDto[]
+  isIncludeDraft?: () => boolean
 } | null>(null)
 const activePanel = ref<PanelMode | null>(null)
 const splitRatio = ref(DEFAULT_SPLIT_RATIO)
@@ -291,7 +327,7 @@ const cursorPlacement = ref<{ at: number } | null>(null)
 const aiNote = ref('')
 const aiConversationId = ref(loadConversationId())
 const aiGenerating = ref(false)
-const writingMode = ref<'free' | 'exam'>(loadWritingMode())
+const writingMode = ref<'free' | 'exam'>(props.initialWritingMode ?? loadWritingMode())
 const taskPrompt = ref(loadTaskPrompt())
 let aiAbortController: AbortController | null = null
 const correctionMode = ref(false)
@@ -303,9 +339,25 @@ const archivedList = ref<unknown[]>([])
 const evaluateResult = ref<WritingEvaluateResponse | null>(null)
 const activeErrorId = ref<string | null>(null)
 const evaluatedText = ref<string | null>(null)
+
+// ── 订正会话状态 ──
+type CorrectionError = WritingEvaluateResponse['errors'][number]
+const correctionErrors = ref<CorrectionError[] | null>(null)
+const fixedErrorIds = ref<Set<string>>(new Set())
+const correctionActive = computed(() => correctionErrors.value !== null)
+
 const selectionStore = createWritingSelectionStore()
 
 provide(writingSelectionStoreKey, selectionStore)
+
+// 订正中过滤掉已修复的错误（高亮实时消失）
+const displayEditorErrors = computed(() => {
+  const errors = evaluateResult.value?.errors
+  if (!errors) return undefined
+  if (!correctionActive.value) return errors
+  const fixed = fixedErrorIds.value
+  return errors.filter((e) => !fixed.has(e.id))
+})
 
 const assistantOpen = computed(() => activePanel.value === 'aiNote')
 const layoutStyle = computed(() => ({
@@ -456,6 +508,16 @@ onMounted(async () => {
     console.log('[draft] restored', { len: saved.length })
   }
   
+  // 恢复评分结果
+  const savedResult = loadEvaluateResult()
+  if (savedResult && !evaluateResult.value) {
+    evaluateResult.value = savedResult
+    evaluatedText.value = draftText.value
+    if (layout.activePanel === 'score') {
+      activePanel.value = 'score'
+    }
+  }
+
   // 恢复 AI 助手输入框（仅在当前为空时）
   console.log('[aiNoteDraft] before', aiNote.value)
   const savedAiNote = loadAiNoteDraftNow()
@@ -548,13 +610,17 @@ function onToolSelect(mode: PanelMode) {
 watch(evaluateResult, (result) => {
   if (result) {
     evaluatedText.value = draftText.value
+    saveEvaluateResult(result)
   } else {
     evaluatedText.value = null
     activeErrorId.value = null
+    saveEvaluateResult(null)
   }
 })
 
 watch(draftText, (newText) => {
+  // 订正中替换文本会触发此 watcher，但不应清除 evaluateResult
+  if (correctionActive.value) return
   if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
     evaluateResult.value = null
   }
@@ -571,9 +637,192 @@ function onPanelErrorClick(errorId: string) {
   activeErrorId.value = activeErrorId.value === errorId ? null : errorId
 }
 
+function onApplyPolish(payload: { errorId: string; polished: string }) {
+  const errors = correctionErrors.value ?? evaluateResult.value?.errors
+  if (!errors) return
+  const err = errors.find((e) => e.id === payload.errorId)
+  if (!err?.original) return
+
+  const text = draftText.value
+  const resolved = resolveErrorSpan(err, text)
+  if (!resolved) {
+    showToast(`无法定位「${err.original.slice(0, 20)}…」，可能已被修改`, 'info')
+    return
+  }
+  const { start, end } = resolved
+
+  const delta = payload.polished.length - (end - start)
+
+  // 先标记 + 调整 span，再更新文本（DocEditor watch 是 sync）
+  fixedErrorIds.value = new Set([...fixedErrorIds.value, payload.errorId])
+
+  if (correctionErrors.value) {
+    for (const other of correctionErrors.value) {
+      if (other.id === payload.errorId) continue
+      if (fixedErrorIds.value.has(other.id)) continue
+      if (other.span.start >= end) {
+        other.span.start += delta
+        other.span.end += delta
+      } else if (other.span.start > start) {
+        other.span.end += delta
+      }
+    }
+  }
+
+  const newText = text.slice(0, start) + payload.polished + text.slice(end)
+  draftText.value = newText
+  evaluatedText.value = newText
+  showToast('已替换', 'success')
+}
+
 function onStartFix() {
+  const errors = evaluateResult.value?.errors
+  if (!errors?.length) return
+  // 深拷贝 errors 快照
+  correctionErrors.value = JSON.parse(JSON.stringify(errors))
+  fixedErrorIds.value = new Set()
   correctionMode.value = true
   activePanel.value = 'revise'
+}
+
+function onStartPolish() {
+  activePanel.value = 'rewrite'
+}
+
+function resolveErrorSpan(
+  err: { original?: string; span: { start: number; end: number } },
+  text: string,
+): { start: number; end: number } | null {
+  const { start, end } = err.span
+  // 1. span 有效且文本匹配 → 直接用
+  if (start >= 0 && end <= text.length && start < end && text.slice(start, end) === err.original) {
+    return { start, end }
+  }
+  if (!err.original) return null
+  // 2. 精确搜索
+  const idx = text.indexOf(err.original)
+  if (idx !== -1) {
+    return { start: idx, end: idx + err.original.length }
+  }
+  // 3. 忽略大小写搜索
+  const lowerText = text.toLowerCase()
+  const lowerOrig = err.original.toLowerCase()
+  const idxLower = lowerText.indexOf(lowerOrig)
+  if (idxLower !== -1) {
+    return { start: idxLower, end: idxLower + err.original.length }
+  }
+  // 4. 规范化空白后搜索（合并多余空格）
+  const normText = text.replace(/\s+/g, ' ')
+  const normOrig = err.original.replace(/\s+/g, ' ')
+  const idxNorm = normText.indexOf(normOrig)
+  if (idxNorm !== -1) {
+    // 映射回原文位置：逐字符对齐
+    let origPos = 0
+    let normPos = 0
+    while (normPos < idxNorm && origPos < text.length) {
+      if (/\s/.test(text[origPos]) && normPos > 0 && normText[normPos - 1] === ' ') {
+        origPos++
+        continue
+      }
+      origPos++
+      normPos++
+    }
+    const matchStart = origPos
+    let matchLen = 0
+    let remaining = normOrig.length
+    let p = origPos
+    while (remaining > 0 && p < text.length) {
+      if (/\s/.test(text[p]) && matchLen > 0 && /\s/.test(text[p - 1])) {
+        p++
+        continue
+      }
+      p++
+      remaining--
+      matchLen = p - matchStart
+    }
+    return { start: matchStart, end: matchStart + matchLen }
+  }
+  return null
+}
+
+function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
+  const s = err.suggestion?.trim()
+  if (!s || /^n\/?a$/i.test(s)) return false
+  if (err.original && s === err.original.trim()) return false
+  return true
+}
+
+function onFixError(errorId: string) {
+  if (!correctionErrors.value) return
+  const err = correctionErrors.value.find((e) => e.id === errorId)
+  if (!err || !err.original || !hasValidSuggestion(err)) return
+  if (fixedErrorIds.value.has(errorId)) return
+
+  const text = draftText.value
+  const resolved = resolveErrorSpan(err, text)
+  if (!resolved) {
+    showToast(`无法定位「${err.original.slice(0, 20)}…」，可能已被修改`, 'info')
+    return
+  }
+  const { start, end } = resolved
+
+  const suggestion = err.suggestion!
+  const delta = suggestion.length - (end - start)
+
+  // 先标记已修复 + 调整 span（在 draftText 变化之前，因为 DocEditor watch 是 sync）
+  fixedErrorIds.value = new Set([...fixedErrorIds.value, errorId])
+
+  for (const other of correctionErrors.value) {
+    if (other.id === errorId) continue
+    if (fixedErrorIds.value.has(other.id)) continue
+    if (other.span.start >= end) {
+      other.span.start += delta
+      other.span.end += delta
+    } else if (other.span.start > start) {
+      other.span.end += delta
+    }
+  }
+
+  // 最后更新文本（触发 DocEditor sync watch 时 fixedErrorIds 已是最新）
+  const newText = text.slice(0, start) + suggestion + text.slice(end)
+  draftText.value = newText
+  evaluatedText.value = newText
+}
+
+function onFixAll() {
+  if (!correctionErrors.value) return
+  const unfixed = correctionErrors.value
+    .filter((e) => !fixedErrorIds.value.has(e.id) && e.category !== 'suggestion' && e.original && hasValidSuggestion(e))
+
+  let text = draftText.value
+  const newFixed = new Set(fixedErrorIds.value)
+
+  // 按 span.start 降序：从后往前替换，天然不需要偏移调整
+  // 但 span 可能已漂移，需要用 resolveErrorSpan 重新定位
+  // 先解析全部位置，再按 start 降序排列替换
+  const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
+  for (const err of unfixed) {
+    const pos = resolveErrorSpan(err, text)
+    if (pos) resolved.push({ err, ...pos })
+  }
+  resolved.sort((a, b) => b.start - a.start)
+
+  for (const { err, start, end } of resolved) {
+    text = text.slice(0, start) + err.suggestion! + text.slice(end)
+    newFixed.add(err.id)
+  }
+
+  draftText.value = text
+  evaluatedText.value = text
+  fixedErrorIds.value = newFixed
+}
+
+function onExitCorrection() {
+  correctionErrors.value = null
+  fixedErrorIds.value = new Set()
+  correctionMode.value = false
+  evaluatedText.value = draftText.value
+  activePanel.value = 'score'
 }
 
 function onLoadHistoryResult(detail: EvaluationDetailResponse) {
@@ -597,6 +846,10 @@ async function onSubmit() {
   submitting.value = true
   evaluateResult.value = null
   evaluateError.value = null
+  // 重置订正/润色状态
+  correctionErrors.value = null
+  fixedErrorIds.value = new Set()
+  correctionMode.value = false
   const currentPollToken = ++evaluatePollToken
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
@@ -607,7 +860,6 @@ async function onSubmit() {
       aiHint: aiNote.value.trim() || undefined,
       mode: normalizedMode,
       taskPrompt: examTaskPrompt,
-      draftText: draftText.value.trim() || undefined,
       lang: 'en',
     })
     if (!submitRes.requestId) {
@@ -616,7 +868,7 @@ async function onSubmit() {
 
     const startedAt = Date.now()
     const pollIntervalMs = 1200
-    const pollTimeoutMs = 120000
+    const pollTimeoutMs = 180000
 
     let task: WritingEvaluateTaskStatusResponse | null = null
     while (Date.now() - startedAt < pollTimeoutMs) {
@@ -653,11 +905,6 @@ async function onSubmit() {
   }
 }
 
-function onApplyRewrite(fullText: string) {
-  draftText.value = fullText
-  showToast('已应用到作文', 'success')
-}
-
 function onDismissSelection() {
   lastDismissedPinned.value = selectedTextPinned.value
   selectionDismissed.value = true
@@ -682,6 +929,7 @@ function onClear() {
     localStorage.removeItem(DRAFT_KEY)
     localStorage.removeItem(LEGACY_DRAFT_KEY)
     localStorage.removeItem(AI_NOTE_DRAFT_KEY)
+    localStorage.removeItem(EVALUATE_RESULT_KEY)
     console.log('[draft] cleared')
     console.log('[aiNoteDraft] cleared')
   } catch (_) {}
@@ -733,11 +981,12 @@ async function onAiNoteSend() {
   const instruction = aiNote.value.trim()
   const selectedText = selectionStore.selectedText.value.trim()
   const hasSelectedText = Boolean(selectedText)
+  const wantsDraft = rightPanelRef.value?.isIncludeDraft?.() ?? false
   const hasDraftText = Boolean(draftText.value.trim())
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
-  const contextScope = hasSelectedText ? 'selection' : 'auto'
+  const contextScope = hasSelectedText ? 'selection' : (wantsDraft ? 'auto' : 'none')
   const actionOrigin = 'chat_input'
   const recentMessages = getRecentAiMessages(8)
   console.log('[AI SEND]', {
@@ -745,6 +994,7 @@ async function onAiNoteSend() {
     instruction,
     hasSelectedText,
     hasDraftText,
+    wantsDraft,
     writingMode: normalizedMode,
     hasTaskPrompt: Boolean(examTaskPrompt),
     contextScope,
@@ -779,7 +1029,7 @@ async function onAiNoteSend() {
         taskPrompt: examTaskPrompt,
         conversationId: aiConversationId.value,
         selectedText: selectedText || undefined,
-        draftText: draftText.value || undefined,
+        draftText: wantsDraft ? (draftText.value || undefined) : undefined,
         recentMessages: recentMessages.length ? recentMessages : undefined,
       },
       contextRefs: {

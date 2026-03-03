@@ -9,7 +9,6 @@ export interface WritingEvaluateRequest {
   mode?: 'free' | 'exam'
   lang?: string
   taskPrompt?: string
-  draftText?: string
 }
 
 export interface WritingEvaluateResponse {
@@ -18,7 +17,6 @@ export interface WritingEvaluateResponse {
   source?: 'ai' | 'fallback'
   grades?: Partial<Record<DimensionKey, GradeLetter>>
   dimensionScores?: Partial<Record<DimensionKey, number>>
-  dimension_scores?: Partial<Record<DimensionKey, number>>
   analysis?: Partial<Record<DimensionKey, {
     quote?: string
     strength_quote?: string
@@ -33,8 +31,6 @@ export interface WritingEvaluateResponse {
     delta: number
     message: string
   }
-  evidence?: Partial<Record<DimensionKey, string>>
-  priorityFocus?: DimensionKey[]
   priority_focus?: DimensionKey[]
   priority_focus_detail?: {
     dimension: DimensionKey
@@ -57,7 +53,11 @@ export interface WritingEvaluateResponse {
   summary: string
   errors: Array<{
     id: string
-    type: 'grammar' | 'word_choice' | 'expression' | 'coherence' | 'format'
+    type:
+      | 'spelling' | 'morphology' | 'subject_verb' | 'tense'
+      | 'article' | 'preposition' | 'collocation' | 'syntax'
+      | 'word_choice' | 'part_of_speech' | 'punctuation' | 'logic'
+    category?: 'error' | 'suggestion'
     severity: 'minor' | 'major'
     span: { start: number; end: number }
     original?: string
@@ -121,8 +121,7 @@ export function evaluateWriting(
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
-      draftText: payload.draftText?.trim() || undefined,
-    })
+    }, { timeout: 60000 })
     .then((res) => res.data)
 }
 
@@ -139,8 +138,7 @@ export function submitEvaluateWriting(
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
-      draftText: payload.draftText?.trim() || undefined,
-    })
+    }, { timeout: 60000 })
     .then((res) => res.data)
 }
 
@@ -239,6 +237,28 @@ export interface WritingChatResponse {
   resultText?: string
 }
 
+// ── Polish (分级润色) ──
+
+export type PolishTier = 'basic' | 'steady' | 'advanced' | 'perfect'
+
+export interface PolishRequest {
+  original: string
+  context?: string
+  reason?: string
+  tier: PolishTier
+}
+
+export interface PolishResponse {
+  polished: string | null
+  explanation?: string
+}
+
+export function polishSuggestion(req: PolishRequest): Promise<PolishResponse> {
+  return http
+    .post<PolishResponse>('/writing/polish', req, { timeout: 60000 })
+    .then((res) => res.data)
+}
+
 export function chatWriting(payload: WritingChatRequest): Promise<WritingChatResponse> {
   return http
     .post<WritingChatResponse>('/writing/chat', {
@@ -248,6 +268,6 @@ export function chatWriting(payload: WritingChatRequest): Promise<WritingChatRes
       mode: payload.mode ?? 'free',
       aiHint: payload.aiHint ?? undefined,
       selectedText: payload.selectedText?.trim() || undefined,
-    })
+    }, { timeout: 60000 })
     .then((res) => res.data)
 }

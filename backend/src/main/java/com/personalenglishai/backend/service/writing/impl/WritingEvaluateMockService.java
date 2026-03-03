@@ -50,7 +50,10 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                如果学生用了超出其水平的表达，在 strength 中明确指出。即使是 D/E 级维度也必须找到至少一个正确点。
             4. 每个维度的 weakness 聚焦该维度最关键的一个问题，用「原文引用 → 错误解释 → 正确写法」结构描述；weakness_quote 单独提供对应的原文问题片段。
                逐条的详细错误放在 errors 数组中，weakness 不要罗列多条错误。
-            5. errors 数组收集全文的典型错误，数量根据作文质量调整：A/B 级 3-5 个，C 级 5-7 个，D/E 级 7-10 个。original 必须从原文精确复制。
+            5. errors 数组必须穷举全文所有语言错误和可改进之处，不设数量上限，宁多勿漏。每个错误独立一条，不要合并。original 必须从原文精确复制。
+               errors 数组每条必须包含 category 字段：
+               - "error"：客观语言错误（拼写、语法、时态、主谓不一致等），有明确正确答案
+               - "suggestion"：非错误但可改进（用词基础、表达不地道、内容偏题、逻辑不连贯等）
             6. summary 用中文写成两段：①肯定最大亮点（引用原文）②指出 1-2 个核心问题。语气像一位友善的英语老师在作文本上手写评语。
                行动建议只写在 priority_focus.action_item 中，summary 里不要重复。
             7. 只输出合法 JSON。
@@ -66,14 +69,20 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             反馈语言规范：
             - 禁止使用"总体来说""有待提高""建议加强""整体水平中等"等空泛措辞。
             - 反馈应基于原文中的具体证据。对于"缺少某元素"的问题（如缺少过渡句、缺少结尾段），直接说明缺少什么以及为什么重要，不需要强行引用原文。
+
+            关于 errors 数组的重要提醒：
+            - 必须逐句扫描全文，穷举每一处语法错误、拼写错误、搭配错误和可改进表达。
+            - 不要因为错误数量多就省略，学生需要看到所有问题才能有效改进。
+            - 同一个句子中有多个独立错误时，每个错误单独一条。
+            - 示例中的 errors 数量仅为格式参考，实际应根据全文错误数量如实列出。
             """;
 
     // ----------------------------------------------------------------
     // Chinese-learner high-frequency error patterns
     // ----------------------------------------------------------------
     private static final String CHINESE_LEARNER_ERRORS = """
-            [中国高中生典型错误模式]
-            批改时优先检测以下典型错误（必须从原文精确引用错误片段）：
+            [中国高中生常见错误模式]
+            批改时必须逐句检查以下所有错误类型，发现即收录，不得遗漏（必须从原文精确引用错误片段）：
             1. 中式英语/直译：如 "I very like"、"have a good time to do sth"、very 过度使用
             2. 时态不一致：同一段落中混用过去时和现在时
             3. 主谓一致错误：如 "Everyone have"、"The number of students are"、"Each of them are"
@@ -111,10 +120,14 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 }
               },
               "errors":[
-                {"original":"I go to the park","suggestion":"I went to the park","type":"grammar","severity":"major","reason":"叙述过去事件应用一般过去时"},
-                {"original":"flied kites","suggestion":"flew kites","type":"grammar","severity":"major","reason":"fly 的过去式是 flew，不是 flied"},
-                {"original":"outdoor activities is","suggestion":"outdoor activities are","type":"grammar","severity":"major","reason":"复数主语 activities 应搭配 are"},
-                {"original":"very good time","suggestion":"wonderful / great time","type":"word_choice","severity":"minor","reason":"very good 过于基础，可用更丰富的形容词"}
+                {"original":"I go to the park","suggestion":"I went to the park","type":"tense","category":"error","severity":"major","reason":"叙述过去事件应用一般过去时"},
+                {"original":"flied kites","suggestion":"flew kites","type":"morphology","category":"error","severity":"major","reason":"fly 的过去式是 flew，不是 flied"},
+                {"original":"outdoor activities is","suggestion":"outdoor activities are","type":"subject_verb","category":"error","severity":"major","reason":"复数主语 activities 应搭配 are"},
+                {"original":"We have a very good time","suggestion":"We had a wonderful time","type":"tense","category":"error","severity":"major","reason":"叙述过去事件应用过去时 had，且 very good 可用更丰富的词"},
+                {"original":"The weather is sunny","suggestion":"The weather was sunny","type":"tense","category":"error","severity":"minor","reason":"全文叙述过去，应统一为过去时"},
+                {"original":"I think outdoor activities","suggestion":"I think that outdoor activities","type":"syntax","category":"suggestion","severity":"minor","reason":"think 后接 that 从句更规范"},
+                {"original":"Firstly it can make us healthy. Secondly it can help us relax.","suggestion":"First, it can keep us healthy. Second, it helps us relax.","type":"word_choice","category":"suggestion","severity":"minor","reason":"Firstly/Secondly 略显机械，First/Second 更自然；make us healthy 可用 keep us healthy"},
+                {"original":"I hope everyone can join us","suggestion":"I hope everyone will join us","type":"tense","category":"error","severity":"minor","reason":"hope 后表将来用 will，不用 can"}
               ],
               "priority_focus":{"dimension":"grammar","reason":"时态错误和主谓不一致贯穿全文，是当前最影响表达准确性的问题。","action_item":"今天用 5 分钟把作文中所有动词标出来，逐个检查时态是否统一为过去时。"},
               "summary":"你写的「outdoor activities is very important for students」说明你有明确的中心论点，这是好的开头。不过全文时态混乱（go/played/is 混用），主谓一致也有错误，这两个问题需要优先解决。"
@@ -127,6 +140,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private final ObjectMapper objectMapper;
     private final UserAbilityProfileMapper abilityProfileMapper;
     private final EssayEvaluationMapper essayEvaluationMapper;
+    private final LanguageToolService languageToolService;
 
     public WritingEvaluateMockService(
             RubricService rubricService,
@@ -134,7 +148,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             OpenAiClient openAiClient,
             ObjectMapper objectMapper,
             UserAbilityProfileMapper abilityProfileMapper,
-            EssayEvaluationMapper essayEvaluationMapper
+            EssayEvaluationMapper essayEvaluationMapper,
+            LanguageToolService languageToolService
     ) {
         this.rubricService = rubricService;
         this.rubricTextBuilder = rubricTextBuilder;
@@ -142,6 +157,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         this.objectMapper = objectMapper;
         this.abilityProfileMapper = abilityProfileMapper;
         this.essayEvaluationMapper = essayEvaluationMapper;
+        this.languageToolService = languageToolService;
     }
 
     // ================================================================
@@ -168,7 +184,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 rubricText = buildFallbackRubricText(rubric, mode);
             }
             String userPrompt = buildUserPrompt(request, rubricText, mode);
-            String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, requestId);
+            String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, requestId, 0.4, 8192);
 
             // Parse with 1 retry: if JSON parse fails, re-call OpenAI once
             EvaluationResult result;
@@ -176,11 +192,29 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 result = parseResult(raw, rubric, mode, request.getEssay());
             } catch (Exception parseEx) {
                 log.warn("JSON parse failed, retrying once. requestId={} reason={}", requestId, parseEx.getMessage());
-                raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, requestId + "-retry");
+                raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, requestId + "-retry", 0.4, 8192);
                 result = parseResult(raw, rubric, mode, request.getEssay());
             }
 
-            WritingEvaluateResponse response = buildResponse(requestId, result, mode, "ai", existingProfile);
+            // ── LanguageTool：确定性规则引擎（拼写、语法、主谓一致等）→ 订正栏，优先保留 ──
+            List<WritingEvaluateResponse.ErrorDto> ltErrors = languageToolService.check(request.getEssay());
+
+            // ── 第二次调用：专门查错（注意力不被评分分散）→ 与评分 errors 合并 ──
+            List<WritingEvaluateResponse.ErrorDto> extraErrors = runDedicatedErrorDetection(
+                    request.getEssay(), requestId + "-err");
+            List<WritingEvaluateResponse.ErrorDto> aiMerged = mergeErrors(
+                    result.errors(), extraErrors, request.getEssay());
+
+            // 合并时以 LT 为 primary，避免 LT 条目被“包含关系”去重吃掉
+            List<WritingEvaluateResponse.ErrorDto> mergedErrors = mergeErrors(
+                    ltErrors, aiMerged, request.getEssay());
+
+            EvaluationResult enriched = new EvaluationResult(
+                    result.mode(), result.gradeByDimension(), result.analysisByDimension(),
+                    result.scoreByDimension(), result.priorityFocus(), result.priorityFocusDetail(),
+                    mergedErrors, result.aiSummary());
+
+            WritingEvaluateResponse response = buildResponse(requestId, enriched, mode, "ai", existingProfile);
             updateAbilityProfile(request.getUserId(), result.scoreByDimension());
             saveEvaluationQuietly(request.getUserId(), request.getEssay(), mode, response);
             return response;
@@ -280,7 +314,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             sb.append("      - 严重偏题（仅沾边）→ D\n");
             sb.append("      - weakness 字段必须明确说明是否跑题及词数是否达标\n");
         }
-        sb.append("2. errors[]：收集全文典型错误。A/B 级作文列 3-5 个，C 级列 5-7 个，D/E 级列 7-10 个。original 必须从原文精确复制，reason 用中文说明。\n");
+        sb.append("2. errors[]：穷举全文所有语言错误和可改进之处，不设数量上限，宁多勿漏。original 必须从原文精确复制，reason 用中文说明。\n");
         sb.append("3. priority_focus：一个对象，包含 dimension（最需要改进的维度 key）、reason（为什么是这个维度）、action_item（一个具体的、今天就能做的行动建议）。\n");
         sb.append("4. summary：中文两段式评语：①肯定最大亮点（引用原文）②指出 1-2 个核心问题。行动建议只写在 priority_focus.action_item 中，不要在 summary 中重复。若有偏题必须在 summary 中明确指出。\n");
         sb.append("5. 只输出 JSON，不加任何解释或代码块。\n");
@@ -317,7 +351,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                     {
                       "original": "<从原文精确复制的错误短语>",
                       "suggestion": "<修改后的正确写法>",
-                      "type": "grammar|word_choice|expression|coherence|format",
+                      "type": "spelling|morphology|subject_verb|tense|article|preposition|collocation|syntax|word_choice|part_of_speech|punctuation|logic",
+                      "category": "error|suggestion",
                       "severity": "major|minor",
                       "reason": "<中文：说明错误原因，若为中式英语请标注>"
                     }
@@ -330,6 +365,125 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                   "summary": "<中文两段式评语：①亮点（引原文）②核心问题>"
                 }
                 """.formatted(mode);
+    }
+
+    // ================================================================
+    // Dedicated error detection (second AI call)
+    // ================================================================
+
+    private static final String ERROR_DETECTION_SYSTEM = """
+            你是一位专业的英语语法检查工具。你的唯一任务是逐句检查学生作文中的每一处语言问题。
+
+            检查范围（必须全部覆盖）：
+            - 拼写错误
+            - 动词形态（时态、单复数、不规则变化）
+            - 主谓一致
+            - 冠词使用（a/an/the 缺失或多余）
+            - 介词搭配
+            - 词性错误
+            - 句法结构（残缺句、并列结构不平行等）
+            - 用词不当或不地道（中式英语）
+            - 标点符号
+            - 名词单复数
+            - 代词指代不明
+            - 连词和过渡词使用
+
+            强制要求：
+            1. 逐句扫描，每句话至少检查以上所有类别
+            2. 每个独立错误单独一条，不要合并
+            3. original 必须从原文精确复制，一字不差
+            4. 即使是轻微问题也要列出
+            5. 只输出 JSON 数组，不加任何其他内容
+
+            输出格式：
+            [
+              {"original":"<原文片段>","suggestion":"<修正>","type":"<类型>","category":"error|suggestion","severity":"major|minor","reason":"<中文原因>"}
+            ]
+            """;
+
+    private List<WritingEvaluateResponse.ErrorDto> runDedicatedErrorDetection(String essay, String traceId) {
+        try {
+            String userPrompt = "请逐句检查以下作文的所有语言错误：\n\n" + essay;
+            String raw = openAiClient.callWithTraceId(ERROR_DETECTION_SYSTEM, userPrompt, traceId, 0.6, 8192);
+            return parseDedicatedErrors(raw, essay);
+        } catch (Exception e) {
+            log.warn("Dedicated error detection failed. traceId={} reason={}", traceId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<WritingEvaluateResponse.ErrorDto> parseDedicatedErrors(String raw, String essay) {
+        if (raw == null || raw.isBlank()) return List.of();
+        try {
+            String cleaned = raw.trim();
+            // Strip markdown code fences
+            if (cleaned.startsWith("```")) {
+                int first = cleaned.indexOf('\n');
+                int last = cleaned.lastIndexOf("```");
+                if (first > 0 && last > first) cleaned = cleaned.substring(first + 1, last).trim();
+            }
+            JsonNode arr = objectMapper.readTree(cleaned);
+            if (!arr.isArray()) {
+                // Maybe wrapped in an object
+                if (arr.has("errors") && arr.get("errors").isArray()) {
+                    arr = arr.get("errors");
+                } else {
+                    return List.of();
+                }
+            }
+            return parseAiErrors(arr, essay);
+        } catch (Exception e) {
+            log.warn("Failed to parse dedicated error response: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Merge errors from two sources, dedup by original text overlap */
+    private List<WritingEvaluateResponse.ErrorDto> mergeErrors(
+            List<WritingEvaluateResponse.ErrorDto> primary,
+            List<WritingEvaluateResponse.ErrorDto> secondary,
+            String essay) {
+        List<WritingEvaluateResponse.ErrorDto> merged = new ArrayList<>(primary);
+        // Track existing originals (lowercase) for dedup
+        var existingOriginals = new java.util.HashSet<String>();
+        for (var e : primary) {
+            if (e.getOriginal() != null) {
+                existingOriginals.add(e.getOriginal().toLowerCase(Locale.ROOT).trim());
+            }
+        }
+        int nextId = primary.size() + 1;
+        for (var e : secondary) {
+            String orig = e.getOriginal();
+            if (orig == null || orig.isBlank()) continue;
+            String key = orig.toLowerCase(Locale.ROOT).trim();
+            if (existingOriginals.contains(key)) continue;
+            // Also check if this original is a substring of an existing one or vice versa
+            boolean overlap = false;
+            for (String existing : existingOriginals) {
+                if (key.contains(existing) || existing.contains(key)) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if (overlap) continue;
+            e.setId("e" + nextId++);
+            // 若 secondary 已有有效 span（如来自 LanguageTool），直接保留，避免重复匹配或错位
+            if (e.getSpan() != null && e.getSpan().getStart() < e.getSpan().getEnd()) {
+                // keep e.getOriginal() and e.getSpan() as-is
+            } else {
+                MatchResult m = matchAndCorrect(essay, orig);
+                e.setSpan(m.span());
+                e.setOriginal(m.correctedOriginal());
+            }
+            merged.add(e);
+            existingOriginals.add(key);
+        }
+        // Sort by span start position
+        merged.sort(Comparator.comparingInt(e -> e.getSpan() != null ? e.getSpan().getStart() : 0));
+        // Re-assign sequential IDs
+        int id = 1;
+        for (var e : merged) e.setId("e" + id++);
+        return merged;
     }
 
     // ================================================================
@@ -392,7 +546,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 scoreByDimension, priorityFocus, priorityFocusDetail, errors, aiSummary);
     }
 
-    /** 解析 AI errors 数组，字符串匹配计算真实 span */
+    /** 解析 AI errors 数组，字符串匹配计算真实 span，校正 original 为作文实际文本 */
     private List<WritingEvaluateResponse.ErrorDto> parseAiErrors(JsonNode errorsNode, String essay) {
         List<WritingEvaluateResponse.ErrorDto> result = new ArrayList<>();
         if (errorsNode == null || !errorsNode.isArray()) return result;
@@ -402,49 +556,146 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             String original = node.path("original").asText("").trim();
             String suggestion = node.path("suggestion").asText("").trim();
             String type = node.path("type").asText("grammar").trim();
+            String category = node.path("category").asText("").trim();
             String severity = node.path("severity").asText("minor").trim();
             String reason = node.path("reason").asText("").trim();
 
             if (original.isBlank() && suggestion.isBlank()) continue;
 
+            // 匹配 span 并校正 original 为作文中的实际文本
+            MatchResult match = matchAndCorrect(essay, original);
+
             WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
             dto.setId("e" + idx++);
             dto.setType(normalizeErrorType(type));
+            dto.setCategory("suggestion".equals(category) ? "suggestion" : "error");
             dto.setSeverity("major".equals(severity) ? "major" : "minor");
             dto.setSuggestion(suggestion.isBlank() ? reason : suggestion);
-            dto.setOriginal(original.isBlank() ? null : original);
+            dto.setOriginal(match.correctedOriginal);
             dto.setReason(reason.isBlank() ? null : reason);
-            dto.setSpan(matchSpan(essay, original));
+            dto.setSpan(match.span);
             result.add(dto);
         }
         return result;
     }
 
-    /** 在原文中定位 original 片段的字符偏移 */
-    private WritingEvaluateResponse.SpanDto matchSpan(String essay, String original) {
-        if (original == null || original.isBlank() || essay == null) {
-            return new WritingEvaluateResponse.SpanDto(0, 0);
-        }
-        int pos = essay.indexOf(original);
-        if (pos >= 0) return new WritingEvaluateResponse.SpanDto(pos, pos + original.length());
+    private record MatchResult(WritingEvaluateResponse.SpanDto span, String correctedOriginal) {}
 
+    /**
+     * 在原文中定位 original 片段，返回 span 和校正后的 original（从作文中精确截取）。
+     * 匹配策略：精确 → 忽略大小写 → 规范化空白 → 子串模糊匹配
+     */
+    private MatchResult matchAndCorrect(String essay, String original) {
+        WritingEvaluateResponse.SpanDto noMatch = new WritingEvaluateResponse.SpanDto(0, 0);
+        if (original == null || original.isBlank() || essay == null) {
+            return new MatchResult(noMatch, original);
+        }
+
+        // 1. 精确匹配
+        int pos = essay.indexOf(original);
+        if (pos >= 0) {
+            return new MatchResult(
+                    new WritingEvaluateResponse.SpanDto(pos, pos + original.length()),
+                    essay.substring(pos, pos + original.length()));
+        }
+
+        // 2. 忽略大小写
         String lowerEssay = essay.toLowerCase(Locale.ROOT);
         String lowerOrig = original.toLowerCase(Locale.ROOT).trim();
         pos = lowerEssay.indexOf(lowerOrig);
-        if (pos >= 0) return new WritingEvaluateResponse.SpanDto(pos, pos + original.length());
+        if (pos >= 0) {
+            String actual = essay.substring(pos, pos + lowerOrig.length());
+            return new MatchResult(
+                    new WritingEvaluateResponse.SpanDto(pos, pos + lowerOrig.length()),
+                    actual);
+        }
 
-        return new WritingEvaluateResponse.SpanDto(0, 0);
+        // 3. 规范化空白后匹配（作文中换行/多空格压缩为单空格）
+        String normEssay = essay.replaceAll("\\s+", " ");
+        String normOrig = original.replaceAll("\\s+", " ").trim();
+        pos = normEssay.toLowerCase(Locale.ROOT).indexOf(normOrig.toLowerCase(Locale.ROOT));
+        if (pos >= 0) {
+            // 映射规范化位置回原文位置
+            int[] mapping = buildNormToOrigMapping(essay);
+            int origStart = mapping[pos];
+            int origEnd = mapping[Math.min(pos + normOrig.length(), mapping.length - 1)];
+            String actual = essay.substring(origStart, origEnd);
+            return new MatchResult(
+                    new WritingEvaluateResponse.SpanDto(origStart, origEnd),
+                    actual);
+        }
+
+        // 4. 取 original 中间最长的连续词串（≥4词）尝试子串匹配
+        String[] words = normOrig.split("\\s+");
+        if (words.length >= 4) {
+            // 尝试用中间 70% 的词做匹配，避免首尾差异
+            int from = words.length / 6;
+            int to = words.length - words.length / 6;
+            String core = String.join(" ", java.util.Arrays.copyOfRange(words, from, to));
+            int corePos = normEssay.toLowerCase(Locale.ROOT).indexOf(core.toLowerCase(Locale.ROOT));
+            if (corePos >= 0) {
+                // 向两边扩展到句子/子句边界
+                int expandStart = corePos;
+                int expandEnd = corePos + core.length();
+                // 向左扩展到上一个句号/分号/段落 或 original 长度
+                int targetLen = normOrig.length();
+                int leftExtra = (targetLen - core.length()) / 2;
+                expandStart = Math.max(0, expandStart - leftExtra);
+                expandEnd = Math.min(normEssay.length(), expandStart + targetLen);
+                expandStart = Math.max(0, expandEnd - targetLen);
+
+                int[] mapping = buildNormToOrigMapping(essay);
+                int origStart = mapping[Math.min(expandStart, mapping.length - 1)];
+                int origEnd = mapping[Math.min(expandEnd, mapping.length - 1)];
+                String actual = essay.substring(origStart, origEnd);
+                return new MatchResult(
+                        new WritingEvaluateResponse.SpanDto(origStart, origEnd),
+                        actual);
+            }
+        }
+
+        return new MatchResult(noMatch, original);
+    }
+
+    /** 构建规范化文本位置 → 原始文本位置的映射数组 */
+    private int[] buildNormToOrigMapping(String text) {
+        // normText = text.replaceAll("\\s+", " ")
+        // mapping[normPos] = origPos
+        List<Integer> map = new ArrayList<>(text.length());
+        boolean lastWasSpace = false;
+        for (int i = 0; i < text.length(); i++) {
+            boolean isSpace = Character.isWhitespace(text.charAt(i));
+            if (isSpace && lastWasSpace) continue;
+            map.add(i);
+            lastWasSpace = isSpace;
+        }
+        map.add(text.length()); // sentinel
+        return map.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private String normalizeErrorType(String type) {
-        if (type == null) return "grammar";
+        if (type == null) return "syntax";
         return switch (type.toLowerCase(Locale.ROOT)) {
-            case "grammar" -> "grammar";
-            case "word_choice", "vocabulary" -> "word_choice";
-            case "expression" -> "expression";
-            case "coherence", "structure" -> "coherence";
-            case "format", "task" -> "format";
-            default -> "grammar";
+            // 12 new fine-grained types — pass through
+            case "spelling" -> "spelling";
+            case "morphology" -> "morphology";
+            case "subject_verb" -> "subject_verb";
+            case "tense" -> "tense";
+            case "article" -> "article";
+            case "preposition" -> "preposition";
+            case "collocation" -> "collocation";
+            case "syntax" -> "syntax";
+            case "word_choice" -> "word_choice";
+            case "part_of_speech" -> "part_of_speech";
+            case "punctuation" -> "punctuation";
+            case "logic" -> "logic";
+            // backward compat: map old types to new
+            case "grammar" -> "syntax";
+            case "vocabulary" -> "word_choice";
+            case "expression" -> "collocation";
+            case "coherence", "structure" -> "logic";
+            case "format", "task" -> "punctuation";
+            default -> "syntax";
         };
     }
 
@@ -540,7 +791,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             updated.setStructureScore(ewa(existing == null ? null : existing.getStructureScore(),
                     scoreByDimension.get("structure")));
             updated.setCoherenceScore(ewa(existing == null ? null : existing.getCoherenceScore(),
-                    scoreByDimension.get("expression")));
+                    scoreByDimension.get("structure")));
             Integer taskRaw = scoreByDimension.containsKey("task_achievement")
                     ? scoreByDimension.get("task_achievement")
                     : scoreByDimension.get("content_quality");

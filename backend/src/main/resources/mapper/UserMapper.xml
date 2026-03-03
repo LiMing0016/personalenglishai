@@ -5,41 +5,73 @@
     <resultMap id="UserResultMap" type="com.personalenglishai.backend.entity.User">
         <id column="id" property="id"/>
         <result column="email" property="email"/>
+        <result column="email_verified" property="emailVerified"/>
         <result column="phone" property="phone"/>
+        <result column="phone_verified" property="phoneVerified"/>
         <result column="password_hash" property="passwordHash"/>
         <result column="nickname" property="nickname"/>
         <result column="avatar_url" property="avatarUrl"/>
         <result column="role" property="role"/>
         <result column="status" property="status"/>
         <result column="register_source" property="registerSource"/>
+        <result column="token_version" property="tokenVersion"/>
         <result column="last_active_at" property="lastActiveAt"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
 
     <select id="findByEmail" resultMap="UserResultMap">
-        SELECT id, email, password_hash, nickname
+        SELECT id, email, email_verified, phone, phone_verified, password_hash, nickname, avatar_url, role, status,
+               register_source, token_version, last_active_at, created_at, updated_at
         FROM users
         WHERE email = #{email}
     </select>
 
     <select id="findById" resultMap="UserResultMap">
-        SELECT id, email, password_hash, nickname
+        SELECT id, email, email_verified, phone, phone_verified, password_hash, nickname, avatar_url, role, status,
+               register_source, token_version, last_active_at, created_at, updated_at
         FROM users
         WHERE id = #{id}
     </select>
 
     <select id="findByNickname" resultMap="UserResultMap">
-        SELECT id, email, phone, password_hash, nickname, avatar_url, role, status, 
-               register_source, last_active_at, created_at, updated_at
+        SELECT id, email, phone, password_hash, nickname, avatar_url, role, status,
+               register_source, token_version, last_active_at, created_at, updated_at
         FROM users
         WHERE nickname = #{nickname}
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO users (email, password_hash, nickname, created_at, updated_at)
-        VALUES (#{email}, #{passwordHash}, #{nickname}, NOW(), NOW())
+        INSERT INTO users (email, email_verified, phone, phone_verified, password_hash, nickname, register_source, created_at, updated_at)
+        VALUES (#{email}, 0, #{phone}, #{phoneVerified}, #{passwordHash}, #{nickname}, #{registerSource}, NOW(), NOW())
     </insert>
+
+    <update id="updateEmailVerified">
+        UPDATE users SET email_verified = #{emailVerified}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updatePassword">
+        UPDATE users SET password_hash = #{passwordHash}, token_version = token_version + 1, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="findByPhone" resultMap="UserResultMap">
+        SELECT id, email, email_verified, phone, phone_verified, password_hash, nickname, avatar_url, role, status,
+               register_source, token_version, last_active_at, created_at, updated_at
+        FROM users
+        WHERE phone = #{phone}
+    </select>
+
+    <update id="updatePhoneVerified">
+        UPDATE users SET phone_verified = #{phoneVerified}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateNickname">
+        UPDATE users SET nickname = #{nickname}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
 
 </mapper>
 

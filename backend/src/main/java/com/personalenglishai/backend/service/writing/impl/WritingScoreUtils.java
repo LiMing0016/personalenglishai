@@ -44,6 +44,32 @@ public final class WritingScoreUtils {
         return text.trim().split("\\s+").length;
     }
 
+    // ── 句子数统计 ────────────────────────────────────────────────────────────
+
+    public static int countSentences(String text) {
+        if (text == null || text.isBlank()) return 0;
+        // Split on sentence-ending punctuation followed by space or end-of-string
+        String[] parts = text.trim().split("[.!?]+(?:\\s|$)");
+        int count = 0;
+        for (String p : parts) {
+            if (!p.isBlank()) count++;
+        }
+        return Math.max(count, 1);
+    }
+
+    // ── 段落数统计 ────────────────────────────────────────────────────────────
+
+    public static int countParagraphs(String text) {
+        if (text == null || text.isBlank()) return 0;
+        // Split on blank lines or double newlines
+        String[] parts = text.trim().split("\\n\\s*\\n");
+        int count = 0;
+        for (String p : parts) {
+            if (!p.isBlank()) count++;
+        }
+        return Math.max(count, 1);
+    }
+
     // ── 指数加权平均 ────────────────────────────────────────────────────────
 
     /**
@@ -68,32 +94,4 @@ public final class WritingScoreUtils {
         return "本次比历史均分低 " + Math.abs(delta) + " 分，需加强薄弱环节的针对性练习。";
     }
 
-    // ── 题目有效性检测 ───────────────────────────────────────────────────────
-
-    /**
-     * 检测 taskPrompt 是否为有效写作题目（非乱码）。
-     * 规则：有效字符（字母+汉字）占比 >= 35%，且长度 >= 8。
-     */
-    public static boolean isValidTaskPrompt(String prompt) {
-        if (prompt == null || prompt.trim().length() < 8) return false;
-        String text = prompt.trim();
-        // A valid prompt must have either spaces (multiple words) or CJK characters.
-        // A single unspaced token like "128045325adfafbfd" is always gibberish.
-        boolean hasCjk = text.chars().anyMatch(c -> c >= 0x4E00 && c <= 0x9FFF);
-        boolean hasSpace = text.contains(" ");
-        if (!hasCjk && !hasSpace) return false;
-        long validChars = text.chars()
-                .filter(Character::isLetter)
-                .count();
-        return (double) validChars / text.length() >= 0.35;
-    }
-
-    /** 从题目文本中提取词数要求（如"120词"→120），找不到返回 null */
-    public static Integer extractWordCount(String prompt) {
-        if (prompt == null) return null;
-        var matcher = java.util.regex.Pattern
-                .compile("(\\d+)\\s*(词|字|words?)", java.util.regex.Pattern.CASE_INSENSITIVE)
-                .matcher(prompt);
-        return matcher.find() ? Integer.parseInt(matcher.group(1)) : null;
-    }
 }

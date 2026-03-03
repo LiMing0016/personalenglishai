@@ -19,10 +19,12 @@ import java.util.Map;
 public class JwtUtil {
 
     private final SecretKey secretKey;
-    private final long expirationTime;
+    private final long accessTokenMs;
+    private final long refreshTokenMs;
 
     public JwtUtil(@Value("${jwt.secret}") String secret,
-                   @Value("${jwt.expireSeconds:86400}") long expireSeconds) {
+                   @Value("${jwt.accessTokenSeconds:1800}") long accessTokenSeconds,
+                   @Value("${jwt.refreshTokenSeconds:259200}") long refreshTokenSeconds) {
         // 校验密钥长度（至少32字节）
         byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
         if (secretBytes.length < 32) {
@@ -30,18 +32,47 @@ public class JwtUtil {
         }
 
         this.secretKey = Keys.hmacShaKeyFor(secretBytes);
-        this.expirationTime = expireSeconds * 1000; // 转换为毫秒
+        this.accessTokenMs = accessTokenSeconds * 1000;
+        this.refreshTokenMs = refreshTokenSeconds * 1000;
+    }
+
+    public long getAccessTokenSeconds() {
+        return accessTokenMs / 1000;
+    }
+
+    public long getRefreshTokenSeconds() {
+        return refreshTokenMs / 1000;
     }
 
     /**
-     * 生成 JWT Token
+     * 生成 Access Token（短期）
+     */
+    public String generateAccessToken(Long userId, String nickname, int tokenVersion) {
+        return buildToken(userId, nickname, "access", tokenVersion, accessTokenMs);
+    }
+
+    /**
+     * 生成 Refresh Token（长期）
+     */
+    public String generateRefreshToken(Long userId, String nickname, int tokenVersion) {
+        return buildToken(userId, nickname, "refresh", tokenVersion, refreshTokenMs);
+    }
+
+    /**
+     * 兼容旧调用（等同于 generateAccessToken，tokenVersion=0）
      */
     public String generateToken(Long userId, String nickname) {
+        return generateAccessToken(userId, nickname, 0);
+    }
+
+    private String buildToken(Long userId, String nickname, String tokenType, int tokenVersion, long expirationMs) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("nickname", nickname);
+        claims.put("type", tokenType);
+        claims.put("tv", tokenVersion);
 
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + expirationTime);
+        Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
                 .claims(claims)
@@ -77,6 +108,24 @@ public class JwtUtil {
     public String getNicknameFromToken(String token) {
         Claims claims = getClaimsFromToken(token);
         return claims.get("nickname", String.class);
+    }
+
+    /**
+     * 获取 token 类型（"access" 或 "refresh"）
+     */
+    public String getTokenType(String token) {
+        Claims claims = getClaimsFromToken(token);
+        String type = claims.get("type", String.class);
+        return type != null ? type : "access";
+    }
+
+    /**
+     * 获取 token 中的 tokenVersion（用于密码重置后失效旧 token）
+     */
+    public int getTokenVersion(String token) {
+        Claims claims = getClaimsFromToken(token);
+        Integer tv = claims.get("tv", Integer.class);
+        return tv != null ? tv : 0;
     }
 
     /**

@@ -1,12 +1,16 @@
-﻿/**
+/**
  * 前端路由与鉴权守卫
  * - 公共路由（meta.public=true）：放行
  * - 业务路由：无 token 或 token 已过期时跳转 /login
+ * - 已登录但无学段 → 跳转 /app/stage-setup
  * - 登录成功后支持回跳到原始目标页面（redirect query）
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import { clearToken, getToken, isTokenExpired } from '@/utils/token'
+import { clearToken, getToken, setToken, isTokenExpired } from '@/utils/token'
+import { authApi } from '@/api/auth'
+import { userApi } from '@/api/user'
+import { stageCache, clearStageCache } from '@/stores/stageCache'
 
 const BUSINESS_HOME = '/app'
 
@@ -36,34 +40,6 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
-    path: '/app',
-    name: 'AppHome',
-    component: () => import('@/views/AppHome.vue'),
-    meta: { public: false },
-  },
-  {
-    path: '/app/writing',
-    name: 'Writing',
-    component: () => import('@/pages/app/WritingPage.vue'),
-    meta: { public: false },
-  },
-  {
-    path: '/app/ai-test',
-    name: 'AiCommandTest',
-    component: () => import('@/pages/app/AiCommandTestPage.vue'),
-    meta: { public: false },
-  },
-  {
-    path: '/app/writing/evaluate',
-    redirect: () => ({ path: '/app/writing' }),
-  },
-  {
-    path: '/me',
-    name: 'Me',
-    component: () => import('@/views/MeView.vue'),
-    meta: { public: false },
-  },
-  {
     path: '/check-email',
     name: 'CheckEmail',
     component: () => import('@/pages/CheckEmail.vue'),
@@ -74,6 +50,78 @@ const routes: RouteRecordRaw[] = [
     name: 'VerifyEmail',
     component: () => import('@/pages/VerifyEmail.vue'),
     meta: { public: true },
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/ForgotPasswordView.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/views/ResetPasswordView.vue'),
+    meta: { public: true },
+  },
+
+  // ── 业务路由（嵌套在 AppLayout 下） ──
+  {
+    path: '/app',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { public: false },
+    children: [
+      {
+        path: '',
+        name: 'Dashboard',
+        component: () => import('@/views/DashboardView.vue'),
+      },
+      {
+        path: 'stage-setup',
+        name: 'StageSetup',
+        component: () => import('@/pages/app/StageSetupPage.vue'),
+      },
+      {
+        path: 'writing',
+        name: 'Writing',
+        component: () => import('@/pages/app/WritingPage.vue'),
+        meta: { immersive: true },
+      },
+      {
+        path: 'vocabulary',
+        name: 'Vocabulary',
+        component: () => import('@/views/VocabularyView.vue'),
+      },
+      {
+        path: 'listening',
+        name: 'Listening',
+        component: () => import('@/views/ListeningView.vue'),
+      },
+      {
+        path: 'speaking',
+        name: 'Speaking',
+        component: () => import('@/views/SpeakingView.vue'),
+      },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/ProfileView.vue'),
+      },
+      {
+        path: 'ai-test',
+        name: 'AiCommandTest',
+        component: () => import('@/pages/app/AiCommandTestPage.vue'),
+      },
+    ],
+  },
+
+  // ── 兼容旧路径 ──
+  {
+    path: '/app/writing/evaluate',
+    redirect: () => ({ path: '/app/writing' }),
+  },
+  {
+    path: '/me',
+    redirect: () => ({ path: '/app/profile' }),
   },
 ]
 
@@ -91,16 +139,37 @@ function buildLoginRedirectTarget(fullPath: string) {
   return { path: '/login', query: { redirect: fullPath } }
 }
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = getToken()
   const expired = isTokenExpired(token)
-  const hasToken = !!token && !expired
+  let hasToken = !!token && !expired
   const isPublic = Boolean((to.meta as { public?: boolean }).public)
 
+  // Access token 过期时尝试用 refresh cookie 静默续签
   if (token && expired) {
-    clearToken()
     if (DEBUG_ROUTER) {
-      console.info('[router] guard: token expired, cleared local token', { to: to.fullPath, from: from.fullPath })
+      console.info('[router] guard: token expired, attempting refresh', { to: to.fullPath })
+    }
+    try {
+      const res = await authApi.refresh()
+      const fallbackToken = (res as unknown as { token?: string }).token
+      const newToken = res.data?.token ?? fallbackToken
+      if (newToken) {
+        setToken(newToken)
+        hasToken = true
+        if (DEBUG_ROUTER) {
+          console.info('[router] guard: refresh succeeded')
+        }
+      } else {
+        clearToken()
+        clearStageCache()
+      }
+    } catch {
+      clearToken()
+      clearStageCache()
+      if (DEBUG_ROUTER) {
+        console.info('[router] guard: refresh failed, cleared token')
+      }
     }
   }
 
@@ -108,6 +177,7 @@ router.beforeEach((to, from, next) => {
     if (DEBUG_ROUTER) {
       console.info('[router] guard: no valid token, redirect to /login', { to: to.fullPath, from: from.fullPath })
     }
+    clearStageCache()
     next(buildLoginRedirectTarget(to.fullPath))
     return
   }
@@ -118,6 +188,28 @@ router.beforeEach((to, from, next) => {
     }
     next(BUSINESS_HOME)
     return
+  }
+
+  // ── Stage check for authenticated non-public routes ──
+  if (!isPublic && hasToken && to.path !== '/app/stage-setup') {
+    // Fetch profile once and cache it
+    if (stageCache.value === null) {
+      try {
+        const res = await userApi.getMyProfile()
+        stageCache.value = res.data?.studyStage || ''
+      } catch {
+        // On failure, skip the check to avoid blocking navigation
+        stageCache.value = '__error__'
+      }
+    }
+
+    if (stageCache.value === '') {
+      if (DEBUG_ROUTER) {
+        console.info('[router] guard: no studyStage, redirect to /app/stage-setup', { to: to.fullPath })
+      }
+      next({ path: '/app/stage-setup', query: { redirect: to.fullPath } })
+      return
+    }
   }
 
   if (DEBUG_ROUTER) {

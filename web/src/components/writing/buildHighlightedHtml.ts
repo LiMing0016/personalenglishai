@@ -10,17 +10,24 @@
 
 export interface ErrorSpan {
   id: string
-  type: 'grammar' | 'word_choice' | 'expression' | 'coherence' | 'format'
+  type: string
   severity: 'minor' | 'major'
   span: { start: number; end: number }
 }
 
 const TYPE_PRIORITY: Record<string, number> = {
-  grammar: 0,
-  word_choice: 1,
-  expression: 2,
-  coherence: 3,
-  format: 4,
+  spelling: 0,
+  morphology: 1,
+  subject_verb: 2,
+  tense: 3,
+  syntax: 4,
+  article: 5,
+  preposition: 6,
+  collocation: 7,
+  word_choice: 8,
+  part_of_speech: 9,
+  punctuation: 10,
+  logic: 11,
 }
 
 function escapeHtml(text: string): string {

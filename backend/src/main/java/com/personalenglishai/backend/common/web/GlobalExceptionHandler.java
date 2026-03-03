@@ -52,12 +52,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BizException.class)
     public ResponseEntity<ApiResponse<Object>> handleBiz(BizException e) {
         log.warn("业务异常: {} - {}", e.getErrorCode().getCode(), e.getMessage());
-        HttpStatus status = HttpStatus.BAD_REQUEST;
-        if (e.getErrorCode() == ErrorCode.AUTH_EMAIL_EXISTS) status = HttpStatus.CONFLICT;
-        else if (e.getErrorCode() == ErrorCode.AUTH_LOGIN_FAILED) status = HttpStatus.UNAUTHORIZED;
-        else if (e.getErrorCode() == ErrorCode.DOC_NOT_FOUND) status = HttpStatus.NOT_FOUND;
-        else if (e.getErrorCode() == ErrorCode.DOC_FORBIDDEN) status = HttpStatus.FORBIDDEN;
-        else if (e.getErrorCode() == ErrorCode.DOC_CONFLICT) status = HttpStatus.CONFLICT;
+        HttpStatus status = resolveStatus(e.getErrorCode());
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
     }
 
@@ -75,5 +70,22 @@ public class GlobalExceptionHandler {
         ApiResponse<Object> r = ApiResponse.error(code, message);
         r.setTraceId(MDC.get("traceId"));
         return ResponseEntity.status(status).body(r);
+    }
+
+    private HttpStatus resolveStatus(ErrorCode errorCode) {
+        String code = errorCode.getCode();
+        if (code == null || code.length() < 3) {
+            return HttpStatus.BAD_REQUEST;
+        }
+        String prefix = code.substring(0, 3);
+        return switch (prefix) {
+            case "400" -> HttpStatus.BAD_REQUEST;
+            case "401" -> HttpStatus.UNAUTHORIZED;
+            case "403" -> HttpStatus.FORBIDDEN;
+            case "404" -> HttpStatus.NOT_FOUND;
+            case "409" -> HttpStatus.CONFLICT;
+            case "429" -> HttpStatus.TOO_MANY_REQUESTS;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 }

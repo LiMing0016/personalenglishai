@@ -11,6 +11,7 @@ import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -34,18 +35,20 @@ public class WritingEvaluateTaskServiceImpl implements WritingEvaluateTaskServic
     private final WritingEvaluateService writingEvaluateService;
     private final EvaluateTaskMapper evaluateTaskMapper;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newFixedThreadPool(2, runnable -> {
-        Thread t = new Thread(runnable, "writing-evaluate-worker-" + WORKER_SEQ.incrementAndGet());
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService executor;
 
     public WritingEvaluateTaskServiceImpl(WritingEvaluateService writingEvaluateService,
                                           EvaluateTaskMapper evaluateTaskMapper,
-                                          ObjectMapper objectMapper) {
+                                          ObjectMapper objectMapper,
+                                          @Value("${writing.evaluate.thread-pool-size:4}") int threadPoolSize) {
         this.writingEvaluateService = writingEvaluateService;
         this.evaluateTaskMapper = evaluateTaskMapper;
         this.objectMapper = objectMapper;
+        this.executor = Executors.newFixedThreadPool(threadPoolSize, runnable -> {
+            Thread t = new Thread(runnable, "writing-evaluate-worker-" + WORKER_SEQ.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     @Override

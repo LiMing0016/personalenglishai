@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="input-wrapper">
     <label v-if="label" class="input-label">{{ label }}</label>
     <div class="input-shell" :class="{ 'has-toggle': canTogglePassword }">

@@ -34,13 +34,26 @@
         @retry="$emit('retry')"
         @close="$emit('close')"
       />
+      <FixPanel
+        v-else-if="panel === 'revise'"
+        :errors="errorTypeErrors"
+        :fixed-error-ids="fixedErrorIds ?? new Set()"
+        :active-error-id="activeErrorId"
+        :has-suggestions="hasSuggestions"
+        @fix-error="$emit('fix-error', $event)"
+        @fix-all="$emit('fix-all')"
+        @error-click="$emit('error-click', $event)"
+        @exit-correction="$emit('exit-correction')"
+        @start-polish="$emit('start-polish')"
+      />
       <RewritePanel
         v-else-if="panel === 'rewrite'"
-        :essay="essay"
-        :ai-hint="aiNote"
-        @apply-rewrite="$emit('apply-rewrite', $event)"
+        :suggestions="suggestionErrors"
+        :fixed-error-ids="fixedErrorIds ?? new Set()"
+        :full-essay="essay"
+        @apply-polish="$emit('apply-polish', $event)"
+        @exit-correction="$emit('exit-correction')"
       />
-      <FixPanel v-else-if="panel === 'revise'" />
       <PolishPanel v-else-if="panel === 'improve'" />
       <ExplainPanel v-else-if="panel === 'explain'" />
       <TranslatePanel v-else-if="panel === 'translate'" />
@@ -86,14 +99,19 @@ const props = defineProps<{
   activeErrorId?: string | null
   submitting?: boolean
   evaluateError?: string | null
+  fixedErrorIds?: Set<string>
 }>()
 
 defineEmits<{
   close: []
   'start-fix': []
+  'fix-error': [errorId: string]
+  'fix-all': []
+  'exit-correction': []
   'error-click': [errorId: string]
+  'apply-polish': [payload: { errorId: string; polished: string }]
+  'start-polish': []
   retry: []
-  'apply-rewrite': [fullText: string]
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
   archived: []
@@ -106,9 +124,22 @@ defineEmits<{
   'update:taskPrompt': [value: string]
 }>()
 
-const scorePanelTitle = computed(() =>
-  props.panel === 'score' ? '评价与建议' : props.title
+const errorTypeErrors = computed(() =>
+  (props.evaluateResult?.errors ?? []).filter((e) => e.category !== 'suggestion'),
 )
+
+const suggestionErrors = computed(() =>
+  (props.evaluateResult?.errors ?? []).filter((e) => e.category === 'suggestion'),
+)
+
+const hasSuggestions = computed(() => suggestionErrors.value.length > 0)
+
+const scorePanelTitle = computed(() => {
+  if (props.panel === 'score') return '评价与建议'
+  if (props.panel === 'revise') return '订正'
+  if (props.panel === 'rewrite') return '润色'
+  return props.title
+})
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
 
@@ -116,6 +147,7 @@ const aiNotePanelRef = ref<{
   setComposerText: (text: string) => void
   focusComposer: () => void
   getRecentMessages: (max?: number) => RecentMessageDto[]
+  isIncludeDraft: () => boolean
 } | null>(null)
 
 function setAiComposerText(text: string): boolean {
@@ -135,14 +167,21 @@ function getAiRecentMessages(max = 8): RecentMessageDto[] {
   return aiNotePanelRef.value?.getRecentMessages(max) ?? []
 }
 
+function isIncludeDraft(): boolean {
+  if (props.panel !== 'aiNote') return false
+  return aiNotePanelRef.value?.isIncludeDraft() ?? false
+}
+
 defineExpose<{
   setAiComposerText: (text: string) => boolean
   focusAiComposer: () => boolean
   getAiRecentMessages: (max?: number) => RecentMessageDto[]
+  isIncludeDraft: () => boolean
 }>({
   setAiComposerText,
   focusAiComposer,
   getAiRecentMessages,
+  isIncludeDraft,
 })
 </script>
 
@@ -163,4 +202,3 @@ defineExpose<{
   box-sizing: border-box;
 }
 </style>
-

@@ -8,13 +8,16 @@ import java.time.LocalDateTime;
 public class User {
     private Long id;
     private String email;
+    private boolean emailVerified;
     private String phone;
+    private boolean phoneVerified;
     private String passwordHash;
     private String nickname;
     private String avatarUrl;
     private String role;
     private String status;
     private String registerSource;
+    private int tokenVersion;
     private LocalDateTime lastActiveAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -38,12 +41,28 @@ public class User {
         this.email = email;
     }
 
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
+    }
+
     public String getPhone() {
         return phone;
     }
 
     public void setPhone(String phone) {
         this.phone = phone;
+    }
+
+    public boolean isPhoneVerified() {
+        return phoneVerified;
+    }
+
+    public void setPhoneVerified(boolean phoneVerified) {
+        this.phoneVerified = phoneVerified;
     }
 
     public String getPasswordHash() {
@@ -92,6 +111,14 @@ public class User {
 
     public void setRegisterSource(String registerSource) {
         this.registerSource = registerSource;
+    }
+
+    public int getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(int tokenVersion) {
+        this.tokenVersion = tokenVersion;
     }
 
     public LocalDateTime getLastActiveAt() {

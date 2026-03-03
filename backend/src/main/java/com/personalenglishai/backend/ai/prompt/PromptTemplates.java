@@ -68,5 +68,4 @@ Working principles:
 请保持栏目标题清晰稳定，不要输出与任务无关的格式说明。
 """;
 
-    public static final String CHAT_SYSTEM_PROMPT = SYSTEM_PROMPT_V1;
 }

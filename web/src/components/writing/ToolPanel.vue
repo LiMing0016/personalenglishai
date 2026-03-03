@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="tool-panel">
     <header class="tool-panel-header">
       <span class="tool-panel-title">{{ title }}</span>

@@ -1,0 +1,165 @@
+/* ── Shared Auth Form Styles ── */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error-text {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #ffb4b4;
+}
+
+.auth-footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
+  color: rgba(225, 235, 255, 0.85);
+}
+
+.auth-footer a {
+  color: #8fd8ff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+.auth-footer-split {
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.auth-footer-split .line {
+  width: 80px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Input dark-theme overrides ── */
+
+:deep(.input-wrapper) {
+  gap: 4px;
+}
+
+:deep(.input-label) {
+  color: rgba(236, 243, 255, 0.92);
+  font-weight: 600;
+}
+
+:deep(.input) {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-radius: 14px;
+  height: 44px;
+  padding: 10px 14px;
+}
+
+:deep(.input::placeholder) {
+  color: rgba(226, 234, 248, 0.42);
+}
+
+:deep(.input:focus) {
+  border-color: rgba(114, 198, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(76, 161, 255, 0.15);
+}
+
+:deep(.input:disabled) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:deep(.input-error) {
+  border-color: rgba(255, 110, 110, 0.9);
+}
+
+:deep(.input-error-text) {
+  color: #ffb0b0;
+}
+
+/* ── Submit button gradient ── */
+
+:deep(.btn.submit-btn) {
+  width: 100%;
+  min-width: 0;
+  border-radius: 999px;
+  font-weight: 700;
+  margin-top: 8px;
+  box-shadow: 0 10px 24px rgba(64, 122, 255, 0.2);
+}
+
+:deep(.btn-primary.submit-btn) {
+  background: linear-gradient(90deg, #35c0ff 0%, #6f6bff 52%, #a47dff 100%);
+  color: #fff;
+}
+
+:deep(.btn-primary.submit-btn:hover:not(:disabled)) {
+  background: linear-gradient(90deg, #2bb7f6 0%, #6662fa 52%, #9a72f9 100%);
+  transform: translateY(-1px);
+}
+
+/* ── SMS code row ── */
+
+.sms-code-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.sms-code-row > :first-child {
+  flex: 1;
+}
+
+.sms-send-btn {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(143, 216, 255, 0.9);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+
+.sms-send-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sms-send-btn:disabled {
+  color: rgba(225, 235, 255, 0.35);
+  cursor: not-allowed;
+}
+
+/* ── Sub-mode toggle (验证码/密码 switch inside phone tab) ── */
+
+.sub-mode-toggle {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.sub-mode-toggle button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: rgba(225, 235, 255, 0.5);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.sub-mode-toggle button.active {
+  color: rgba(143, 216, 255, 0.9);
+  font-weight: 600;
+}

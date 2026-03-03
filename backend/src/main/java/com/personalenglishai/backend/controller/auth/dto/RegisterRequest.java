@@ -2,6 +2,7 @@ package com.personalenglishai.backend.controller.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -14,6 +15,8 @@ public class RegisterRequest {
 
     @NotBlank(message = "密码不能为空")
     @Size(min = 8, message = "密码长度至少为8位")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$",
+             message = "密码需包含大小写字母和数字")
     private String password;
 
     @NotBlank(message = "昵称不能为空")

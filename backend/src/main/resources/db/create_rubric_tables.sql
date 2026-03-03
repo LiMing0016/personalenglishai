@@ -231,7 +231,7 @@ INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level
 (@rv_id,'exam','task_achievement','C',60,
  'Addresses some required writing points but with notable gaps (e.g., missing one key point). Format is partially correct (e.g., missing salutation OR closing). Word count slightly below requirement.'),
 (@rv_id,'exam','task_achievement','D',42,
- 'Addresses only a few required writing points. Significant omissions of key content. Format has multiple errors (e.g., missing both salutation and closing). Word count clearly insufficient.'),
+ 'Partially addresses the task but with major gaps: only 1-2 of the required points are covered, or the essay is loosely related to the topic but drifts significantly. Format has multiple errors. Word count clearly insufficient.'),
 (@rv_id,'exam','task_achievement','E',20,
- 'Fails to address the required writing points. Format is wrong or completely absent. Word count is far below requirement. The response does not fit the task scenario at all.')
+ 'COMPLETELY OFF-TOPIC or fails entirely: the essay topic is entirely different from the required task (e.g., task requires writing about New Year celebrations but the essay discusses environmental protection or another unrelated subject). Any essay that does not engage with the required topic at all MUST receive E. Format absent. Word count irrelevant.')
 ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
