@@ -141,6 +141,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private final UserAbilityProfileMapper abilityProfileMapper;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final LanguageToolService languageToolService;
+    private final SaplingService saplingService;
 
     public WritingEvaluateMockService(
             RubricService rubricService,
@@ -149,7 +150,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             ObjectMapper objectMapper,
             UserAbilityProfileMapper abilityProfileMapper,
             EssayEvaluationMapper essayEvaluationMapper,
-            LanguageToolService languageToolService
+            LanguageToolService languageToolService,
+            SaplingService saplingService
     ) {
         this.rubricService = rubricService;
         this.rubricTextBuilder = rubricTextBuilder;
@@ -158,6 +160,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         this.abilityProfileMapper = abilityProfileMapper;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.languageToolService = languageToolService;
+        this.saplingService = saplingService;
     }
 
     // ================================================================
@@ -196,8 +199,18 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 result = parseResult(raw, rubric, mode, request.getEssay());
             }
 
-            // ── LanguageTool：确定性规则引擎（拼写、语法、主谓一致等）→ 订正栏，优先保留 ──
-            List<WritingEvaluateResponse.ErrorDto> ltErrors = languageToolService.check(request.getEssay());
+            // ── 规则引擎：LT + Sapling 并行调用 ──
+            var ltFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> languageToolService.check(request.getEssay()));
+            var saplingFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> saplingService.check(request.getEssay()));
+
+            List<WritingEvaluateResponse.ErrorDto> ltErrors = ltFuture.join();
+            List<WritingEvaluateResponse.ErrorDto> saplingErrors = saplingFuture.join();
+
+            // LT + Sapling 合并（LT 为 primary）
+            List<WritingEvaluateResponse.ErrorDto> ruleErrors = mergeErrors(
+                    ltErrors, saplingErrors, request.getEssay());
 
             // ── 第二次调用：专门查错（注意力不被评分分散）→ 与评分 errors 合并 ──
             List<WritingEvaluateResponse.ErrorDto> extraErrors = runDedicatedErrorDetection(
@@ -205,9 +218,9 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             List<WritingEvaluateResponse.ErrorDto> aiMerged = mergeErrors(
                     result.errors(), extraErrors, request.getEssay());
 
-            // 合并时以 LT 为 primary，避免 LT 条目被“包含关系”去重吃掉
+            // 规则引擎为 primary，AI 补充
             List<WritingEvaluateResponse.ErrorDto> mergedErrors = mergeErrors(
-                    ltErrors, aiMerged, request.getEssay());
+                    ruleErrors, aiMerged, request.getEssay());
 
             EvaluationResult enriched = new EvaluationResult(
                     result.mode(), result.gradeByDimension(), result.analysisByDimension(),

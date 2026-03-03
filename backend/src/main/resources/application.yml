@@ -96,3 +96,9 @@ ai:
 
 languagetool:
   enabled: ${LANGUAGETOOL_ENABLED:true}
+
+sapling:
+  enabled: ${SAPLING_ENABLED:false}
+  api-key: ${SAPLING_API_KEY:}
+  base-url: ${SAPLING_BASE_URL:https://api.sapling.ai}
+  timeout-ms: ${SAPLING_TIMEOUT_MS:5000}
