@@ -1,13 +1,18 @@
 package com.personalenglishai.backend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
+import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
+import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
+import com.personalenglishai.backend.service.writing.WritingPolishService;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,13 +22,18 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(WritingController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class WritingControllerTest {
 
     @Autowired
@@ -42,7 +52,16 @@ class WritingControllerTest {
     private WritingChatService writingChatService;
 
     @MockBean
+    private WritingPolishService writingPolishService;
+
+    @MockBean
     private EssayEvaluationMapper essayEvaluationMapper;
+
+    @MockBean
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @MockBean
+    private JwtInterceptor jwtInterceptor;
 
     private static final String VALID_ESSAY =
             "Last weekend I went to the park with my friends. We had a wonderful time there. "
@@ -80,7 +99,8 @@ class WritingControllerTest {
                             .requestAttr("userId", 1L)
                             .content(objectMapper.writeValueAsString(
                                     buildRequest("Too short essay.", "free"))))
-                    .andExpect(status().is4xxClientError());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("400010"));
         }
 
         @Test
@@ -93,7 +113,8 @@ class WritingControllerTest {
                             .requestAttr("userId", 1L)
                             .content(objectMapper.writeValueAsString(
                                     buildRequest(sb.toString(), "free"))))
-                    .andExpect(status().is4xxClientError());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("400011"));
         }
 
         @Test
@@ -140,9 +161,11 @@ class WritingControllerTest {
             WritingEvaluateTaskResponse mockResponse = new WritingEvaluateTaskResponse();
             mockResponse.setRequestId("eval-task-abc123");
             mockResponse.setStatus("succeeded");
+            mockResponse.setUserId(1L);
             when(writingEvaluateTaskService.getTask("eval-task-abc123")).thenReturn(mockResponse);
 
-            mockMvc.perform(get("/api/writing/evaluate/tasks/eval-task-abc123"))
+            mockMvc.perform(get("/api/writing/evaluate/tasks/eval-task-abc123")
+                            .requestAttr("userId", 1L))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value("succeeded"));
         }
@@ -152,8 +175,30 @@ class WritingControllerTest {
         void getTask_notFound() throws Exception {
             when(writingEvaluateTaskService.getTask("nonexistent")).thenReturn(null);
 
-            mockMvc.perform(get("/api/writing/evaluate/tasks/nonexistent"))
+            mockMvc.perform(get("/api/writing/evaluate/tasks/nonexistent")
+                            .requestAttr("userId", 1L))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("returns 404 when task belongs to another user")
+        void getTask_otherUser() throws Exception {
+            WritingEvaluateTaskResponse mockResponse = new WritingEvaluateTaskResponse();
+            mockResponse.setRequestId("eval-task-other");
+            mockResponse.setStatus("succeeded");
+            mockResponse.setUserId(2L);
+            when(writingEvaluateTaskService.getTask("eval-task-other")).thenReturn(mockResponse);
+
+            mockMvc.perform(get("/api/writing/evaluate/tasks/eval-task-other")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("returns 401 when userId is missing")
+        void getTask_noAuth() throws Exception {
+            mockMvc.perform(get("/api/writing/evaluate/tasks/eval-task-any"))
+                    .andExpect(status().isUnauthorized());
         }
     }
 
@@ -166,6 +211,103 @@ class WritingControllerTest {
         void history_noAuth() throws Exception {
             mockMvc.perform(get("/api/writing/history"))
                     .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("returns paged items with total")
+        void history_success() throws Exception {
+            EssayEvaluation record = new EssayEvaluation();
+            record.setId(10L);
+            record.setUserId(1L);
+            record.setMode("free");
+            record.setGaokaoScore(11);
+            record.setMaxScore(15);
+            record.setBand("good");
+            record.setOverallScore(78);
+            record.setEssayText("This is a test essay with enough words for preview generation.");
+            record.setCreatedAt(LocalDateTime.of(2026, 3, 3, 12, 0));
+
+            when(essayEvaluationMapper.selectByUserId(1L, 0, 10)).thenReturn(List.of(record));
+            when(essayEvaluationMapper.countByUserId(1L)).thenReturn(1L);
+
+            mockMvc.perform(get("/api/writing/history?page=0&size=10")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.total").value(1))
+                    .andExpect(jsonPath("$.items[0].id").value(10))
+                    .andExpect(jsonPath("$.items[0].mode").value("free"))
+                    .andExpect(jsonPath("$.items[0].gaokao_score").value(11))
+                    .andExpect(jsonPath("$.items[0].max_score").value(15));
+        }
+
+        @Test
+        @DisplayName("caps page size at 50")
+        void history_capsPageSize() throws Exception {
+            when(essayEvaluationMapper.selectByUserId(1L, 0, 50)).thenReturn(List.of());
+            when(essayEvaluationMapper.countByUserId(1L)).thenReturn(0L);
+
+            mockMvc.perform(get("/api/writing/history?page=0&size=999")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(content().json("{\"items\":[],\"total\":0}"));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/writing/history/{id}")
+    class HistoryDetail {
+
+        @Test
+        @DisplayName("returns 401 when userId is missing")
+        void detail_noAuth() throws Exception {
+            mockMvc.perform(get("/api/writing/history/100"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("returns 404 when record not found")
+        void detail_notFound() throws Exception {
+            when(essayEvaluationMapper.selectById(100L)).thenReturn(null);
+
+            mockMvc.perform(get("/api/writing/history/100")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("returns 404 when record belongs to another user")
+        void detail_otherUser() throws Exception {
+            EssayEvaluation record = new EssayEvaluation();
+            record.setId(100L);
+            record.setUserId(2L);
+            when(essayEvaluationMapper.selectById(100L)).thenReturn(record);
+
+            mockMvc.perform(get("/api/writing/history/100")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("returns full detail when record belongs to current user")
+        void detail_success() throws Exception {
+            WritingEvaluateResponse eval = new WritingEvaluateResponse();
+            eval.setRequestId("eval-100");
+            eval.setMode("free");
+            eval.setSummary("Well done");
+
+            EssayEvaluation record = new EssayEvaluation();
+            record.setId(100L);
+            record.setUserId(1L);
+            record.setEssayText("Original essay text");
+            record.setResultJson(objectMapper.writeValueAsString(eval));
+            when(essayEvaluationMapper.selectById(100L)).thenReturn(record);
+
+            mockMvc.perform(get("/api/writing/history/100")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.essayText").value("Original essay text"))
+                    .andExpect(jsonPath("$.result.requestId").value("eval-100"))
+                    .andExpect(jsonPath("$.result.summary").value("Well done"));
         }
     }
 
