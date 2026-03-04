@@ -120,3 +120,14 @@ Verification commands (passed):
 cd backend
 ./mvnw test
 ```
+
+### CI gate setup (GitHub)
+
+Workflow file:
+- `.github/workflows/backend-test.yml`
+
+To enforce PR gate on `main`:
+1. Open repository `Settings` -> `Branches`.
+2. Add/Edit branch protection rule for `main`.
+3. Enable `Require status checks to pass before merging`.
+4. Select required check: `backend / mvnw test`.
