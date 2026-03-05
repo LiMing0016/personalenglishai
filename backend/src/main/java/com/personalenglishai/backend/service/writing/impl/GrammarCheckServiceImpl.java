@@ -38,14 +38,17 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         if (text == null || text.isBlank()) {
             return List.of();
         }
+        // 统一换行符：Windows \r\n → \n，防止 LT/Sapling span 偏移
+        text = text.replace("\r\n", "\n").replace("\r", "\n");
 
         long start = System.currentTimeMillis();
 
         // Run LT (full text) and Sapling (paragraph-cached) in parallel
+        final String normalizedText = text;
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> ltFuture =
-                CompletableFuture.supplyAsync(() -> languageToolService.check(text));
+                CompletableFuture.supplyAsync(() -> languageToolService.check(normalizedText));
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> saplingFuture =
-                CompletableFuture.supplyAsync(() -> checkSaplingWithCache(text));
+                CompletableFuture.supplyAsync(() -> checkSaplingWithCache(normalizedText));
 
         List<WritingEvaluateResponse.ErrorDto> ltErrors;
         List<WritingEvaluateResponse.ErrorDto> saplingErrors;
@@ -54,7 +57,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             saplingErrors = saplingFuture.join();
         } catch (Exception e) {
             log.warn("Grammar check parallel execution failed: {}", e.getMessage());
-            ltErrors = languageToolService.check(text);
+            ltErrors = languageToolService.check(normalizedText);
             saplingErrors = List.of();
         }
 

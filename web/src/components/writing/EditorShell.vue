@@ -59,6 +59,7 @@
           :grammar-fixed-error-ids="grammarPanelFixedIds"
           @close="activePanel = null"
           @start-fix="onStartFix"
+          @view-error-details="activePanel = 'grammarCheck'"
           @fix-error="onFixError"
           @fix-all="onFixAll"
           @exit-correction="onExitCorrection"
@@ -359,11 +360,13 @@ const grammarCheckActive = ref(true)
 const grammarChecking = ref(false)
 const grammarCheckError = ref<string | null>(null)
 const grammarFixedErrorIds = ref<Set<string>>(new Set())
+const grammarReChecked = ref(false)  // 评分后重检完成，切换到实时结果
 let grammarCheckAbortController: AbortController | null = null
 let grammarCheckTimer: ReturnType<typeof setTimeout> | null = null
 
 // 语法面板展示的错误：评分结果中的 error 类型 + 实时语法检查结果合并
 const grammarPanelErrors = computed(() => {
+  if (grammarReChecked.value) return grammarErrors.value
   const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
   if (evalErrors.length > 0) return evalErrors
   return grammarErrors.value
@@ -371,6 +374,7 @@ const grammarPanelErrors = computed(() => {
 
 // 语法面板使用的 fixedErrorIds：评分模式用 fixedErrorIds，实时模式用 grammarFixedErrorIds
 const grammarPanelFixedIds = computed(() => {
+  if (grammarReChecked.value) return grammarFixedErrorIds.value
   const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
   if (evalErrors.length > 0) return fixedErrorIds.value
   return grammarFixedErrorIds.value
@@ -389,11 +393,16 @@ const displayEditorErrors = computed(() => {
     const fixed = fixedErrorIds.value
     return errors.filter((e) => !fixed.has(e.id))
   }
-  // 2. 评分结果存在（非订正模式）→ 显示评分错误
-  if (evaluateResult.value?.errors?.length) {
+  // 2. 重检完成 → 显示实时结果
+  if (grammarReChecked.value && grammarErrors.value.length > 0) {
+    const fixed = grammarFixedErrorIds.value
+    return grammarErrors.value.filter((e) => !fixed.has(e.id))
+  }
+  // 3. 评分结果存在（未重检）→ 显示评分错误
+  if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
     return evaluateResult.value.errors
   }
-  // 3. 实时语法检查 → 显示语法检查错误
+  // 4. 实时语法检查 → 显示语法检查错误
   if (grammarErrors.value.length > 0) {
     const fixed = grammarFixedErrorIds.value
     return grammarErrors.value.filter((e) => !fixed.has(e.id))
@@ -713,6 +722,7 @@ async function runGrammarCheck() {
     const res = await grammarCheckApi({ text }, { signal: grammarCheckAbortController.signal })
     grammarErrors.value = res.errors ?? []
     grammarFixedErrorIds.value = new Set()
+    if (evaluateResult.value) grammarReChecked.value = true
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
     grammarErrors.value = []
@@ -757,8 +767,9 @@ function onGrammarFixError(errorId: string) {
   }
 
   const newText = text.slice(0, start) + suggestion + text.slice(end)
-  draftText.value = newText
   if (isFromEval) evaluatedText.value = newText
+  grammarCheckActive.value = true
+  draftText.value = newText
 }
 
 function onGrammarFixAll() {
@@ -785,9 +796,10 @@ function onGrammarFixAll() {
     newFixed.add(err.id)
   }
 
+  if (isFromEval) evaluatedText.value = text
+  grammarCheckActive.value = true
   draftText.value = text
   fixedIds.value = newFixed
-  if (isFromEval) evaluatedText.value = text
 }
 
 function onApplySuggestion(payload: { original: string; suggestion: string }) {
@@ -857,6 +869,26 @@ function onStartPolish() {
   activePanel.value = 'rewrite'
 }
 
+// 在所有匹配中找到最接近 hintPos 的位置
+function findClosestMatch(text: string, needle: string, hintPos: number, caseSensitive = true): number {
+  const haystack = caseSensitive ? text : text.toLowerCase()
+  const target = caseSensitive ? needle : needle.toLowerCase()
+  let bestIdx = -1
+  let bestDist = Infinity
+  let searchFrom = 0
+  while (searchFrom <= haystack.length - target.length) {
+    const idx = haystack.indexOf(target, searchFrom)
+    if (idx === -1) break
+    const dist = Math.abs(idx - hintPos)
+    if (dist < bestDist) {
+      bestDist = dist
+      bestIdx = idx
+    }
+    searchFrom = idx + 1
+  }
+  return bestIdx
+}
+
 function resolveErrorSpan(
   err: { original?: string; span: { start: number; end: number } },
   text: string,
@@ -867,15 +899,13 @@ function resolveErrorSpan(
     return { start, end }
   }
   if (!err.original) return null
-  // 2. 精确搜索
-  const idx = text.indexOf(err.original)
+  // 2. 精确搜索（优先最接近原始 span 位置的匹配）
+  const idx = findClosestMatch(text, err.original, start)
   if (idx !== -1) {
     return { start: idx, end: idx + err.original.length }
   }
-  // 3. 忽略大小写搜索
-  const lowerText = text.toLowerCase()
-  const lowerOrig = err.original.toLowerCase()
-  const idxLower = lowerText.indexOf(lowerOrig)
+  // 3. 忽略大小写搜索（优先最接近原始 span 位置的匹配）
+  const idxLower = findClosestMatch(text, err.original, start, false)
   if (idxLower !== -1) {
     return { start: idxLower, end: idxLower + err.original.length }
   }
@@ -1024,6 +1054,7 @@ async function onSubmit() {
   grammarCheckActive.value = false
   grammarErrors.value = []
   grammarCheckError.value = null
+  grammarReChecked.value = false
   grammarCheckAbortController?.abort()
   if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
   const currentPollToken = ++evaluatePollToken
@@ -1106,6 +1137,7 @@ function onClear() {
   grammarCheckError.value = null
   grammarFixedErrorIds.value = new Set()
   grammarCheckActive.value = true
+  grammarReChecked.value = false
   grammarCheckAbortController?.abort()
   if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
   try {

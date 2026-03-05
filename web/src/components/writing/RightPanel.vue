@@ -31,6 +31,7 @@
         :evaluate-error="evaluateError"
         @start-fix="$emit('start-fix')"
         @error-click="$emit('error-click', $event)"
+        @view-error-details="$emit('view-error-details')"
         @retry="$emit('retry')"
         @close="$emit('close')"
       />
@@ -124,6 +125,7 @@ const props = defineProps<{
 defineEmits<{
   close: []
   'start-fix': []
+  'view-error-details': []
   'fix-error': [errorId: string]
   'fix-all': []
   'exit-correction': []
