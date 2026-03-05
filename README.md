@@ -28,6 +28,27 @@
 | `POST /api/v1/auth/captcha/verify` | 验证滑动位置，返回一次性 captchaToken |
 | `POST /api/v1/auth/login` | 登录时需携带 captchaToken 字段 |
 
+## 个人中心
+
+沉浸式个人中心页面（`/app/me`），隐藏顶部导航，左侧边栏 + 右侧内容区两栏布局。
+
+### 功能模块
+
+| 模块 | 说明 |
+|------|------|
+| 综合能力 | 统计卡片（累计作文、平均分、最高分、学习天数）+ 最近活动 |
+| 我的作文 | 作文归档列表，支持收藏/取消收藏，分页浏览，查看详情 |
+| 能力雷达 | ECharts 雷达图展示 6 维度能力（任务完成、连贯性、语法、词汇、结构、多样性） |
+| 账号设置 | 昵称修改、学段切换、密码修改、登出 |
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/users/me/profile/ability` | 获取能力雷达数据 |
+| GET | `/api/users/me/profile/stats` | 获取统计概览 |
+| POST | `/api/writing/history/{id}/favorite` | 收藏/取消收藏作文 |
+
 ## 仓库结构
 
 - `backend/` — Spring Boot 后端
