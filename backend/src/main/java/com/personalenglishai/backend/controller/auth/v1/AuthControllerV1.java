@@ -1,11 +1,14 @@
 package com.personalenglishai.backend.controller.auth.v1;
 
+import com.personalenglishai.backend.common.error.BizException;
+import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.common.response.ApiResponse;
 import com.personalenglishai.backend.controller.auth.dto.*;
 import com.personalenglishai.backend.service.auth.AuthService;
 import com.personalenglishai.backend.service.auth.EmailVerificationService;
 import com.personalenglishai.backend.service.auth.PasswordResetService;
 import com.personalenglishai.backend.service.auth.SmsVerificationService;
+import com.personalenglishai.backend.service.captcha.CaptchaService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -35,17 +38,20 @@ public class AuthControllerV1 {
     private final EmailVerificationService emailVerificationService;
     private final PasswordResetService passwordResetService;
     private final SmsVerificationService smsVerificationService;
+    private final CaptchaService captchaService;
     private final boolean cookieSecure;
 
     public AuthControllerV1(AuthService authService,
                             EmailVerificationService emailVerificationService,
                             PasswordResetService passwordResetService,
                             SmsVerificationService smsVerificationService,
+                            CaptchaService captchaService,
                             @org.springframework.beans.factory.annotation.Value("${app.cookie.secure:false}") boolean cookieSecure) {
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
         this.passwordResetService = passwordResetService;
         this.smsVerificationService = smsVerificationService;
+        this.captchaService = captchaService;
         this.cookieSecure = cookieSecure;
     }
 
@@ -71,6 +77,34 @@ public class AuthControllerV1 {
     }
 
     /**
+     * 获取滑动验证码
+     */
+    @GetMapping("/captcha")
+    public ResponseEntity<ApiResponse<CaptchaResponse>> getCaptcha() {
+        CaptchaService.CaptchaResult result = captchaService.generate();
+        CaptchaResponse data = new CaptchaResponse(result.captchaId(), result.bgImage(), result.pieceImage());
+        ApiResponse<CaptchaResponse> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * 验证滑动验证码
+     */
+    @PostMapping("/captcha/verify")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyCaptcha(
+            @Valid @RequestBody CaptchaVerifyRequest request) {
+        String token = captchaService.verify(request.getCaptchaId(), request.getX());
+        boolean verified = token != null;
+        Map<String, Object> data = verified
+                ? Map.of("verified", true, "captchaToken", token)
+                : Map.of("verified", false);
+        ApiResponse<Map<String, Object>> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
+    }
+
+    /**
      * 用户登录 — access token 通过 body 返回，refresh token 通过 httpOnly cookie 返回
      */
     @PostMapping("/login")
@@ -81,6 +115,12 @@ public class AuthControllerV1 {
         String ip = resolveClientIp(httpRequest);
         String ua = httpRequest.getHeader("User-Agent");
         String email = request.getEmail();
+
+        // 验证滑动验证码 token
+        if (!captchaService.validateToken(request.getCaptchaToken())) {
+            audit.warn("[LOGIN_FAIL] email={} ip={} reason=invalid_captcha", email, ip);
+            throw new BizException(ErrorCode.AUTH_CAPTCHA_INVALID);
+        }
 
         try {
             LoginResponse data = authService.login(email, request.getPassword());

@@ -30,7 +30,28 @@ export type RegisterResponseBody = ApiResponse<RegisterData>
 export interface LoginRequest {
   email: string
   password: string
+  captchaToken?: string
 }
+
+export interface CaptchaData {
+  captchaId: string
+  bgImage: string
+  pieceImage: string
+}
+
+export type CaptchaResponseBody = ApiResponse<CaptchaData>
+
+export interface CaptchaVerifyRequest {
+  captchaId: string
+  x: number
+}
+
+export interface CaptchaVerifyData {
+  verified: boolean
+  captchaToken?: string
+}
+
+export type CaptchaVerifyResponseBody = ApiResponse<CaptchaVerifyData>
 
 export interface RegisterRequest {
   email: string

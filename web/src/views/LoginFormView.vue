@@ -99,6 +99,12 @@
       </div>
     </form>
   </AuthShell>
+
+  <SliderCaptcha
+    :visible="showCaptcha"
+    @close="showCaptcha = false"
+    @verified="onCaptchaVerified"
+  />
 </template>
 
 <script setup lang="ts">
@@ -106,6 +112,7 @@ import { computed, reactive, ref, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import AuthTabs from '@/components/auth/AuthTabs.vue'
+import SliderCaptcha from '@/components/auth/SliderCaptcha.vue'
 import Input from '@/components/Input.vue'
 import Button from '@/components/Button.vue'
 import { authApi } from '@/api/auth'
@@ -142,6 +149,8 @@ const errors = reactive<Record<string, string>>({
 })
 const errorText = ref('')
 const loading = ref(false)
+const showCaptcha = ref(false)
+const captchaToken = ref('')
 
 // SMS cooldown
 const smsCooldown = ref(0)
@@ -239,15 +248,49 @@ async function sendCode(purpose: 'login' | 'register') {
   }
 }
 
-// ── submit handlers ──
+// ── captcha ──
 
-async function onEmailSubmit() {
+let pendingLoginType: 'email' | 'phone' = 'email'
+
+function onEmailSubmit() {
   errorText.value = ''
   if (!validateEmail() || !validateEmailPassword()) return
+  pendingLoginType = 'email'
+  showCaptcha.value = true
+}
 
+function onPhoneSubmit() {
+  errorText.value = ''
+  if (!validatePhone()) return
+  if (phoneMode.value === 'otp') {
+    if (!validateSmsCode()) return
+  } else {
+    if (!validatePhonePassword()) return
+  }
+  pendingLoginType = 'phone'
+  showCaptcha.value = true
+}
+
+async function onCaptchaVerified(token: string) {
+  showCaptcha.value = false
+  captchaToken.value = token
+  if (pendingLoginType === 'email') {
+    await doEmailLogin()
+  } else {
+    await doPhoneLogin()
+  }
+}
+
+// ── submit handlers ──
+
+async function doEmailLogin() {
   loading.value = true
   try {
-    const res = await authApi.login({ email: email.value, password: emailPassword.value })
+    const res = await authApi.login({
+      email: email.value,
+      password: emailPassword.value,
+      captchaToken: captchaToken.value,
+    })
     const token = getTokenFromResponse(res)
     if (!token) { errorText.value = res.message ?? '登录失败，请重试'; return }
     setToken(token)
@@ -260,16 +303,7 @@ async function onEmailSubmit() {
   }
 }
 
-async function onPhoneSubmit() {
-  errorText.value = ''
-  if (!validatePhone()) return
-
-  if (phoneMode.value === 'otp') {
-    if (!validateSmsCode()) return
-  } else {
-    if (!validatePhonePassword()) return
-  }
-
+async function doPhoneLogin() {
   loading.value = true
   try {
     const data = phoneMode.value === 'otp'

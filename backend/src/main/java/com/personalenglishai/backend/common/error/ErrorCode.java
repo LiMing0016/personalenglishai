@@ -21,6 +21,7 @@ public enum ErrorCode {
     AUTH_PHONE_NOT_FOUND("401003", "该手机号未注册"),
     AUTH_PHONE_NO_PASSWORD("401004", "该账号未设置密码，请使用验证码登录"),
     AUTH_CURRENT_PASSWORD_WRONG("401005", "当前密码错误"),
+    AUTH_CAPTCHA_INVALID("400040", "验证码无效或已过期，请重新验证"),
     ESSAY_TOO_SHORT("400010", "作文太短，至少需要 20 个词"),
     ESSAY_TOO_LONG("400011", "作文太长，最多支持 500 个词"),
     ;

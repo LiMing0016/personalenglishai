@@ -10,11 +10,26 @@ import type {
   SendSmsCodeRequest,
   PhoneLoginRequest,
   PhoneRegisterRequest,
+  CaptchaResponseBody,
+  CaptchaVerifyRequest,
+  CaptchaVerifyResponseBody,
 } from '@/types/api'
 
 export type { LoginRequest, RegisterRequest, LoginResponseBody, RegisterResponseBody, PhoneLoginRequest, PhoneRegisterRequest }
 
 export const authApi = {
+  /** 获取滑动验证码 */
+  async getCaptcha(): Promise<CaptchaResponseBody> {
+    const res = await http.get<CaptchaResponseBody>('/v1/auth/captcha')
+    return res.data
+  },
+
+  /** 验证滑动验证码 */
+  async verifyCaptcha(data: CaptchaVerifyRequest): Promise<CaptchaVerifyResponseBody> {
+    const res = await http.post<CaptchaVerifyResponseBody>('/v1/auth/captcha/verify', data)
+    return res.data
+  },
+
   /** 登录：仅调用接口并返回响应 */
   async login(data: LoginRequest): Promise<LoginResponseBody> {
     const res = await http.post<LoginResponseBody>('/v1/auth/login', data)
