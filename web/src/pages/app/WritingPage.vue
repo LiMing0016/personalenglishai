@@ -56,11 +56,20 @@ onMounted(() => {
     return
   }
   currentStage.value = cached
-  phase.value = 'mode-select'
+
+  // 恢复上次选择的模式，刷新后直接进入编辑器
+  const savedMode = sessionStorage.getItem('writingMode')
+  if (savedMode === 'free' || savedMode === 'exam') {
+    chosenMode.value = savedMode
+    phase.value = 'editor'
+  } else {
+    phase.value = 'mode-select'
+  }
 })
 
 function enterEditor(mode: 'free' | 'exam') {
   chosenMode.value = mode
+  sessionStorage.setItem('writingMode', mode)
   phase.value = 'editor'
 }
 </script>

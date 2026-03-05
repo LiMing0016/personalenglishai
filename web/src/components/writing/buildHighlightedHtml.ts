@@ -2,10 +2,11 @@
  * 将纯文本 + 错误 span 数组转换为带 <mark> 高亮标签的 HTML。
  *
  * 处理逻辑：
- * 1. 过滤无效 span（start>=end 即零长度、越界）
- * 2. 收集所有 span 边界点，切分文本为 segments
- * 3. 每个 segment 检查被哪些 error 覆盖，有则包裹 <mark>
- * 4. 重叠 span：同一 segment 被多个 error 覆盖时合并到一个 <mark>
+ * 1. span 校验/修正：若 span 指向的文本与 original 不匹配，用 original 重新定位
+ * 2. 过滤无效 span（start>=end 即零长度、越界）
+ * 3. 收集所有 span 边界点，切分文本为 segments
+ * 4. 每个 segment 检查被哪些 error 覆盖，有则包裹 <mark>
+ * 5. 重叠 span：同一 segment 被多个 error 覆盖时合并到一个 <mark>
  */
 
 export interface ErrorSpan {
@@ -13,6 +14,7 @@ export interface ErrorSpan {
   type: string
   severity: 'minor' | 'major'
   span: { start: number; end: number }
+  original?: string
 }
 
 const TYPE_PRIORITY: Record<string, number> = {
@@ -42,7 +44,21 @@ export function buildHighlightedHtml(text: string, errors: ErrorSpan[]): string 
   if (!text) return ''
   if (!errors || errors.length === 0) return escapeHtml(text)
 
-  // 1. 过滤无效 error（零长度 span 或越界）
+  // 1. span 校验/修正：若 span 指向的文本与 original 不匹配，尝试重新定位
+  for (const e of errors) {
+    const { start, end } = e.span
+    if (!e.original || start < 0 || end > text.length || start >= end) continue
+    const sliced = text.slice(start, end)
+    if (sliced === e.original) continue
+    // span 漂移了，尝试用 original 重新定位
+    const idx = text.indexOf(e.original)
+    if (idx !== -1) {
+      e.span.start = idx
+      e.span.end = idx + e.original.length
+    }
+  }
+
+  // 2. 过滤无效 error（零长度 span 或越界）
   const validErrors = errors.filter((e) => {
     const { start, end } = e.span
     if (start >= end) return false
@@ -52,7 +68,7 @@ export function buildHighlightedHtml(text: string, errors: ErrorSpan[]): string 
 
   if (validErrors.length === 0) return escapeHtml(text)
 
-  // 2. 收集边界点
+  // 3. 收集边界点
   const breakpointSet = new Set<number>()
   breakpointSet.add(0)
   breakpointSet.add(text.length)
@@ -62,7 +78,7 @@ export function buildHighlightedHtml(text: string, errors: ErrorSpan[]): string 
   }
   const breakpoints = Array.from(breakpointSet).sort((a, b) => a - b)
 
-  // 3. 逐 segment 构建 HTML
+  // 4. 逐 segment 构建 HTML
   const parts: string[] = []
   for (let i = 0; i < breakpoints.length - 1; i++) {
     const segStart = breakpoints[i]

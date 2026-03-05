@@ -65,30 +65,14 @@
         <p class="pf-action">{{ focusDetail.action_item }}</p>
       </div>
 
-      <!-- 典型错误（只读展示） -->
+      <!-- 典型错误统计饼图 -->
       <div v-if="errorTypeErrors.length" class="insight-block errors-block">
         <span class="insight-title">典型错误 Error Details</span>
-        <ul class="errors-list">
-          <li
-            v-for="err in errorTypeErrors"
-            :key="err.id"
-            class="error-item"
-            :class="{ 'error-item--active': err.id === activeErrorId }"
-            :data-error-id="err.id"
-            @click="emit('error-click', err.id)"
-          >
-            <span class="error-meta">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
-            <div v-if="err.original && hasValidSuggestion(err)" class="error-correction">
-              <span class="error-original">{{ err.original }}</span>
-              <span class="error-arrow">&rarr;</span>
-              <span class="error-fix">{{ err.suggestion }}</span>
-            </div>
-            <div v-else-if="err.original" class="error-correction">
-              <span class="error-original">{{ err.original }}</span>
-            </div>
-            <p v-if="err.reason" class="error-reason">{{ err.reason }}</p>
-          </li>
-        </ul>
+        <div ref="pieChartRef" class="error-pie-chart" />
+        <div class="error-summary-row">
+          <span class="error-summary-text">共 {{ errorTypeErrors.length }} 个错误</span>
+          <button type="button" class="btn-view-details" @click="emit('view-error-details')">查看详情</button>
+        </div>
       </div>
 
       <div v-if="evaluateResult && !evaluateResult.errors?.length" class="no-errors-hint">
@@ -136,8 +120,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick } from 'vue'
+import { computed, watch, nextTick, ref, onMounted, onBeforeUnmount, shallowRef } from 'vue'
+import * as echarts from 'echarts/core'
+import { PieChart } from 'echarts/charts'
+import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import type { WritingEvaluateResponse, DimensionKey, GradeLetter } from '@/api/writing'
+
+echarts.use([PieChart, TitleComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = withDefaults(
   defineProps<{
@@ -153,6 +143,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'start-fix': []
   'error-click': [errorId: string]
+  'view-error-details': []
   retry: []
   close: []
 }>()
@@ -361,22 +352,57 @@ const focusDimensionLabel = computed(() => {
   return dim ? (DEFAULT_LABELS[dim] ?? dim) : ''
 })
 
-// ── 错误（只读，仅 error 类） ──
-
-function errorTypeLabel(type: string): string {
-  return ERROR_TYPE_LABELS[type] ?? type
-}
-
-function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
-  const s = err.suggestion?.trim()
-  if (!s || /^n\/?a$/i.test(s)) return false
-  if (err.original && s === err.original.trim()) return false
-  return true
-}
+// ── 错误统计 ──
 
 const errorTypeErrors = computed(() =>
   (props.evaluateResult?.errors ?? []).filter((e) => e.category !== 'suggestion'),
 )
+
+// ── ECharts 饼图 ──
+
+const pieChartRef = ref<HTMLElement | null>(null)
+const chartInstance = shallowRef<echarts.ECharts | null>(null)
+
+const PIE_COLORS = ['#f59e0b', '#ef4444', '#6366f1', '#0ea5e9', '#10b981', '#8b5cf6', '#ec4899', '#f97316']
+
+const errorTypePieData = computed(() => {
+  const countMap = new Map<string, number>()
+  for (const err of errorTypeErrors.value) {
+    const label = ERROR_TYPE_LABELS[err.type] ?? err.type
+    countMap.set(label, (countMap.get(label) ?? 0) + 1)
+  }
+  return Array.from(countMap.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+})
+
+function renderPieChart() {
+  if (!pieChartRef.value || errorTypePieData.value.length === 0) return
+  if (!chartInstance.value) {
+    chartInstance.value = echarts.init(pieChartRef.value)
+  }
+  chartInstance.value.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { bottom: 0, left: 'center', textStyle: { fontSize: 11 } },
+    color: PIE_COLORS,
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+      data: errorTypePieData.value,
+    }],
+  })
+}
+
+watch(errorTypePieData, () => nextTick(renderPieChart), { deep: true })
+watch(() => props.evaluateResult, () => nextTick(renderPieChart))
+
+onMounted(() => nextTick(renderPieChart))
+onBeforeUnmount(() => { chartInstance.value?.dispose() })
 
 // ── activeErrorId 联动 ──
 
@@ -558,6 +584,37 @@ watch(
 .weaknesses-block { background: #fff7ed; border-color: #fed7aa; }
 .errors-block { background: #fefce8; border-color: #fde68a; }
 
+.error-pie-chart {
+  width: 100%;
+  height: 220px;
+}
+
+.error-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.error-summary-text {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.btn-view-details {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #d97706;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-view-details:hover { background: #fef3c7; }
+
 /* ── 行动建议卡片 ── */
 .priority-focus-card {
   margin-bottom: 12px;
@@ -573,66 +630,7 @@ watch(
 .pf-reason { margin: 0 0 4px; font-size: 13px; color: #374151; line-height: 1.5; }
 .pf-action { margin: 0; font-size: 13px; font-weight: 500; color: #4338ca; line-height: 1.5; }
 
-/* ── 错误条目（只读） ── */
-.errors-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.error-item {
-  padding: 8px;
-  margin: 0 -8px;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: background 0.15s, box-shadow 0.15s;
-}
-.error-item:hover { background: rgba(251, 191, 36, 0.1); }
-.error-item--active { background: #fef3c7; box-shadow: 0 0 0 2px #fbbf24; }
-
-.error-meta { color: #6b7280; font-size: 12px; }
-
-.error-correction {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.error-original {
-  background: #fee2e2;
-  color: #991b1b;
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-family: monospace;
-  text-decoration: line-through;
-  font-size: 12px;
-}
-
-.error-arrow { color: #6b7280; }
-
-.error-fix {
-  background: #d1fae5;
-  color: #065f46;
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.error-reason {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #78350f;
-  line-height: 1.4;
-}
+/* (error card styles removed — details now in grammar panel) */
 
 .no-errors-hint {
   margin-bottom: 12px;

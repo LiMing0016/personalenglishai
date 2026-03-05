@@ -31,6 +31,7 @@
         :evaluate-error="evaluateError"
         @start-fix="$emit('start-fix')"
         @error-click="$emit('error-click', $event)"
+        @view-error-details="$emit('view-error-details')"
         @retry="$emit('retry')"
         @close="$emit('close')"
       />
@@ -44,6 +45,20 @@
         @fix-all="$emit('fix-all')"
         @error-click="$emit('error-click', $event)"
         @exit-correction="$emit('exit-correction')"
+        @start-polish="$emit('start-polish')"
+      />
+      <GrammarCheckPanel
+        v-else-if="panel === 'grammarCheck'"
+        :errors="grammarErrors ?? []"
+        :checking="grammarChecking ?? false"
+        :error="grammarCheckError ?? null"
+        :fixed-error-ids="grammarFixedErrorIds ?? new Set()"
+        :active-error-id="activeErrorId"
+        :essay-text="essay"
+        @fix-error="$emit('grammar-fix-error', $event)"
+        @fix-all="$emit('grammar-fix-all')"
+        @error-click="$emit('error-click', $event)"
+        @apply-suggestion="$emit('apply-suggestion', $event)"
         @start-polish="$emit('start-polish')"
       />
       <RewritePanel
@@ -74,6 +89,7 @@ import ToolPanel from './ToolPanel.vue'
 import ScorePanel from './panels/ScorePanel.vue'
 import RewritePanel from './panels/RewritePanel.vue'
 import FixPanel from './panels/FixPanel.vue'
+import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
 import PolishPanel from './panels/PolishPanel.vue'
 import ExplainPanel from './panels/ExplainPanel.vue'
 import TranslatePanel from './panels/TranslatePanel.vue'
@@ -100,17 +116,25 @@ const props = defineProps<{
   submitting?: boolean
   evaluateError?: string | null
   fixedErrorIds?: Set<string>
+  grammarErrors?: WritingEvaluateResponse['errors']
+  grammarChecking?: boolean
+  grammarCheckError?: string | null
+  grammarFixedErrorIds?: Set<string>
 }>()
 
 defineEmits<{
   close: []
   'start-fix': []
+  'view-error-details': []
   'fix-error': [errorId: string]
   'fix-all': []
   'exit-correction': []
   'error-click': [errorId: string]
   'apply-polish': [payload: { errorId: string; polished: string }]
   'start-polish': []
+  'grammar-fix-error': [errorId: string]
+  'grammar-fix-all': []
+  'apply-suggestion': [payload: { original: string; suggestion: string }]
   retry: []
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
@@ -136,6 +160,7 @@ const hasSuggestions = computed(() => suggestionErrors.value.length > 0)
 
 const scorePanelTitle = computed(() => {
   if (props.panel === 'score') return '评价与建议'
+  if (props.panel === 'grammarCheck') return '语法检查'
   if (props.panel === 'revise') return '订正'
   if (props.panel === 'rewrite') return '润色'
   return props.title

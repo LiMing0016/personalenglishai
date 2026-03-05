@@ -9,12 +9,15 @@ import com.personalenglishai.backend.dto.writing.WritingChatRequest;
 import com.personalenglishai.backend.dto.writing.WritingChatResponse;
 import com.personalenglishai.backend.dto.writing.PolishRequest;
 import com.personalenglishai.backend.dto.writing.PolishResponse;
+import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
+import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
+import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
@@ -36,6 +39,7 @@ public class WritingController {
     private final WritingEvaluateTaskService writingEvaluateTaskService;
     private final WritingChatService writingChatService;
     private final WritingPolishService writingPolishService;
+    private final GrammarCheckService grammarCheckService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final ObjectMapper objectMapper;
@@ -44,6 +48,7 @@ public class WritingController {
                              WritingEvaluateTaskService writingEvaluateTaskService,
                              WritingChatService writingChatService,
                              WritingPolishService writingPolishService,
+                             GrammarCheckService grammarCheckService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              ObjectMapper objectMapper) {
@@ -51,6 +56,7 @@ public class WritingController {
         this.writingEvaluateTaskService = writingEvaluateTaskService;
         this.writingChatService = writingChatService;
         this.writingPolishService = writingPolishService;
+        this.grammarCheckService = grammarCheckService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.objectMapper = objectMapper;
@@ -123,6 +129,16 @@ public class WritingController {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
         PolishResponse response = writingPolishService.polish(request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 轻量语法检查（LanguageTool + Sapling，不涉及 GPT）
+     */
+    @PostMapping("/grammar-check")
+    public ResponseEntity<GrammarCheckResponse> grammarCheck(
+            @Valid @RequestBody GrammarCheckRequest request) {
+        var errors = grammarCheckService.check(request.getText());
+        return ResponseEntity.ok(new GrammarCheckResponse(errors));
     }
 
     /**
