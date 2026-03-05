@@ -1,12 +1,17 @@
 package com.personalenglishai.backend.controller;
 
 import com.personalenglishai.backend.common.response.ApiResponse;
+import com.personalenglishai.backend.controller.dto.AbilityProfileResponse;
 import com.personalenglishai.backend.controller.dto.MeProfileResponse;
 import com.personalenglishai.backend.controller.dto.UpdateNicknameRequest;
+import com.personalenglishai.backend.controller.dto.UserStatsResponse;
 import com.personalenglishai.backend.dto.UpdateStageRequest;
 import com.personalenglishai.backend.entity.User;
+import com.personalenglishai.backend.entity.UserAbilityProfile;
 import com.personalenglishai.backend.entity.UserProfile;
+import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.UserMapper;
+import com.personalenglishai.backend.service.UserAbilityProfileService;
 import com.personalenglishai.backend.service.UserProfileService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
@@ -27,10 +32,17 @@ public class UserProfileController {
 
     private final UserProfileService userProfileService;
     private final UserMapper userMapper;
+    private final UserAbilityProfileService userAbilityProfileService;
+    private final EssayEvaluationMapper essayEvaluationMapper;
 
-    public UserProfileController(UserProfileService userProfileService, UserMapper userMapper) {
+    public UserProfileController(UserProfileService userProfileService,
+                                 UserMapper userMapper,
+                                 UserAbilityProfileService userAbilityProfileService,
+                                 EssayEvaluationMapper essayEvaluationMapper) {
         this.userProfileService = userProfileService;
         this.userMapper = userMapper;
+        this.userAbilityProfileService = userAbilityProfileService;
+        this.essayEvaluationMapper = essayEvaluationMapper;
     }
 
     /**
@@ -85,6 +97,53 @@ public class UserProfileController {
             @RequestAttribute("userId") Long userId) {
         userProfileService.updateStudyStage(userId, request);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 获取能力雷达数据
+     * GET /api/users/me/profile/ability
+     */
+    @GetMapping("/ability")
+    public ResponseEntity<ApiResponse<AbilityProfileResponse>> getAbilityProfile(
+            @RequestAttribute("userId") Long userId) {
+        UserAbilityProfile ap = userAbilityProfileService.getByUserId(userId);
+        AbilityProfileResponse data = new AbilityProfileResponse();
+        if (ap != null) {
+            data.setTaskScore(ap.getTaskScore());
+            data.setCoherenceScore(ap.getCoherenceScore());
+            data.setGrammarScore(ap.getGrammarScore());
+            data.setVocabularyScore(ap.getVocabularyScore());
+            data.setStructureScore(ap.getStructureScore());
+            data.setVarietyScore(ap.getVarietyScore());
+            data.setAssessedScore(ap.getAssessedScore());
+            data.setConfidence(ap.getConfidence());
+            data.setSampleCount(ap.getSampleCount());
+            data.setUpdatedAt(ap.getUpdatedAt() != null ? ap.getUpdatedAt().format(FMT) : null);
+        }
+        ApiResponse<AbilityProfileResponse> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * 获取统计概览
+     * GET /api/users/me/profile/stats
+     */
+    @GetMapping("/stats")
+    public ResponseEntity<ApiResponse<UserStatsResponse>> getStats(
+            @RequestAttribute("userId") Long userId) {
+        UserStatsResponse data = new UserStatsResponse();
+        data.setTotalEssays(essayEvaluationMapper.countByUserId(userId));
+        data.setAverageScore(essayEvaluationMapper.averageScoreByUserId(userId));
+        data.setBestScore(essayEvaluationMapper.bestScoreByUserId(userId));
+        data.setStudyDays(essayEvaluationMapper.countDistinctDaysByUserId(userId));
+        User user = userMapper.findById(userId);
+        if (user != null && user.getCreatedAt() != null) {
+            data.setMemberSince(user.getCreatedAt().format(FMT));
+        }
+        ApiResponse<UserStatsResponse> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
     }
 
     private String maskPhone(String phone) {

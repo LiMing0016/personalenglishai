@@ -32,9 +32,11 @@ public class EvaluationHistoryResponse {
         private String essayPreview;
         @JsonProperty("created_at")
         private LocalDateTime createdAt;
+        private boolean favorited;
 
         public Item(Long id, String mode, Integer gaokaoScore, Integer maxScore,
-                    String band, Integer overallScore, String essayPreview, LocalDateTime createdAt) {
+                    String band, Integer overallScore, String essayPreview, LocalDateTime createdAt,
+                    boolean favorited) {
             this.id = id;
             this.mode = mode;
             this.gaokaoScore = gaokaoScore;
@@ -43,6 +45,7 @@ public class EvaluationHistoryResponse {
             this.overallScore = overallScore;
             this.essayPreview = essayPreview;
             this.createdAt = createdAt;
+            this.favorited = favorited;
         }
 
         public Long getId() { return id; }
@@ -53,5 +56,6 @@ public class EvaluationHistoryResponse {
         public Integer getOverallScore() { return overallScore; }
         public String getEssayPreview() { return essayPreview; }
         public LocalDateTime getCreatedAt() { return createdAt; }
+        public boolean isFavorited() { return favorited; }
     }
 }

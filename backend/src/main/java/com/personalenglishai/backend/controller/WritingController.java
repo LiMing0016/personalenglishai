@@ -14,6 +14,7 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
+import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
@@ -36,6 +37,7 @@ public class WritingController {
     private final WritingChatService writingChatService;
     private final WritingPolishService writingPolishService;
     private final EssayEvaluationMapper essayEvaluationMapper;
+    private final EssayFavoriteMapper essayFavoriteMapper;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -43,12 +45,14 @@ public class WritingController {
                              WritingChatService writingChatService,
                              WritingPolishService writingPolishService,
                              EssayEvaluationMapper essayEvaluationMapper,
+                             EssayFavoriteMapper essayFavoriteMapper,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
         this.writingChatService = writingChatService;
         this.writingPolishService = writingPolishService;
         this.essayEvaluationMapper = essayEvaluationMapper;
+        this.essayFavoriteMapper = essayFavoriteMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -138,11 +142,15 @@ public class WritingController {
         var records = essayEvaluationMapper.selectByUserId(userId, offset, safeSize);
         long total = essayEvaluationMapper.countByUserId(userId);
 
+        // Batch-fetch favorite IDs for this user
+        var favIds = new java.util.HashSet<>(essayFavoriteMapper.selectEvalIdsByUserId(userId));
+
         var items = records.stream().map(r -> new EvaluationHistoryResponse.Item(
                 r.getId(), r.getMode(), r.getGaokaoScore(), r.getMaxScore(),
                 r.getBand(), r.getOverallScore(),
                 trimPreview(r.getEssayText(), 80),
-                r.getCreatedAt()
+                r.getCreatedAt(),
+                favIds.contains(r.getId())
         )).toList();
 
         return ResponseEntity.ok(new EvaluationHistoryResponse(items, total));
@@ -170,6 +178,25 @@ public class WritingController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /**
+     * 收藏/取消收藏作文
+     * POST /api/writing/history/{id}/favorite
+     */
+    @PostMapping("/history/{id}/favorite")
+    public ResponseEntity<java.util.Map<String, Boolean>> toggleFavorite(
+            @PathVariable Long id,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        boolean exists = essayFavoriteMapper.existsByUserAndEval(userId, id);
+        if (exists) {
+            essayFavoriteMapper.deleteByUserAndEval(userId, id);
+        } else {
+            essayFavoriteMapper.insert(userId, id);
+        }
+        return ResponseEntity.ok(java.util.Map.of("favorited", !exists));
     }
 
     private String trimPreview(String text, int maxLen) {

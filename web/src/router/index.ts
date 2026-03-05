@@ -102,9 +102,15 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/SpeakingView.vue'),
       },
       {
+        path: 'me',
+        name: 'PersonalCenter',
+        component: () => import('@/pages/app/PersonalCenterPage.vue'),
+        meta: { immersive: true },
+      },
+      {
         path: 'profile',
         name: 'Profile',
-        component: () => import('@/views/ProfileView.vue'),
+        redirect: () => ({ path: '/app/me', query: { tab: 'settings' } }),
       },
       {
         path: 'ai-test',
@@ -121,7 +127,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/me',
-    redirect: () => ({ path: '/app/profile' }),
+    redirect: () => ({ path: '/app/me' }),
   },
 ]
 

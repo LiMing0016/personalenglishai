@@ -188,6 +188,7 @@ export interface EvaluationHistoryItem {
   overall_score: number | null
   essay_preview: string
   created_at: string
+  favorited: boolean
 }
 
 export interface EvaluationHistoryResponse {
@@ -256,6 +257,12 @@ export interface PolishResponse {
 export function polishSuggestion(req: PolishRequest): Promise<PolishResponse> {
   return http
     .post<PolishResponse>('/writing/polish', req, { timeout: 60000 })
+    .then((res) => res.data)
+}
+
+export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }> {
+  return http
+    .post<{ favorited: boolean }>(`/writing/history/${id}/favorite`)
     .then((res) => res.data)
 }
 

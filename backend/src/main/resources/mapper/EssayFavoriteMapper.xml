@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.EssayFavoriteMapper">
+
+    <insert id="insert">
+        INSERT IGNORE INTO essay_favorite (user_id, evaluation_id)
+        VALUES (#{userId}, #{evaluationId})
+    </insert>
+
+    <delete id="deleteByUserAndEval">
+        DELETE FROM essay_favorite
+        WHERE user_id = #{userId} AND evaluation_id = #{evaluationId}
+    </delete>
+
+    <select id="existsByUserAndEval" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM essay_favorite
+        WHERE user_id = #{userId} AND evaluation_id = #{evaluationId}
+    </select>
+
+    <select id="selectEvalIdsByUserId" resultType="java.lang.Long">
+        SELECT evaluation_id
+        FROM essay_favorite
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+    </select>
+
+</mapper>

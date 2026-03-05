@@ -112,6 +112,16 @@ CREATE TABLE IF NOT EXISTS essay_evaluation (
     INDEX idx_user_created (user_id, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='essay evaluation history';
 
+-- essay favorites
+CREATE TABLE IF NOT EXISTS essay_favorite (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL COMMENT 'users.id',
+    evaluation_id BIGINT NOT NULL COMMENT 'essay_evaluation.id',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_eval (user_id, evaluation_id),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='essay favorites';
+
 -- async evaluation tasks
 CREATE TABLE IF NOT EXISTS evaluate_task (
     request_id VARCHAR(64) PRIMARY KEY,

@@ -20,4 +20,10 @@ public interface EssayEvaluationMapper {
     long countByUserId(@Param("userId") Long userId);
 
     EssayEvaluation selectById(@Param("id") Long id);
+
+    Double averageScoreByUserId(@Param("userId") Long userId);
+
+    Integer bestScoreByUserId(@Param("userId") Long userId);
+
+    long countDistinctDaysByUserId(@Param("userId") Long userId);
 }

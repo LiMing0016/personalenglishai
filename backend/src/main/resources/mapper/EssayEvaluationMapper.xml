@@ -46,4 +46,16 @@
         WHERE id = #{id}
     </select>
 
+    <select id="averageScoreByUserId" resultType="java.lang.Double">
+        SELECT AVG(overall_score) FROM essay_evaluation WHERE user_id = #{userId}
+    </select>
+
+    <select id="bestScoreByUserId" resultType="java.lang.Integer">
+        SELECT MAX(overall_score) FROM essay_evaluation WHERE user_id = #{userId}
+    </select>
+
+    <select id="countDistinctDaysByUserId" resultType="long">
+        SELECT COUNT(DISTINCT DATE(created_at)) FROM essay_evaluation WHERE user_id = #{userId}
+    </select>
+
 </mapper>
