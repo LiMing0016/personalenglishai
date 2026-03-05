@@ -11,6 +11,23 @@
 
 详见 [docs/roadmap.md](docs/roadmap.md) 阶段 0.5 与 [web/README.md](web/README.md) 安全与鉴权章节。
 
+## 安全功能
+
+### 滑动拼图验证码
+
+登录时需完成滑动拼图验证，防止自动化登录攻击。
+
+- **实现**：自托管，Java2D 生成背景图+拼图块，无第三方依赖
+- **流程**：`GET /api/v1/auth/captcha` → 用户拖动拼图 → `POST /api/v1/auth/captcha/verify` → 获取 token → 携带 token 登录
+- **缓存**：内存 ConcurrentHashMap（验证码 2 分钟过期，token 1 分钟过期）
+- **容差**：±4px
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/v1/auth/captcha` | 获取验证码图片（背景+拼图块 base64） |
+| `POST /api/v1/auth/captcha/verify` | 验证滑动位置，返回一次性 captchaToken |
+| `POST /api/v1/auth/login` | 登录时需携带 captchaToken 字段 |
+
 ## 仓库结构
 
 - `backend/` — Spring Boot 后端
