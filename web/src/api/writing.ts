@@ -266,6 +266,75 @@ export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }>
     .then((res) => res.data)
 }
 
+// ── Grammar Check (LanguageTool + Sapling) ──
+
+export interface GrammarCheckRequest {
+  text: string
+}
+
+export interface GrammarCheckResponse {
+  errors: WritingEvaluateResponse['errors']
+}
+
+export function grammarCheck(
+  payload: GrammarCheckRequest,
+  options?: { signal?: AbortSignal }
+): Promise<GrammarCheckResponse> {
+  return http
+    .post<GrammarCheckResponse>('/writing/grammar-check', payload, {
+      timeout: 8000,
+      signal: options?.signal,
+    })
+    .then((res) => res.data)
+}
+
+// ── AI Suggestions ──
+
+export interface SuggestionItem {
+  id: string
+  type: string
+  original: string
+  suggestion: string
+  reason: string
+}
+
+export interface SuggestionsResponse {
+  suggestions: SuggestionItem[]
+}
+
+export function fetchWritingSuggestions(
+  text: string,
+  options?: { signal?: AbortSignal }
+): Promise<SuggestionsResponse> {
+  return http
+    .post<SuggestionsResponse>('/writing/chat', {
+      essay: text,
+      instruction: 'Analyze this essay for subtle language issues (chinglish, unnatural collocations, uncountable noun misuse, unnatural expressions, word choice problems). Return ONLY a JSON object with a "suggestions" array. Each item: { "id": "sg1", "type": "collocation|chinglish|uncountable|unnatural|word_choice", "original": "exact text from essay", "suggestion": "improved version", "reason": "brief Chinese explanation" }. If no issues found, return {"suggestions":[]}.',
+      lang: 'en',
+      mode: 'free',
+    }, {
+      timeout: 30000,
+      signal: options?.signal,
+    })
+    .then((res) => {
+      // The chat endpoint returns { assistantMessage, rewrite, ... }
+      // We need to parse the assistantMessage as JSON to get suggestions
+      const raw = res.data as any
+      const messageText = raw.assistantMessage ?? raw.rewrite?.fullText ?? ''
+      try {
+        // Try to extract JSON from the response
+        const jsonMatch = messageText.match(/\{[\s\S]*"suggestions"[\s\S]*\}/)
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as SuggestionsResponse
+          return { suggestions: parsed.suggestions ?? [] }
+        }
+      } catch (_) {
+        // ignore parse errors
+      }
+      return { suggestions: [] }
+    })
+}
+
 export function chatWriting(payload: WritingChatRequest): Promise<WritingChatResponse> {
   return http
     .post<WritingChatResponse>('/writing/chat', {

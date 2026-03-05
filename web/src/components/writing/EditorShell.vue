@@ -53,6 +53,10 @@
           :submitting="submitting"
           :evaluate-error="evaluateError"
           :fixed-error-ids="fixedErrorIds"
+          :grammar-errors="grammarErrors"
+          :grammar-checking="grammarChecking"
+          :grammar-check-error="grammarCheckError"
+          :grammar-fixed-error-ids="grammarFixedErrorIds"
           @close="activePanel = null"
           @start-fix="onStartFix"
           @fix-error="onFixError"
@@ -61,6 +65,9 @@
           @error-click="onPanelErrorClick"
           @apply-polish="onApplyPolish"
           @start-polish="onStartPolish"
+          @grammar-fix-error="onGrammarFixError"
+          @grammar-fix-all="onGrammarFixAll"
+          @apply-suggestion="onApplySuggestion"
           @retry="onSubmit"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
@@ -93,7 +100,7 @@ import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
-import { getEvaluateTask, submitEvaluateWriting } from '@/api/writing'
+import { getEvaluateTask, submitEvaluateWriting, grammarCheck as grammarCheckApi } from '@/api/writing'
 import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse } from '@/api/writing'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
@@ -116,7 +123,7 @@ const MAX_PANEL_WIDTH = 1280
 const MIN_LEFT_WIDTH = 360
 
 const VALID_PANELS: PanelMode[] = [
-  'score', 'rewrite', 'revise', 'improve', 'explain', 'translate', 'archive', 'aiNote',
+  'score', 'rewrite', 'revise', 'grammarCheck', 'improve', 'explain', 'translate', 'archive', 'aiNote',
 ]
 
 interface LayoutState {
@@ -346,17 +353,38 @@ const correctionErrors = ref<CorrectionError[] | null>(null)
 const fixedErrorIds = ref<Set<string>>(new Set())
 const correctionActive = computed(() => correctionErrors.value !== null)
 
+// ── 实时语法检查状态 ──
+const grammarErrors = ref<CorrectionError[]>([])
+const grammarCheckActive = ref(true)
+const grammarChecking = ref(false)
+const grammarCheckError = ref<string | null>(null)
+const grammarFixedErrorIds = ref<Set<string>>(new Set())
+let grammarCheckAbortController: AbortController | null = null
+let grammarCheckTimer: ReturnType<typeof setTimeout> | null = null
+
 const selectionStore = createWritingSelectionStore()
 
 provide(writingSelectionStoreKey, selectionStore)
 
-// 订正中过滤掉已修复的错误（高亮实时消失）
+// 编辑器错误显示优先级：评分订正 > 实时语法检查
 const displayEditorErrors = computed(() => {
-  const errors = evaluateResult.value?.errors
-  if (!errors) return undefined
-  if (!correctionActive.value) return errors
-  const fixed = fixedErrorIds.value
-  return errors.filter((e) => !fixed.has(e.id))
+  // 1. 评分订正模式 → 显示评分错误
+  if (correctionActive.value) {
+    const errors = evaluateResult.value?.errors
+    if (!errors) return undefined
+    const fixed = fixedErrorIds.value
+    return errors.filter((e) => !fixed.has(e.id))
+  }
+  // 2. 评分结果存在（非订正模式）→ 显示评分错误
+  if (evaluateResult.value?.errors?.length) {
+    return evaluateResult.value.errors
+  }
+  // 3. 实时语法检查 → 显示语法检查错误
+  if (grammarErrors.value.length > 0) {
+    const fixed = grammarFixedErrorIds.value
+    return grammarErrors.value.filter((e) => !fixed.has(e.id))
+  }
+  return undefined
 })
 
 const assistantOpen = computed(() => activePanel.value === 'aiNote')
@@ -401,6 +429,7 @@ function syncSelectionStoreFromLeftMouseup() {
 const panelTitle = computed(() => {
   const t: Record<PanelMode, string> = {
     score: '作文评价',
+    grammarCheck: '语法检查',
     rewrite: 'AI 改写',
     revise: '订正',
     improve: '提升',
@@ -555,6 +584,8 @@ onBeforeUnmount(() => {
   if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout)
   if (draftSaveTimeout) clearTimeout(draftSaveTimeout)
   if (aiNoteSaveTimeout) clearTimeout(aiNoteSaveTimeout)
+  grammarCheckAbortController?.abort()
+  if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
   const handler = (window as Window & { __writingResizeHandler?: () => void }).__writingResizeHandler
   if (handler) {
     window.removeEventListener('resize', handler)
@@ -624,13 +655,123 @@ watch(draftText, (newText) => {
   if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
     evaluateResult.value = null
   }
+  // 触发实时语法检查
+  scheduleGrammarCheck()
 })
 
 function onEditorErrorClick(errorId: string) {
   activeErrorId.value = activeErrorId.value === errorId ? null : errorId
   if (activeErrorId.value) {
-    activePanel.value = 'score'
+    // If this error belongs to grammar check, open grammar panel
+    if (grammarErrors.value.some((e) => e.id === errorId)) {
+      activePanel.value = 'grammarCheck'
+    } else {
+      activePanel.value = 'score'
+    }
   }
+}
+
+// ── 实时语法检查 ──
+
+function scheduleGrammarCheck() {
+  if (!grammarCheckActive.value || submitting.value || correctionActive.value) return
+  const text = draftText.value.trim()
+  if (text.length < 10) {
+    grammarErrors.value = []
+    grammarCheckError.value = null
+    return
+  }
+  // Abort previous
+  if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
+  grammarCheckAbortController?.abort()
+  grammarCheckTimer = setTimeout(() => {
+    runGrammarCheck()
+  }, 800)
+}
+
+async function runGrammarCheck() {
+  const text = draftText.value.trim()
+  if (!text || text.length < 10) return
+  grammarCheckAbortController = new AbortController()
+  grammarChecking.value = true
+  grammarCheckError.value = null
+  try {
+    const res = await grammarCheckApi({ text }, { signal: grammarCheckAbortController.signal })
+    grammarErrors.value = res.errors ?? []
+    grammarFixedErrorIds.value = new Set()
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
+    grammarErrors.value = []
+    grammarCheckError.value = e?.message ?? '语法检查失败'
+  } finally {
+    grammarChecking.value = false
+  }
+}
+
+function onGrammarFixError(errorId: string) {
+  const err = grammarErrors.value.find((e) => e.id === errorId)
+  if (!err || !err.original || !hasValidSuggestion(err)) return
+  if (grammarFixedErrorIds.value.has(errorId)) return
+
+  const text = draftText.value
+  const resolved = resolveErrorSpan(err, text)
+  if (!resolved) {
+    showToast(`无法定位「${err.original.slice(0, 20)}…」，可能已被修改`, 'info')
+    return
+  }
+  const { start, end } = resolved
+  const suggestion = err.suggestion!
+  const delta = suggestion.length - (end - start)
+
+  grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
+
+  for (const other of grammarErrors.value) {
+    if (other.id === errorId) continue
+    if (grammarFixedErrorIds.value.has(other.id)) continue
+    if (other.span.start >= end) {
+      other.span.start += delta
+      other.span.end += delta
+    } else if (other.span.start > start) {
+      other.span.end += delta
+    }
+  }
+
+  const newText = text.slice(0, start) + suggestion + text.slice(end)
+  draftText.value = newText
+}
+
+function onGrammarFixAll() {
+  const unfixed = grammarErrors.value
+    .filter((e) => !grammarFixedErrorIds.value.has(e.id) && e.original && hasValidSuggestion(e))
+
+  let text = draftText.value
+  const newFixed = new Set(grammarFixedErrorIds.value)
+
+  const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
+  for (const err of unfixed) {
+    const pos = resolveErrorSpan(err, text)
+    if (pos) resolved.push({ err, ...pos })
+  }
+  resolved.sort((a, b) => b.start - a.start)
+
+  for (const { err, start, end } of resolved) {
+    text = text.slice(0, start) + err.suggestion! + text.slice(end)
+    newFixed.add(err.id)
+  }
+
+  draftText.value = text
+  grammarFixedErrorIds.value = newFixed
+}
+
+function onApplySuggestion(payload: { original: string; suggestion: string }) {
+  const text = draftText.value
+  const idx = text.indexOf(payload.original)
+  if (idx === -1) {
+    showToast('无法定位原文，可能已被修改', 'info')
+    return
+  }
+  draftText.value = text.slice(0, idx) + payload.suggestion + text.slice(idx + payload.original.length)
+  showToast('已替换', 'success')
 }
 
 function onPanelErrorClick(errorId: string) {
@@ -823,6 +964,8 @@ function onExitCorrection() {
   correctionMode.value = false
   evaluatedText.value = draftText.value
   activePanel.value = 'score'
+  // 恢复语法检查
+  grammarCheckActive.value = true
 }
 
 function onLoadHistoryResult(detail: EvaluationDetailResponse) {
@@ -850,6 +993,12 @@ async function onSubmit() {
   correctionErrors.value = null
   fixedErrorIds.value = new Set()
   correctionMode.value = false
+  // 暂停语法检查
+  grammarCheckActive.value = false
+  grammarErrors.value = []
+  grammarCheckError.value = null
+  grammarCheckAbortController?.abort()
+  if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
   const currentPollToken = ++evaluatePollToken
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
@@ -925,6 +1074,13 @@ function onClear() {
   correctionMode.value = false
   evaluateResult.value = null
   activeErrorId.value = null
+  // 清空语法检查
+  grammarErrors.value = []
+  grammarCheckError.value = null
+  grammarFixedErrorIds.value = new Set()
+  grammarCheckActive.value = true
+  grammarCheckAbortController?.abort()
+  if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
   try {
     localStorage.removeItem(DRAFT_KEY)
     localStorage.removeItem(LEGACY_DRAFT_KEY)
@@ -986,7 +1142,7 @@ async function onAiNoteSend() {
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
-  const contextScope = hasSelectedText ? 'selection' : (wantsDraft ? 'auto' : 'none')
+  const contextScope = hasSelectedText ? 'selection' : 'auto'
   const actionOrigin = 'chat_input'
   const recentMessages = getRecentAiMessages(8)
   console.log('[AI SEND]', {
@@ -1025,6 +1181,7 @@ async function onAiNoteSend() {
       constraints: {
         contextScope,
         actionOrigin,
+        includeDraft: wantsDraft ? true : undefined,
         mode: normalizedMode,
         taskPrompt: examTaskPrompt,
         conversationId: aiConversationId.value,

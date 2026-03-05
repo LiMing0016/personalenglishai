@@ -80,6 +80,7 @@ defineEmits<{
 
 const modeLabels: Record<PanelMode, string> = {
   score: '评分',
+  grammarCheck: '语法检查',
   rewrite: '改写',
   revise: '订正',
   improve: '提升',
