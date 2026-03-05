@@ -53,10 +53,10 @@
           :submitting="submitting"
           :evaluate-error="evaluateError"
           :fixed-error-ids="fixedErrorIds"
-          :grammar-errors="grammarErrors"
+          :grammar-errors="grammarPanelErrors"
           :grammar-checking="grammarChecking"
           :grammar-check-error="grammarCheckError"
-          :grammar-fixed-error-ids="grammarFixedErrorIds"
+          :grammar-fixed-error-ids="grammarPanelFixedIds"
           @close="activePanel = null"
           @start-fix="onStartFix"
           @fix-error="onFixError"
@@ -362,6 +362,20 @@ const grammarFixedErrorIds = ref<Set<string>>(new Set())
 let grammarCheckAbortController: AbortController | null = null
 let grammarCheckTimer: ReturnType<typeof setTimeout> | null = null
 
+// 语法面板展示的错误：评分结果中的 error 类型 + 实时语法检查结果合并
+const grammarPanelErrors = computed(() => {
+  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
+  if (evalErrors.length > 0) return evalErrors
+  return grammarErrors.value
+})
+
+// 语法面板使用的 fixedErrorIds：评分模式用 fixedErrorIds，实时模式用 grammarFixedErrorIds
+const grammarPanelFixedIds = computed(() => {
+  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
+  if (evalErrors.length > 0) return fixedErrorIds.value
+  return grammarFixedErrorIds.value
+})
+
 const selectionStore = createWritingSelectionStore()
 
 provide(writingSelectionStoreKey, selectionStore)
@@ -662,11 +676,11 @@ watch(draftText, (newText) => {
 function onEditorErrorClick(errorId: string) {
   activeErrorId.value = activeErrorId.value === errorId ? null : errorId
   if (activeErrorId.value) {
-    // If this error belongs to grammar check, open grammar panel
-    if (grammarErrors.value.some((e) => e.id === errorId)) {
-      activePanel.value = 'grammarCheck'
+    // 订正模式 → 订正面板；否则 → 语法面板（包含评分错误+实时检查错误）
+    if (correctionActive.value) {
+      activePanel.value = 'revise'
     } else {
-      activePanel.value = 'score'
+      activePanel.value = 'grammarCheck'
     }
   }
 }
@@ -709,9 +723,15 @@ async function runGrammarCheck() {
 }
 
 function onGrammarFixError(errorId: string) {
-  const err = grammarErrors.value.find((e) => e.id === errorId)
+  // 判断错误来源：评分结果 or 实时语法检查
+  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
+  const isFromEval = evalErrors.some((e) => e.id === errorId)
+  const errorSource = isFromEval ? evalErrors : grammarErrors.value
+  const fixedIds = isFromEval ? fixedErrorIds : grammarFixedErrorIds
+
+  const err = errorSource.find((e) => e.id === errorId)
   if (!err || !err.original || !hasValidSuggestion(err)) return
-  if (grammarFixedErrorIds.value.has(errorId)) return
+  if (fixedIds.value.has(errorId)) return
 
   const text = draftText.value
   const resolved = resolveErrorSpan(err, text)
@@ -723,11 +743,11 @@ function onGrammarFixError(errorId: string) {
   const suggestion = err.suggestion!
   const delta = suggestion.length - (end - start)
 
-  grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
+  fixedIds.value = new Set([...fixedIds.value, errorId])
 
-  for (const other of grammarErrors.value) {
+  for (const other of errorSource) {
     if (other.id === errorId) continue
-    if (grammarFixedErrorIds.value.has(other.id)) continue
+    if (fixedIds.value.has(other.id)) continue
     if (other.span.start >= end) {
       other.span.start += delta
       other.span.end += delta
@@ -738,14 +758,20 @@ function onGrammarFixError(errorId: string) {
 
   const newText = text.slice(0, start) + suggestion + text.slice(end)
   draftText.value = newText
+  if (isFromEval) evaluatedText.value = newText
 }
 
 function onGrammarFixAll() {
-  const unfixed = grammarErrors.value
-    .filter((e) => !grammarFixedErrorIds.value.has(e.id) && e.original && hasValidSuggestion(e))
+  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
+  const isFromEval = evalErrors.length > 0
+  const errorSource = isFromEval ? evalErrors : grammarErrors.value
+  const fixedIds = isFromEval ? fixedErrorIds : grammarFixedErrorIds
+
+  const unfixed = errorSource
+    .filter((e) => !fixedIds.value.has(e.id) && e.original && hasValidSuggestion(e))
 
   let text = draftText.value
-  const newFixed = new Set(grammarFixedErrorIds.value)
+  const newFixed = new Set(fixedIds.value)
 
   const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
   for (const err of unfixed) {
@@ -760,7 +786,8 @@ function onGrammarFixAll() {
   }
 
   draftText.value = text
-  grammarFixedErrorIds.value = newFixed
+  fixedIds.value = newFixed
+  if (isFromEval) evaluatedText.value = text
 }
 
 function onApplySuggestion(payload: { original: string; suggestion: string }) {
