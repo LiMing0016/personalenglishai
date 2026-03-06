@@ -19,7 +19,6 @@
 export type PanelMode =
   | 'score'
   | 'rewrite'
-  | 'revise'
   | 'grammarCheck'
   | 'improve'
   | 'explain'
@@ -38,7 +37,6 @@ defineEmits<{
 const items: { mode: PanelMode; label: string; title: string; icon: string }[] = [
   { mode: 'score', label: '评价', title: '作文评价', icon: '◇' },
   { mode: 'grammarCheck', label: '语法', title: '实时语法检查', icon: '✓' },
-  { mode: 'revise', label: '订正', title: '订正', icon: '✎' },
   { mode: 'rewrite', label: '润色', title: '分级润色', icon: '≡' },
   { mode: 'improve', label: '提升', title: '润色/高级词', icon: '↑' },
   { mode: 'explain', label: '解释', title: '语法解释', icon: '?' },

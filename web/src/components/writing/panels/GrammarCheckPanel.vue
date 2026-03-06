@@ -121,38 +121,73 @@
           <p>{{ suggestionsError }}</p>
           <button type="button" class="sg-retry-btn" @click="loadSuggestions">重试</button>
         </div>
-        <div v-else-if="suggestions.length === 0 && suggestionsLoaded" class="sg-empty">
+        <div v-else-if="gptHardErrors.length === 0 && suggestions.length === 0 && suggestionsLoaded" class="sg-empty">
           未发现隐含问题，表达很自然！
         </div>
         <template v-else>
-          <div v-if="usableSuggestions.length > 0" class="sg-action-row">
-            <span class="sg-fix-progress">{{ suggestions.length }} 条建议</span>
-            <button
-              type="button"
-              class="sg-apply-all-btn"
-              @click="applyAllSuggestions"
-            >一键全部替换</button>
-          </div>
-          <ul class="sg-list">
-            <li v-for="item in suggestions" :key="item.id" class="sg-item">
-              <div class="sg-item-header">
-                <span class="sg-type">{{ suggestionTypeLabel(item.type) }}</span>
-                <button
-                  v-if="!isSuggestionApplied(item.id)"
-                  type="button"
-                  class="sg-apply-btn"
-                  @click="applySuggestion(item)"
-                >替换</button>
-                <span v-else class="sg-applied-badge">已替换</span>
-              </div>
-              <div class="sg-correction">
-                <span class="sg-original" :class="{ 'sg-original--applied': isSuggestionApplied(item.id) }">{{ item.original }}</span>
-                <span class="sg-arrow">&rarr;</span>
-                <span class="sg-fix">{{ item.suggestion }}</span>
-              </div>
-              <p class="sg-reason">{{ item.reason }}</p>
-            </li>
-          </ul>
+          <!-- GPT 复检硬性错误 -->
+          <template v-if="gptHardErrors.length > 0">
+            <div class="sg-section-label sg-section-label--error">
+              <span class="sg-section-dot sg-section-dot--error">●</span>
+              AI 复检错误 ({{ gptHardErrors.length }})
+            </div>
+            <ul class="sg-list">
+              <li v-for="item in gptHardErrors" :key="item.id" class="sg-item sg-item--error">
+                <div class="sg-item-header">
+                  <span class="sg-type sg-type--error">{{ errorTypeLabel(item.type) }}</span>
+                  <button
+                    v-if="!isGptErrorApplied(item.id)"
+                    type="button"
+                    class="btn-fix-single"
+                    @click="applyGptError(item)"
+                  >替换</button>
+                  <span v-else class="sg-applied-badge">已替换</span>
+                </div>
+                <div class="sg-correction">
+                  <span class="gc-original">{{ item.original }}</span>
+                  <span class="sg-arrow">&rarr;</span>
+                  <span class="gc-suggestion">{{ item.suggestion }}</span>
+                </div>
+                <p class="sg-reason">{{ item.reason }}</p>
+              </li>
+            </ul>
+          </template>
+
+          <!-- 软性建议 -->
+          <template v-if="suggestions.length > 0">
+            <div class="sg-section-label">
+              <span class="sg-section-dot">●</span>
+              改进建议 ({{ suggestions.length }})
+            </div>
+            <div v-if="usableSuggestions.length > 0" class="sg-action-row">
+              <span class="sg-fix-progress">{{ usableSuggestions.length }} 条可替换</span>
+              <button
+                type="button"
+                class="sg-apply-all-btn"
+                @click="applyAllSuggestions"
+              >一键全部替换</button>
+            </div>
+            <ul class="sg-list">
+              <li v-for="item in suggestions" :key="item.id" class="sg-item">
+                <div class="sg-item-header">
+                  <span class="sg-type">{{ suggestionTypeLabel(item.type) }}</span>
+                  <button
+                    v-if="!isSuggestionApplied(item.id)"
+                    type="button"
+                    class="sg-apply-btn"
+                    @click="applySuggestion(item)"
+                  >替换</button>
+                  <span v-else class="sg-applied-badge">已替换</span>
+                </div>
+                <div class="sg-correction">
+                  <span class="sg-original" :class="{ 'sg-original--applied': isSuggestionApplied(item.id) }">{{ item.original }}</span>
+                  <span class="sg-arrow">&rarr;</span>
+                  <span class="sg-fix">{{ item.suggestion }}</span>
+                </div>
+                <p class="sg-reason">{{ item.reason }}</p>
+              </li>
+            </ul>
+          </template>
         </template>
       </template>
     </div>
@@ -161,7 +196,7 @@
 
 <script setup lang="ts">
 import { computed, watch, nextTick, ref, onBeforeUnmount } from 'vue'
-import type { WritingEvaluateResponse, SuggestionItem } from '@/api/writing'
+import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
 import { fetchWritingSuggestions } from '@/api/writing'
 
 type ErrorItem = WritingEvaluateResponse['errors'][number]
@@ -200,6 +235,8 @@ const emit = defineEmits<{
   'error-click': [errorId: string]
   'apply-suggestion': [payload: { original: string; suggestion: string }]
   'start-polish': []
+  'gpt-errors-loaded': [errors: SuggestionErrorItem[]]
+  'gpt-suggestions-loaded': [suggestions: SuggestionItem[]]
 }>()
 
 function errorTypeLabel(type: string): string {
@@ -264,10 +301,13 @@ watch(
 
 const SUGGESTION_TYPE_LABELS: Record<string, string> = {
   collocation: '搭配',
+  word_choice: '用词',
+  register_style: '语体',
+  clarity: '清晰度',
+  redundancy: '冗余',
   chinglish: '中式英语',
   uncountable: '可数/不可数',
   unnatural: '不自然表达',
-  word_choice: '用词',
 }
 
 function suggestionTypeLabel(type: string): string {
@@ -279,7 +319,9 @@ const suggestionsLoaded = ref(false)
 const suggestionsCollapsed = ref(false)
 const suggestionsError = ref<string | null>(null)
 const suggestions = ref<SuggestionItem[]>([])
+const gptHardErrors = ref<SuggestionErrorItem[]>([])
 const appliedSuggestionIds = ref(new Set<string>())
+const appliedGptErrorIds = ref(new Set<string>())
 let suggestionsAbort: AbortController | null = null
 
 // 语法检查完成且无错误时显示建议区块
@@ -338,6 +380,16 @@ async function loadSuggestions() {
   try {
     const res = await fetchWritingSuggestions(text, { signal: suggestionsAbort.signal })
     suggestions.value = (res.suggestions ?? []).filter((item) => isSuggestionUsable(item, text))
+    // GPT 复检的硬性错误
+    gptHardErrors.value = (res.errors ?? []).filter(
+      (e) => e.original && e.suggestion && e.original !== e.suggestion && text.includes(e.original),
+    )
+    if (gptHardErrors.value.length > 0) {
+      emit('gpt-errors-loaded', gptHardErrors.value)
+    }
+    if (suggestions.value.length > 0) {
+      emit('gpt-suggestions-loaded', suggestions.value)
+    }
     suggestionsLoaded.value = true
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.name === 'AbortError') return
@@ -357,10 +409,25 @@ watch(showSuggestions, (show) => {
 function reloadSuggestions() {
   suggestionsLoaded.value = false
   suggestions.value = []
+  gptHardErrors.value = []
   suggestionsError.value = null
   appliedSuggestionIds.value.clear()
+  appliedGptErrorIds.value.clear()
   loadSuggestions()
 }
+
+function isGptErrorApplied(id: string): boolean {
+  return appliedGptErrorIds.value.has(id)
+}
+
+function applyGptError(item: SuggestionErrorItem) {
+  const text = props.essayText ?? ''
+  if (!item.original || !item.suggestion || !text.includes(item.original)) return
+  appliedGptErrorIds.value.add(item.id)
+  emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
+  gptHardErrors.value = gptHardErrors.value.filter((e) => e.id !== item.id)
+}
+
 
 onBeforeUnmount(() => {
   suggestionsAbort?.abort()
@@ -886,5 +953,40 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #6b7280;
   line-height: 1.4;
+}
+
+/* ── GPT 复检错误样式 ── */
+.sg-section-label {
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7c3aed;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sg-section-label--error {
+  color: #dc2626;
+}
+
+.sg-section-dot {
+  font-size: 10px;
+  color: #7c3aed;
+}
+
+.sg-section-dot--error {
+  color: #ef4444;
+}
+
+.sg-item--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.sg-type--error {
+  background: #fee2e2;
+  color: #dc2626;
 }
 </style>

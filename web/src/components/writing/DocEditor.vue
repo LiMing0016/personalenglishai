@@ -5,7 +5,7 @@
         <router-link to="/app" class="back-link" title="返回总览">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </router-link>
-        <span class="doc-title">自由写作</span>
+        <span class="doc-title">{{ docTitle }}</span>
         <div class="doc-actions">
           <span class="word-count">{{ wordCount }} 词</span>
           <button type="button" class="btn btn-secondary" :disabled="submitting" @click="clear">
@@ -32,12 +32,36 @@
         @click="onEditorClick"
       />
     </div>
+
+    <!-- 行内替换弹窗 -->
+    <Teleport to="body">
+      <div
+        v-if="popup.visible"
+        ref="popupEl"
+        class="inline-fix-popup"
+        :style="{ top: popup.top + 'px', left: popup.left + 'px' }"
+        @mousedown.stop
+      >
+        <div v-if="popup.suggestion" class="popup-suggestion" @click="onPopupApply">
+          <span class="popup-label">{{ popupTypeLabel }}</span>
+          <span class="popup-replacement">{{ popup.suggestion }}</span>
+        </div>
+        <div v-if="popup.isDeletion" class="popup-suggestion popup-deletion" @click="onPopupApply">
+          <span class="popup-label">{{ popupTypeLabel }}</span>
+          <span class="popup-replacement deletion-text">删除此处</span>
+        </div>
+        <div class="popup-dismiss" @click="onPopupDismiss">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Dismiss</span>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { buildHighlightedHtml, type ErrorSpan } from './buildHighlightedHtml'
+import { buildHighlightedHtml, type ErrorSpan, type HighlightRange } from './buildHighlightedHtml'
 
 export type SelectionState = { text: string; start: number; end: number }
 
@@ -49,6 +73,8 @@ const props = defineProps<{
   selectionCaptureEnabled?: boolean
   errors?: ErrorSpan[]
   activeErrorId?: string | null
+  writingMode?: 'free' | 'exam'
+  highlightRange?: HighlightRange | null
 }>()
 
 const emit = defineEmits<{
@@ -58,9 +84,111 @@ const emit = defineEmits<{
   submit: []
   clear: []
   'error-click': [errorId: string]
+  'fix-error': [errorId: string]
+  'dismiss-error': [errorId: string]
 }>()
 
 const editorEl = ref<HTMLDivElement | null>(null)
+const popupEl = ref<HTMLDivElement | null>(null)
+
+// ── 行内替换弹窗状态 ──
+const popup = ref<{
+  visible: boolean
+  errorId: string
+  type: string
+  original: string
+  suggestion: string | null
+  isDeletion: boolean
+  top: number
+  left: number
+}>({
+  visible: false,
+  errorId: '',
+  type: '',
+  original: '',
+  suggestion: null,
+  isDeletion: false,
+  top: 0,
+  left: 0,
+})
+
+const ERROR_TYPE_LABELS: Record<string, string> = {
+  spelling: 'Spelling',
+  morphology: 'Grammar',
+  subject_verb: 'Grammar',
+  tense: 'Grammar',
+  syntax: 'Grammar',
+  article: 'Article',
+  preposition: 'Preposition',
+  word_choice: 'Word Choice',
+  part_of_speech: 'Grammar',
+  collocation: 'Collocation',
+  punctuation: 'Punctuation',
+  logic: 'Logic',
+  plural: 'Grammar',
+  countability: 'Grammar',
+  comparative: 'Grammar',
+  register_style: 'Style',
+  clarity: 'Clarity',
+  redundancy: 'Redundancy',
+}
+
+const popupTypeLabel = computed(() => ERROR_TYPE_LABELS[popup.value.type] ?? 'Rephrase')
+
+function closePopup() {
+  popup.value.visible = false
+}
+
+function showPopupForError(errorId: string, markEl: HTMLElement) {
+  const err = props.errors?.find((e) => e.id === errorId)
+  if (!err) return
+
+  const hasSuggestion = err.suggestion != null && err.suggestion.trim() !== ''
+  const isDeletion = !hasSuggestion && !!err.original?.trim()
+
+  // 没有建议也不是删除操作，不弹
+  if (!hasSuggestion && !isDeletion) return
+  // 建议和原文相同，不弹
+  if (hasSuggestion && err.suggestion!.trim() === (err.original ?? '').trim()) return
+
+  const rect = markEl.getBoundingClientRect()
+  const popupTop = rect.bottom + window.scrollY + 6
+  let popupLeft = rect.left + window.scrollX
+
+  // 防止超出右侧视口
+  const maxLeft = window.innerWidth - 280
+  if (popupLeft > maxLeft) popupLeft = maxLeft
+
+  popup.value = {
+    visible: true,
+    errorId,
+    type: err.type,
+    original: err.original ?? '',
+    suggestion: hasSuggestion ? err.suggestion! : null,
+    isDeletion,
+    top: popupTop,
+    left: popupLeft,
+  }
+}
+
+function onPopupApply() {
+  if (!popup.value.errorId) return
+  emit('fix-error', popup.value.errorId)
+  closePopup()
+}
+
+function onPopupDismiss() {
+  if (!popup.value.errorId) return
+  emit('dismiss-error', popup.value.errorId)
+  closePopup()
+}
+
+function onDocumentClick(e: MouseEvent) {
+  if (!popup.value.visible) return
+  const target = e.target as Node
+  if (popupEl.value?.contains(target)) return
+  closePopup()
+}
 
 const wordCount = computed(() => {
   const t = props.draftText.trim()
@@ -69,25 +197,40 @@ const wordCount = computed(() => {
 })
 
 const hasContent = computed(() => props.draftText.trim().length > 0)
+const docTitle = computed(() => (props.writingMode === 'exam' ? '考试写作' : '自由写作'))
 
 const hasErrors = computed(() => (props.errors?.length ?? 0) > 0)
 
+const hasHighlight = computed(() => hasErrors.value || !!props.highlightRange)
+
 const highlightedHtml = computed(() => {
-  if (!hasErrors.value || !props.errors) return ''
-  return buildHighlightedHtml(props.draftText, props.errors)
+  if (!hasHighlight.value) return ''
+  return buildHighlightedHtml(props.draftText, props.errors ?? [], props.highlightRange)
 })
 
 // 记录上一次渲染是否为高亮模式，避免重复设置
 let lastRenderedHighlighted = false
 
+// 用户正在输入时跳过高亮重渲染，避免光标跳转
+let userIsTyping = false
+let typingTimer: ReturnType<typeof setTimeout> | null = null
+
 watch(
-  () => [props.draftText, hasErrors.value] as const,
+  () => [props.draftText, hasHighlight.value] as const,
   ([val, highlighted]) => {
     if (!editorEl.value) return
     if (highlighted) {
+      // 用户正在输入时不重渲染高亮，等打字停止后再渲染
+      if (userIsTyping) return
       const html = highlightedHtml.value
+      const cursorOffset = getCurrentCursorOffset()
       editorEl.value.innerHTML = html
       lastRenderedHighlighted = true
+      if (cursorOffset !== null) {
+        nextTick(() => {
+          if (editorEl.value) setCursorAt(editorEl.value, cursorOffset)
+        })
+      }
       nextTick(updateActiveErrorMark)
     } else {
       if (editorEl.value.innerText !== val) {
@@ -102,8 +245,38 @@ watch(
 watch(
   () => props.activeErrorId,
   () => {
-    if (hasErrors.value) nextTick(updateActiveErrorMark)
+    if (hasHighlight.value) nextTick(updateActiveErrorMark)
   },
+)
+
+watch(
+  () => props.highlightRange,
+  (range) => {
+    if (!editorEl.value) return
+    // Re-render HTML with updated highlight
+    if (hasHighlight.value) {
+      const html = highlightedHtml.value
+      const cursorOffset = getCurrentCursorOffset()
+      editorEl.value.innerHTML = html
+      lastRenderedHighlighted = true
+      if (cursorOffset !== null) {
+        nextTick(() => {
+          if (editorEl.value) setCursorAt(editorEl.value, cursorOffset)
+        })
+      }
+    } else if (!range) {
+      // Highlight removed, restore plain text
+      editorEl.value.innerText = props.draftText
+      lastRenderedHighlighted = false
+    }
+    if (range) {
+      nextTick(() => {
+        const el = editorEl.value?.querySelector('.sentence-hl')
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+  },
+  { deep: true },
 )
 
 watch(
@@ -147,7 +320,10 @@ function onEditorClick(e: MouseEvent) {
     const ids = mark.getAttribute('data-error-ids')?.split(',') ?? []
     if (ids.length > 0) {
       emit('error-click', ids[0])
+      showPopupForError(ids[0], mark)
     }
+  } else {
+    closePopup()
   }
 }
 
@@ -232,10 +408,18 @@ onMounted(() => {
       editorEl.value.innerText = props.draftText
     }
   }
+  document.addEventListener('click', onDocumentClick, true)
+  // 左侧面板滚动时关闭弹窗
+  const scrollParent = editorEl.value?.closest('.left-pane')
+  if (scrollParent) scrollParent.addEventListener('scroll', closePopup)
 })
 
 onBeforeUnmount(() => {
   removeSelectionListeners()
+  if (typingTimer) clearTimeout(typingTimer)
+  document.removeEventListener('click', onDocumentClick, true)
+  const scrollParent = editorEl.value?.closest('.left-pane')
+  if (scrollParent) scrollParent.removeEventListener('scroll', closePopup)
 })
 
 function getSelectionState(): SelectionState | null {
@@ -276,6 +460,12 @@ function onInput() {
   if (!editorEl.value) return
   const text = editorEl.value.innerText ?? ''
 
+  closePopup()
+
+  // 标记用户正在输入，阻止 watch 立即重渲染高亮
+  userIsTyping = true
+  if (typingTimer) clearTimeout(typingTimer)
+
   if (lastRenderedHighlighted) {
     // 用户在高亮模式下编辑，保存光标位置后切换回纯文本模式
     const cursorOffset = getCurrentCursorOffset()
@@ -292,6 +482,23 @@ function onInput() {
   } else {
     emit('update:draftText', text)
   }
+
+  // 停止输入 600ms 后恢复高亮渲染
+  typingTimer = setTimeout(() => {
+    userIsTyping = false
+    if (hasErrors.value && editorEl.value) {
+      const html = highlightedHtml.value
+      const cursorOffset = getCurrentCursorOffset()
+      editorEl.value.innerHTML = html
+      lastRenderedHighlighted = true
+      if (cursorOffset !== null) {
+        nextTick(() => {
+          if (editorEl.value) setCursorAt(editorEl.value, cursorOffset)
+        })
+      }
+      nextTick(updateActiveErrorMark)
+    }
+  }, 600)
 }
 
 function onPaste(e: ClipboardEvent) {
@@ -402,8 +609,8 @@ function clear() {
 .doc-content {
   user-select: text;
   white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  word-break: normal;
+  overflow-wrap: break-word;
   line-height: 1.8;
   font-size: 18px;
   min-height: calc(100vh - 160px);
@@ -427,7 +634,7 @@ function clear() {
 }
 </style>
 
-<!-- 非 scoped：动态 innerHTML 中的 <mark> 元素无法匹配 scoped 样式 -->
+<!-- 非 scoped：行内弹窗 Teleport 到 body + 动态 innerHTML 中的 <mark> 元素 -->
 <style>
 .doc-content mark[data-error-ids] {
   background: transparent;
@@ -461,6 +668,20 @@ function clear() {
   background: rgba(139, 92, 246, 0.13);
   border-bottom: 2px solid #8b5cf6;
 }
+/* ── 紫色系（AI 建议：搭配/用词/语体/清晰度/冗余） ── */
+.doc-content mark.err-register_style,
+.doc-content mark.err-clarity,
+.doc-content mark.err-redundancy {
+  background: rgba(139, 92, 246, 0.10);
+  border-bottom: 2px dotted #8b5cf6;
+}
+/* GPT 复检硬性错误类型 */
+.doc-content mark.err-plural,
+.doc-content mark.err-countability,
+.doc-content mark.err-comparative {
+  background: rgba(239, 68, 68, 0.13);
+  border-bottom: 2px solid #ef4444;
+}
 /* ── 旧 type 兼容（来自缓存/历史数据） ── */
 .doc-content mark.err-grammar {
   background: rgba(239, 68, 68, 0.13);
@@ -485,7 +706,7 @@ function clear() {
   border-bottom-style: wavy;
 }
 .doc-content mark.err-minor {
-  border-bottom-style: dashed;
+  border-bottom-style: solid;
 }
 
 /* 选中/聚焦的错误 */
@@ -498,4 +719,76 @@ function clear() {
 .doc-content mark[data-error-ids]:hover {
   filter: brightness(0.96);
 }
+
+/* ── 句子高亮 ── */
+.doc-content :deep(.sentence-hl) {
+  background: rgba(59, 130, 246, 0.2);
+  border-bottom: 2px solid #2563eb;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+  transition: background 0.2s;
+}
+
+/* ── 行内替换弹窗 ── */
+.inline-fix-popup {
+  position: absolute;
+  z-index: 1000;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.13), 0 1px 4px rgba(0, 0, 0, 0.08);
+  min-width: 160px;
+  max-width: 320px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: popup-in 0.12s ease-out;
+}
+@keyframes popup-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.popup-suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.popup-suggestion:hover {
+  background: #f0fdf4;
+}
+.popup-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.popup-replacement {
+  font-size: 16px;
+  font-weight: 600;
+  color: #059669;
+  line-height: 1.4;
+}
+.popup-deletion .popup-replacement.deletion-text {
+  color: #dc2626;
+  font-size: 14px;
+}
+.popup-dismiss {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #6b7280;
+  border-top: 1px solid #f3f4f6;
+  transition: background 0.12s, color 0.12s;
+}
+.popup-dismiss:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
 </style>
+
+
+

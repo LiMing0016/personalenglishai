@@ -249,14 +249,49 @@ export interface PolishRequest {
   tier: PolishTier
 }
 
-export interface PolishResponse {
-  polished: string | null
+export interface PolishCandidate {
+  polished: string
   explanation?: string
+}
+
+export interface PolishResponse {
+  polished?: string | null
+  explanation?: string
+  candidates?: PolishCandidate[]
 }
 
 export function polishSuggestion(req: PolishRequest): Promise<PolishResponse> {
   return http
     .post<PolishResponse>('/writing/polish', req, { timeout: 60000 })
+    .then((res) => res.data)
+}
+
+// ── Polish Essay (全文逐句润色) ──
+
+export interface PolishEssayRequest {
+  text: string
+  tier: PolishTier
+}
+
+export interface SentencePolish {
+  original: string
+  polished: string
+  explanation?: string
+}
+
+export interface PolishEssaySummary {
+  strengths: string[]
+  improvements: string[]
+}
+
+export interface PolishEssayResponse {
+  summary?: PolishEssaySummary
+  sentences: SentencePolish[]
+}
+
+export function polishEssay(req: PolishEssayRequest): Promise<PolishEssayResponse> {
+  return http
+    .post<PolishEssayResponse>('/writing/polish-essay', req, { timeout: 120000 })
     .then((res) => res.data)
 }
 
@@ -290,6 +325,17 @@ export function grammarCheck(
 
 // ── AI Suggestions ──
 
+/** GPT 复检的硬性错误 */
+export interface SuggestionErrorItem {
+  id: string
+  type: string
+  severity: string
+  original: string
+  suggestion: string
+  reason: string
+}
+
+/** 软性建议 */
 export interface SuggestionItem {
   id: string
   type: string
@@ -299,6 +345,7 @@ export interface SuggestionItem {
 }
 
 export interface SuggestionsResponse {
+  errors: SuggestionErrorItem[]
   suggestions: SuggestionItem[]
 }
 
@@ -307,32 +354,14 @@ export function fetchWritingSuggestions(
   options?: { signal?: AbortSignal }
 ): Promise<SuggestionsResponse> {
   return http
-    .post<SuggestionsResponse>('/writing/chat', {
-      essay: text,
-      instruction: 'Analyze this essay for subtle language issues (chinglish, unnatural collocations, uncountable noun misuse, unnatural expressions, word choice problems). Return ONLY a JSON object with a "suggestions" array. Each item: { "id": "sg1", "type": "collocation|chinglish|uncountable|unnatural|word_choice", "original": "exact text from essay", "suggestion": "improved version", "reason": "brief Chinese explanation" }. If no issues found, return {"suggestions":[]}.',
-      lang: 'en',
-      mode: 'free',
-    }, {
+    .post<SuggestionsResponse>('/writing/suggestions', { text }, {
       timeout: 30000,
       signal: options?.signal,
     })
-    .then((res) => {
-      // The chat endpoint returns { assistantMessage, rewrite, ... }
-      // We need to parse the assistantMessage as JSON to get suggestions
-      const raw = res.data as any
-      const messageText = raw.assistantMessage ?? raw.rewrite?.fullText ?? ''
-      try {
-        // Try to extract JSON from the response
-        const jsonMatch = messageText.match(/\{[\s\S]*"suggestions"[\s\S]*\}/)
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]) as SuggestionsResponse
-          return { suggestions: parsed.suggestions ?? [] }
-        }
-      } catch (_) {
-        // ignore parse errors
-      }
-      return { suggestions: [] }
-    })
+    .then((res) => ({
+      errors: res.data.errors ?? [],
+      suggestions: res.data.suggestions ?? [],
+    }))
 }
 
 export function chatWriting(payload: WritingChatRequest): Promise<WritingChatResponse> {

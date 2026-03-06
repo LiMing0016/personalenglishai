@@ -1,105 +1,142 @@
 <template>
   <div class="polish-panel">
-    <template v-if="suggestions.length">
-      <ul class="suggestion-list">
+    <!-- 全局润色档次选择 -->
+    <div class="polish-tier-global">
+      <span class="polish-tier-label">润色档次</span>
+      <div class="polish-tiers">
+        <button
+          v-for="t in tierOptions"
+          :key="t.value"
+          type="button"
+          class="tier-chip"
+          :class="{ 'tier-chip--active': polishTier === t.value }"
+          @click="onSelectTier(t.value)"
+        >{{ t.label }}</button>
+      </div>
+    </div>
+
+    <!-- 全文加载中 -->
+    <div v-if="polishingAll" class="polish-loading">
+      <div class="skeleton-block skeleton-polish"></div>
+      <div class="skeleton-block skeleton-polish short"></div>
+      <p class="loading-hint">AI 正在逐句润色全文，请稍候...</p>
+    </div>
+
+    <!-- 润色失败 -->
+    <div v-else-if="polishError" class="polish-error-block">
+      <p class="polish-error-hint">{{ polishError }}</p>
+      <button type="button" class="btn btn-primary btn-sm" @click="doPolishAll">重试</button>
+    </div>
+
+    <!-- AI 总结卡片（可折叠） -->
+    <div v-if="polishSummary && !polishingAll && !polishError" class="summary-card" :class="{ 'summary-card--collapsed': summaryCollapsed }">
+      <div class="summary-toggle" @click="summaryCollapsed = !summaryCollapsed">
+        <span class="summary-toggle-label">AI 润色建议</span>
+        <span class="summary-toggle-arrow">{{ summaryCollapsed ? '▸' : '▾' }}</span>
+      </div>
+      <div v-show="!summaryCollapsed" class="summary-body">
+        <div class="summary-section" v-if="polishSummary.strengths.length">
+          <div class="summary-heading strengths-heading">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1l2 5h5l-4 3 1.5 5L8 11l-4.5 3L5 9 1 6h5l2-5z" fill="#10b981"/></svg>
+            做得好的方面
+          </div>
+          <ul class="summary-list">
+            <li v-for="(s, i) in polishSummary.strengths" :key="'s'+i">{{ s }}</li>
+          </ul>
+        </div>
+        <div class="summary-section" v-if="polishSummary.improvements.length">
+          <div class="summary-heading improvements-heading">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M1 8h14" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/></svg>
+            {{ tierLabel }}需要改进
+          </div>
+          <ul class="summary-list">
+            <li v-for="(s, i) in polishSummary.improvements" :key="'i'+i">{{ s }}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 句子列表 -->
+    <template v-if="!polishingAll && !polishError && sentences.length">
+      <ul class="sentence-list">
         <li
-          v-for="err in suggestions"
-          :key="err.id"
-          class="suggestion-item"
-          :class="{ 'suggestion-item--fixed': isFixed(err.id) }"
+          v-for="(s, idx) in sentences"
+          :key="idx"
+          class="sentence-card"
+          :class="{
+            'sentence-card--expanded': expandedIdx === idx,
+            'sentence-card--replaced': replacedSet.has(idx),
+            'sentence-card--unchanged': s.polished && s.polished === s.text,
+          }"
         >
-          <div class="suggestion-header">
-            <span class="suggestion-type">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
-            <span v-if="isFixed(err.id)" class="badge-fixed">已润色</span>
-            <button
-              v-else
-              type="button"
-              class="btn-polish"
-              @click="enterPolish(err)"
-            >润色</button>
+          <!-- 折叠态：句子预览 -->
+          <div class="sentence-header" @click="toggleExpand(idx)">
+            <span class="sentence-dot" :class="{
+              'dot--replaced': replacedSet.has(idx),
+              'dot--unchanged': s.polished && s.polished === s.text,
+              'dot--ready': s.polished && s.polished !== s.text && !replacedSet.has(idx),
+            }"></span>
+            <span class="sentence-preview">{{ truncate(s.text, 40) }}</span>
+            <span class="sentence-arrow">{{ expandedIdx === idx ? '▾' : '▸' }}</span>
           </div>
-          <div v-if="err.original" class="suggestion-original">
-            <span class="original-text">{{ err.original }}</span>
+
+          <!-- 展开态 -->
+          <div v-if="expandedIdx === idx" class="sentence-body">
+            <div class="sentence-original">
+              <span class="label-original">原文：</span>
+              <span>{{ s.text }}</span>
+            </div>
+
+            <template v-if="s.polished">
+              <!-- 无改动 -->
+              <p v-if="s.polished === s.text" class="no-change-hint">此句无需改动。</p>
+
+              <!-- 有润色结果 -->
+              <div v-else class="candidate-card">
+                <span class="candidate-label">推荐句子</span>
+                <p class="candidate-text" v-html="diffHighlight(s.text, s.polished)"></p>
+                <p v-if="s.explanation" class="candidate-explanation">{{ s.explanation }}</p>
+                <div class="candidate-actions">
+                  <button
+                    type="button"
+                    class="btn-replace"
+                    @click="applyCandidate(idx)"
+                  >替换</button>
+                  <button
+                    type="button"
+                    class="btn-dismiss"
+                    @click="dismissSentence(idx)"
+                  >忽略</button>
+                </div>
+              </div>
+            </template>
+
+            <p v-else class="no-result-hint">选择润色档次后自动生成润色建议。</p>
           </div>
-          <p v-if="err.reason" class="suggestion-reason">{{ err.reason }}</p>
         </li>
       </ul>
-
-      <!-- 润色详情视图 -->
-      <div v-if="polishTarget" class="polish-detail">
-        <div class="polish-detail-header">
-          <span class="polish-detail-label">润色目标</span>
-          <button type="button" class="polish-close-btn" @click="exitPolish">&times;</button>
-        </div>
-        <p class="polish-target-text">{{ polishTarget.original }}</p>
-        <div class="polish-tiers">
-          <button
-            v-for="t in tierOptions"
-            :key="t.value"
-            type="button"
-            class="tier-chip"
-            :class="{ 'tier-chip--active': polishTier === t.value }"
-            @click="selectTier(t.value)"
-          >{{ t.label }}</button>
-        </div>
-        <div v-if="polishLoading" class="polish-loading">
-          <div class="skeleton-block skeleton-polish"></div>
-          <p class="loading-hint">AI 润色中...</p>
-        </div>
-        <div v-else-if="polishResult" class="polish-result">
-          <div v-if="polishResult.polished" class="polish-result-text">
-            <span class="result-label">润色结果</span>
-            <p class="polished-text">{{ polishResult.polished }}</p>
-          </div>
-          <p v-if="polishResult.explanation" class="polish-explanation">{{ polishResult.explanation }}</p>
-          <button
-            v-if="polishResult.polished"
-            type="button"
-            class="btn btn-primary btn-sm"
-            @click="applyPolish"
-          >替换原文</button>
-          <p v-else class="polish-error-hint">未能生成润色结果，请重试或切换档次。</p>
-        </div>
-      </div>
-
-      <div class="polish-footer">
-        <button type="button" class="btn btn-secondary" @click="emit('exit-correction')">完成</button>
-      </div>
     </template>
 
-    <template v-else>
+    <!-- 空状态 -->
+    <template v-if="!polishingAll && !polishError && !sentences.length">
       <div class="polish-empty">
-        <p>没有需要润色的建议项。</p>
-        <button type="button" class="btn btn-secondary" @click="emit('exit-correction')">返回</button>
+        <p>选择润色档次，AI 将逐句润色全文。</p>
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import type { WritingEvaluateResponse, PolishTier, PolishResponse } from '@/api/writing'
-import { polishSuggestion } from '@/api/writing'
+import { ref, computed, watch } from 'vue'
+import type { PolishTier, PolishEssaySummary } from '@/api/writing'
+import { polishEssay } from '@/api/writing'
 
-type ErrorItem = WritingEvaluateResponse['errors'][number]
-
-const ERROR_TYPE_LABELS: Record<string, string> = {
-  spelling: '拼写',
-  morphology: '词形',
-  subject_verb: '主谓一致',
-  tense: '时态',
-  article: '冠词',
-  preposition: '介词',
-  collocation: '搭配',
-  syntax: '句法',
-  word_choice: '用词',
-  part_of_speech: '词性',
-  punctuation: '标点',
-  logic: '逻辑',
-  grammar: '语法',
-  expression: '表达',
-  coherence: '连贯',
-  format: '格式',
+interface SentenceItem {
+  text: string
+  start: number
+  end: number
+  polished?: string
+  explanation?: string
 }
 
 const tierOptions: { value: PolishTier; label: string }[] = [
@@ -110,92 +147,173 @@ const tierOptions: { value: PolishTier; label: string }[] = [
 ]
 
 const props = defineProps<{
-  suggestions: ErrorItem[]
-  fixedErrorIds: Set<string>
   fullEssay: string
 }>()
 
 const emit = defineEmits<{
-  'apply-polish': [payload: { errorId: string; polished: string }]
-  'exit-correction': []
+  'replace-sentence': [payload: { original: string; replacement: string }]
+  'sentence-focus': [range: { start: number; end: number } | null]
 }>()
 
-const polishTarget = ref<ErrorItem | null>(null)
-const polishTier = ref<PolishTier>('steady')
-const polishLoading = ref(false)
-const polishResult = ref<PolishResponse | null>(null)
+const polishTier = ref<PolishTier | null>(null)
+const expandedIdx = ref<number | null>(null)
+const polishingAll = ref(false)
+const polishError = ref<string | null>(null)
+const polishSummary = ref<PolishEssaySummary | null>(null)
+const summaryCollapsed = ref(false)
+const replacedSet = ref<Set<number>>(new Set())
+const sentences = ref<SentenceItem[]>([])
 let polishAbortToken = 0
+let ignoreNextEssayChange = false
 
-function errorTypeLabel(type: string): string {
-  return ERROR_TYPE_LABELS[type] ?? type
+const tierLabel = computed(() => {
+  if (!polishTier.value) return ''
+  const found = tierOptions.find(t => t.value === polishTier.value)
+  return found ? `达到「${found.label}」` : ''
+})
+
+function splitSentences(text: string): SentenceItem[] {
+  if (!text || !text.trim()) return []
+  const items: SentenceItem[] = []
+  const regex = /[^.!?\n]+[.!?]*/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    const raw = match[0].trim()
+    if (raw.length < 3) continue
+    const start = text.indexOf(raw, match.index)
+    items.push({ text: raw, start, end: start + raw.length })
+  }
+  return items
 }
 
-function isFixed(errorId: string): boolean {
-  return props.fixedErrorIds.has(errorId)
-}
-
-function extractContext(original: string): string {
-  const essay = props.fullEssay
-  if (!essay || !original) return ''
-  const idx = essay.indexOf(original)
-  if (idx === -1) return ''
-  const before = essay.slice(Math.max(0, idx - 50), idx)
-  const after = essay.slice(idx + original.length, idx + original.length + 50)
-  return (before + original + after).trim()
-}
-
-function enterPolish(err: ErrorItem) {
-  polishTarget.value = err
-  polishTier.value = 'steady'
-  polishResult.value = null
-  doPolish()
-}
-
-function exitPolish() {
-  polishTarget.value = null
-  polishResult.value = null
-  polishLoading.value = false
+// Split sentences on mount (but don't call GPT yet)
+// Skip reset when the change was caused by a sentence replacement
+watch(() => props.fullEssay, () => {
+  if (ignoreNextEssayChange) {
+    ignoreNextEssayChange = false
+    // Re-split to update positions, but preserve polish results
+    const newSentences = splitSentences(props.fullEssay)
+    for (const ns of newSentences) {
+      const old = sentences.value.find(s =>
+        s.text === ns.text || s.polished === ns.text
+      )
+      if (old) {
+        ns.polished = old.polished
+        ns.explanation = old.explanation
+      }
+    }
+    sentences.value = newSentences
+    return
+  }
+  sentences.value = splitSentences(props.fullEssay)
+  expandedIdx.value = null
+  replacedSet.value = new Set()
+  polishSummary.value = null
+  polishError.value = null
   polishAbortToken++
+}, { immediate: true })
+
+function truncate(text: string, maxLen: number): string {
+  return text.length > maxLen ? text.slice(0, maxLen) + '...' : text
 }
 
-function selectTier(tier: PolishTier) {
-  if (tier === polishTier.value && polishResult.value) return
+function onSelectTier(tier: PolishTier) {
+  if (polishingAll.value) return
   polishTier.value = tier
-  doPolish()
+  doPolishAll()
 }
 
-async function doPolish() {
-  const target = polishTarget.value
-  if (!target?.original) return
+async function doPolishAll() {
+  if (!props.fullEssay?.trim() || !polishTier.value) return
+
   const token = ++polishAbortToken
-  polishLoading.value = true
-  polishResult.value = null
+  polishingAll.value = true
+  polishError.value = null
+
+  // Reset previous results
+  for (const s of sentences.value) {
+    s.polished = undefined
+    s.explanation = undefined
+  }
+  replacedSet.value = new Set()
+  polishSummary.value = null
+
   try {
-    const res = await polishSuggestion({
-      original: target.original,
-      context: extractContext(target.original),
-      reason: target.reason || undefined,
-      tier: polishTier.value,
-    })
+    const res = await polishEssay({ text: props.fullEssay, tier: polishTier.value })
     if (token !== polishAbortToken) return
-    polishResult.value = res
+
+    // Save summary
+    polishSummary.value = res.summary ?? null
+    summaryCollapsed.value = false
+
+    // Match GPT results to local sentences by original text
+    for (const gpt of res.sentences) {
+      const match = sentences.value.find(s =>
+        s.text === gpt.original || s.text.includes(gpt.original) || gpt.original.includes(s.text)
+      )
+      if (match) {
+        match.polished = gpt.polished
+        match.explanation = gpt.explanation
+      }
+    }
   } catch {
     if (token !== polishAbortToken) return
-    polishResult.value = { polished: null, explanation: '润色请求失败，请重试。' }
+    polishError.value = '润色请求失败，请重试。'
   } finally {
     if (token === polishAbortToken) {
-      polishLoading.value = false
+      polishingAll.value = false
     }
   }
 }
 
-function applyPolish() {
-  if (!polishTarget.value || !polishResult.value?.polished) return
-  emit('apply-polish', {
-    errorId: polishTarget.value.id,
-    polished: polishResult.value.polished,
-  })
-  exitPolish()
+function toggleExpand(idx: number) {
+  if (expandedIdx.value === idx) {
+    expandedIdx.value = null
+    emit('sentence-focus', null)
+  } else {
+    expandedIdx.value = idx
+    const s = sentences.value[idx]
+    emit('sentence-focus', { start: s.start, end: s.end })
+  }
+}
+
+function applyCandidate(idx: number) {
+  const s = sentences.value[idx]
+  if (!s?.polished) return
+  ignoreNextEssayChange = true
+  emit('replace-sentence', { original: s.text, replacement: s.polished })
+  replacedSet.value = new Set([...replacedSet.value, idx])
+}
+
+function dismissSentence(idx: number) {
+  const s = sentences.value[idx]
+  if (s) {
+    s.polished = undefined
+    s.explanation = undefined
+  }
+  expandedIdx.value = null
+  emit('sentence-focus', null)
+}
+
+function diffHighlight(original: string, polished: string): string {
+  const origWords = original.split(/(\s+)/)
+  const polWords = polished.split(/(\s+)/)
+  const origSet = new Set(origWords.filter(w => w.trim()))
+
+  return polWords.map(w => {
+    if (!w.trim()) return escapeHtml(w)
+    if (!origSet.has(w)) {
+      return `<b class="diff-changed">${escapeHtml(w)}</b>`
+    }
+    return escapeHtml(w)
+  }).join('')
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 </script>
 
@@ -204,131 +322,91 @@ function applyPolish() {
   padding: 16px;
 }
 
-.suggestion-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.suggestion-item {
-  padding: 10px;
+/* ── AI 总结卡片（可折叠） ── */
+.summary-card {
+  margin-bottom: 14px;
   border-radius: 10px;
-  background: #fefce8;
-  border: 1px solid #fde68a;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
 }
-.suggestion-item--fixed { opacity: 0.5; }
 
-.suggestion-header {
+.summary-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.suggestion-header .suggestion-type { flex: 1; }
-
-.suggestion-type {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.badge-fixed {
-  display: inline-block;
-  padding: 1px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 20px;
-  background: #d1fae5;
-  color: #065f46;
-  white-space: nowrap;
-}
-
-.btn-polish {
-  padding: 2px 10px;
-  font-size: 11px;
-  font-weight: 500;
-  border: 1px solid #059669;
-  border-radius: 6px;
-  background: #ecfdf5;
-  color: #047857;
+  justify-content: space-between;
+  padding: 10px 14px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s;
+  user-select: none;
+  transition: background 0.12s;
 }
-.btn-polish:hover { background: #d1fae5; }
+.summary-toggle:hover { background: #f9fafb; }
 
-.suggestion-original {
+.summary-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.summary-toggle-arrow {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.summary-body {
+  padding: 0 14px 14px;
+}
+
+.summary-section + .summary-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.summary-heading {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
 }
 
-.original-text {
-  background: #fef3c7;
-  color: #78350f;
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-family: monospace;
-  font-size: 12px;
+.strengths-heading { color: #047857; }
+.improvements-heading { color: #b45309; }
+
+.summary-list {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
 }
 
-.suggestion-reason {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #78350f;
-  line-height: 1.4;
+.summary-list li {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.8;
 }
 
-/* ── 润色详情 ── */
-.polish-detail {
-  margin-bottom: 16px;
+/* ── 全局润色档次 ── */
+.polish-tier-global {
+  margin-bottom: 14px;
   padding: 12px;
   border-radius: 12px;
   background: #f0fdf4;
   border: 1px solid #dcfce7;
 }
 
-.polish-detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.polish-detail-label {
+.polish-tier-label {
+  display: block;
   font-size: 12px;
   font-weight: 600;
   color: #065f46;
-}
-
-.polish-close-btn {
-  padding: 0 6px;
-  font-size: 18px;
-  line-height: 1;
-  border: none;
-  background: transparent;
-  color: #6b7280;
-  cursor: pointer;
-}
-.polish-close-btn:hover { color: #374151; }
-
-.polish-target-text {
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-family: monospace;
-  color: #374151;
-  padding: 6px 8px;
-  background: #fef3c7;
-  border-radius: 6px;
+  margin-bottom: 8px;
 }
 
 .polish-tiers {
   display: flex;
   gap: 6px;
-  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
@@ -348,27 +426,172 @@ function applyPolish() {
 .tier-chip--active { background: #059669; border-color: #059669; color: #fff; }
 .tier-chip--active:hover { background: #047857; border-color: #047857; color: #fff; }
 
-.polish-loading { padding: 8px 0; }
+/* ── 句子列表 ── */
+.sentence-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sentence-card {
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.sentence-card--expanded { border-color: #93c5fd; }
+.sentence-card--replaced { opacity: 0.5; }
+.sentence-card--unchanged { opacity: 0.6; }
+
+.sentence-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.sentence-header:hover { background: #f9fafb; }
+
+.sentence-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1d5db;
+}
+.dot--ready { background: #3b82f6; }
+.dot--replaced { background: #10b981; }
+.dot--unchanged { background: #d1d5db; }
+
+.sentence-preview {
+  flex: 1;
+  font-size: 13px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sentence-arrow {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* ── 展开态 ── */
+.sentence-body {
+  padding: 0 12px 12px;
+}
+
+.sentence-original {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+.label-original {
+  font-weight: 600;
+  color: #374151;
+}
+
+/* ── 候选卡片 ── */
+.candidate-card {
+  margin-bottom: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.candidate-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.candidate-text {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: #1f2937;
+  line-height: 1.6;
+}
+
+.candidate-text :deep(.diff-changed) {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.candidate-explanation {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.candidate-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-replace {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-replace:hover { background: #dbeafe; }
+
+.btn-dismiss {
+  padding: 2px 10px;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+}
+.btn-dismiss:hover { color: #6b7280; }
+
+.no-change-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.no-result-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+/* ── 加载 / 错误 / 空状态 ── */
+.polish-loading { padding: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 .skeleton-block { border-radius: 10px; background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
 .skeleton-polish { height: 60px; }
+.skeleton-polish.short { height: 40px; width: 70%; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .loading-hint { text-align: center; font-size: 13px; color: #6b7280; margin: 4px 0 0; }
 
-.polish-result { margin-top: 8px; }
-.polish-result-text { margin-bottom: 8px; }
-.result-label { display: block; font-size: 11px; font-weight: 600; color: #065f46; margin-bottom: 4px; }
-.polished-text { margin: 0; font-size: 14px; color: #065f46; line-height: 1.6; font-weight: 500; }
-.polish-explanation { margin: 0 0 8px; font-size: 12px; color: #374151; line-height: 1.5; }
-.polish-error-hint { margin: 0; font-size: 13px; color: #991b1b; }
+.polish-error-block { padding: 16px; text-align: center; }
+.polish-error-hint { margin: 0 0 10px; font-size: 13px; color: #991b1b; }
 
-.polish-footer { display: flex; gap: 10px; }
 .polish-empty { padding: 32px 16px; text-align: center; font-size: 14px; color: #9ca3af; }
-.polish-empty .btn { margin-top: 12px; }
 
 .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border: none; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
 .btn-primary { background: #047857; color: #fff; }
 .btn-primary:hover { background: #065f46; }
-.btn-secondary { background: #f3f4f6; color: #374151; }
-.btn-secondary:hover { background: #e5e7eb; }
 .btn-sm { padding: 6px 16px; font-size: 13px; }
 </style>

@@ -4,8 +4,7 @@
       <span class="dock-title">{{ modeLabel }}</span>
     </header>
     <div class="dock-body">
-      <ScorePanel v-if="mode === 'score'" @start-fix="$emit('switch-mode', 'revise')" />
-      <FixPanel v-else-if="mode === 'revise'" :errors="[]" :fixed-error-ids="new Set()" :has-suggestions="false" />
+      <ScorePanel v-if="mode === 'score'" />
       <PolishPanel v-else-if="mode === 'improve'" />
       <ExplainPanel v-else-if="mode === 'explain'" />
       <TranslatePanel v-else-if="mode === 'translate'" />
@@ -59,7 +58,6 @@ import { computed } from 'vue'
 import type { PanelMode } from './ToolRail.vue'
 import AiNoteComposer from './AiNoteComposer.vue'
 import ScorePanel from './panels/ScorePanel.vue'
-import FixPanel from './panels/FixPanel.vue'
 import PolishPanel from './panels/PolishPanel.vue'
 import ExplainPanel from './panels/ExplainPanel.vue'
 import TranslatePanel from './panels/TranslatePanel.vue'
@@ -82,7 +80,6 @@ const modeLabels: Record<PanelMode, string> = {
   score: '评分',
   grammarCheck: '语法检查',
   rewrite: '改写',
-  revise: '订正',
   improve: '提升',
   explain: '解释',
   translate: '翻译',

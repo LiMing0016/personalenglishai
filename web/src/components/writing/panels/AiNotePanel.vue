@@ -34,13 +34,6 @@
     </section>
 
     <footer class="composer">
-      <div v-if="selectedText" class="selected-chip">
-        <div class="selected-chip-header">
-          <span class="selected-chip-title">Selected text</span>
-          <button type="button" class="selected-chip-close" @click="clearSelectedText">x</button>
-        </div>
-        <div class="selected-chip-content">{{ selectedTextPreview }}</div>
-      </div>
       <div v-if="isExamMode" class="task-prompt-box">
         <button type="button" class="task-prompt-toggle" @click="toggleTaskPrompt">
           <span class="task-prompt-title">
@@ -148,6 +141,14 @@
         <span class="draft-toggle-label">{{ includeDraft ? '\u5F15\u7528\u4F5C\u6587' : '\u4E0D\u5F15\u7528\u4F5C\u6587' }}</span>
       </button>
       <div class="composer-input-wrap">
+        <div v-if="selectedText" class="composer-selected-text">
+          <span class="composer-selected-label">Selected text</span>
+          <SelectedTextChip
+            :text="selectedText"
+            :max-chars="68"
+            @dismiss="clearSelectedText"
+          />
+        </div>
         <div ref="modeMenuRef" class="mode-plus-wrap">
           <button
             type="button"
@@ -180,6 +181,7 @@
           ref="composerInputRef"
           :value="modelValue"
           class="composer-input"
+          :class="{ 'composer-input--with-selection': !!selectedText }"
           placeholder="Type instruction..."
           rows="3"
           @input="onInput"
@@ -215,6 +217,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
+import SelectedTextChip from './SelectedTextChip.vue'
 
 type Mode = 'sm' | 'md' | 'lg'
 type WritingMode = 'free' | 'exam'
@@ -276,11 +279,6 @@ const selectedText = computed(() => selectionStore?.selectedText.value ?? '')
 const writingMode = computed<WritingMode>(() => (props.writingMode === 'exam' ? 'exam' : 'free'))
 const isExamMode = computed(() => writingMode.value === 'exam')
 
-const selectedTextPreview = computed(() => {
-  const text = selectedText.value
-  if (text.length <= 80) return text
-  return `${text.slice(0, 80)}...`
-})
 const canSend = computed(() => props.modelValue.trim().length > 0)
 
 const canReplaceSelection = computed(
@@ -788,39 +786,22 @@ function onClickOutsideModeMenu(e: Event) {
 .draft-toggle-label {
   line-height: 1;
 }
-.selected-chip {
-  border: 1px solid #d1d5db;
-  background: #f9fafb;
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-}
-.selected-chip-header {
+.composer-selected-text {
+  position: absolute;
+  top: 8px;
+  left: 52px;
+  right: 58px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
-.selected-chip-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #111827;
-}
-.selected-chip-close {
-  border: none;
-  background: transparent;
+.composer-selected-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
   color: #6b7280;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0;
-}
-.selected-chip-content {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #374151;
-  line-height: 1.4;
-  word-break: break-word;
 }
 .composer-input {
   width: 100%;
@@ -840,6 +821,9 @@ function onClickOutsideModeMenu(e: Event) {
 .composer-input-wrap .composer-input {
   padding-left: 52px;
   padding-right: 58px;
+}
+.composer-input--with-selection {
+  padding-top: 42px;
 }
 .mode-plus-wrap {
   position: absolute;
@@ -1137,4 +1121,3 @@ function onClickOutsideModeMenu(e: Event) {
   }
 }
 </style>
-

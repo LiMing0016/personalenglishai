@@ -102,9 +102,10 @@ public class PromptAssembler {
         String taskIntent = detectTaskIntent(defaultIfBlank(req != null ? req.getIntent() : null, "chat"), userMessage);
         ReferenceResolution reference = referenceResolver.resolve(userMessage);
         boolean hasDocId = !isBlank(docId);
+        boolean forceIncludeDraft = constraints != null && Boolean.TRUE.equals(constraints.get("includeDraft"));
         String target = detectTarget(taskIntent, userMessage, selectedText, draftText, recentMessages, reference, contextScope, actionOrigin, hasDocId);
 
-        ContextDecision contextDecision = decideContext(taskIntent, userMessage, selectedText, recentMessages, reference, draftText, contextScope, actionOrigin, hasDocId);
+        ContextDecision contextDecision = decideContext(taskIntent, userMessage, selectedText, recentMessages, reference, draftText, contextScope, actionOrigin, hasDocId, forceIncludeDraft);
         String contextBlock = buildContextBlock(contextDecision, target, selectedText, draftText, recentMessages, reference);
 
         // system prompt: role definition + ability profile + output rules
@@ -176,7 +177,8 @@ public class PromptAssembler {
                                           String draftText,
                                           String contextScope,
                                           String actionOrigin,
-                                          boolean hasDocId) {
+                                          boolean hasDocId,
+                                          boolean forceIncludeDraft) {
         String intent = taskIntent == null ? "chat" : taskIntent.toLowerCase(Locale.ROOT);
         boolean hasSelected = !isBlank(selectedText);
         boolean hasRecent = recentMessages != null && !recentMessages.isEmpty();
@@ -212,7 +214,7 @@ public class PromptAssembler {
         boolean injectConversation = hasRecent && (hasReference || implicitConversationContinuation);
         boolean injectDraft = !hasSelected && hasDraftSignal
                 && ("rewrite".equals(intent) || "evaluate".equals(intent) || "chat".equals(intent) || "translate".equals(intent) || "explain".equals(intent));
-        if (implicitConversationContinuation) {
+        if (implicitConversationContinuation && !forceIncludeDraft) {
             injectDraft = false;
         }
 

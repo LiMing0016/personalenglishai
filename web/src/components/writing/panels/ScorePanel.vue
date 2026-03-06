@@ -71,7 +71,9 @@
         <div ref="pieChartRef" class="error-pie-chart" />
         <div class="error-summary-row">
           <span class="error-summary-text">共 {{ errorTypeErrors.length }} 个错误</span>
-          <button type="button" class="btn-view-details" @click="emit('view-error-details')">查看详情</button>
+          <span v-if="topErrorType" class="error-summary-top">
+            最高占比：{{ topErrorType.name }} {{ formatPercent(topErrorType.value, errorTypeTotal) }}
+          </span>
         </div>
       </div>
 
@@ -85,10 +87,14 @@
         <p class="summary-text">{{ evaluateResult.summary }}</p>
       </div>
 
-      <div class="actions">
-        <button type="button" class="btn btn-primary" @click="emit('start-fix')">开始订正</button>
-        <button type="button" class="btn btn-secondary" @click="emit('close')">暂不订正</button>
+      <!-- 引导语法修正 -->
+      <div v-if="errorTypeErrors.length" class="grammar-cta-card">
+        <p class="grammar-cta-text">评分完成！建议逐条修正语法错误，提升作文质量。</p>
+        <button type="button" class="grammar-cta-btn" @click="emit('start-grammar-check')">
+          开始语法修正
+        </button>
       </div>
+
     </template>
 
     <!-- 加载中骨架屏 -->
@@ -141,11 +147,10 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'start-fix': []
   'error-click': [errorId: string]
-  'view-error-details': []
   retry: []
   close: []
+  'start-grammar-check': []
 }>()
 
 // ── 维度配置 ──
@@ -376,34 +381,128 @@ const errorTypePieData = computed(() => {
     .sort((a, b) => b.value - a.value)
 })
 
+const errorTypeTotal = computed(() =>
+  errorTypePieData.value.reduce((sum, item) => sum + item.value, 0),
+)
+
+const topErrorType = computed(() => errorTypePieData.value[0] ?? null)
+
+function formatPercent(value: number, total: number): string {
+  if (total <= 0) return '0%'
+  const percent = (value / total) * 100
+  return `${percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)}%`
+}
+
 function renderPieChart() {
   if (!pieChartRef.value || errorTypePieData.value.length === 0) return
   if (!chartInstance.value) {
     chartInstance.value = echarts.init(pieChartRef.value)
   }
+
+  const pieData = errorTypePieData.value
+  const total = errorTypeTotal.value
+  const valueMap = new Map(pieData.map((item) => [item.name, item.value]))
+  const isNarrow = pieChartRef.value.clientWidth < 640
+
   chartInstance.value.setOption({
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { bottom: 0, left: 'center', textStyle: { fontSize: 11 } },
+    title: [
+      {
+        text: String(total),
+        left: isNarrow ? '50%' : '24%',
+        top: isNarrow ? '30%' : '36%',
+        textAlign: 'center',
+        textStyle: {
+          fontSize: 30,
+          fontWeight: 700,
+          color: '#1f2937',
+        },
+      },
+      {
+        text: '错误总数',
+        left: isNarrow ? '50%' : '24%',
+        top: isNarrow ? '46%' : '52%',
+        textAlign: 'center',
+        textStyle: {
+          fontSize: 12,
+          fontWeight: 500,
+          color: '#64748b',
+        },
+      },
+    ],
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: { name: string; value: number }) =>
+        `${params.name}<br/>数量：${params.value} 个<br/>占比：${formatPercent(params.value, total)}`,
+    },
+    legend: isNarrow
+      ? {
+          bottom: 0,
+          left: 'center',
+          textStyle: { fontSize: 11, color: '#475569' },
+          formatter: (name: string) => {
+            const value = valueMap.get(name) ?? 0
+            return `${name} ${value}个 ${formatPercent(value, total)}`
+          },
+        }
+      : {
+          orient: 'vertical',
+          right: 0,
+          top: 'middle',
+          itemGap: 12,
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: {
+            rich: {
+              n: { width: 70, fontSize: 12, color: '#334155' },
+              v: { width: 44, align: 'right', fontSize: 12, color: '#0f172a', fontWeight: 600 },
+              p: { width: 42, align: 'right', fontSize: 12, color: '#64748b' },
+            },
+          },
+          formatter: (name: string) => {
+            const value = valueMap.get(name) ?? 0
+            return `{n|${name}} {v|${value}个} {p|${formatPercent(value, total)}}`
+          },
+        },
     color: PIE_COLORS,
     series: [{
       type: 'pie',
-      radius: ['40%', '70%'],
-      center: ['50%', '45%'],
+      radius: isNarrow ? ['38%', '62%'] : ['45%', '70%'],
+      center: isNarrow ? ['50%', '42%'] : ['24%', '45%'],
       avoidLabelOverlap: true,
-      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
-      label: { show: false },
-      emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
-      data: errorTypePieData.value,
+      minAngle: 5,
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 3 },
+      label: {
+        show: true,
+        color: '#475569',
+        fontSize: 11,
+        formatter: (params: { percent: number }) => `${params.percent}%`,
+      },
+      labelLine: { show: true, length: 10, length2: 8 },
+      emphasis: {
+        scale: true,
+        scaleSize: 6,
+      },
+      data: pieData,
     }],
   })
+}
+
+function handleChartResize() {
+  chartInstance.value?.resize()
 }
 
 watch(errorTypePieData, () => nextTick(renderPieChart), { deep: true })
 watch(() => props.evaluateResult, () => nextTick(renderPieChart))
 
-onMounted(() => nextTick(renderPieChart))
-onBeforeUnmount(() => { chartInstance.value?.dispose() })
-
+onMounted(() => {
+  window.addEventListener('resize', handleChartResize)
+  nextTick(renderPieChart)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleChartResize)
+  chartInstance.value?.dispose()
+})
 // ── activeErrorId 联动 ──
 
 watch(
@@ -586,34 +685,33 @@ watch(
 
 .error-pie-chart {
   width: 100%;
-  height: 220px;
+  height: 260px;
 }
 
 .error-summary-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   margin-top: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .error-summary-text {
   font-size: 13px;
-  color: #6b7280;
+  color: #334155;
 }
 
-.btn-view-details {
-  padding: 4px 14px;
+.error-summary-top {
   font-size: 12px;
-  font-weight: 500;
-  border: 1px solid #d97706;
-  border-radius: 8px;
-  background: #fffbeb;
-  color: #92400e;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s;
+  color: #64748b;
 }
-.btn-view-details:hover { background: #fef3c7; }
+
+@media (max-width: 640px) {
+  .error-pie-chart {
+    height: 320px;
+  }
+}
 
 /* ── 行动建议卡片 ── */
 .priority-focus-card {
@@ -648,13 +746,38 @@ watch(
 .summary-label { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
 .summary-text { margin: 0; font-size: 13px; line-height: 1.6; color: #374151; }
 
-/* ── 操作按钮 ── */
-.actions { display: flex; gap: 10px; }
+/* ── 语法修正引导 ── */
+.grammar-cta-card {
+  margin-bottom: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  text-align: center;
+}
+.grammar-cta-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #065f46;
+  line-height: 1.5;
+}
+.grammar-cta-btn {
+  display: inline-block;
+  padding: 8px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  background: #047857;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.grammar-cta-btn:hover { background: #065f46; }
+
 .btn { padding: 10px 20px; font-size: 14px; font-weight: 500; border: none; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
 .btn-primary { background: #047857; color: #fff; }
 .btn-primary:hover { background: #065f46; }
-.btn-secondary { background: #f3f4f6; color: #374151; }
-.btn-secondary:hover { background: #e5e7eb; }
 
 /* ── 加载骨架屏 ── */
 .score-loading { padding: 16px 0; display: flex; flex-direction: column; gap: 12px; }
@@ -676,3 +799,4 @@ watch(
 /* ── 空状态 ── */
 .score-empty { padding: 32px 0; text-align: center; font-size: 14px; color: #9ca3af; }
 </style>
+

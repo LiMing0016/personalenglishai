@@ -7,6 +7,8 @@ import com.personalenglishai.backend.dto.writing.EvaluationDetailResponse;
 import com.personalenglishai.backend.dto.writing.EvaluationHistoryResponse;
 import com.personalenglishai.backend.dto.writing.WritingChatRequest;
 import com.personalenglishai.backend.dto.writing.WritingChatResponse;
+import com.personalenglishai.backend.dto.writing.PolishEssayRequest;
+import com.personalenglishai.backend.dto.writing.PolishEssayResponse;
 import com.personalenglishai.backend.dto.writing.PolishRequest;
 import com.personalenglishai.backend.dto.writing.PolishResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
@@ -17,11 +19,14 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
+import com.personalenglishai.backend.dto.writing.SuggestionsRequest;
+import com.personalenglishai.backend.dto.writing.SuggestionsResponse;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
+import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,6 +45,7 @@ public class WritingController {
     private final WritingChatService writingChatService;
     private final WritingPolishService writingPolishService;
     private final GrammarCheckService grammarCheckService;
+    private final WritingSuggestionsService writingSuggestionsService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final ObjectMapper objectMapper;
@@ -49,6 +55,7 @@ public class WritingController {
                              WritingChatService writingChatService,
                              WritingPolishService writingPolishService,
                              GrammarCheckService grammarCheckService,
+                             WritingSuggestionsService writingSuggestionsService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              ObjectMapper objectMapper) {
@@ -57,6 +64,7 @@ public class WritingController {
         this.writingChatService = writingChatService;
         this.writingPolishService = writingPolishService;
         this.grammarCheckService = grammarCheckService;
+        this.writingSuggestionsService = writingSuggestionsService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.objectMapper = objectMapper;
@@ -132,6 +140,18 @@ public class WritingController {
     }
 
     /**
+     * 全文逐句润色：一次 GPT 调用润色所有句子
+     */
+    @PostMapping("/polish-essay")
+    public ResponseEntity<PolishEssayResponse> polishEssay(
+            @Valid @RequestBody PolishEssayRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        PolishEssayResponse response = writingPolishService.polishEssay(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 轻量语法检查（LanguageTool + Sapling，不涉及 GPT）
      */
     @PostMapping("/grammar-check")
@@ -139,6 +159,16 @@ public class WritingController {
             @Valid @RequestBody GrammarCheckRequest request) {
         var errors = grammarCheckService.check(request.getText());
         return ResponseEntity.ok(new GrammarCheckResponse(errors));
+    }
+
+    /**
+     * AI 隐形错误检测（GPT 专用：搭配不当、中式英语等）
+     */
+    @PostMapping("/suggestions")
+    public ResponseEntity<SuggestionsResponse> suggestions(
+            @Valid @RequestBody SuggestionsRequest request) {
+        SuggestionsResponse response = writingSuggestionsService.analyze(request.getText());
+        return ResponseEntity.ok(response);
     }
 
     /**

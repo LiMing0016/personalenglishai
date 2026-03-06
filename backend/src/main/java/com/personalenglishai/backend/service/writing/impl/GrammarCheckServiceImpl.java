@@ -82,8 +82,14 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
      * 按段落拆分文本，缓存命中的段落直接复用，未命中的调 Sapling API。
      * 结果中 span 偏移量需要加上段落在全文中的起始位置。
      */
+    /**
+     * 按段落拆分，缓存未改动的段落。
+     * <p>
+     * Sapling 接收 trimmed 段落文本，返回的 span 基于 trimmed（0-based）。
+     * 缓存 key = trimmed, value = trimmed 相对 span。
+     * 读取时加上 trimmed 在全文中的偏移即可。
+     */
     private List<WritingEvaluateResponse.ErrorDto> checkSaplingWithCache(String text) {
-        // 按双换行或单换行拆段落
         String[] paragraphs = text.split("(?<=\\n)");
         List<WritingEvaluateResponse.ErrorDto> allErrors = new ArrayList<>();
         int offset = 0;
@@ -93,46 +99,35 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
                 offset += para.length();
                 continue;
             }
+
             String trimmed = para.trim();
+            // trimmed 在全文中的起始位置
+            int leadingWs = para.indexOf(trimmed.charAt(0));
+            int trimmedBase = offset + Math.max(0, leadingWs);
+
             List<WritingEvaluateResponse.ErrorDto> cached = saplingCache.get(trimmed);
             if (cached != null) {
-                // 复用缓存，调整 span 偏移
+                // 缓存命中：span 相对于 trimmed，加 trimmedBase 转全文
                 for (var e : cached) {
-                    WritingEvaluateResponse.ErrorDto copy = new WritingEvaluateResponse.ErrorDto();
-                    copy.setType(e.getType());
-                    copy.setCategory(e.getCategory());
-                    copy.setSeverity(e.getSeverity());
-                    copy.setOriginal(e.getOriginal());
-                    copy.setSuggestion(e.getSuggestion());
-                    copy.setReason(e.getReason());
-                    int paraOffset = text.indexOf(para, offset);
-                    int base = paraOffset >= 0 ? paraOffset : offset;
+                    WritingEvaluateResponse.ErrorDto copy = copyError(e);
                     copy.setSpan(new WritingEvaluateResponse.SpanDto(
-                            e.getSpan().getStart() + base,
-                            e.getSpan().getEnd() + base));
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
                     allErrors.add(copy);
                 }
             } else {
-                // 未命中缓存，调 API
-                List<WritingEvaluateResponse.ErrorDto> fresh = saplingService.check(para);
-                // 存入缓存（span 相对于段落自身，从 0 开始）
+                // 缓存未命中：用 trimmed 调 API，span 直接基于 trimmed（0-based）
+                List<WritingEvaluateResponse.ErrorDto> fresh = saplingService.check(trimmed);
                 List<WritingEvaluateResponse.ErrorDto> cacheEntry = new ArrayList<>();
-                int paraOffset = text.indexOf(para, offset);
-                int base = paraOffset >= 0 ? paraOffset : offset;
                 for (var e : fresh) {
-                    // 缓存中保存相对于段落的 span
-                    WritingEvaluateResponse.ErrorDto cacheItem = new WritingEvaluateResponse.ErrorDto();
-                    cacheItem.setType(e.getType());
-                    cacheItem.setCategory(e.getCategory());
-                    cacheItem.setSeverity(e.getSeverity());
-                    cacheItem.setOriginal(e.getOriginal());
-                    cacheItem.setSuggestion(e.getSuggestion());
-                    cacheItem.setReason(e.getReason());
-                    cacheItem.setSpan(new WritingEvaluateResponse.SpanDto(
-                            e.getSpan().getStart() - base,
-                            e.getSpan().getEnd() - base));
-                    cacheEntry.add(cacheItem);
-                    allErrors.add(e);
+                    // 缓存保存 trimmed 相对 span（原样）
+                    cacheEntry.add(copyError(e));
+                    // allErrors 保存全文 span
+                    WritingEvaluateResponse.ErrorDto global = copyError(e);
+                    global.setSpan(new WritingEvaluateResponse.SpanDto(
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
+                    allErrors.add(global);
                 }
                 if (saplingCache.size() > MAX_CACHE_SIZE) {
                     saplingCache.clear();
@@ -142,6 +137,19 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             offset += para.length();
         }
         return allErrors;
+    }
+
+    private WritingEvaluateResponse.ErrorDto copyError(WritingEvaluateResponse.ErrorDto src) {
+        WritingEvaluateResponse.ErrorDto copy = new WritingEvaluateResponse.ErrorDto();
+        copy.setType(src.getType());
+        copy.setCategory(src.getCategory());
+        copy.setSeverity(src.getSeverity());
+        copy.setOriginal(src.getOriginal());
+        copy.setSuggestion(src.getSuggestion());
+        copy.setReason(src.getReason());
+        copy.setSpan(new WritingEvaluateResponse.SpanDto(
+                src.getSpan().getStart(), src.getSpan().getEnd()));
+        return copy;
     }
 
     private List<WritingEvaluateResponse.ErrorDto> mergeErrors(

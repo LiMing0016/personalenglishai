@@ -3,32 +3,18 @@
     <header class="tool-panel-header">
       <span class="tool-panel-title">{{ title }}</span>
       <div class="tool-panel-actions">
-        <span class="size-switcher">
-          <button
-            v-for="s in sizes"
-            :key="s"
-            type="button"
-            class="size-btn"
-            :class="{ active: currentSize === s }"
-            @click="currentSize = s"
-          >
-            {{ s }}
-          </button>
-        </span>
         <button type="button" class="btn-close" title="关闭" aria-label="关闭" @click="$emit('close')">
           ×
         </button>
       </div>
     </header>
-    <div class="tool-panel-body" :class="currentSize">
+    <div class="tool-panel-body">
       <slot />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-
 defineProps<{
   title: string
 }>()
@@ -36,9 +22,6 @@ defineProps<{
 defineEmits<{
   close: []
 }>()
-
-const sizes = ['sm', 'md', 'lg'] as const
-const currentSize = ref<'sm' | 'md' | 'lg'>('md')
 </script>
 
 <style scoped>
@@ -68,26 +51,6 @@ const currentSize = ref<'sm' | 'md' | 'lg'>('md')
   align-items: center;
   gap: 10px;
 }
-.size-switcher {
-  display: flex;
-  gap: 2px;
-}
-.size-btn {
-  padding: 4px 8px;
-  font-size: 11px;
-  color: #6b7280;
-  background: #f3f4f6;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.size-btn:hover {
-  color: #111827;
-}
-.size-btn.active {
-  background: #e5e7eb;
-  color: #111827;
-}
 .btn-close {
   width: 28px;
   height: 28px;
@@ -109,14 +72,4 @@ const currentSize = ref<'sm' | 'md' | 'lg'>('md')
   overflow-y: auto;
   min-height: 0;
 }
-.tool-panel-body.sm {
-  max-width: 100%;
-}
-.tool-panel-body.md {
-  max-width: 100%;
-}
-.tool-panel-body.lg {
-  max-width: 100%;
-}
 </style>
-

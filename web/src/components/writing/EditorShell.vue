@@ -5,17 +5,21 @@
       <div ref="leftPaneRef" class="left-pane">
         <DocEditor
           v-model:draft-text="draftText"
-          :correction-mode="correctionMode"
+          :correction-mode="false"
           :submitting="submitting"
+          :writing-mode="writingMode"
           :cursor-placement="cursorPlacement"
           :selection-capture-enabled="assistantOpen"
           :errors="displayEditorErrors"
           :active-error-id="activeErrorId"
+          :highlight-range="sentenceHighlightRange"
           @submit="onSubmit"
           @clear="onClear"
           @selection-change="onSelectionChange"
           @cursor-placed="cursorPlacement = null"
           @error-click="onEditorErrorClick"
+          @fix-error="onInlineFixError"
+          @dismiss-error="onDismissError"
         />
       </div>
 
@@ -52,24 +56,24 @@
           :active-error-id="activeErrorId"
           :submitting="submitting"
           :evaluate-error="evaluateError"
-          :fixed-error-ids="fixedErrorIds"
           :grammar-errors="grammarPanelErrors"
           :grammar-checking="grammarChecking"
           :grammar-check-error="grammarCheckError"
           :grammar-fixed-error-ids="grammarPanelFixedIds"
+          :rewrite-suggestions="rewritePanelSuggestions"
           @close="activePanel = null"
-          @start-fix="onStartFix"
-          @view-error-details="activePanel = 'grammarCheck'"
-          @fix-error="onFixError"
-          @fix-all="onFixAll"
-          @exit-correction="onExitCorrection"
           @error-click="onPanelErrorClick"
           @apply-polish="onApplyPolish"
+          @replace-sentence="onReplaceSentence"
+          @sentence-focus="sentenceHighlightRange = $event"
           @start-polish="onStartPolish"
           @grammar-fix-error="onGrammarFixError"
           @grammar-fix-all="onGrammarFixAll"
           @apply-suggestion="onApplySuggestion"
+          @gpt-errors-loaded="onGptErrorsLoaded"
+          @gpt-suggestions-loaded="onGptSuggestionsLoaded"
           @retry="onSubmit"
+          @start-grammar-check="onStartGrammarCheck"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
           @archived="onArchived"
@@ -102,7 +106,7 @@ import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
 import { getEvaluateTask, submitEvaluateWriting, grammarCheck as grammarCheckApi } from '@/api/writing'
-import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse } from '@/api/writing'
+import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
@@ -124,7 +128,7 @@ const MAX_PANEL_WIDTH = 1280
 const MIN_LEFT_WIDTH = 360
 
 const VALID_PANELS: PanelMode[] = [
-  'score', 'rewrite', 'revise', 'grammarCheck', 'improve', 'explain', 'translate', 'archive', 'aiNote',
+  'score', 'rewrite', 'grammarCheck', 'improve', 'explain', 'translate', 'archive', 'aiNote',
 ]
 
 interface LayoutState {
@@ -338,7 +342,6 @@ const aiGenerating = ref(false)
 const writingMode = ref<'free' | 'exam'>(props.initialWritingMode ?? loadWritingMode())
 const taskPrompt = ref(loadTaskPrompt())
 let aiAbortController: AbortController | null = null
-const correctionMode = ref(false)
 const submitting = ref(false)
 const evaluateError = ref<string | null>(null)
 let evaluatePollToken = 0
@@ -346,13 +349,10 @@ const resizing = ref(false)
 const archivedList = ref<unknown[]>([])
 const evaluateResult = ref<WritingEvaluateResponse | null>(null)
 const activeErrorId = ref<string | null>(null)
+const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
 const evaluatedText = ref<string | null>(null)
 
-// ── 订正会话状态 ──
 type CorrectionError = WritingEvaluateResponse['errors'][number]
-const correctionErrors = ref<CorrectionError[] | null>(null)
-const fixedErrorIds = ref<Set<string>>(new Set())
-const correctionActive = computed(() => correctionErrors.value !== null)
 
 // ── 实时语法检查状态 ──
 const grammarErrors = ref<CorrectionError[]>([])
@@ -361,53 +361,64 @@ const grammarChecking = ref(false)
 const grammarCheckError = ref<string | null>(null)
 const grammarFixedErrorIds = ref<Set<string>>(new Set())
 const grammarReChecked = ref(false)  // 评分后重检完成，切换到实时结果
+const gptErrors = ref<CorrectionError[]>([])  // GPT 复检的硬性错误（转换为 CorrectionError 格式）
+const gptSuggestionErrors = ref<CorrectionError[]>([])  // GPT 软性建议（转换为 CorrectionError 格式，用于编辑器下划线）
 let grammarCheckAbortController: AbortController | null = null
 let grammarCheckTimer: ReturnType<typeof setTimeout> | null = null
 
-// 语法面板展示的错误：评分结果中的 error 类型 + 实时语法检查结果合并
+// 语法面板：重检完成显示实时结果，否则显示评分错误（若有），最后回落到实时结果
 const grammarPanelErrors = computed(() => {
-  if (grammarReChecked.value) return grammarErrors.value
-  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
-  if (evalErrors.length > 0) return evalErrors
+  if (grammarReChecked.value && grammarErrors.value.length > 0) {
+    return grammarErrors.value
+  }
+  if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
+    return evaluateResult.value.errors.filter((e) => e.category !== 'suggestion')
+  }
   return grammarErrors.value
 })
-
-// 语法面板使用的 fixedErrorIds：评分模式用 fixedErrorIds，实时模式用 grammarFixedErrorIds
-const grammarPanelFixedIds = computed(() => {
-  if (grammarReChecked.value) return grammarFixedErrorIds.value
-  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
-  if (evalErrors.length > 0) return fixedErrorIds.value
-  return grammarFixedErrorIds.value
-})
+const grammarPanelFixedIds = computed(() => grammarFixedErrorIds.value)
 
 const selectionStore = createWritingSelectionStore()
 
 provide(writingSelectionStoreKey, selectionStore)
 
-// 编辑器错误显示优先级：评分订正 > 实时语法检查
+// 编辑器错误显示：重检结果 > 评分错误 > 实时语法，+ GPT 复检错误
 const displayEditorErrors = computed(() => {
-  // 1. 评分订正模式 → 显示评分错误
-  if (correctionActive.value) {
-    const errors = evaluateResult.value?.errors
-    if (!errors) return undefined
-    const fixed = fixedErrorIds.value
-    return errors.filter((e) => !fixed.has(e.id))
-  }
-  // 2. 重检完成 → 显示实时结果
+  let base: CorrectionError[] | undefined
+  // 1. 重检完成 → 显示实时结果
   if (grammarReChecked.value && grammarErrors.value.length > 0) {
     const fixed = grammarFixedErrorIds.value
-    return grammarErrors.value.filter((e) => !fixed.has(e.id))
+    base = grammarErrors.value.filter((e) => !fixed.has(e.id))
   }
-  // 3. 评分结果存在（未重检）→ 显示评分错误
-  if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
-    return evaluateResult.value.errors
+  // 2. 评分结果存在（未重检）→ 显示评分错误
+  else if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
+    base = evaluateResult.value.errors
   }
-  // 4. 实时语法检查 → 显示语法检查错误
-  if (grammarErrors.value.length > 0) {
+  // 3. 实时语法检查 → 显示语法检查错误
+  else if (grammarErrors.value.length > 0) {
     const fixed = grammarFixedErrorIds.value
-    return grammarErrors.value.filter((e) => !fixed.has(e.id))
+    base = grammarErrors.value.filter((e) => !fixed.has(e.id))
   }
-  return undefined
+  // 4. 合并 GPT 复检错误 + GPT 软性建议下划线
+  const extras = [...gptErrors.value, ...gptSuggestionErrors.value]
+  if (extras.length > 0) {
+    return [...(base ?? []), ...extras]
+  }
+  return base
+})
+
+const rewritePanelSuggestions = computed(() => {
+  const fromEvaluate = (evaluateResult.value?.errors ?? []).filter((e) => e.category === 'suggestion')
+  if (gptSuggestionErrors.value.length === 0) return fromEvaluate
+
+  const merged = [...fromEvaluate]
+  const seen = new Set(merged.map((e) => e.id))
+  for (const s of gptSuggestionErrors.value) {
+    if (seen.has(s.id)) continue
+    merged.push(s)
+    seen.add(s.id)
+  }
+  return merged
 })
 
 const assistantOpen = computed(() => activePanel.value === 'aiNote')
@@ -454,7 +465,6 @@ const panelTitle = computed(() => {
     score: '作文评价',
     grammarCheck: '语法检查',
     rewrite: 'AI 改写',
-    revise: '订正',
     improve: '提升',
     explain: '解释',
     translate: '翻译',
@@ -616,7 +626,12 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(activePanel, () => saveLayoutState(), { flush: 'post' })
+watch(activePanel, (newPanel, oldPanel) => {
+  if (oldPanel === 'rewrite' && newPanel !== 'rewrite') {
+    sentenceHighlightRange.value = null
+  }
+  saveLayoutState()
+}, { flush: 'post' })
 
 watch(
   writingMode,
@@ -660,6 +675,10 @@ function onToolSelect(mode: PanelMode) {
   activePanel.value = mode
 }
 
+function onStartGrammarCheck() {
+  activePanel.value = 'grammarCheck'
+}
+
 // 评分完成时记住被评分的文本，文本变化时自动清除评分结果
 watch(evaluateResult, (result) => {
   if (result) {
@@ -673,8 +692,6 @@ watch(evaluateResult, (result) => {
 })
 
 watch(draftText, (newText) => {
-  // 订正中替换文本会触发此 watcher，但不应清除 evaluateResult
-  if (correctionActive.value) return
   if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
     evaluateResult.value = null
   }
@@ -685,19 +702,14 @@ watch(draftText, (newText) => {
 function onEditorErrorClick(errorId: string) {
   activeErrorId.value = activeErrorId.value === errorId ? null : errorId
   if (activeErrorId.value) {
-    // 订正模式 → 订正面板；否则 → 语法面板（包含评分错误+实时检查错误）
-    if (correctionActive.value) {
-      activePanel.value = 'revise'
-    } else {
-      activePanel.value = 'grammarCheck'
-    }
+    activePanel.value = 'grammarCheck'
   }
 }
 
 // ── 实时语法检查 ──
 
 function scheduleGrammarCheck() {
-  if (!grammarCheckActive.value || submitting.value || correctionActive.value) return
+  if (!grammarCheckActive.value || submitting.value) return
   const text = draftText.value.trim()
   if (text.length < 10) {
     grammarErrors.value = []
@@ -713,7 +725,7 @@ function scheduleGrammarCheck() {
 }
 
 async function runGrammarCheck() {
-  const text = draftText.value.trim()
+  const text = draftText.value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
   if (!text || text.length < 10) return
   grammarCheckAbortController = new AbortController()
   grammarChecking.value = true
@@ -722,6 +734,8 @@ async function runGrammarCheck() {
     const res = await grammarCheckApi({ text }, { signal: grammarCheckAbortController.signal })
     grammarErrors.value = res.errors ?? []
     grammarFixedErrorIds.value = new Set()
+    gptErrors.value = []  // 重检时清空 GPT 错误，GPT 会在无错误时重新调用
+    gptSuggestionErrors.value = []
     if (evaluateResult.value) grammarReChecked.value = true
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
@@ -733,15 +747,11 @@ async function runGrammarCheck() {
 }
 
 function onGrammarFixError(errorId: string) {
-  // 判断错误来源：评分结果 or 实时语法检查
-  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
-  const isFromEval = evalErrors.some((e) => e.id === errorId)
-  const errorSource = isFromEval ? evalErrors : grammarErrors.value
-  const fixedIds = isFromEval ? fixedErrorIds : grammarFixedErrorIds
-
-  const err = errorSource.find((e) => e.id === errorId)
+  // 查找错误来源：语法面板合并了评分错误和实时语法错误
+  const panelErrors = grammarPanelErrors.value
+  const err = panelErrors.find((e) => e.id === errorId)
   if (!err || !err.original || !hasValidSuggestion(err)) return
-  if (fixedIds.value.has(errorId)) return
+  if (grammarFixedErrorIds.value.has(errorId)) return
 
   const text = draftText.value
   const resolved = resolveErrorSpan(err, text)
@@ -751,38 +761,22 @@ function onGrammarFixError(errorId: string) {
   }
   const { start, end } = resolved
   const suggestion = err.suggestion!
-  const delta = suggestion.length - (end - start)
 
-  fixedIds.value = new Set([...fixedIds.value, errorId])
-
-  for (const other of errorSource) {
-    if (other.id === errorId) continue
-    if (fixedIds.value.has(other.id)) continue
-    if (other.span.start >= end) {
-      other.span.start += delta
-      other.span.end += delta
-    } else if (other.span.start > start) {
-      other.span.end += delta
-    }
-  }
+  grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
 
   const newText = text.slice(0, start) + suggestion + text.slice(end)
-  if (isFromEval) evaluatedText.value = newText
+  evaluatedText.value = newText
   grammarCheckActive.value = true
   draftText.value = newText
 }
 
 function onGrammarFixAll() {
-  const evalErrors = (evaluateResult.value?.errors ?? []).filter((e) => e.category !== 'suggestion')
-  const isFromEval = evalErrors.length > 0
-  const errorSource = isFromEval ? evalErrors : grammarErrors.value
-  const fixedIds = isFromEval ? fixedErrorIds : grammarFixedErrorIds
-
-  const unfixed = errorSource
-    .filter((e) => !fixedIds.value.has(e.id) && e.original && hasValidSuggestion(e))
+  const panelErrors = grammarPanelErrors.value
+  const unfixed = panelErrors
+    .filter((e) => !grammarFixedErrorIds.value.has(e.id) && e.original && hasValidSuggestion(e))
 
   let text = draftText.value
-  const newFixed = new Set(fixedIds.value)
+  const newFixed = new Set(grammarFixedErrorIds.value)
 
   const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
   for (const err of unfixed) {
@@ -796,20 +790,97 @@ function onGrammarFixAll() {
     newFixed.add(err.id)
   }
 
-  if (isFromEval) evaluatedText.value = text
+  evaluatedText.value = text
   grammarCheckActive.value = true
   draftText.value = text
-  fixedIds.value = newFixed
+  grammarFixedErrorIds.value = newFixed
+}
+
+// ── 行内弹窗替换/忽略 ──
+
+function onInlineFixError(errorId: string) {
+  // 先在语法面板错误中查找
+  const panelErr = grammarPanelErrors.value.find((e) => e.id === errorId)
+  if (panelErr) {
+    onGrammarFixError(errorId)
+    return
+  }
+  // 再在 GPT 错误中查找
+  const gptErr = gptErrors.value.find((e) => e.id === errorId)
+    ?? gptSuggestionErrors.value.find((e) => e.id === errorId)
+  if (gptErr && gptErr.original && gptErr.suggestion != null) {
+    const text = draftText.value
+    const resolved = resolveErrorSpan(gptErr, text)
+    if (!resolved) return
+    const newText = text.slice(0, resolved.start) + gptErr.suggestion + text.slice(resolved.end)
+    evaluatedText.value = newText
+    draftText.value = newText
+  }
+}
+
+function onDismissError(errorId: string) {
+  // 将错误加入已修复集合，使其从面板和编辑器中消失
+  grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
+  // 也从 GPT 错误中移除
+  gptErrors.value = gptErrors.value.filter((e) => e.id !== errorId)
+  gptSuggestionErrors.value = gptSuggestionErrors.value.filter((e) => e.id !== errorId)
+}
+
+function onGptErrorsLoaded(errors: SuggestionErrorItem[]) {
+  // 将 GPT 硬性错误转为 CorrectionError 格式，带 span（通过 indexOf 定位）
+  const text = draftText.value
+  const converted: CorrectionError[] = []
+  for (const e of errors) {
+    const idx = findClosestMatch(text, e.original, 0, true, shouldUseWordBoundary(e.original))
+    if (idx === -1) continue
+    converted.push({
+      id: e.id,
+      type: e.type as any,
+      category: 'error',
+      severity: (e.severity === 'minor' ? 'minor' : 'major') as 'minor' | 'major',
+      span: { start: idx, end: idx + e.original.length },
+      original: e.original,
+      suggestion: e.suggestion,
+      reason: e.reason,
+    })
+  }
+  gptErrors.value = converted
+}
+
+function onGptSuggestionsLoaded(suggestions: SuggestionItem[]) {
+  const text = draftText.value
+  const converted: CorrectionError[] = []
+  for (const s of suggestions) {
+    const idx = findClosestMatch(text, s.original, 0, true, shouldUseWordBoundary(s.original))
+    if (idx === -1) continue
+    converted.push({
+      id: s.id,
+      type: s.type as any,
+      category: 'suggestion',
+      severity: 'minor',
+      span: { start: idx, end: idx + s.original.length },
+      original: s.original,
+      suggestion: s.suggestion,
+      reason: s.reason,
+    })
+  }
+  gptSuggestionErrors.value = converted
 }
 
 function onApplySuggestion(payload: { original: string; suggestion: string }) {
   const text = draftText.value
-  const idx = text.indexOf(payload.original)
-  if (idx === -1) {
+  const resolved = resolveErrorSpan(
+    {
+      original: payload.original,
+      span: { start: 0, end: Math.min(text.length, payload.original.length) },
+    },
+    text,
+  )
+  if (!resolved) {
     showToast('无法定位原文，可能已被修改', 'info')
     return
   }
-  draftText.value = text.slice(0, idx) + payload.suggestion + text.slice(idx + payload.original.length)
+  draftText.value = text.slice(0, resolved.start) + payload.suggestion + text.slice(resolved.end)
   showToast('已替换', 'success')
 }
 
@@ -818,7 +889,7 @@ function onPanelErrorClick(errorId: string) {
 }
 
 function onApplyPolish(payload: { errorId: string; polished: string }) {
-  const errors = correctionErrors.value ?? evaluateResult.value?.errors
+  const errors = evaluateResult.value?.errors
   if (!errors) return
   const err = errors.find((e) => e.id === payload.errorId)
   if (!err?.original) return
@@ -831,38 +902,23 @@ function onApplyPolish(payload: { errorId: string; polished: string }) {
   }
   const { start, end } = resolved
 
-  const delta = payload.polished.length - (end - start)
-
-  // 先标记 + 调整 span，再更新文本（DocEditor watch 是 sync）
-  fixedErrorIds.value = new Set([...fixedErrorIds.value, payload.errorId])
-
-  if (correctionErrors.value) {
-    for (const other of correctionErrors.value) {
-      if (other.id === payload.errorId) continue
-      if (fixedErrorIds.value.has(other.id)) continue
-      if (other.span.start >= end) {
-        other.span.start += delta
-        other.span.end += delta
-      } else if (other.span.start > start) {
-        other.span.end += delta
-      }
-    }
-  }
-
   const newText = text.slice(0, start) + payload.polished + text.slice(end)
   draftText.value = newText
   evaluatedText.value = newText
   showToast('已替换', 'success')
 }
 
-function onStartFix() {
-  const errors = evaluateResult.value?.errors
-  if (!errors?.length) return
-  // 深拷贝 errors 快照
-  correctionErrors.value = JSON.parse(JSON.stringify(errors))
-  fixedErrorIds.value = new Set()
-  correctionMode.value = true
-  activePanel.value = 'revise'
+function onReplaceSentence(payload: { original: string; replacement: string }) {
+  const text = draftText.value
+  const idx = text.indexOf(payload.original)
+  if (idx === -1) {
+    showToast('原句已被修改，无法定位替换', 'info')
+    return
+  }
+  const newText = text.slice(0, idx) + payload.replacement + text.slice(idx + payload.original.length)
+  draftText.value = newText
+  evaluatedText.value = newText
+  showToast('已替换', 'success')
 }
 
 function onStartPolish() {
@@ -870,7 +926,30 @@ function onStartPolish() {
 }
 
 // 在所有匹配中找到最接近 hintPos 的位置
-function findClosestMatch(text: string, needle: string, hintPos: number, caseSensitive = true): number {
+function isWordChar(ch: string): boolean {
+  return /[A-Za-z0-9'_/-]/.test(ch)
+}
+
+function shouldUseWordBoundary(needle: string): boolean {
+  if (!needle) return false
+  return isWordChar(needle[0]) && isWordChar(needle[needle.length - 1])
+}
+
+function isWholeWordMatch(text: string, start: number, len: number): boolean {
+  if (start < 0 || len <= 0) return false
+  const end = start + len
+  const leftOk = start === 0 || !isWordChar(text[start - 1])
+  const rightOk = end >= text.length || !isWordChar(text[end])
+  return leftOk && rightOk
+}
+
+function findClosestMatch(
+  text: string,
+  needle: string,
+  hintPos: number,
+  caseSensitive = true,
+  wholeWordOnly = false,
+): number {
   const haystack = caseSensitive ? text : text.toLowerCase()
   const target = caseSensitive ? needle : needle.toLowerCase()
   let bestIdx = -1
@@ -879,6 +958,10 @@ function findClosestMatch(text: string, needle: string, hintPos: number, caseSen
   while (searchFrom <= haystack.length - target.length) {
     const idx = haystack.indexOf(target, searchFrom)
     if (idx === -1) break
+    if (wholeWordOnly && !isWholeWordMatch(text, idx, needle.length)) {
+      searchFrom = idx + 1
+      continue
+    }
     const dist = Math.abs(idx - hintPos)
     if (dist < bestDist) {
       bestDist = dist
@@ -894,27 +977,34 @@ function resolveErrorSpan(
   text: string,
 ): { start: number; end: number } | null {
   const { start, end } = err.span
-  // 1. span 有效且文本匹配 → 直接用
-  if (start >= 0 && end <= text.length && start < end && text.slice(start, end) === err.original) {
-    return { start, end }
-  }
   if (!err.original) return null
+
+  const wholeWord = shouldUseWordBoundary(err.original)
+
+  // 1. span 有效且文本匹配（需要时必须是整词）
+  if (start >= 0 && end <= text.length && start < end && text.slice(start, end) === err.original) {
+    if (!wholeWord || isWholeWordMatch(text, start, end - start)) {
+      return { start, end }
+    }
+  }
+
   // 2. 精确搜索（优先最接近原始 span 位置的匹配）
-  const idx = findClosestMatch(text, err.original, start)
+  const idx = findClosestMatch(text, err.original, start, true, wholeWord)
   if (idx !== -1) {
     return { start: idx, end: idx + err.original.length }
   }
+
   // 3. 忽略大小写搜索（优先最接近原始 span 位置的匹配）
-  const idxLower = findClosestMatch(text, err.original, start, false)
+  const idxLower = findClosestMatch(text, err.original, start, false, wholeWord)
   if (idxLower !== -1) {
     return { start: idxLower, end: idxLower + err.original.length }
   }
+
   // 4. 规范化空白后搜索（合并多余空格）
   const normText = text.replace(/\s+/g, ' ')
   const normOrig = err.original.replace(/\s+/g, ' ')
   const idxNorm = normText.indexOf(normOrig)
   if (idxNorm !== -1) {
-    // 映射回原文位置：逐字符对齐
     let origPos = 0
     let normPos = 0
     while (normPos < idxNorm && origPos < text.length) {
@@ -938,92 +1028,26 @@ function resolveErrorSpan(
       remaining--
       matchLen = p - matchStart
     }
-    return { start: matchStart, end: matchStart + matchLen }
+
+    if (!wholeWord || isWholeWordMatch(text, matchStart, matchLen)) {
+      return { start: matchStart, end: matchStart + matchLen }
+    }
   }
+
   return null
 }
 
 function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
-  const s = err.suggestion?.trim()
-  if (!s || /^n\/?a$/i.test(s)) return false
+  if (err.suggestion == null) return false
+  const s = err.suggestion.trim()
+  if (/^n\/?a$/i.test(s)) return false
+  // 空字符串表示删除，是有效操作
+  if (s === '' && err.original?.trim()) return true
+  if (!s) return false
   if (err.original && s === err.original.trim()) return false
   return true
 }
 
-function onFixError(errorId: string) {
-  if (!correctionErrors.value) return
-  const err = correctionErrors.value.find((e) => e.id === errorId)
-  if (!err || !err.original || !hasValidSuggestion(err)) return
-  if (fixedErrorIds.value.has(errorId)) return
-
-  const text = draftText.value
-  const resolved = resolveErrorSpan(err, text)
-  if (!resolved) {
-    showToast(`无法定位「${err.original.slice(0, 20)}…」，可能已被修改`, 'info')
-    return
-  }
-  const { start, end } = resolved
-
-  const suggestion = err.suggestion!
-  const delta = suggestion.length - (end - start)
-
-  // 先标记已修复 + 调整 span（在 draftText 变化之前，因为 DocEditor watch 是 sync）
-  fixedErrorIds.value = new Set([...fixedErrorIds.value, errorId])
-
-  for (const other of correctionErrors.value) {
-    if (other.id === errorId) continue
-    if (fixedErrorIds.value.has(other.id)) continue
-    if (other.span.start >= end) {
-      other.span.start += delta
-      other.span.end += delta
-    } else if (other.span.start > start) {
-      other.span.end += delta
-    }
-  }
-
-  // 最后更新文本（触发 DocEditor sync watch 时 fixedErrorIds 已是最新）
-  const newText = text.slice(0, start) + suggestion + text.slice(end)
-  draftText.value = newText
-  evaluatedText.value = newText
-}
-
-function onFixAll() {
-  if (!correctionErrors.value) return
-  const unfixed = correctionErrors.value
-    .filter((e) => !fixedErrorIds.value.has(e.id) && e.category !== 'suggestion' && e.original && hasValidSuggestion(e))
-
-  let text = draftText.value
-  const newFixed = new Set(fixedErrorIds.value)
-
-  // 按 span.start 降序：从后往前替换，天然不需要偏移调整
-  // 但 span 可能已漂移，需要用 resolveErrorSpan 重新定位
-  // 先解析全部位置，再按 start 降序排列替换
-  const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
-  for (const err of unfixed) {
-    const pos = resolveErrorSpan(err, text)
-    if (pos) resolved.push({ err, ...pos })
-  }
-  resolved.sort((a, b) => b.start - a.start)
-
-  for (const { err, start, end } of resolved) {
-    text = text.slice(0, start) + err.suggestion! + text.slice(end)
-    newFixed.add(err.id)
-  }
-
-  draftText.value = text
-  evaluatedText.value = text
-  fixedErrorIds.value = newFixed
-}
-
-function onExitCorrection() {
-  correctionErrors.value = null
-  fixedErrorIds.value = new Set()
-  correctionMode.value = false
-  evaluatedText.value = draftText.value
-  activePanel.value = 'score'
-  // 恢复语法检查
-  grammarCheckActive.value = true
-}
 
 function onLoadHistoryResult(detail: EvaluationDetailResponse) {
   evaluateResult.value = detail.result
@@ -1046,13 +1070,11 @@ async function onSubmit() {
   submitting.value = true
   evaluateResult.value = null
   evaluateError.value = null
-  // 重置订正/润色状态
-  correctionErrors.value = null
-  fixedErrorIds.value = new Set()
-  correctionMode.value = false
   // 暂停语法检查
   grammarCheckActive.value = false
   grammarErrors.value = []
+  gptErrors.value = []
+  gptSuggestionErrors.value = []
   grammarCheckError.value = null
   grammarReChecked.value = false
   grammarCheckAbortController?.abort()
@@ -1129,13 +1151,14 @@ function onClear() {
   lastChatResult.value = null
   aiDocId.value = ''
   cursorPlacement.value = null
-  correctionMode.value = false
   evaluateResult.value = null
   activeErrorId.value = null
   // 清空语法检查
   grammarErrors.value = []
   grammarCheckError.value = null
   grammarFixedErrorIds.value = new Set()
+  gptErrors.value = []
+  gptSuggestionErrors.value = []
   grammarCheckActive.value = true
   grammarReChecked.value = false
   grammarCheckAbortController?.abort()
@@ -1371,6 +1394,9 @@ function onAiNoteStop() {
   }
 }
 </style>
+
+
+
 
 
 

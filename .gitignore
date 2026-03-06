@@ -11,6 +11,16 @@ node_modules/
 dist/
 .vite/
 
+# Maven local repository cache
+backend/.m2/
+backend/.m2home/
+
+# Unrelated tools
+apps/
+
+# Claude Code local settings
+.claude/settings.local.json
+
 # Env (never commit secrets)
 .env
 .env.local
