@@ -8,10 +8,13 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
+import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
+import com.personalenglishai.backend.service.writing.GrammarCheckService;
+import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -55,7 +58,16 @@ class WritingControllerTest {
     private WritingPolishService writingPolishService;
 
     @MockBean
+    private GrammarCheckService grammarCheckService;
+
+    @MockBean
+    private WritingSuggestionsService writingSuggestionsService;
+
+    @MockBean
     private EssayEvaluationMapper essayEvaluationMapper;
+
+    @MockBean
+    private EssayFavoriteMapper essayFavoriteMapper;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -229,6 +241,7 @@ class WritingControllerTest {
 
             when(essayEvaluationMapper.selectByUserId(1L, 0, 10)).thenReturn(List.of(record));
             when(essayEvaluationMapper.countByUserId(1L)).thenReturn(1L);
+            when(essayFavoriteMapper.selectEvalIdsByUserId(1L)).thenReturn(List.of());
 
             mockMvc.perform(get("/api/writing/history?page=0&size=10")
                             .requestAttr("userId", 1L))
@@ -245,6 +258,7 @@ class WritingControllerTest {
         void history_capsPageSize() throws Exception {
             when(essayEvaluationMapper.selectByUserId(1L, 0, 50)).thenReturn(List.of());
             when(essayEvaluationMapper.countByUserId(1L)).thenReturn(0L);
+            when(essayFavoriteMapper.selectEvalIdsByUserId(1L)).thenReturn(List.of());
 
             mockMvc.perform(get("/api/writing/history?page=0&size=999")
                             .requestAttr("userId", 1L))
@@ -318,3 +332,7 @@ class WritingControllerTest {
         return req;
     }
 }
+
+
+
+

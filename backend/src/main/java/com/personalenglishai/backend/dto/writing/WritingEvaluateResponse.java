@@ -28,6 +28,8 @@ public class WritingEvaluateResponse {
     private ImprovementDto improvement;
     private String summary;
     private List<ErrorDto> errors;
+    @JsonProperty("error_count")
+    private Integer errorCount;
 
     public WritingEvaluateResponse() {
     }
@@ -110,7 +112,11 @@ public class WritingEvaluateResponse {
 
     public void setErrors(List<ErrorDto> errors) {
         this.errors = errors;
+        this.errorCount = (errors != null) ? errors.size() : 0;
     }
+
+    public Integer getErrorCount() { return errorCount; }
+    public void setErrorCount(Integer errorCount) { this.errorCount = errorCount; }
 
     public GaokaoScoreDto getGaokaoScore() { return gaokaoScore; }
     public void setGaokaoScore(GaokaoScoreDto gaokaoScore) { this.gaokaoScore = gaokaoScore; }

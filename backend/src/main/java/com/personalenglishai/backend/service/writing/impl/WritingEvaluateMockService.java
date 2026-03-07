@@ -212,20 +212,14 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             List<WritingEvaluateResponse.ErrorDto> ruleErrors = mergeErrors(
                     ltErrors, saplingErrors, request.getEssay());
 
-            // ── 第二次调用：专门查错（注意力不被评分分散）→ 与评分 errors 合并 ──
-            List<WritingEvaluateResponse.ErrorDto> extraErrors = runDedicatedErrorDetection(
-                    request.getEssay(), requestId + "-err");
-            List<WritingEvaluateResponse.ErrorDto> aiMerged = mergeErrors(
-                    result.errors(), extraErrors, request.getEssay());
-
-            // 规则引擎为 primary，AI 补充
-            List<WritingEvaluateResponse.ErrorDto> mergedErrors = mergeErrors(
-                    ruleErrors, aiMerged, request.getEssay());
+            log.info("[Evaluate] 错误统计 requestId={} LT={} Sapling={} 合并后={}",
+                    requestId, ltErrors.size(), saplingErrors.size(),
+                    ruleErrors.size());
 
             EvaluationResult enriched = new EvaluationResult(
                     result.mode(), result.gradeByDimension(), result.analysisByDimension(),
                     result.scoreByDimension(), result.priorityFocus(), result.priorityFocusDetail(),
-                    mergedErrors, result.aiSummary());
+                    ruleErrors, result.aiSummary());
 
             WritingEvaluateResponse response = buildResponse(requestId, enriched, mode, "ai", existingProfile);
             updateAbilityProfile(request.getUserId(), result.scoreByDimension());
@@ -749,6 +743,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 ? "评分完成。重点提升方向：" + String.join("、", result.priorityFocus()) + "。"
                 : result.aiSummary());
         response.setErrors(result.errors());
+        log.info("[Evaluate] GPT 检查到 {} 个错误/建议", result.errors() != null ? result.errors().size() : 0);
         return response;
     }
 

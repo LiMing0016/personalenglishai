@@ -130,6 +130,9 @@ public class SaplingService {
         }
     }
 
+    /** 超过此长度的 span 视为句子级润色，跳过 */
+    private static final int MAX_SPAN_LENGTH = 80;
+
     private WritingEvaluateResponse.ErrorDto toErrorDto(JsonNode edit, String essay, int idx) {
         // Sapling gives start/end relative to sentence, plus sentence_start as global offset
         int sentenceStart = edit.path("sentence_start").asInt(0);
@@ -138,12 +141,23 @@ public class SaplingService {
 
         if (start < 0 || end <= start || end > essay.length()) return null;
 
+        // 过滤句子级润色（整句替换），只保留词/短语级的具体错误
+        if ((end - start) > MAX_SPAN_LENGTH) {
+            log.debug("Sapling: skipping sentence-level edit span={}..{} len={}", start, end, end - start);
+            return null;
+        }
+
         String original = essay.substring(start, end);
         if (original.isBlank()) return null;
 
         String replacement = edit.path("replacement").asText("");
         String errorType = edit.path("error_type").asText("");
         String generalErrorType = edit.path("general_error_type").asText("");
+
+        // 只保留语法/拼写/标点错误，过滤 style（润色建议）
+        if ("style".equalsIgnoreCase(generalErrorType)) {
+            return null;
+        }
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId("sp" + idx);

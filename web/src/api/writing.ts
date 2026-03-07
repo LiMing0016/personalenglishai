@@ -51,6 +51,7 @@ export interface WritingEvaluateResponse {
     band: string
   }
   summary: string
+  error_count?: number
   errors: Array<{
     id: string
     type:
@@ -374,5 +375,45 @@ export function chatWriting(payload: WritingChatRequest): Promise<WritingChatRes
       aiHint: payload.aiHint ?? undefined,
       selectedText: payload.selectedText?.trim() || undefined,
     }, { timeout: 60000 })
+    .then((res) => res.data)
+}
+
+// ── Audit Topic (千问题目解析) ──
+
+export interface AuditTopicRequest {
+  topic: string
+  genre?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+}
+
+export interface AuditTopicResponse {
+  status: 'complete' | 'need_more_info' | 'invalid'
+  topic?: string
+  genre?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+  message?: string
+}
+
+export function auditTopic(req: AuditTopicRequest): Promise<AuditTopicResponse> {
+  return http
+    .post<AuditTopicResponse>('/writing/audit-topic', req, { timeout: 15000 })
+    .then((res) => res.data)
+}
+
+// ── Recognize Topic Image (千问 VL 图片识别) ──
+
+export interface RecognizeTopicImageRequest {
+  imageBase64: string
+}
+
+export interface RecognizeTopicImageResponse {
+  text: string | null
+}
+
+export function recognizeTopicImage(req: RecognizeTopicImageRequest): Promise<RecognizeTopicImageResponse> {
+  return http
+    .post<RecognizeTopicImageResponse>('/writing/recognize-topic-image', req, { timeout: 30000 })
     .then((res) => res.data)
 }

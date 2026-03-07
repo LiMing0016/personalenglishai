@@ -29,6 +29,7 @@
         :active-error-id="activeErrorId"
         :submitting="submitting"
         :evaluate-error="evaluateError"
+        :exam-max-score="examMaxScore"
         @error-click="$emit('error-click', $event)"
         @retry="$emit('retry')"
         @close="$emit('close')"
@@ -106,13 +107,14 @@ const props = defineProps<{
   grammarCheckError?: string | null
   grammarFixedErrorIds?: Set<string>
   rewriteSuggestions?: WritingEvaluateResponse['errors']
+  examMaxScore?: number | null
 }>()
 
 defineEmits<{
   close: []
   'error-click': [errorId: string]
   'apply-polish': [payload: { errorId: string; polished: string }]
-  'replace-sentence': [payload: { original: string; replacement: string }]
+  'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string }]
   'sentence-focus': [range: { start: number; end: number } | null]
   'start-polish': []
   'grammar-fix-error': [errorId: string]
@@ -202,3 +204,4 @@ defineExpose<{
   box-sizing: border-box;
 }
 </style>
+

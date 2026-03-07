@@ -11,6 +11,10 @@ import com.personalenglishai.backend.dto.writing.PolishEssayRequest;
 import com.personalenglishai.backend.dto.writing.PolishEssayResponse;
 import com.personalenglishai.backend.dto.writing.PolishRequest;
 import com.personalenglishai.backend.dto.writing.PolishResponse;
+import com.personalenglishai.backend.dto.writing.AuditTopicRequest;
+import com.personalenglishai.backend.dto.writing.AuditTopicResponse;
+import com.personalenglishai.backend.dto.writing.RecognizeTopicImageRequest;
+import com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
 import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
@@ -21,6 +25,7 @@ import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
 import com.personalenglishai.backend.dto.writing.SuggestionsRequest;
 import com.personalenglishai.backend.dto.writing.SuggestionsResponse;
+import com.personalenglishai.backend.service.writing.AuditTopicService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
@@ -46,6 +51,7 @@ public class WritingController {
     private final WritingPolishService writingPolishService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
+    private final AuditTopicService auditTopicService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final ObjectMapper objectMapper;
@@ -56,6 +62,7 @@ public class WritingController {
                              WritingPolishService writingPolishService,
                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
+                             AuditTopicService auditTopicService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              ObjectMapper objectMapper) {
@@ -65,6 +72,7 @@ public class WritingController {
         this.writingPolishService = writingPolishService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
+        this.auditTopicService = auditTopicService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.objectMapper = objectMapper;
@@ -278,5 +286,21 @@ public class WritingController {
             throw new BizException(ErrorCode.ESSAY_TOO_LONG,
                     "作文太长（" + wordCount + " 词），最多支持 " + MAX_WORDS + " 个词");
         }
+    }
+
+    /** 题目智能解析（千问） */
+    @PostMapping("/audit-topic")
+    public ResponseEntity<AuditTopicResponse> auditTopic(
+            @Valid @RequestBody AuditTopicRequest request) {
+        AuditTopicResponse response = auditTopicService.audit(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /** 图片题目识别（千问 VL） */
+    @PostMapping("/recognize-topic-image")
+    public ResponseEntity<RecognizeTopicImageResponse> recognizeTopicImage(
+            @Valid @RequestBody RecognizeTopicImageRequest request) {
+        RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64());
+        return ResponseEntity.ok(response);
     }
 }

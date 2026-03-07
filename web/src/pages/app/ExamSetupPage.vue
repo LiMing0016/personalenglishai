@@ -1,0 +1,921 @@
+<template>
+  <div class="exam-setup gate-center">
+    <div class="setup-card">
+      <h2 class="gate-title">考试写作 — 题目设置</h2>
+      <p class="gate-desc">填写作文题目信息后开始写作</p>
+
+      <!-- Tab 切换 -->
+      <div class="tab-bar">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="tab-item"
+          :class="{ active: activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <!-- 手动输入 Tab -->
+      <div v-if="activeTab === 'manual'" class="tab-content">
+        <!-- 题目输入 -->
+        <div class="field">
+          <label class="field-label">
+            题目 / 写作要求
+            <span class="required">*</span>
+          </label>
+          <textarea
+            v-model="topic"
+            class="topic-input"
+            rows="7"
+            placeholder="请输入完整的作文题目和写作要求，例如：&#10;Write an essay of 120-150 words based on the picture below. In your essay, you should 1) describe the picture briefly, 2) interpret the meaning, and 3) give your comments.&#10;&#10;或者：&#10;假设你是李华，你的外国朋友Tom对中国的春节很感兴趣，请给他写一封信，介绍中国春节的习俗。80-120词"
+          />
+          <p v-if="topicError" class="field-error">{{ topicError }}</p>
+
+          <!-- 图片上传 -->
+          <div class="image-upload-area">
+            <div v-if="uploadedImage" class="image-preview-wrap">
+              <img :src="uploadedImage" class="image-preview" alt="题目图片" />
+              <div class="image-actions">
+                <button
+                  class="image-action-btn recognize-btn"
+                  :disabled="recognizing"
+                  @click="onRecognizeImage"
+                >
+                  {{ recognizing ? '识别中...' : '识别图片文字' }}
+                </button>
+                <button class="image-action-btn remove-btn" @click="removeImage">删除</button>
+              </div>
+              <p v-if="recognizeError" class="field-error">{{ recognizeError }}</p>
+            </div>
+            <label v-else class="image-upload-btn">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                class="file-input-hidden"
+                @change="onFileChange"
+              />
+              <span class="upload-icon">+</span>
+              <span class="upload-text">上传题目图片</span>
+              <span class="upload-hint">支持 JPG/PNG/WebP，拍照或截图均可</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 体裁选择 -->
+        <div class="field">
+          <label class="field-label">体裁 <span class="optional">（可选）</span></label>
+          <div class="chip-group">
+            <button
+              v-for="g in genres"
+              :key="g"
+              class="chip"
+              :class="{ selected: genre === g }"
+              @click="genre = genre === g ? null : g"
+            >
+              {{ g }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 字数要求 -->
+        <div class="field">
+          <label class="field-label">字数要求 <span class="optional">（可选）</span></label>
+          <div class="chip-group">
+            <button
+              v-for="w in wordRangeOptions"
+              :key="w"
+              class="chip"
+              :class="{ selected: wordRange === w }"
+              @click="wordRange = wordRange === w ? null : w"
+            >
+              {{ w }}
+            </button>
+            <div v-if="showCustomWordRange" class="custom-word-input">
+              <input
+                v-model="customWordRange"
+                type="text"
+                placeholder="如: 150-200"
+                class="custom-input"
+              />
+            </div>
+            <button
+              class="chip"
+              :class="{ selected: showCustomWordRange }"
+              @click="toggleCustomWordRange"
+            >
+              自定义
+            </button>
+          </div>
+        </div>
+
+        <!-- 满分分值 -->
+        <div class="field">
+          <label class="field-label">满分分值 <span class="optional">（默认 100 分）</span></label>
+          <div class="chip-group">
+            <button
+              v-for="s in maxScoreOptions"
+              :key="s"
+              class="chip"
+              :class="{ selected: maxScore === s }"
+              @click="maxScore = maxScore === s ? 100 : s"
+            >
+              {{ s }} 分
+            </button>
+            <div class="custom-word-input">
+              <input
+                v-model.number="customMaxScore"
+                type="number"
+                min="1"
+                max="200"
+                placeholder="自定义"
+                class="custom-input"
+                @input="maxScore = customMaxScore || 100"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- AI 审核提示 -->
+        <div v-if="auditMessage" class="audit-message">
+          <span>{{ auditMessage }}</span>
+        </div>
+
+        <!-- 提示 -->
+        <div class="hint-box">
+          <span class="hint-icon">i</span>
+          <span>也可以直接粘贴完整考试题目，未选择的信息系统会自动识别</span>
+        </div>
+      </div>
+
+      <!-- AI 生成 Tab（占位） -->
+      <div v-else-if="activeTab === 'ai'" class="tab-content">
+        <div class="placeholder-box">
+          <p class="placeholder-text">AI 智能出题功能即将上线</p>
+          <p class="placeholder-sub">支持按体裁、难度自动生成模拟考试题目</p>
+        </div>
+      </div>
+
+      <!-- 历年真题 Tab（占位） -->
+      <div v-else-if="activeTab === 'past'" class="tab-content">
+        <div class="placeholder-box">
+          <p class="placeholder-text">历年真题库即将上线</p>
+          <p class="placeholder-sub">收录全国高考、各省模考英语写作真题</p>
+        </div>
+      </div>
+
+      <!-- AI 确认卡片 -->
+      <div v-if="confirmStep === 'confirming'" class="confirm-overlay">
+        <div class="confirm-card">
+          <h3 class="confirm-title">AI 已识别题目信息</h3>
+          <p class="confirm-sub">请确认或修改以下信息</p>
+          <div class="confirm-body">
+            <div v-if="auditMessage" class="confirm-hint">{{ auditMessage }}</div>
+            <div class="confirm-field">
+              <label class="confirm-label">题目</label>
+              <textarea
+                v-model="parsedResult.topic"
+                class="confirm-input confirm-textarea"
+                rows="3"
+              />
+            </div>
+            <div class="confirm-field">
+              <label class="confirm-label">体裁</label>
+              <div class="chip-group">
+                <button
+                  v-for="g in genres"
+                  :key="g"
+                  class="chip chip-sm"
+                  :class="{ selected: parsedResult.genre === g }"
+                  @click="parsedResult.genre = parsedResult.genre === g ? null : g"
+                >
+                  {{ g }}
+                </button>
+              </div>
+            </div>
+            <div class="confirm-field">
+              <label class="confirm-label">字数</label>
+              <input
+                v-model="parsedResult.wordRange"
+                class="confirm-input"
+                placeholder="如: 80-120"
+              />
+            </div>
+            <div class="confirm-field">
+              <label class="confirm-label">写作要求</label>
+              <textarea
+                v-model="parsedResult.requirements"
+                class="confirm-input confirm-textarea"
+                rows="3"
+                placeholder="如有具体写作要点可在此补充"
+              />
+            </div>
+            <div class="confirm-field">
+              <label class="confirm-label">满分</label>
+              <div class="confirm-score-row">
+                <input
+                  v-model.number="parsedResult.maxScore"
+                  type="number"
+                  min="1"
+                  max="200"
+                  class="confirm-input"
+                  style="width: 100px;"
+                />
+                <span class="confirm-score-hint">分</span>
+              </div>
+            </div>
+          </div>
+          <div class="confirm-actions">
+            <button class="btn-back" @click="confirmStep = 'idle'">返回修改</button>
+            <button class="gate-btn" @click="onFinalConfirm">确认，开始写作</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 解析中 -->
+      <div v-if="confirmStep === 'parsing'" class="confirm-overlay">
+        <div class="confirm-card parsing-card">
+          <div class="gate-spinner" />
+          <p class="parsing-text">AI 正在解析题目信息...</p>
+        </div>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="action-bar">
+        <button class="btn-back" @click="$emit('back')">
+          返回选择模式
+        </button>
+        <button
+          class="gate-btn"
+          :disabled="!canStart || confirmStep !== 'idle'"
+          @click="onStartConfirm"
+        >
+          开始写作
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { auditTopic, recognizeTopicImage } from '@/api/writing'
+
+export interface ExamTopicInfo {
+  topic: string
+  genre: string | null
+  wordRange: string | null
+  requirements: string | null
+  maxScore: number
+}
+
+const emit = defineEmits<{
+  confirm: [info: ExamTopicInfo]
+  back: []
+}>()
+
+const tabs = [
+  { key: 'manual', label: '手动输入' },
+  { key: 'ai', label: 'AI 生成' },
+  { key: 'past', label: '历年真题' },
+] as const
+
+type TabKey = (typeof tabs)[number]['key']
+
+const activeTab = ref<TabKey>('manual')
+
+// ── 手动输入表单 ──
+
+const topic = ref('')
+const genre = ref<string | null>(null)
+const wordRange = ref<string | null>(null)
+const showCustomWordRange = ref(false)
+const customWordRange = ref('')
+
+// ── 图片上传 ──
+const uploadedImage = ref<string | null>(null) // data URL
+const uploadedImageBase64 = ref<string | null>(null) // pure base64
+const recognizing = ref(false)
+const recognizeError = ref<string | null>(null)
+
+function onFileChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    recognizeError.value = '图片不能超过 5MB'
+    return
+  }
+  recognizeError.value = null
+  const reader = new FileReader()
+  reader.onload = () => {
+    const dataUrl = reader.result as string
+    uploadedImage.value = dataUrl
+    // 提取纯 base64（去掉 data:image/xxx;base64, 前缀）
+    uploadedImageBase64.value = dataUrl.split(',')[1] || null
+  }
+  reader.readAsDataURL(file)
+  // 清空 input 以便重复选同一文件
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+function removeImage() {
+  uploadedImage.value = null
+  uploadedImageBase64.value = null
+  recognizeError.value = null
+}
+
+async function onRecognizeImage() {
+  if (!uploadedImageBase64.value) return
+  recognizing.value = true
+  recognizeError.value = null
+  try {
+    const res = await recognizeTopicImage({ imageBase64: uploadedImageBase64.value })
+    if (res.text) {
+      // 追加到现有题目文本
+      topic.value = topic.value
+        ? topic.value.trimEnd() + '\n' + res.text
+        : res.text
+    } else {
+      recognizeError.value = '未能识别到文字内容，请尝试更清晰的图片'
+    }
+  } catch {
+    recognizeError.value = '图片识别失败，请重试'
+  } finally {
+    recognizing.value = false
+  }
+}
+
+const genres = ['书信', '议论文', '说明文', '演讲稿', '看图作文', '通知', '日记']
+
+const wordRangeOptions = ['80-100', '100-120', '120-150']
+
+const maxScore = ref(100)
+const customMaxScore = ref<number | null>(null)
+const maxScoreOptions = [10, 15, 20, 25]
+
+function toggleCustomWordRange() {
+  showCustomWordRange.value = !showCustomWordRange.value
+  if (!showCustomWordRange.value) {
+    customWordRange.value = ''
+  } else {
+    wordRange.value = null
+  }
+}
+
+// ── 校验 ──
+
+const topicError = computed(() => {
+  const t = topic.value.trim()
+  if (!t) return null // 空的时候不报错，靠 canStart 禁用按钮
+  if (/^\d+$/.test(t)) return '请输入有效的作文题目'
+  if (/^[^a-zA-Z\u4e00-\u9fff]*$/.test(t)) return '请输入有效的作文题目'
+  if (t.length < 5) return '题目过于简略，建议补充写作情境和要求'
+  return null
+})
+
+const canStart = computed(() => {
+  const t = topic.value.trim()
+  if (!t) return false
+  if (topicError.value) return false
+  return true
+})
+
+// ── AI 确认流程 ──
+
+type ConfirmStep = 'idle' | 'parsing' | 'confirming'
+const confirmStep = ref<ConfirmStep>('idle')
+const parsedResult = ref<ExamTopicInfo>({ topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100 })
+const auditMessage = ref<string | null>(null)
+
+function getEffectiveWordRange(): string | null {
+  return showCustomWordRange.value
+    ? (customWordRange.value.trim() || null)
+    : wordRange.value
+}
+
+async function onStartConfirm() {
+  if (!canStart.value) return
+
+  confirmStep.value = 'parsing'
+  auditMessage.value = null
+
+  try {
+    const res = await auditTopic({
+      topic: topic.value.trim(),
+      genre: genre.value ?? undefined,
+      wordRange: getEffectiveWordRange() ?? undefined,
+    })
+
+    if (res.status === 'invalid') {
+      auditMessage.value = res.message || '请输入有效的作文题目'
+      confirmStep.value = 'idle'
+      return
+    }
+
+    parsedResult.value = {
+      topic: res.topic || topic.value.trim(),
+      genre: res.genre || null,
+      wordRange: res.wordRange || null,
+      requirements: res.requirements || null,
+      maxScore: maxScore.value,
+    }
+
+    if (res.status === 'need_more_info' && res.message) {
+      auditMessage.value = res.message
+    }
+
+    confirmStep.value = 'confirming'
+  } catch (e) {
+    // API 失败时兜底：直接使用用户输入
+    parsedResult.value = {
+      topic: topic.value.trim(),
+      genre: genre.value,
+      wordRange: getEffectiveWordRange(),
+      requirements: null,
+      maxScore: maxScore.value,
+    }
+    confirmStep.value = 'confirming'
+  }
+}
+
+function onFinalConfirm() {
+  emit('confirm', parsedResult.value)
+  confirmStep.value = 'idle'
+}
+</script>
+
+<style src="@/styles/gate.css" />
+<style scoped>
+.setup-card {
+  width: 100%;
+  max-width: 640px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 40px 36px 32px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 24px;
+}
+
+.tab-item {
+  flex: 1;
+  padding: 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-item:hover {
+  color: #374151;
+}
+.tab-item.active {
+  color: #047857;
+  border-bottom-color: #047857;
+}
+
+/* Tab content */
+.tab-content {
+  min-height: 280px;
+}
+
+/* Field */
+.field {
+  margin-bottom: 20px;
+}
+
+.field-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.required {
+  color: #ef4444;
+  margin-left: 2px;
+}
+
+.optional {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.topic-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #111827;
+  resize: vertical;
+  transition: border-color 0.15s;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.topic-input:focus {
+  outline: none;
+  border-color: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.1);
+}
+.topic-input::placeholder {
+  color: #9ca3af;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #ef4444;
+}
+
+/* Chip group */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.chip {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.chip:hover {
+  border-color: #047857;
+  color: #047857;
+}
+.chip.selected {
+  background: #ecfdf5;
+  border-color: #047857;
+  color: #047857;
+  font-weight: 600;
+}
+
+.custom-word-input {
+  display: inline-flex;
+}
+
+.custom-input {
+  width: 100px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 20px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.custom-input:focus {
+  border-color: #047857;
+}
+
+/* Hint box */
+.hint-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #f0fdf4;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+
+.hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #047857;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Placeholder for future tabs */
+.placeholder-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  border: 2px dashed #e5e7eb;
+  border-radius: 12px;
+  padding: 32px;
+}
+
+.placeholder-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #6b7280;
+  margin: 0 0 6px;
+}
+
+.placeholder-sub {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* Action bar */
+.action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.btn-back {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  background: none;
+  border: 1.5px solid #d1d5db;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-back:hover {
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+/* Image upload */
+.image-upload-area {
+  margin-top: 10px;
+}
+
+.image-upload-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px;
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.image-upload-btn:hover {
+  border-color: #047857;
+  background: #f0fdf4;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+.upload-icon {
+  font-size: 24px;
+  color: #9ca3af;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.upload-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.upload-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.image-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.image-preview {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.image-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.image-action-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+}
+
+.recognize-btn {
+  color: #fff;
+  background: #047857;
+}
+.recognize-btn:hover:not(:disabled) {
+  background: #065f46;
+}
+.recognize-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.remove-btn {
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+.remove-btn:hover {
+  color: #ef4444;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+/* Audit message */
+.audit-message {
+  padding: 10px 14px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+/* Confirm hint */
+.confirm-hint {
+  padding: 10px 14px;
+  background: #fef3c7;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+/* Confirm overlay */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.confirm-card {
+  width: 90%;
+  max-width: 480px;
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.confirm-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px;
+}
+
+.confirm-sub {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0 0 20px;
+}
+
+.confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirm-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.confirm-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #111827;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.confirm-input:focus {
+  outline: none;
+  border-color: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.1);
+}
+
+.confirm-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.chip-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.confirm-score-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirm-score-hint {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.parsing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px 28px;
+}
+
+.parsing-text {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 560px) {
+  .setup-card {
+    padding: 28px 20px 24px;
+  }
+  .confirm-card {
+    padding: 24px 20px 20px;
+  }
+}
+</style>

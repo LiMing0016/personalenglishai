@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
 import com.personalenglishai.backend.entity.User;
 import com.personalenglishai.backend.entity.UserProfile;
+import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.mapper.UserMapper;
+import com.personalenglishai.backend.service.UserAbilityProfileService;
 import com.personalenglishai.backend.service.UserProfileService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -41,6 +43,12 @@ class UserProfileControllerTest {
 
     @MockBean
     private UserMapper userMapper;
+
+    @MockBean
+    private UserAbilityProfileService userAbilityProfileService;
+
+    @MockBean
+    private EssayEvaluationMapper essayEvaluationMapper;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -110,3 +118,4 @@ class UserProfileControllerTest {
 
     private record StageBody(String studyStage) {}
 }
+

@@ -2,9 +2,9 @@
   <div class="doc-editor">
     <div class="doc-canvas">
       <header class="doc-header">
-        <router-link to="/app" class="back-link" title="返回总览">
+        <button type="button" class="back-link" title="返回总览" @click="emit('back')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </router-link>
+        </button>
         <span class="doc-title">{{ docTitle }}</span>
         <div class="doc-actions">
           <span class="word-count">{{ wordCount }} 词</span>
@@ -62,8 +62,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { buildHighlightedHtml, type ErrorSpan, type HighlightRange } from './buildHighlightedHtml'
-
-export type SelectionState = { text: string; start: number; end: number }
+import {
+  getCurrentCursorOffset as getCursorOffset,
+  getSelectionState as getEditorSelectionState,
+  setCursorAt as setEditorCursorAt,
+  type SelectionState,
+} from './docEditorSelection'
 
 const props = defineProps<{
   draftText: string
@@ -86,6 +90,7 @@ const emit = defineEmits<{
   'error-click': [errorId: string]
   'fix-error': [errorId: string]
   'dismiss-error': [errorId: string]
+  back: []
 }>()
 
 const editorEl = ref<HTMLDivElement | null>(null)
@@ -328,54 +333,11 @@ function onEditorClick(e: MouseEvent) {
 }
 
 function setCursorAt(el: HTMLElement, charOffset: number): boolean {
-  const sel = window.getSelection()
-  if (!sel) return false
-  const range = document.createRange()
-  let passed = 0
-  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null)
-  let node: Text | null = walk.nextNode() as Text | null
-  while (node) {
-    const len = node.textContent?.length ?? 0
-    if (passed + len >= charOffset) {
-      range.setStart(node, charOffset - passed)
-      range.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(range)
-      el.focus()
-      return true
-    }
-    passed += len
-    node = walk.nextNode() as Text | null
-  }
-  if (passed > 0) {
-    const last = walk.currentNode as Text
-    if (last) {
-      range.setStart(last, last.textContent?.length ?? 0)
-      range.collapse(true)
-      sel.removeAllRanges()
-      sel.addRange(range)
-      el.focus()
-      return true
-    }
-  }
-  return false
+  return setEditorCursorAt(el, charOffset)
 }
 
 function getCurrentCursorOffset(): number | null {
-  const el = editorEl.value
-  if (!el) return null
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return null
-  const range = sel.getRangeAt(0)
-  if (!el.contains(range.startContainer)) return null
-  try {
-    const preRange = document.createRange()
-    preRange.selectNodeContents(el)
-    preRange.setEnd(range.startContainer, range.startOffset)
-    return preRange.toString().length
-  } catch {
-    return null
-  }
+  return getCursorOffset(editorEl.value)
 }
 
 function addSelectionListeners() {
@@ -423,32 +385,7 @@ onBeforeUnmount(() => {
 })
 
 function getSelectionState(): SelectionState | null {
-  const el = editorEl.value
-  if (!el || props.correctionMode) return null
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0) return null
-  const range = sel.getRangeAt(0)
-  const text = range.toString()
-  const trimmed = text.trim()
-  if (!trimmed || trimmed.length < 2) return null
-  const anchorNode = sel.anchorNode
-  const focusNode = sel.focusNode
-  const inside =
-    anchorNode != null &&
-    focusNode != null &&
-    el.contains(anchorNode) &&
-    el.contains(focusNode)
-  if (!inside) return null
-  try {
-    const startRange = document.createRange()
-    startRange.selectNodeContents(el)
-    startRange.setEnd(range.startContainer, range.startOffset)
-    const start = startRange.toString().length
-    const end = start + text.length
-    return { text, start, end }
-  } catch {
-    return { text, start: 0, end: text.length }
-  }
+  return getEditorSelectionState(editorEl.value, props.correctionMode)
 }
 
 function onSelectionChange() {
@@ -721,7 +658,7 @@ function clear() {
 }
 
 /* ── 句子高亮 ── */
-.doc-content :deep(.sentence-hl) {
+.doc-content .sentence-hl {
   background: rgba(59, 130, 246, 0.2);
   border-bottom: 2px solid #2563eb;
   border-radius: 3px;
@@ -789,6 +726,8 @@ function clear() {
   color: #dc2626;
 }
 </style>
+
+
 
 
 

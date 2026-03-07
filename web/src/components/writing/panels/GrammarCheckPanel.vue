@@ -106,7 +106,12 @@
           <span class="sg-hint">AI 检测搭配不当、中式英语等隐含问题</span>
         </div>
         <div v-if="suggestionsLoaded" class="sg-header-actions">
-          <span class="sg-toggle" @click="reloadSuggestions" title="重新检测">↻</span>
+          <span
+            class="sg-toggle"
+            :class="{ 'sg-toggle--disabled': !canReloadSuggestions }"
+            :title="canReloadSuggestions ? '重新检测' : '修改作文后可重新检测'"
+            @click="reloadSuggestions"
+          >↻</span>
           <span class="sg-toggle" @click="suggestionsCollapsed = !suggestionsCollapsed">
             {{ suggestionsCollapsed ? '展开' : '收起' }}
           </span>
@@ -195,9 +200,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick, ref, onBeforeUnmount } from 'vue'
+import { computed, watch, nextTick, ref, onMounted, onBeforeUnmount } from 'vue'
 import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
 import { fetchWritingSuggestions } from '@/api/writing'
+import { loadPolishSuggestions, savePolishSuggestions } from '../editorShellStorage'
 
 type ErrorItem = WritingEvaluateResponse['errors'][number]
 
@@ -323,6 +329,23 @@ const gptHardErrors = ref<SuggestionErrorItem[]>([])
 const appliedSuggestionIds = ref(new Set<string>())
 const appliedGptErrorIds = ref(new Set<string>())
 let suggestionsAbort: AbortController | null = null
+let lastSuggestionsText = ''  // 上次检查时的文本，防止重复检查
+
+// 恢复缓存的润色建议
+onMounted(() => {
+  const cached = loadPolishSuggestions()
+  if (cached) {
+    if (cached.errors.length > 0) {
+      gptHardErrors.value = cached.errors as SuggestionErrorItem[]
+    }
+    if (cached.suggestions.length > 0) {
+      suggestions.value = cached.suggestions as SuggestionItem[]
+    }
+    if (gptHardErrors.value.length > 0 || suggestions.value.length > 0) {
+      suggestionsLoaded.value = true
+    }
+  }
+})
 
 // 语法检查完成且无错误时显示建议区块
 const showSuggestions = computed(() =>
@@ -384,12 +407,12 @@ async function loadSuggestions() {
     gptHardErrors.value = (res.errors ?? []).filter(
       (e) => e.original && e.suggestion && e.original !== e.suggestion && text.includes(e.original),
     )
-    if (gptHardErrors.value.length > 0) {
-      emit('gpt-errors-loaded', gptHardErrors.value)
-    }
-    if (suggestions.value.length > 0) {
-      emit('gpt-suggestions-loaded', suggestions.value)
-    }
+    // 只 emit 面板实际展示的数据，避免面板无内容但编辑器有红线
+    emit('gpt-errors-loaded', gptHardErrors.value)
+    emit('gpt-suggestions-loaded', suggestions.value)
+    // 缓存到 sessionStorage，刷新后可恢复
+    savePolishSuggestions({ errors: gptHardErrors.value, suggestions: suggestions.value })
+    lastSuggestionsText = text
     suggestionsLoaded.value = true
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.name === 'AbortError') return
@@ -406,7 +429,13 @@ watch(showSuggestions, (show) => {
   }
 })
 
+const canReloadSuggestions = computed(() => {
+  const text = props.essayText?.trim() ?? ''
+  return text !== lastSuggestionsText
+})
+
 function reloadSuggestions() {
+  if (!canReloadSuggestions.value) return
   suggestionsLoaded.value = false
   suggestions.value = []
   gptHardErrors.value = []
@@ -795,6 +824,10 @@ onBeforeUnmount(() => {
   font-weight: 500;
   flex-shrink: 0;
   cursor: pointer;
+}
+.sg-toggle--disabled {
+  color: #c4b5fd;
+  cursor: not-allowed;
 }
 
 .sg-loading {

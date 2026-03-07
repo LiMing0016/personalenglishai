@@ -151,7 +151,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'replace-sentence': [payload: { original: string; replacement: string }]
+  'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string }]
   'sentence-focus': [range: { start: number; end: number } | null]
 }>()
 
@@ -175,13 +175,24 @@ const tierLabel = computed(() => {
 function splitSentences(text: string): SentenceItem[] {
   if (!text || !text.trim()) return []
   const items: SentenceItem[] = []
-  const regex = /[^.!?\n]+[.!?]*/g
+  // 按句末标点分割，但跳过小数点（数字.数字）和缩写（如 Mr. Dr. etc.）
+  const sentenceEnd = /(?<!\d)\.(?!\d)(?:\s|$)|[!?](?:\s|$)|[.!?]$/g
+  let lastIdx = 0
   let match: RegExpExecArray | null
-  while ((match = regex.exec(text)) !== null) {
-    const raw = match[0].trim()
-    if (raw.length < 3) continue
-    const start = text.indexOf(raw, match.index)
-    items.push({ text: raw, start, end: start + raw.length })
+  while ((match = sentenceEnd.exec(text)) !== null) {
+    const punctEnd = match.index + match[0].trimEnd().length
+    const raw = text.slice(lastIdx, punctEnd).trim()
+    if (raw.length >= 3) {
+      const start = text.indexOf(raw, lastIdx)
+      items.push({ text: raw, start, end: start + raw.length })
+    }
+    lastIdx = match.index + match[0].length
+  }
+  // 剩余文本
+  const tail = text.slice(lastIdx).trim()
+  if (tail.length >= 3) {
+    const start = text.indexOf(tail, lastIdx)
+    items.push({ text: tail, start, end: start + tail.length })
   }
   return items
 }
@@ -246,15 +257,49 @@ async function doPolishAll() {
     polishSummary.value = res.summary ?? null
     summaryCollapsed.value = false
 
-    // Match GPT results to local sentences by original text
-    for (const gpt of res.sentences) {
-      const match = sentences.value.find(s =>
-        s.text === gpt.original || s.text.includes(gpt.original) || gpt.original.includes(s.text)
-      )
-      if (match) {
-        match.polished = gpt.polished
-        match.explanation = gpt.explanation
+    // One-to-one mapping by order + text similarity, avoids duplicate sentence collisions.
+    const available = new Set(sentences.value.map((_, i) => i))
+    const normalize = (v: string) => v.replace(/\s+/g, ' ').trim()
+    let cursor = 0
+
+    const pickIndex = (gptOriginal: string): number => {
+      const targetRaw = gptOriginal.trim()
+      const targetNorm = normalize(gptOriginal)
+      if (!targetNorm) return -1
+
+      const ordered = [
+        ...Array.from({ length: Math.max(0, sentences.value.length - cursor) }, (_, k) => cursor + k),
+        ...Array.from({ length: cursor }, (_, k) => k),
+      ]
+
+      const findInOrdered = (predicate: (s: SentenceItem) => boolean): number => {
+        for (const idx of ordered) {
+          if (!available.has(idx)) continue
+          if (predicate(sentences.value[idx])) return idx
+        }
+        return -1
       }
+
+      let idx = findInOrdered((s) => s.text.trim() === targetRaw)
+      if (idx !== -1) return idx
+
+      idx = findInOrdered((s) => normalize(s.text) === targetNorm)
+      if (idx !== -1) return idx
+
+      return findInOrdered((s) => {
+        const cur = normalize(s.text)
+        return cur.includes(targetNorm) || targetNorm.includes(cur)
+      })
+    }
+
+    for (const gpt of res.sentences) {
+      const idx = pickIndex(gpt.original)
+      if (idx === -1) continue
+      const match = sentences.value[idx]
+      match.polished = gpt.polished
+      match.explanation = gpt.explanation
+      available.delete(idx)
+      cursor = (idx + 1) % Math.max(1, sentences.value.length)
     }
   } catch {
     if (token !== polishAbortToken) return
@@ -281,7 +326,12 @@ function applyCandidate(idx: number) {
   const s = sentences.value[idx]
   if (!s?.polished) return
   ignoreNextEssayChange = true
-  emit('replace-sentence', { original: s.text, replacement: s.polished })
+  emit('replace-sentence', {
+    start: s.start,
+    end: s.end,
+    original: s.text,
+    replacement: s.polished,
+  })
   replacedSet.value = new Set([...replacedSet.value, idx])
 }
 
@@ -595,3 +645,5 @@ function escapeHtml(text: string): string {
 .btn-primary:hover { background: #065f46; }
 .btn-sm { padding: 6px 16px; font-size: 13px; }
 </style>
+
+
