@@ -15,7 +15,7 @@ public enum ErrorCode {
     DOC_NOT_FOUND("404001", "document not found"),
     DOC_FORBIDDEN("403001", "not owner"),
     DOC_CONFLICT("409002", "revision conflict"),
-    AUTH_PHONE_EXISTS("409002", "该手机号已被注册"),
+    AUTH_PHONE_EXISTS("409003", "该手机号已被注册"),
     AUTH_SMS_RATE_LIMITED("429002", "验证码发送过于频繁，请稍后再试"),
     AUTH_SMS_CODE_INVALID("400030", "验证码无效或已过期"),
     AUTH_PHONE_NOT_FOUND("401003", "该手机号未注册"),

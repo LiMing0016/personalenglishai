@@ -106,7 +106,12 @@
           <span class="sg-hint">AI 检测搭配不当、中式英语等隐含问题</span>
         </div>
         <div v-if="suggestionsLoaded" class="sg-header-actions">
-          <span class="sg-toggle" @click="reloadSuggestions" title="重新检测">↻</span>
+          <span
+            class="sg-toggle"
+            :class="{ 'sg-toggle--disabled': !canReloadSuggestions }"
+            :title="canReloadSuggestions ? '重新检测' : '修改作文后可重新检测'"
+            @click="reloadSuggestions"
+          >↻</span>
           <span class="sg-toggle" @click="suggestionsCollapsed = !suggestionsCollapsed">
             {{ suggestionsCollapsed ? '展开' : '收起' }}
           </span>
@@ -119,7 +124,7 @@
         </div>
         <div v-else-if="suggestionsError" class="sg-error">
           <p>{{ suggestionsError }}</p>
-          <button type="button" class="sg-retry-btn" @click="loadSuggestions">重试</button>
+          <button type="button" class="sg-retry-btn" @click="retrySuggestions">重试</button>
         </div>
         <div v-else-if="gptHardErrors.length === 0 && suggestions.length === 0 && suggestionsLoaded" class="sg-empty">
           未发现隐含问题，表达很自然！
@@ -195,9 +200,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick, ref, onBeforeUnmount } from 'vue'
+import { computed, watch, nextTick, ref } from 'vue'
 import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
-import { fetchWritingSuggestions } from '@/api/writing'
+import { useWritingSuggestions } from '@/composables/useWritingSuggestions'
+import { savePolishSuggestions } from '../editorShellStorage'
 
 type ErrorItem = WritingEvaluateResponse['errors'][number]
 
@@ -314,47 +320,51 @@ function suggestionTypeLabel(type: string): string {
   return SUGGESTION_TYPE_LABELS[type] ?? type
 }
 
-const suggestionsLoading = ref(false)
-const suggestionsLoaded = ref(false)
-const suggestionsCollapsed = ref(false)
-const suggestionsError = ref<string | null>(null)
-const suggestions = ref<SuggestionItem[]>([])
-const gptHardErrors = ref<SuggestionErrorItem[]>([])
-const appliedSuggestionIds = ref(new Set<string>())
-const appliedGptErrorIds = ref(new Set<string>())
-let suggestionsAbort: AbortController | null = null
-
 // 语法检查完成且无错误时显示建议区块
 const showSuggestions = computed(() =>
   !props.checking && props.errors.length === 0 && !props.error,
 )
 
+const {
+  suggestions,
+  gptHardErrors,
+  isLoading: suggestionsLoading,
+  error: suggestionsError,
+  loaded: suggestionsLoaded,
+  canReload: canReloadSuggestions,
+  reload: reloadSuggestions,
+  refetch: retrySuggestions,
+} = useWritingSuggestions(
+  () => props.essayText ?? '',
+  () => showSuggestions.value,
+)
+
+const suggestionsCollapsed = ref(false)
+const appliedSuggestionIds = ref(new Set<string>())
+const appliedGptErrorIds = ref(new Set<string>())
+
+// Emit GPT results to parent + cache to sessionStorage when data changes
+watch([suggestions, gptHardErrors], ([sgs, errs]) => {
+  if (sgs.length > 0 || errs.length > 0) {
+    emit('gpt-errors-loaded', errs)
+    emit('gpt-suggestions-loaded', sgs)
+    savePolishSuggestions({ errors: errs, suggestions: sgs })
+  }
+})
+
 function isSuggestionApplied(id: string): boolean {
   return appliedSuggestionIds.value.has(id)
 }
 
-function isSuggestionUsable(item: SuggestionItem, essayText: string): boolean {
-  const original = item.original?.trim() ?? ''
-  const suggestion = item.suggestion?.trim() ?? ''
-  if (!original || !suggestion) return false
-  if (original === suggestion) return false
-  return essayText.includes(original)
-}
-
 const usableSuggestions = computed(() => {
-  const text = props.essayText ?? ''
-  return suggestions.value.filter(item =>
-    isSuggestionUsable(item, text) && !isSuggestionApplied(item.id),
-  )
+  return suggestions.value.filter(item => !isSuggestionApplied(item.id))
 })
 
 function applySuggestion(item: SuggestionItem) {
   const text = props.essayText ?? ''
-  if (!isSuggestionUsable(item, text)) return
+  if (!text.includes(item.original)) return
   appliedSuggestionIds.value.add(item.id)
   emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
-  // 已应用建议直接移出列表，避免反复出现
-  suggestions.value = suggestions.value.filter((s) => s.id !== item.id)
 }
 
 function applyAllSuggestions() {
@@ -364,56 +374,6 @@ function applyAllSuggestions() {
     appliedSuggestionIds.value.add(item.id)
     emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
   }
-  suggestions.value = suggestions.value.filter(s => !items.some(u => u.id === s.id))
-}
-
-async function loadSuggestions() {
-  const text = props.essayText?.trim()
-  if (!text) {
-    suggestionsError.value = '无法获取当前作文内容'
-    return
-  }
-  suggestionsAbort?.abort()
-  suggestionsAbort = new AbortController()
-  suggestionsLoading.value = true
-  suggestionsError.value = null
-  try {
-    const res = await fetchWritingSuggestions(text, { signal: suggestionsAbort.signal })
-    suggestions.value = (res.suggestions ?? []).filter((item) => isSuggestionUsable(item, text))
-    // GPT 复检的硬性错误
-    gptHardErrors.value = (res.errors ?? []).filter(
-      (e) => e.original && e.suggestion && e.original !== e.suggestion && text.includes(e.original),
-    )
-    if (gptHardErrors.value.length > 0) {
-      emit('gpt-errors-loaded', gptHardErrors.value)
-    }
-    if (suggestions.value.length > 0) {
-      emit('gpt-suggestions-loaded', suggestions.value)
-    }
-    suggestionsLoaded.value = true
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.name === 'AbortError') return
-    suggestionsError.value = '获取建议失败，请重试'
-  } finally {
-    suggestionsLoading.value = false
-  }
-}
-
-// 语法检查完成且无错误时自动加载建议（仅首次）
-watch(showSuggestions, (show) => {
-  if (show && !suggestionsLoaded.value && !suggestionsLoading.value) {
-    loadSuggestions()
-  }
-})
-
-function reloadSuggestions() {
-  suggestionsLoaded.value = false
-  suggestions.value = []
-  gptHardErrors.value = []
-  suggestionsError.value = null
-  appliedSuggestionIds.value.clear()
-  appliedGptErrorIds.value.clear()
-  loadSuggestions()
 }
 
 function isGptErrorApplied(id: string): boolean {
@@ -425,13 +385,7 @@ function applyGptError(item: SuggestionErrorItem) {
   if (!item.original || !item.suggestion || !text.includes(item.original)) return
   appliedGptErrorIds.value.add(item.id)
   emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
-  gptHardErrors.value = gptHardErrors.value.filter((e) => e.id !== item.id)
 }
-
-
-onBeforeUnmount(() => {
-  suggestionsAbort?.abort()
-})
 </script>
 
 <style scoped>
@@ -795,6 +749,10 @@ onBeforeUnmount(() => {
   font-weight: 500;
   flex-shrink: 0;
   cursor: pointer;
+}
+.sg-toggle--disabled {
+  color: #c4b5fd;
+  cursor: not-allowed;
 }
 
 .sg-loading {

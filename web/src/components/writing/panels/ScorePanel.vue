@@ -7,15 +7,18 @@
         <div class="score-line">
           <span class="score-value">{{ displayScore }}</span>
           <span class="score-max">/ {{ displayMaxScore }}</span>
-          <span v-if="gaokaoband" class="score-band">{{ gaokaoband }}</span>
+          <span v-if="gaokaoband && !(props.examMaxScore && props.examMaxScore !== 100)" class="score-band">{{ gaokaoband }}</span>
           <span
             v-if="improvement"
             :class="['improvement-badge', improvement.delta >= 0 ? 'improved' : 'declined']"
           >{{ improvement.delta >= 0 ? '\u2191' : '\u2193' }}{{ Math.abs(improvement.delta) }}</span>
         </div>
-        <span v-if="evaluateResult.gaokao_score" class="score-hint">高考预估得分</span>
+        <span v-if="evaluateResult.gaokao_score && !(props.examMaxScore && props.examMaxScore !== 100)" class="score-hint">高考预估得分</span>
         <span v-else class="score-hint">综合评分</span>
         <p v-if="improvement" class="improvement-message">{{ improvement.message }}</p>
+        <p v-if="gptErrorCount > 0" class="error-count-hint">
+          检测到 <strong>{{ gptErrorCount }}</strong> 个语法/表达问题
+        </p>
       </div>
 
       <div v-if="isFallback" class="fallback-banner">
@@ -28,7 +31,6 @@
         <div v-for="row in dimensionRows" :key="row.key" class="dim-row">
           <span class="dim-label">{{ row.label }}</span>
           <span class="dim-stars">{{ row.stars }}</span>
-          <span v-if="row.score != null" class="dim-score">{{ row.score }}</span>
           <span class="dim-grade">({{ row.grade }})</span>
         </div>
       </div>
@@ -78,7 +80,7 @@
       </div>
 
       <div v-if="evaluateResult && !evaluateResult.errors?.length" class="no-errors-hint">
-        未发现典型错误，继续保持！
+        &#127881; 未检测到明显语法错误，写得很棒！继续保持，尝试在词汇和表达上更进一步吧！
       </div>
 
       <!-- 讲评 -->
@@ -142,8 +144,9 @@ const props = withDefaults(
     submitting?: boolean
     evaluateError?: string | null
     dimensionLabels?: Record<string, string> | null
+    examMaxScore?: number | null
   }>(),
-  { evaluateResult: null, activeErrorId: null, submitting: false, evaluateError: null, dimensionLabels: null },
+  { evaluateResult: null, activeErrorId: null, submitting: false, evaluateError: null, dimensionLabels: null, examMaxScore: null },
 )
 
 const emit = defineEmits<{
@@ -201,17 +204,25 @@ const dimensionOrder = computed(() =>
 const isFallback = computed(() => props.evaluateResult?.source === 'fallback')
 
 const displayScore = computed(() => {
+  const overall = props.evaluateResult?.score?.overall ?? 0
+  // 考试模式：examMaxScore 优先，按满分换算
+  if (props.examMaxScore && props.examMaxScore !== 100) {
+    return Math.round(overall * props.examMaxScore / 100)
+  }
   const gs = props.evaluateResult?.gaokao_score
   if (typeof gs?.score === 'number') return gs.score
-  return props.evaluateResult?.score?.overall ?? 0
+  return overall
 })
 
 const displayMaxScore = computed(() => {
+  // 考试模式：examMaxScore 优先
+  if (props.examMaxScore && props.examMaxScore !== 100) return props.examMaxScore
   const gs = props.evaluateResult?.gaokao_score
   if (typeof gs?.max_score === 'number') return gs.max_score
-  return 100
+  return props.examMaxScore ?? 100
 })
 
+const gptErrorCount = computed(() => props.evaluateResult?.error_count ?? props.evaluateResult?.errors?.length ?? 0)
 const gaokaoband = computed(() => props.evaluateResult?.gaokao_score?.band ?? null)
 const improvement = computed(() => props.evaluateResult?.improvement ?? null)
 
@@ -257,14 +268,11 @@ const gradeMap = computed<Record<DimensionKey, GradeLetter>>(() => {
 const dimensionRows = computed(() =>
   dimensionOrder.value.map((key) => {
     const grade = gradeMap.value[key]
-    const dimScores = props.evaluateResult?.dimensionScores
-    const score = dimScores?.[key] ?? null
     return {
       key,
       label: labelOf(key),
       grade,
       stars: '\u2B50'.repeat(GRADE_STARS[grade]),
-      score,
     }
   }),
 )
@@ -277,7 +285,7 @@ interface InsightItem {
   text: string
 }
 
-function labelOf(key: DimensionKey): string {
+function labelOf(key: string): string {
   return props.dimensionLabels?.[key] ?? DEFAULT_LABELS[key] ?? key
 }
 
@@ -287,20 +295,36 @@ const priorityFocus = computed<DimensionKey[]>(() => {
   return all.filter((k): k is DimensionKey => valid.has(k))
 })
 
-const strengths = computed<InsightItem[]>(() => {
-  const items: InsightItem[] = []
-  const weakSet = new Set(priorityFocus.value)
+const orderedAnalysisKeys = computed<string[]>(() => {
   const analysisMap = props.evaluateResult?.analysis ?? {}
+  const keys: string[] = []
+  const seen = new Set<string>()
 
   for (const key of dimensionOrder.value) {
-    const grade = gradeMap.value[key]
-    if (weakSet.has(key) || (grade !== 'A' && grade !== 'B')) continue
-    const a = analysisMap[key]
+    const rec = analysisMap[key]
+    if (!rec) continue
+    keys.push(key)
+    seen.add(key)
+  }
+  for (const key of Object.keys(analysisMap)) {
+    if (seen.has(key)) continue
+    keys.push(key)
+    seen.add(key)
+  }
+  return keys
+})
+
+const strengths = computed<InsightItem[]>(() => {
+  const items: InsightItem[] = []
+  const analysisMap = props.evaluateResult?.analysis ?? {}
+
+  // 展示后端 analysis 中的全部 strength，避免遗漏模型返回内容
+  for (const key of orderedAnalysisKeys.value) {
+    const a = analysisMap[key as DimensionKey]
     const text = a?.strength?.trim()
-      || `${labelOf(key)}表现稳定（${grade}）。`
+    if (!text) continue
     const quote = a?.strength_quote?.trim() || a?.quote?.trim() || undefined
     items.push({ label: labelOf(key), quote, text })
-    if (items.length >= 3) break
   }
 
   if (!items.length) {
@@ -320,26 +344,26 @@ const strengths = computed<InsightItem[]>(() => {
 
 const weaknesses = computed<InsightItem[]>(() => {
   const items: InsightItem[] = []
-  const seen = new Set<DimensionKey>()
   const analysisMap = props.evaluateResult?.analysis ?? {}
+  const prioritySet = new Set<string>(priorityFocus.value)
+  const keyOrder = [
+    ...priorityFocus.value,
+    ...orderedAnalysisKeys.value.filter((k) => !prioritySet.has(k)),
+  ]
 
-  for (const key of priorityFocus.value) {
-    const a = analysisMap[key]
-    const text = (a?.suggestion ?? a?.weakness)?.trim()
-      || `建议优先改进${labelOf(key)}。`
-    const quote = a?.weakness_quote?.trim() || a?.quote?.trim() || undefined
-    items.push({ label: labelOf(key), quote, text })
-    seen.add(key)
-  }
-
-  for (const key of Object.keys(analysisMap) as DimensionKey[]) {
-    if (seen.has(key)) continue
-    const a = analysisMap[key]
-    const text = (a?.suggestion ?? a?.weakness)?.trim()
+  // 每个维度同时展示 weakness + suggestion（若都有），确保信息完整
+  for (const key of keyOrder) {
+    const a = analysisMap[key as DimensionKey]
+    if (!a) continue
+    const weaknessText = a.weakness?.trim() ?? ''
+    const suggestionText = a.suggestion?.trim() ?? ''
+    const parts: string[] = []
+    if (weaknessText) parts.push(`问题：${weaknessText}`)
+    if (suggestionText && suggestionText !== weaknessText) parts.push(`建议：${suggestionText}`)
+    const text = parts.join(' ') || (prioritySet.has(key) ? `建议优先改进${labelOf(key)}。` : '')
     if (!text) continue
     const quote = a?.weakness_quote?.trim() || a?.quote?.trim() || undefined
     items.push({ label: labelOf(key), quote, text })
-    seen.add(key)
   }
 
   if (!items.length) {
@@ -348,7 +372,6 @@ const weaknesses = computed<InsightItem[]>(() => {
 
   return items
 })
-
 // ── 行动建议 ──
 
 const focusDetail = computed(() => props.evaluateResult?.priority_focus_detail ?? null)
@@ -575,6 +598,15 @@ watch(
   margin-top: 2px;
 }
 
+.error-count-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #dc2626;
+  line-height: 1.4;
+}
+
+
+
 .improvement-badge {
   display: inline-flex;
   align-items: center;
@@ -616,7 +648,7 @@ watch(
 
 .dim-row {
   display: grid;
-  grid-template-columns: 92px 1fr auto auto;
+  grid-template-columns: 92px 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
@@ -626,7 +658,6 @@ watch(
 
 .dim-label { font-size: 13px; color: #374151; }
 .dim-stars { font-size: 14px; letter-spacing: 1px; white-space: nowrap; }
-.dim-score { font-size: 12px; font-weight: 600; color: #374151; }
 .dim-grade { font-size: 12px; color: #6b7280; }
 
 /* ── 优点 / 缺点 / 错误 通用 ── */
@@ -799,4 +830,5 @@ watch(
 /* ── 空状态 ── */
 .score-empty { padding: 32px 0; text-align: center; font-size: 14px; color: #9ca3af; }
 </style>
+
 

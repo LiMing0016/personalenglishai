@@ -29,6 +29,7 @@
         :active-error-id="activeErrorId"
         :submitting="submitting"
         :evaluate-error="evaluateError"
+        :exam-max-score="examMaxScore"
         @error-click="$emit('error-click', $event)"
         @retry="$emit('retry')"
         @close="$emit('close')"
@@ -49,6 +50,11 @@
         @start-polish="$emit('start-polish')"
         @gpt-errors-loaded="$emit('gpt-errors-loaded', $event)"
         @gpt-suggestions-loaded="$emit('gpt-suggestions-loaded', $event)"
+      />
+      <StructurePanel
+        v-else-if="panel === 'structure'"
+        :essay="essay"
+        @paragraph-click="$emit('paragraph-click', $event)"
       />
       <RewritePanel
         v-else-if="panel === 'rewrite'"
@@ -76,6 +82,7 @@ import ToolPanel from './ToolPanel.vue'
 import ScorePanel from './panels/ScorePanel.vue'
 import RewritePanel from './panels/RewritePanel.vue'
 import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
+import StructurePanel from './panels/StructurePanel.vue'
 import PolishPanel from './panels/PolishPanel.vue'
 import ExplainPanel from './panels/ExplainPanel.vue'
 import TranslatePanel from './panels/TranslatePanel.vue'
@@ -106,13 +113,14 @@ const props = defineProps<{
   grammarCheckError?: string | null
   grammarFixedErrorIds?: Set<string>
   rewriteSuggestions?: WritingEvaluateResponse['errors']
+  examMaxScore?: number | null
 }>()
 
 defineEmits<{
   close: []
   'error-click': [errorId: string]
   'apply-polish': [payload: { errorId: string; polished: string }]
-  'replace-sentence': [payload: { original: string; replacement: string }]
+  'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string }]
   'sentence-focus': [range: { start: number; end: number } | null]
   'start-polish': []
   'grammar-fix-error': [errorId: string]
@@ -121,6 +129,7 @@ defineEmits<{
   'gpt-errors-loaded': [errors: import('@/api/writing').SuggestionErrorItem[]]
   'gpt-suggestions-loaded': [suggestions: import('@/api/writing').SuggestionItem[]]
   retry: []
+  'paragraph-click': [offset: number]
   'start-grammar-check': []
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
@@ -137,6 +146,7 @@ defineEmits<{
 const scorePanelTitle = computed(() => {
   if (props.panel === 'score') return '评价与建议'
   if (props.panel === 'grammarCheck') return '语法检查'
+  if (props.panel === 'structure') return '段落结构'
   if (props.panel === 'rewrite') return '润色'
   return props.title
 })
@@ -202,3 +212,4 @@ defineExpose<{
   box-sizing: border-box;
 }
 </style>
+

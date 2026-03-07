@@ -17,7 +17,7 @@
         <span class="mode-name">自由模式</span>
         <span class="mode-desc">自由写作，AI 实时辅助与反馈</span>
       </button>
-      <button class="mode-card" @click="enterEditor('exam')">
+      <button class="mode-card" @click="enterExamSetup">
         <span class="mode-icon">&#9200;</span>
         <span class="mode-name">考试模式</span>
         <span class="mode-desc">模拟考试环境，限时写作与评分</span>
@@ -25,10 +25,19 @@
     </div>
   </div>
 
+  <!-- Exam setup -->
+  <ExamSetupPage
+    v-else-if="phase === 'exam-setup'"
+    @confirm="onExamConfirm"
+    @back="phase = 'mode-select'"
+  />
+
   <!-- Editor -->
   <EditorShell
     v-else
     :initial-writing-mode="chosenMode"
+    :initial-task-prompt="initialTaskPrompt"
+    :exam-max-score="examMaxScore"
     :study-stage="currentStage!"
   />
 </template>
@@ -37,16 +46,20 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import EditorShell from '@/components/writing/EditorShell.vue'
+import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
+import type { ExamTopicInfo } from '@/pages/app/ExamSetupPage.vue'
 import { stageCache } from '@/stores/stageCache'
 import { getStageLabel } from '@/constants/stage'
 
-type Phase = 'loading' | 'mode-select' | 'editor'
+type Phase = 'loading' | 'mode-select' | 'exam-setup' | 'editor'
 
 const router = useRouter()
 
 const phase = ref<Phase>('loading')
 const currentStage = ref<string | null>(null)
 const chosenMode = ref<'free' | 'exam'>('free')
+const initialTaskPrompt = ref<string | undefined>(undefined)
+const examMaxScore = ref<number | null>(null)
 
 onMounted(() => {
   // Router guard already fetched profile into stageCache
@@ -70,6 +83,24 @@ onMounted(() => {
 function enterEditor(mode: 'free' | 'exam') {
   chosenMode.value = mode
   sessionStorage.setItem('writingMode', mode)
+  phase.value = 'editor'
+}
+
+function enterExamSetup() {
+  phase.value = 'exam-setup'
+}
+
+function onExamConfirm(info: ExamTopicInfo) {
+  chosenMode.value = 'exam'
+  // 组装 taskPrompt
+  let prompt = info.topic
+  if (info.genre) prompt += `\n体裁：${info.genre}`
+  if (info.wordRange) prompt += `\n字数要求：${info.wordRange}词`
+  if (info.requirements) prompt += `\n写作要求：${info.requirements}`
+  if (info.maxScore && info.maxScore !== 100) prompt += `\n满分分值：${info.maxScore}分`
+  examMaxScore.value = info.maxScore ?? 100
+  initialTaskPrompt.value = prompt
+  sessionStorage.setItem('writingMode', 'exam')
   phase.value = 'editor'
 }
 </script>

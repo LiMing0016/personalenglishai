@@ -9,6 +9,7 @@ import com.personalenglishai.backend.service.auth.AuthService;
 import com.personalenglishai.backend.service.auth.EmailVerificationService;
 import com.personalenglishai.backend.service.auth.PasswordResetService;
 import com.personalenglishai.backend.service.auth.SmsVerificationService;
+import com.personalenglishai.backend.service.captcha.CaptchaService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,9 @@ class AuthControllerV1Test {
 
     @MockBean
     private SmsVerificationService smsVerificationService;
+
+    @MockBean
+    private CaptchaService captchaService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -98,13 +102,14 @@ class AuthControllerV1Test {
         @Test
         @DisplayName("returns token and sets refresh cookie")
         void login_success() throws Exception {
+            when(captchaService.validateToken("cap-ok")).thenReturn(true);
             when(authService.login("u1@example.com", "Abcd1234"))
                     .thenReturn(buildLoginResponse("access-1", "refresh-1"));
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"email":"u1@example.com","password":"Abcd1234"}
+                                    {"email":"u1@example.com","password":"Abcd1234","captchaToken":"cap-ok"}
                                     """))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.token").value("access-1"))
@@ -115,13 +120,14 @@ class AuthControllerV1Test {
         @Test
         @DisplayName("returns 401 for invalid credentials")
         void login_badCredentials() throws Exception {
+            when(captchaService.validateToken("cap-ok")).thenReturn(true);
             when(authService.login("u1@example.com", "wrongPass"))
                     .thenThrow(new BizException(ErrorCode.AUTH_LOGIN_FAILED));
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"email":"u1@example.com","password":"wrongPass"}
+                                    {"email":"u1@example.com","password":"wrongPass","captchaToken":"cap-ok"}
                                     """))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value("401001"));
@@ -333,3 +339,6 @@ class AuthControllerV1Test {
         return response;
     }
 }
+
+
+

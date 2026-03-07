@@ -1,0 +1,282 @@
+import type { WritingEvaluateResponse } from '@/api/writing'
+
+export const WRITING_STORAGE_KEYS = {
+  layout: 'peai:writing:layout',
+  scrollTop: 'peai:writing:scrollTop',
+  draft: 'peai:writing:draft',
+  legacyDraft: 'peai:draft:writing',
+  aiNoteDraft: 'peai:writing:aiNoteDraft',
+  aiConversationId: 'peai:writing:aiConversationId',
+  writingMode: 'peai:writing:mode',
+  taskPrompt: 'peai:writing:taskPrompt',
+  evaluateResult: 'peai:writing:evaluateResult',
+  splitRatio: 'writing.split.ratio',
+  grammarErrors: 'peai:writing:grammarErrors',
+  polishSuggestions: 'peai:writing:polishSuggestions',
+} as const
+
+export interface LayoutState<T extends string> {
+  rightPanelOpen: boolean
+  activePanel: T | null
+}
+
+export const DEFAULT_SPLIT_RATIO = 0.3
+
+export function loadLayout<T extends string>(validPanels: readonly T[]): LayoutState<T> {
+  try {
+    const saved = localStorage.getItem(WRITING_STORAGE_KEYS.layout)
+    if (!saved) {
+      return { rightPanelOpen: false, activePanel: null }
+    }
+
+    const data = JSON.parse(saved) as Record<string, unknown>
+    const rightPanelOpen = Boolean(data.rightPanelOpen)
+    const panel = data.activePanel
+    const activePanel =
+      typeof panel === 'string' && validPanels.includes(panel as T) ? (panel as T) : null
+
+    return {
+      rightPanelOpen: rightPanelOpen && activePanel != null,
+      activePanel: rightPanelOpen ? activePanel : null,
+    }
+  } catch {
+    return { rightPanelOpen: false, activePanel: null }
+  }
+}
+
+export function saveLayout<T extends string>(state: LayoutState<T>): void {
+  try {
+    localStorage.setItem(WRITING_STORAGE_KEYS.layout, JSON.stringify(state))
+  } catch {
+    // ignore localStorage failure
+  }
+}
+
+export function clampRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return DEFAULT_SPLIT_RATIO
+  return Math.min(0.82, Math.max(0.22, ratio))
+}
+
+export function createConversationId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+  } catch {
+    // fallback below
+  }
+  return `conv_${Date.now()}_${Math.random().toString(16).slice(2)}`
+}
+
+export function loadConversationId(): string {
+  try {
+    const saved = localStorage.getItem(WRITING_STORAGE_KEYS.aiConversationId)?.trim()
+    if (saved) return saved
+  } catch {
+    // fallback below
+  }
+  return createConversationId()
+}
+
+export function loadWritingMode(): 'free' | 'exam' {
+  try {
+    const saved = localStorage.getItem(WRITING_STORAGE_KEYS.writingMode)?.trim()
+    return saved === 'exam' ? 'exam' : 'free'
+  } catch {
+    return 'free'
+  }
+}
+
+export function loadTaskPrompt(): string {
+  try {
+    return localStorage.getItem(WRITING_STORAGE_KEYS.taskPrompt) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function computePanelWidthByRatio(
+  ratio: number,
+  viewportWidth: number,
+  minPanelWidth: number,
+  maxPanelWidth: number,
+  minLeftWidth: number,
+): number {
+  const clampedRatio = clampRatio(ratio)
+  const maxByEditor = Math.max(0, viewportWidth - minLeftWidth)
+  const maxPanelByViewport = Math.min(maxPanelWidth, maxByEditor)
+  if (maxPanelByViewport <= 0) return 0
+  const minPanelByViewport = Math.min(minPanelWidth, maxPanelByViewport)
+  const preferred = Math.round(viewportWidth * clampedRatio)
+  return Math.max(minPanelByViewport, Math.min(preferred, maxPanelByViewport))
+}
+
+export function saveSplitRatio(ratio: number): void {
+  try {
+    localStorage.setItem(WRITING_STORAGE_KEYS.splitRatio, String(clampRatio(ratio)))
+  } catch {
+    // ignore localStorage failure
+  }
+}
+
+export function loadSplitRatio(): number {
+  try {
+    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.splitRatio)
+    if (!raw) return DEFAULT_SPLIT_RATIO
+    return clampRatio(Number(raw))
+  } catch {
+    return DEFAULT_SPLIT_RATIO
+  }
+}
+
+export function saveEvaluateResult(result: WritingEvaluateResponse | null): void {
+  try {
+    if (result) {
+      localStorage.setItem(WRITING_STORAGE_KEYS.evaluateResult, JSON.stringify(result))
+    } else {
+      localStorage.removeItem(WRITING_STORAGE_KEYS.evaluateResult)
+    }
+  } catch {
+    // ignore localStorage failure
+  }
+}
+
+export function loadEvaluateResult(): WritingEvaluateResponse | null {
+  try {
+    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.evaluateResult)
+    if (!raw) return null
+    return JSON.parse(raw) as WritingEvaluateResponse
+  } catch {
+    return null
+  }
+}
+
+export function saveDraftNow(text: string): void {
+  try {
+    const payload = { text, updatedAt: Date.now() }
+    localStorage.setItem(WRITING_STORAGE_KEYS.draft, JSON.stringify(payload))
+    console.log('[draft] saved', { len: text.length, head: text.slice(0, 30) })
+  } catch (e) {
+    console.error('[draft] save failed', e)
+  }
+}
+
+export function loadDraftNow(): string | null {
+  try {
+    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.draft)
+    console.log('[draft] load raw', raw)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    return typeof obj?.text === 'string' ? obj.text : null
+  } catch (e) {
+    console.error('[draft] load failed', e)
+    return null
+  }
+}
+
+export function loadDraft(): string {
+  try {
+    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.draft)
+    if (raw) {
+      const trimmed = raw.trim()
+      if (trimmed.startsWith('{')) {
+        try {
+          const obj = JSON.parse(trimmed) as { text?: unknown }
+          if (typeof obj.text === 'string') return obj.text
+        } catch {
+          // fall through and treat as legacy
+        }
+      } else {
+        const text = raw
+        localStorage.setItem(WRITING_STORAGE_KEYS.draft, JSON.stringify({ text, updatedAt: Date.now() }))
+        return text
+      }
+    }
+
+    const legacy = localStorage.getItem(WRITING_STORAGE_KEYS.legacyDraft)
+    if (legacy) {
+      let text = legacy
+      const trimmedLegacy = legacy.trim()
+      if (trimmedLegacy.startsWith('{')) {
+        try {
+          const obj = JSON.parse(trimmedLegacy) as { text?: unknown }
+          if (typeof obj.text === 'string') text = obj.text
+        } catch {
+          // ignore legacy parse error
+        }
+      }
+      localStorage.setItem(WRITING_STORAGE_KEYS.draft, JSON.stringify({ text, updatedAt: Date.now() }))
+      localStorage.removeItem(WRITING_STORAGE_KEYS.legacyDraft)
+      return text
+    }
+  } catch {
+    // ignore localStorage failure
+  }
+  return ''
+}
+
+export function saveAiNoteDraftNow(text: string): void {
+  try {
+    const payload = { text, updatedAt: Date.now() }
+    localStorage.setItem(WRITING_STORAGE_KEYS.aiNoteDraft, JSON.stringify(payload))
+    console.log('[aiNoteDraft] saved', { len: text.length, head: text.slice(0, 30) })
+  } catch (e) {
+    console.error('[aiNoteDraft] save failed', e)
+  }
+}
+
+export function loadAiNoteDraftNow(): string | null {
+  try {
+    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.aiNoteDraft)
+    console.log('[aiNoteDraft] load', raw)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    return typeof obj?.text === 'string' ? obj.text : null
+  } catch (e) {
+    console.error('[aiNoteDraft] load failed', e)
+    return null
+  }
+}
+
+// ── 语法检查结果缓存（sessionStorage） ──
+
+export function saveGrammarErrors(errors: unknown[]): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.grammarErrors, JSON.stringify(errors))
+  } catch { /* ignore */ }
+}
+
+export function loadGrammarErrors(): unknown[] | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.grammarErrors)
+    if (!raw) return null
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr : null
+  } catch { return null }
+}
+
+export function clearGrammarErrors(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.grammarErrors) } catch { /* ignore */ }
+}
+
+// ── 润色建议缓存（sessionStorage） ──
+
+export function savePolishSuggestions(data: { errors: unknown[]; suggestions: unknown[] }): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.polishSuggestions, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadPolishSuggestions(): { errors: unknown[]; suggestions: unknown[] } | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.polishSuggestions)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.errors) && Array.isArray(obj.suggestions)) return obj
+    return null
+  } catch { return null }
+}
+
+export function clearPolishSuggestions(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.polishSuggestions) } catch { /* ignore */ }
+}

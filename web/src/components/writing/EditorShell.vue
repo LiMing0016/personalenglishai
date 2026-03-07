@@ -20,6 +20,8 @@
           @error-click="onEditorErrorClick"
           @fix-error="onInlineFixError"
           @dismiss-error="onDismissError"
+          @bubble-action="onBubbleAction"
+          @back="onBack"
         />
       </div>
 
@@ -56,6 +58,7 @@
           :active-error-id="activeErrorId"
           :submitting="submitting"
           :evaluate-error="evaluateError"
+          :exam-max-score="props.examMaxScore"
           :grammar-errors="grammarPanelErrors"
           :grammar-checking="grammarChecking"
           :grammar-check-error="grammarCheckError"
@@ -73,6 +76,7 @@
           @gpt-errors-loaded="onGptErrorsLoaded"
           @gpt-suggestions-loaded="onGptSuggestionsLoaded"
           @retry="onSubmit"
+          @paragraph-click="onParagraphClick"
           @start-grammar-check="onStartGrammarCheck"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
@@ -87,234 +91,100 @@
         />
       </div>
     </div>
+
+    <!-- 退出确认对话框 -->
+    <Teleport to="body">
+      <div v-if="showExitDialog" class="exit-overlay" @click.self="onExitCancel">
+        <div class="exit-dialog">
+          <h3 class="exit-title">退出写作</h3>
+          <p class="exit-message">你的作文尚未提交，是否保存为草稿？</p>
+          <div class="exit-actions">
+            <button class="exit-btn exit-btn-cancel" @click="onExitCancel">取消</button>
+            <button class="exit-btn exit-btn-discard" @click="onExitDiscard">不保存</button>
+            <button class="exit-btn exit-btn-save" @click="onExitSave">保存并退出</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
+import { useRouter } from 'vue-router'
 import type { PanelMode } from './ToolRail.vue'
 
 const props = withDefaults(defineProps<{
   initialWritingMode?: 'free' | 'exam'
+  initialTaskPrompt?: string
+  examMaxScore?: number | null
   studyStage?: string | null
 }>(), {
   initialWritingMode: undefined,
+  initialTaskPrompt: undefined,
+  examMaxScore: null,
   studyStage: null,
 })
+const router = useRouter()
+
 import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
-import { getEvaluateTask, submitEvaluateWriting, grammarCheck as grammarCheckApi } from '@/api/writing'
-import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
+import { grammarCheck as grammarCheckApi } from '@/api/writing'
+import type { WritingEvaluateResponse, EvaluationDetailResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
+import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
+import { findClosestMatch, hasValidSuggestion, resolveErrorSpan, shouldUseWordBoundary } from './errorSpanResolver'
+import {
+  DEFAULT_SPLIT_RATIO,
+  WRITING_STORAGE_KEYS,
+  clampRatio,
+  computePanelWidthByRatio,
+  createConversationId,
+  loadAiNoteDraftNow,
+  loadConversationId,
+  loadDraft,
+  loadDraftNow,
+  loadEvaluateResult,
+  loadLayout,
+  loadSplitRatio,
+  loadTaskPrompt,
+  loadWritingMode,
+  saveAiNoteDraftNow,
+  saveDraftNow,
+  saveEvaluateResult,
+  saveLayout,
+  saveSplitRatio,
+  saveGrammarErrors,
+  loadGrammarErrors,
+  clearGrammarErrors,
+  savePolishSuggestions,
+  loadPolishSuggestions,
+  clearPolishSuggestions,
+} from './editorShellStorage'
 
-const LAYOUT_KEY = 'peai:writing:layout'
-const SCROLL_KEY = 'peai:writing:scrollTop'
-const DRAFT_KEY = 'peai:writing:draft'
-const LEGACY_DRAFT_KEY = 'peai:draft:writing'
-const AI_NOTE_DRAFT_KEY = 'peai:writing:aiNoteDraft'
-const AI_CHAT_CONVERSATION_ID_KEY = 'peai:writing:aiConversationId'
-const WRITING_MODE_KEY = 'peai:writing:mode'
-const TASK_PROMPT_KEY = 'peai:writing:taskPrompt'
-const EVALUATE_RESULT_KEY = 'peai:writing:evaluateResult'
-const SPLIT_RATIO_KEY = 'writing.split.ratio'
-const DEFAULT_SPLIT_RATIO = 0.3
+const {
+  scrollTop: SCROLL_KEY,
+  draft: DRAFT_KEY,
+  legacyDraft: LEGACY_DRAFT_KEY,
+  aiNoteDraft: AI_NOTE_DRAFT_KEY,
+  aiConversationId: AI_CHAT_CONVERSATION_ID_KEY,
+  writingMode: WRITING_MODE_KEY,
+  taskPrompt: TASK_PROMPT_KEY,
+  evaluateResult: EVALUATE_RESULT_KEY,
+} = WRITING_STORAGE_KEYS
+
 const MIN_PANEL_WIDTH = 420
 const MAX_PANEL_WIDTH = 1280
 const MIN_LEFT_WIDTH = 360
 
 const VALID_PANELS: PanelMode[] = [
-  'score', 'rewrite', 'grammarCheck', 'improve', 'explain', 'translate', 'archive', 'aiNote',
+  'score', 'rewrite', 'grammarCheck', 'structure', 'improve', 'explain', 'translate', 'archive', 'aiNote',
 ]
-
-interface LayoutState {
-  rightPanelOpen: boolean
-  activePanel: PanelMode | null
-}
-
-function loadLayout(): LayoutState {
-  try {
-    const s = localStorage.getItem(LAYOUT_KEY)
-    if (s) {
-      const data = JSON.parse(s) as Record<string, unknown>
-      const rightPanelOpen = Boolean(data.rightPanelOpen)
-      const panel = data.activePanel
-      const activePanel =
-        typeof panel === 'string' && VALID_PANELS.includes(panel as PanelMode) ? (panel as PanelMode) : null
-      return {
-        rightPanelOpen: rightPanelOpen && activePanel != null,
-        activePanel: rightPanelOpen ? activePanel : null,
-      }
-    }
-  } catch (_) {}
-  return { rightPanelOpen: false, activePanel: null }
-}
-
-function saveLayout(state: { rightPanelOpen: boolean; activePanel: PanelMode | null }) {
-  try {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(state))
-  } catch (_) {}
-}
-
-function clampRatio(r: number): number {
-  if (!Number.isFinite(r)) return DEFAULT_SPLIT_RATIO
-  return Math.min(0.82, Math.max(0.22, r))
-}
-
-function createConversationId(): string {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID()
-    }
-  } catch (_) {}
-  return `conv_${Date.now()}_${Math.random().toString(16).slice(2)}`
-}
-
-function loadConversationId(): string {
-  try {
-    const saved = localStorage.getItem(AI_CHAT_CONVERSATION_ID_KEY)?.trim()
-    if (saved) return saved
-  } catch (_) {}
-  return createConversationId()
-}
-
-function loadWritingMode(): 'free' | 'exam' {
-  try {
-    const saved = localStorage.getItem(WRITING_MODE_KEY)?.trim()
-    return saved === 'exam' ? 'exam' : 'free'
-  } catch (_) {
-    return 'free'
-  }
-}
-
-function loadTaskPrompt(): string {
-  try {
-    return localStorage.getItem(TASK_PROMPT_KEY) ?? ''
-  } catch (_) {
-    return ''
-  }
-}
-
-function computePanelWidthByRatio(ratio: number, viewportWidth = window.innerWidth): number {
-  const clampedRatio = clampRatio(ratio)
-  const maxByEditor = Math.max(0, viewportWidth - MIN_LEFT_WIDTH)
-  const maxPanelByViewport = Math.min(MAX_PANEL_WIDTH, maxByEditor)
-  if (maxPanelByViewport <= 0) return 0
-  const minPanelByViewport = Math.min(MIN_PANEL_WIDTH, maxPanelByViewport)
-  const preferred = Math.round(viewportWidth * clampedRatio)
-  return Math.max(minPanelByViewport, Math.min(preferred, maxPanelByViewport))
-}
-
-function saveSplitRatio(ratio: number) {
-  try {
-    localStorage.setItem(SPLIT_RATIO_KEY, String(clampRatio(ratio)))
-  } catch (_) {}
-}
-
-function loadSplitRatio(): number {
-  try {
-    const raw = localStorage.getItem(SPLIT_RATIO_KEY)
-    if (!raw) return DEFAULT_SPLIT_RATIO
-    return clampRatio(Number(raw))
-  } catch (_) {
-    return DEFAULT_SPLIT_RATIO
-  }
-}
-
-// ── 评分结果持久化 ──
-function saveEvaluateResult(result: WritingEvaluateResponse | null) {
-  try {
-    if (result) {
-      localStorage.setItem(EVALUATE_RESULT_KEY, JSON.stringify(result))
-    } else {
-      localStorage.removeItem(EVALUATE_RESULT_KEY)
-    }
-  } catch (_) {}
-}
-
-function loadEvaluateResult(): WritingEvaluateResponse | null {
-  try {
-    const raw = localStorage.getItem(EVALUATE_RESULT_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as WritingEvaluateResponse
-  } catch (_) {
-    return null
-  }
-}
-
-// 立即保存草稿到 localStorage
-function saveDraftNow(text: string) {
-  try {
-    const payload = { text, updatedAt: Date.now() }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
-    console.log('[draft] saved', { len: text.length, head: text.slice(0, 30) })
-  } catch (e) {
-    console.error('[draft] save failed', e)
-  }
-}
-
-// 从 localStorage 读取草稿
-function loadDraftNow(): string | null {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY)
-    console.log('[draft] load raw', raw)
-    if (!raw) return null
-    const obj = JSON.parse(raw)
-    return typeof obj?.text === 'string' ? obj.text : null
-  } catch (e) {
-    console.error('[draft] load failed', e)
-    return null
-  }
-}
-
-// 初始化加载草稿（兼容旧存储格式并迁移）
-function loadDraft(): string {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY)
-    if (raw) {
-      const trimmed = raw.trim()
-      if (trimmed.startsWith('{')) {
-        try {
-          const obj = JSON.parse(trimmed) as { text?: unknown }
-          if (typeof obj.text === 'string') return obj.text
-        } catch {
-          // fall through and treat as legacy
-        }
-      } else {
-        // 旧格式：纯文本，迁移为 JSON
-        const text = raw
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, updatedAt: Date.now() }))
-        return text
-      }
-    }
-
-    // 若新 key 为空，尝试从旧 key 迁移
-    const legacy = localStorage.getItem(LEGACY_DRAFT_KEY)
-    if (legacy) {
-      let text = legacy
-      const trimmedLegacy = legacy.trim()
-      if (trimmedLegacy.startsWith('{')) {
-        try {
-          const obj = JSON.parse(trimmedLegacy) as { text?: unknown }
-          if (typeof obj.text === 'string') text = obj.text
-        } catch {
-          // ignore, 使用原始文本
-        }
-      }
-      // 迁移到新 key，并删除旧 key
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, updatedAt: Date.now() }))
-      localStorage.removeItem(LEGACY_DRAFT_KEY)
-      return text
-    }
-  } catch {
-    // ignore
-  }
-  return ''
-}
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
 
@@ -340,14 +210,18 @@ const aiNote = ref('')
 const aiConversationId = ref(loadConversationId())
 const aiGenerating = ref(false)
 const writingMode = ref<'free' | 'exam'>(props.initialWritingMode ?? loadWritingMode())
-const taskPrompt = ref(loadTaskPrompt())
+const taskPrompt = ref(props.initialTaskPrompt ?? loadTaskPrompt())
 let aiAbortController: AbortController | null = null
-const submitting = ref(false)
-const evaluateError = ref<string | null>(null)
-let evaluatePollToken = 0
+const {
+  submit: evalSubmit,
+  cancel: evalCancel,
+  clearResult: evalClearResult,
+  evaluateResult,
+  evaluateError,
+  submitting,
+} = useEvaluateSubmission()
 const resizing = ref(false)
 const archivedList = ref<unknown[]>([])
-const evaluateResult = ref<WritingEvaluateResponse | null>(null)
 const activeErrorId = ref<string | null>(null)
 const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
 const evaluatedText = ref<string | null>(null)
@@ -465,6 +339,7 @@ const panelTitle = computed(() => {
     score: '作文评价',
     grammarCheck: '语法检查',
     rewrite: 'AI 改写',
+    structure: '段落结构',
     improve: '提升',
     explain: '解释',
     translate: '翻译',
@@ -500,28 +375,7 @@ watch(
 )
 
 // AI 助手输入框保存：基于 aiNote，写入 JSON { text, updatedAt }
-function saveAiNoteDraftNow(text: string) {
-  try {
-    const payload = { text, updatedAt: Date.now() }
-    localStorage.setItem(AI_NOTE_DRAFT_KEY, JSON.stringify(payload))
-    console.log('[aiNoteDraft] saved', { len: text.length, head: text.slice(0, 30) })
-  } catch (e) {
-    console.error('[aiNoteDraft] save failed', e)
-  }
-}
 
-function loadAiNoteDraftNow(): string | null {
-  try {
-    const raw = localStorage.getItem(AI_NOTE_DRAFT_KEY)
-    console.log('[aiNoteDraft] load', raw)
-    if (!raw) return null
-    const obj = JSON.parse(raw)
-    return typeof obj?.text === 'string' ? obj.text : null
-  } catch (e) {
-    console.error('[aiNoteDraft] load failed', e)
-    return null
-  }
-}
 
 let aiNoteSaveTimeout: ReturnType<typeof setTimeout> | null = null
 watch(
@@ -556,10 +410,10 @@ function saveLayoutState() {
 }
 
 onMounted(async () => {
-  const layout = loadLayout()
+  const layout = loadLayout(VALID_PANELS)
   activePanel.value = layout.activePanel
   splitRatio.value = loadSplitRatio()
-  dockWidth.value = computePanelWidthByRatio(splitRatio.value)
+  dockWidth.value = computePanelWidthByRatio(splitRatio.value, window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_LEFT_WIDTH)
   
   // 恢复草稿（仅在当前为空时）
   const saved = loadDraftNow()
@@ -574,9 +428,25 @@ onMounted(async () => {
   const savedResult = loadEvaluateResult()
   if (savedResult && !evaluateResult.value) {
     evaluateResult.value = savedResult
-    evaluatedText.value = draftText.value
     if (layout.activePanel === 'score') {
       activePanel.value = 'score'
+    }
+  }
+
+  // 恢复语法检查结果
+  const cachedGrammarErrors = loadGrammarErrors()
+  if (cachedGrammarErrors && cachedGrammarErrors.length > 0 && grammarErrors.value.length === 0) {
+    grammarErrors.value = cachedGrammarErrors as typeof grammarErrors.value
+  }
+
+  // 恢复润色建议
+  const cachedPolish = loadPolishSuggestions()
+  if (cachedPolish) {
+    if (cachedPolish.errors.length > 0 && gptErrors.value.length === 0) {
+      gptErrors.value = cachedPolish.errors as typeof gptErrors.value
+    }
+    if (cachedPolish.suggestions.length > 0 && gptSuggestionErrors.value.length === 0) {
+      gptSuggestionErrors.value = cachedPolish.suggestions as typeof gptSuggestionErrors.value
     }
   }
 
@@ -604,14 +474,14 @@ onMounted(async () => {
   leftPaneRef.value?.addEventListener('mouseup', syncSelectionStoreFromLeftMouseup)
 
   const onResize = () => {
-    dockWidth.value = computePanelWidthByRatio(splitRatio.value)
+    dockWidth.value = computePanelWidthByRatio(splitRatio.value, window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_LEFT_WIDTH)
   }
   window.addEventListener('resize', onResize)
   ;(window as Window & { __writingResizeHandler?: () => void }).__writingResizeHandler = onResize
 })
 
 onBeforeUnmount(() => {
-  evaluatePollToken += 1
+  evalCancel()
   leftPaneRef.value?.removeEventListener('scroll', onLeftPaneScroll)
   leftPaneRef.value?.removeEventListener('mouseup', syncSelectionStoreFromLeftMouseup)
   if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout)
@@ -679,21 +549,9 @@ function onStartGrammarCheck() {
   activePanel.value = 'grammarCheck'
 }
 
-// 评分完成时记住被评分的文本，文本变化时自动清除评分结果
-watch(evaluateResult, (result) => {
-  if (result) {
-    evaluatedText.value = draftText.value
-    saveEvaluateResult(result)
-  } else {
-    evaluatedText.value = null
-    activeErrorId.value = null
-    saveEvaluateResult(null)
-  }
-})
-
 watch(draftText, (newText) => {
   if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
-    evaluateResult.value = null
+    evalClearResult()
   }
   // 触发实时语法检查
   scheduleGrammarCheck()
@@ -736,6 +594,7 @@ async function runGrammarCheck() {
     grammarFixedErrorIds.value = new Set()
     gptErrors.value = []  // 重检时清空 GPT 错误，GPT 会在无错误时重新调用
     gptSuggestionErrors.value = []
+    saveGrammarErrors(grammarErrors.value)
     if (evaluateResult.value) grammarReChecked.value = true
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
@@ -845,6 +704,7 @@ function onGptErrorsLoaded(errors: SuggestionErrorItem[]) {
     })
   }
   gptErrors.value = converted
+  savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value })
 }
 
 function onGptSuggestionsLoaded(suggestions: SuggestionItem[]) {
@@ -865,6 +725,7 @@ function onGptSuggestionsLoaded(suggestions: SuggestionItem[]) {
     })
   }
   gptSuggestionErrors.value = converted
+  savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value })
 }
 
 function onApplySuggestion(payload: { original: string; suggestion: string }) {
@@ -908,144 +769,49 @@ function onApplyPolish(payload: { errorId: string; polished: string }) {
   showToast('已替换', 'success')
 }
 
-function onReplaceSentence(payload: { original: string; replacement: string }) {
+function onReplaceSentence(payload: { start: number; end: number; original: string; replacement: string }) {
   const text = draftText.value
-  const idx = text.indexOf(payload.original)
-  if (idx === -1) {
-    showToast('原句已被修改，无法定位替换', 'info')
-    return
+
+  let start = Math.max(0, Math.min(payload.start, text.length))
+  let end = Math.max(0, Math.min(payload.end, text.length))
+  if (end < start) {
+    const tmp = start
+    start = end
+    end = tmp
   }
-  const newText = text.slice(0, idx) + payload.replacement + text.slice(idx + payload.original.length)
+
+  const directSlice = text.slice(start, end)
+  if (start >= end || directSlice !== payload.original) {
+    const fallback = findClosestMatch(text, payload.original, start, true, shouldUseWordBoundary(payload.original))
+    if (fallback < 0) {
+      showToast('原句已被修改，无法定位替换', 'info')
+      return
+    }
+    start = fallback
+    end = fallback + payload.original.length
+  }
+
+  const newText = text.slice(0, start) + payload.replacement + text.slice(end)
   draftText.value = newText
   evaluatedText.value = newText
   showToast('已替换', 'success')
 }
 
+function onBubbleAction(action: 'explain' | 'rewrite' | 'translate') {
+  const panelMap: Record<string, import('./ToolRail.vue').PanelMode> = {
+    explain: 'explain',
+    rewrite: 'rewrite',
+    translate: 'translate',
+  }
+  activePanel.value = panelMap[action] ?? 'aiNote'
+}
+
+function onParagraphClick(offset: number) {
+  cursorPlacement.value = { at: offset }
+}
+
 function onStartPolish() {
   activePanel.value = 'rewrite'
-}
-
-// 在所有匹配中找到最接近 hintPos 的位置
-function isWordChar(ch: string): boolean {
-  return /[A-Za-z0-9'_/-]/.test(ch)
-}
-
-function shouldUseWordBoundary(needle: string): boolean {
-  if (!needle) return false
-  return isWordChar(needle[0]) && isWordChar(needle[needle.length - 1])
-}
-
-function isWholeWordMatch(text: string, start: number, len: number): boolean {
-  if (start < 0 || len <= 0) return false
-  const end = start + len
-  const leftOk = start === 0 || !isWordChar(text[start - 1])
-  const rightOk = end >= text.length || !isWordChar(text[end])
-  return leftOk && rightOk
-}
-
-function findClosestMatch(
-  text: string,
-  needle: string,
-  hintPos: number,
-  caseSensitive = true,
-  wholeWordOnly = false,
-): number {
-  const haystack = caseSensitive ? text : text.toLowerCase()
-  const target = caseSensitive ? needle : needle.toLowerCase()
-  let bestIdx = -1
-  let bestDist = Infinity
-  let searchFrom = 0
-  while (searchFrom <= haystack.length - target.length) {
-    const idx = haystack.indexOf(target, searchFrom)
-    if (idx === -1) break
-    if (wholeWordOnly && !isWholeWordMatch(text, idx, needle.length)) {
-      searchFrom = idx + 1
-      continue
-    }
-    const dist = Math.abs(idx - hintPos)
-    if (dist < bestDist) {
-      bestDist = dist
-      bestIdx = idx
-    }
-    searchFrom = idx + 1
-  }
-  return bestIdx
-}
-
-function resolveErrorSpan(
-  err: { original?: string; span: { start: number; end: number } },
-  text: string,
-): { start: number; end: number } | null {
-  const { start, end } = err.span
-  if (!err.original) return null
-
-  const wholeWord = shouldUseWordBoundary(err.original)
-
-  // 1. span 有效且文本匹配（需要时必须是整词）
-  if (start >= 0 && end <= text.length && start < end && text.slice(start, end) === err.original) {
-    if (!wholeWord || isWholeWordMatch(text, start, end - start)) {
-      return { start, end }
-    }
-  }
-
-  // 2. 精确搜索（优先最接近原始 span 位置的匹配）
-  const idx = findClosestMatch(text, err.original, start, true, wholeWord)
-  if (idx !== -1) {
-    return { start: idx, end: idx + err.original.length }
-  }
-
-  // 3. 忽略大小写搜索（优先最接近原始 span 位置的匹配）
-  const idxLower = findClosestMatch(text, err.original, start, false, wholeWord)
-  if (idxLower !== -1) {
-    return { start: idxLower, end: idxLower + err.original.length }
-  }
-
-  // 4. 规范化空白后搜索（合并多余空格）
-  const normText = text.replace(/\s+/g, ' ')
-  const normOrig = err.original.replace(/\s+/g, ' ')
-  const idxNorm = normText.indexOf(normOrig)
-  if (idxNorm !== -1) {
-    let origPos = 0
-    let normPos = 0
-    while (normPos < idxNorm && origPos < text.length) {
-      if (/\s/.test(text[origPos]) && normPos > 0 && normText[normPos - 1] === ' ') {
-        origPos++
-        continue
-      }
-      origPos++
-      normPos++
-    }
-    const matchStart = origPos
-    let matchLen = 0
-    let remaining = normOrig.length
-    let p = origPos
-    while (remaining > 0 && p < text.length) {
-      if (/\s/.test(text[p]) && matchLen > 0 && /\s/.test(text[p - 1])) {
-        p++
-        continue
-      }
-      p++
-      remaining--
-      matchLen = p - matchStart
-    }
-
-    if (!wholeWord || isWholeWordMatch(text, matchStart, matchLen)) {
-      return { start: matchStart, end: matchStart + matchLen }
-    }
-  }
-
-  return null
-}
-
-function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
-  if (err.suggestion == null) return false
-  const s = err.suggestion.trim()
-  if (/^n\/?a$/i.test(s)) return false
-  // 空字符串表示删除，是有效操作
-  if (s === '' && err.original?.trim()) return true
-  if (!s) return false
-  if (err.original && s === err.original.trim()) return false
-  return true
 }
 
 
@@ -1066,10 +832,7 @@ function onArchived() {
   showToast('Archived', 'success')
 }
 
-async function onSubmit() {
-  submitting.value = true
-  evaluateResult.value = null
-  evaluateError.value = null
+function onSubmit() {
   // 暂停语法检查
   grammarCheckActive.value = false
   grammarErrors.value = []
@@ -1079,65 +842,97 @@ async function onSubmit() {
   grammarReChecked.value = false
   grammarCheckAbortController?.abort()
   if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
-  const currentPollToken = ++evaluatePollToken
+
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
-  try {
-    const submitRes = await submitEvaluateWriting({
-      essay: draftText.value.trim(),
-      aiHint: aiNote.value.trim() || undefined,
-      mode: normalizedMode,
-      taskPrompt: examTaskPrompt,
-      lang: 'en',
-    })
-    if (!submitRes.requestId) {
-      throw new Error('评估任务提交失败：缺少 requestId')
-    }
 
-    const startedAt = Date.now()
-    const pollIntervalMs = 1200
-    const pollTimeoutMs = 180000
-
-    let task: WritingEvaluateTaskStatusResponse | null = null
-    while (Date.now() - startedAt < pollTimeoutMs) {
-      if (currentPollToken !== evaluatePollToken) {
-        return
-      }
-
-      task = await getEvaluateTask(submitRes.requestId)
-      if (task.status === 'succeeded' && task.result) {
-        evaluateResult.value = task.result
-        break
-      }
-      if (task.status === 'failed') {
-        throw new Error(task.error || '评估任务失败')
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    }
-
-    if (!task || task.status !== 'succeeded' || !task.result) {
-      throw new Error('评估超时，请稍后再试')
-    }
-
-    activePanel.value = 'score'
-    showToast('评估完成', 'success')
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : '评估失败'
-    evaluateError.value = msg
-    showToast(msg, 'error')
-  } finally {
-    if (currentPollToken === evaluatePollToken) {
-      submitting.value = false
-    }
-  }
+  wrappedEvalSubmit({
+    essay: draftText.value.trim(),
+    aiHint: aiNote.value.trim() || undefined,
+    mode: normalizedMode,
+    taskPrompt: examTaskPrompt,
+    lang: 'en',
+  })
 }
+
+// Track whether result came from fresh submission (vs. localStorage restore)
+let evalResultFromSubmit = false
+const origEvalSubmit = evalSubmit
+const wrappedEvalSubmit = (...args: Parameters<typeof origEvalSubmit>) => {
+  evalResultFromSubmit = true
+  return origEvalSubmit(...args)
+}
+
+// Watch for evaluation completion/error from the composable
+watch(evaluateResult, (result) => {
+  if (result) {
+    evaluatedText.value = draftText.value
+    saveEvaluateResult(result)
+    if (evalResultFromSubmit) {
+      activePanel.value = 'score'
+      showToast('评估完成', 'success')
+      evalResultFromSubmit = false
+    }
+  } else {
+    evaluatedText.value = null
+    activeErrorId.value = null
+    saveEvaluateResult(null)
+  }
+})
+
+watch(evaluateError, (err) => {
+  if (err && evalResultFromSubmit) {
+    showToast(err, 'error')
+    evalResultFromSubmit = false
+  }
+})
 
 function onDismissSelection() {
   lastDismissedPinned.value = selectedTextPinned.value
   selectionDismissed.value = true
   selectedSpanPinned.value = null
+}
+
+// ── 退出确认 ──
+
+const showExitDialog = ref(false)
+
+function onBack() {
+  const hasContent = draftText.value.trim().length > 0
+  if (hasContent) {
+    showExitDialog.value = true
+  } else {
+    doExit(false)
+  }
+}
+
+function onExitSave() {
+  showExitDialog.value = false
+  // 草稿已经自动保存到 localStorage，直接退出
+  doExit(false)
+}
+
+function onExitDiscard() {
+  showExitDialog.value = false
+  // 清除草稿
+  try {
+    localStorage.removeItem(WRITING_STORAGE_KEYS.draft)
+    localStorage.removeItem(WRITING_STORAGE_KEYS.legacyDraft)
+    localStorage.removeItem(WRITING_STORAGE_KEYS.evaluateResult)
+  } catch (_) {}
+  doExit(true)
+}
+
+function onExitCancel() {
+  showExitDialog.value = false
+}
+
+function doExit(clearMode: boolean) {
+  if (clearMode) {
+    sessionStorage.removeItem('writingMode')
+  }
+  router.push('/app')
 }
 
 function onClear() {
@@ -1151,7 +946,7 @@ function onClear() {
   lastChatResult.value = null
   aiDocId.value = ''
   cursorPlacement.value = null
-  evaluateResult.value = null
+  evalClearResult()
   activeErrorId.value = null
   // 清空语法检查
   grammarErrors.value = []
@@ -1163,6 +958,8 @@ function onClear() {
   grammarReChecked.value = false
   grammarCheckAbortController?.abort()
   if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
+  clearGrammarErrors()
+  clearPolishSuggestions()
   try {
     localStorage.removeItem(DRAFT_KEY)
     localStorage.removeItem(LEGACY_DRAFT_KEY)
@@ -1393,7 +1190,99 @@ function onAiNoteStop() {
     display: none;
   }
 }
+
+/* 退出确认对话框 */
+.exit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  animation: exitFadeIn 0.15s ease;
+}
+
+@keyframes exitFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.exit-dialog {
+  width: 90%;
+  max-width: 400px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 28px 24px 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  animation: exitSlideUp 0.2s ease;
+}
+
+@keyframes exitSlideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.exit-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 8px;
+}
+
+.exit-message {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.exit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.exit-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+}
+
+.exit-btn-cancel {
+  color: #6b7280;
+  background: #f3f4f6;
+}
+.exit-btn-cancel:hover {
+  background: #e5e7eb;
+}
+
+.exit-btn-discard {
+  color: #ef4444;
+  background: #fef2f2;
+}
+.exit-btn-discard:hover {
+  background: #fee2e2;
+}
+
+.exit-btn-save {
+  color: #fff;
+  background: #047857;
+}
+.exit-btn-save:hover {
+  background: #065f46;
+}
 </style>
+
+
+
+
+
+
 
 
 

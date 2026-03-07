@@ -25,3 +25,7 @@ apps/
 .env
 .env.local
 .env.*.local
+
+# Beta deploy env
+deploy/beta/.env.beta
+

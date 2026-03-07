@@ -1,0 +1,108 @@
+name: peai-beta
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-peai-backend-beta:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: peai-backend-beta
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: ${BACKEND_PORT:-18080}
+
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_SECONDS: ${JWT_ACCESS_TOKEN_SECONDS:-7200}
+      JWT_REFRESH_TOKEN_SECONDS: ${JWT_REFRESH_TOKEN_SECONDS:-604800}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      OPENAI_PROXY_ENABLED: ${OPENAI_PROXY_ENABLED:-false}
+      OPENAI_PROXY_URL: ${OPENAI_PROXY_URL:-}
+      OPENAI_PROXY_HOST: ${OPENAI_PROXY_HOST:-}
+      OPENAI_PROXY_PORT: ${OPENAI_PROXY_PORT:-}
+
+      SAPLING_ENABLED: ${SAPLING_ENABLED:-false}
+      SAPLING_API_KEY: ${SAPLING_API_KEY:-}
+      SAPLING_BASE_URL: ${SAPLING_BASE_URL:-https://api.sapling.ai}
+
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode}
+      QWEN_MODEL: ${QWEN_MODEL:-qwen-plus}
+      QWEN_VL_MODEL: ${QWEN_VL_MODEL:-qwen-vl-plus}
+
+      AI_CONTEXT_CONVERSATION_PROCESSOR: ${AI_CONTEXT_CONVERSATION_PROCESSOR:-hybrid}
+      AI_CONTEXT_CONVERSATION_PYTHON_ENABLED: ${AI_CONTEXT_CONVERSATION_PYTHON_ENABLED:-true}
+      AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL: http://context-sidecar:8001
+      AI_CONTEXT_CONVERSATION_PYTHON_TIMEOUT_MS: ${AI_CONTEXT_CONVERSATION_PYTHON_TIMEOUT_MS:-800}
+      AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED: ${AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED:-true}
+
+      APP_BASE_URL: ${APP_BASE_URL}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_FROM: ${MAIL_FROM:-noreply@mail.personalenglishai.com}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SSL_ENABLE: ${MAIL_SSL_ENABLE:-true}
+      MAIL_STARTTLS_ENABLE: ${MAIL_STARTTLS_ENABLE:-false}
+    expose:
+      - "${BACKEND_PORT:-18080}"
+    depends_on:
+      - redis
+      - context-sidecar
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:${BACKEND_PORT:-18080}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: peai-redis-beta
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - peai_redis_beta_data:/data
+
+  context-sidecar:
+    build:
+      context: ../../python/context_sidecar
+    container_name: peai-context-sidecar-beta
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      CONTEXT_SIDECAR_REDIS_URL: redis://redis:6379/0
+      CONTEXT_SIDECAR_REDIS_TTL_SECONDS: ${CONTEXT_SIDECAR_REDIS_TTL_SECONDS:-86400}
+      CONTEXT_SIDECAR_REDIS_MAX_MESSAGES: ${CONTEXT_SIDECAR_REDIS_MAX_MESSAGES:-50}
+      CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS: ${CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS:-8}
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: peai-gateway-beta
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${BETA_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx.beta.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../web/dist:/usr/share/nginx/html:ro
+
+volumes:
+  peai_redis_beta_data:
