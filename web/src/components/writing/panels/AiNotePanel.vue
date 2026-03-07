@@ -215,7 +215,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
 
@@ -609,14 +610,13 @@ defineExpose<{
   isIncludeDraft,
 })
 
+onClickOutside(modeMenuRef, () => {
+  modeMenuOpen.value = false
+})
+
 onMounted(() => {
   restoreMessages(props.conversationId)
   taskPromptExpanded.value = props.writingMode === 'exam'
-  document.addEventListener('click', onClickOutsideModeMenu, true)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onClickOutsideModeMenu, true)
 })
 
 watch(
@@ -628,18 +628,6 @@ watch(
   }
 )
 
-function onClickOutsideModeMenu(e: Event) {
-  if (!modeMenuOpen.value) return
-  const root = modeMenuRef.value
-  const target = e.target as Node | null
-  if (!root || !target) {
-    modeMenuOpen.value = false
-    return
-  }
-  if (!root.contains(target)) {
-    modeMenuOpen.value = false
-  }
-}
 </script>
 
 <style scoped>

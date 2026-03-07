@@ -28,6 +28,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, onUnmounted } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import * as echarts from 'echarts'
 import { userApi, type AbilityProfile } from '@/api/user'
 
@@ -148,11 +149,11 @@ onMounted(async () => {
     renderChart()
   }
 
-  window.addEventListener('resize', handleResize)
 })
 
+useEventListener(window, 'resize', handleResize)
+
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
   if (chartInstance.value) {
     chartInstance.value.dispose()
     chartInstance.value = null
