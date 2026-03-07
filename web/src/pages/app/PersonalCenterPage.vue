@@ -92,7 +92,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, h, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, h, watch, nextTick } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import { useRouter, useRoute } from 'vue-router'
 import { userApi, type MeProfile } from '@/api/user'
 import { STAGE_OPTIONS, getStageLabel } from '@/constants/stage'
@@ -193,11 +194,9 @@ async function selectStage(value: string) {
   stageDropdownOpen.value = false
 }
 
-function onClickOutsideStage(e: MouseEvent) {
-  if (stageDropdownRef.value && !stageDropdownRef.value.contains(e.target as Node)) {
-    stageDropdownOpen.value = false
-  }
-}
+onClickOutside(stageDropdownRef, () => {
+  stageDropdownOpen.value = false
+})
 
 async function refreshProfile() {
   try {
@@ -216,8 +215,6 @@ onMounted(async () => {
     activeSection.value = tab as SectionKey
   }
 
-  document.addEventListener('click', onClickOutsideStage)
-
   try {
     const res = await userApi.getMyProfile()
     if (res.data) {
@@ -229,9 +226,6 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => {
-  document.removeEventListener('click', onClickOutsideStage)
-})
 
 watch(() => route.query.tab, (val) => {
   if (val && ['overview', 'essays', 'radar', 'referral', 'settings'].includes(val as string)) {

@@ -11,6 +11,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useEventListener } from '@vueuse/core'
 
 const props = defineProps<{
   minRight: number
@@ -26,13 +27,13 @@ const emit = defineEmits<{
 
 const elRef = ref<HTMLElement | null>(null)
 
+const dragging = ref(false)
+
 function onPointerDown(e: PointerEvent) {
   if (e.button !== 0) return
   emit('drag-start')
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp)
-  window.addEventListener('pointercancel', onUp)
+  dragging.value = true
 }
 
 function onMove(e: PointerEvent) {
@@ -48,10 +49,12 @@ function onUp(e: PointerEvent) {
   emit('drag-end')
   const el = elRef.value
   if (el) try { el.releasePointerCapture(e.pointerId) } catch (_) {}
-  window.removeEventListener('pointermove', onMove)
-  window.removeEventListener('pointerup', onUp)
-  window.removeEventListener('pointercancel', onUp)
+  dragging.value = false
 }
+
+useEventListener(window, 'pointermove', (e: PointerEvent) => { if (dragging.value) onMove(e) })
+useEventListener(window, 'pointerup', (e: PointerEvent) => { if (dragging.value) onUp(e) })
+useEventListener(window, 'pointercancel', (e: PointerEvent) => { if (dragging.value) onUp(e) })
 
 </script>
 

@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, shallowRef } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { Editor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -265,10 +266,11 @@ onMounted(() => {
   updateErrorDecorations()
 })
 
+useEventListener(document, 'click', onDocumentClick, true)
+useEventListener(document, 'keydown', onDocumentKeydown, true)
+
 onBeforeUnmount(() => {
   editor.value?.destroy()
-  document.removeEventListener('click', onDocumentClick, true)
-  document.removeEventListener('keydown', onDocumentKeydown, true)
 })
 
 // ── 错误高亮更新 ──
@@ -470,11 +472,6 @@ function onDocumentKeydown(e: KeyboardEvent) {
     onPopupDismiss()
   }
 }
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick, true)
-  document.addEventListener('keydown', onDocumentKeydown, true)
-})
 
 // ── 工具函数 ──
 

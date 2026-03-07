@@ -129,6 +129,7 @@
 
 <script setup lang="ts">
 import { computed, watch, nextTick, ref, onMounted, onBeforeUnmount, shallowRef } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import * as echarts from 'echarts/core'
 import { PieChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent } from 'echarts/components'
@@ -518,12 +519,12 @@ function handleChartResize() {
 watch(errorTypePieData, () => nextTick(renderPieChart), { deep: true })
 watch(() => props.evaluateResult, () => nextTick(renderPieChart))
 
+useEventListener(window, 'resize', handleChartResize)
+
 onMounted(() => {
-  window.addEventListener('resize', handleChartResize)
   nextTick(renderPieChart)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleChartResize)
   chartInstance.value?.dispose()
 })
 // ── activeErrorId 联动 ──
