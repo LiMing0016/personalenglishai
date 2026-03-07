@@ -83,61 +83,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import {
-  getEvaluationHistory,
-  getEvaluationDetail,
-  type EvaluationHistoryItem,
-  type EvaluationDetailResponse,
-} from '@/api/writing'
+import { ref } from 'vue'
+import type { EvaluationHistoryItem, EvaluationDetailResponse } from '@/api/writing'
+import { useEvaluationHistory, useEvaluationDetail } from '@/composables/useEvaluationHistory'
 
 defineEmits<{
   'load-result': [detail: EvaluationDetailResponse]
 }>()
 
 const pageSize = 10
-const page = ref(0)
-const total = ref(0)
-const items = ref<EvaluationHistoryItem[]>([])
-const loading = ref(false)
+const { page, totalPages, items, total, isLoading: loading, setPage } = useEvaluationHistory(pageSize)
 
 const activeId = ref<number | null>(null)
-const activeDetail = ref<EvaluationDetailResponse | null>(null)
-const detailLoading = ref(false)
 const essayExpanded = ref(false)
 
-const totalPages = computed(() => Math.ceil(total.value / pageSize))
+const { data: activeDetail, isLoading: detailLoading } = useEvaluationDetail(() => activeId.value)
 
-async function loadPage(p: number) {
-  loading.value = true
-  page.value = p
+function loadPage(p: number) {
   activeId.value = null
-  activeDetail.value = null
-  try {
-    const res = await getEvaluationHistory(p, pageSize)
-    items.value = res.items
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
+  essayExpanded.value = false
+  setPage(p)
 }
 
-async function toggle(item: EvaluationHistoryItem) {
+function toggle(item: EvaluationHistoryItem) {
   if (activeId.value === item.id) {
     activeId.value = null
-    activeDetail.value = null
     essayExpanded.value = false
     return
   }
   activeId.value = item.id
-  activeDetail.value = null
   essayExpanded.value = false
-  detailLoading.value = true
-  try {
-    activeDetail.value = await getEvaluationDetail(item.id)
-  } finally {
-    detailLoading.value = false
-  }
 }
 
 function formatDate(iso: string): string {
@@ -148,8 +123,6 @@ function formatDate(iso: string): string {
   const min = String(d.getMinutes()).padStart(2, '0')
   return `${d.getFullYear()}-${mm}-${dd} ${hh}:${min}`
 }
-
-onMounted(() => loadPage(0))
 </script>
 
 <style scoped>

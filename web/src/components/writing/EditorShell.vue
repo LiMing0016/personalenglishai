@@ -20,6 +20,7 @@
           @error-click="onEditorErrorClick"
           @fix-error="onInlineFixError"
           @dismiss-error="onDismissError"
+          @bubble-action="onBubbleAction"
           @back="onBack"
         />
       </div>
@@ -75,6 +76,7 @@
           @gpt-errors-loaded="onGptErrorsLoaded"
           @gpt-suggestions-loaded="onGptSuggestionsLoaded"
           @retry="onSubmit"
+          @paragraph-click="onParagraphClick"
           @start-grammar-check="onStartGrammarCheck"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
@@ -129,8 +131,9 @@ import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
-import { getEvaluateTask, submitEvaluateWriting, grammarCheck as grammarCheckApi } from '@/api/writing'
-import type { WritingEvaluateResponse, WritingEvaluateTaskStatusResponse, EvaluationDetailResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
+import { grammarCheck as grammarCheckApi } from '@/api/writing'
+import type { WritingEvaluateResponse, EvaluationDetailResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
+import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
@@ -180,7 +183,7 @@ const MAX_PANEL_WIDTH = 1280
 const MIN_LEFT_WIDTH = 360
 
 const VALID_PANELS: PanelMode[] = [
-  'score', 'rewrite', 'grammarCheck', 'improve', 'explain', 'translate', 'archive', 'aiNote',
+  'score', 'rewrite', 'grammarCheck', 'structure', 'improve', 'explain', 'translate', 'archive', 'aiNote',
 ]
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
@@ -209,12 +212,16 @@ const aiGenerating = ref(false)
 const writingMode = ref<'free' | 'exam'>(props.initialWritingMode ?? loadWritingMode())
 const taskPrompt = ref(props.initialTaskPrompt ?? loadTaskPrompt())
 let aiAbortController: AbortController | null = null
-const submitting = ref(false)
-const evaluateError = ref<string | null>(null)
-let evaluatePollToken = 0
+const {
+  submit: evalSubmit,
+  cancel: evalCancel,
+  clearResult: evalClearResult,
+  evaluateResult,
+  evaluateError,
+  submitting,
+} = useEvaluateSubmission()
 const resizing = ref(false)
 const archivedList = ref<unknown[]>([])
-const evaluateResult = ref<WritingEvaluateResponse | null>(null)
 const activeErrorId = ref<string | null>(null)
 const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
 const evaluatedText = ref<string | null>(null)
@@ -332,6 +339,7 @@ const panelTitle = computed(() => {
     score: '作文评价',
     grammarCheck: '语法检查',
     rewrite: 'AI 改写',
+    structure: '段落结构',
     improve: '提升',
     explain: '解释',
     translate: '翻译',
@@ -420,7 +428,6 @@ onMounted(async () => {
   const savedResult = loadEvaluateResult()
   if (savedResult && !evaluateResult.value) {
     evaluateResult.value = savedResult
-    evaluatedText.value = draftText.value
     if (layout.activePanel === 'score') {
       activePanel.value = 'score'
     }
@@ -474,7 +481,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  evaluatePollToken += 1
+  evalCancel()
   leftPaneRef.value?.removeEventListener('scroll', onLeftPaneScroll)
   leftPaneRef.value?.removeEventListener('mouseup', syncSelectionStoreFromLeftMouseup)
   if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout)
@@ -542,21 +549,9 @@ function onStartGrammarCheck() {
   activePanel.value = 'grammarCheck'
 }
 
-// 评分完成时记住被评分的文本，文本变化时自动清除评分结果
-watch(evaluateResult, (result) => {
-  if (result) {
-    evaluatedText.value = draftText.value
-    saveEvaluateResult(result)
-  } else {
-    evaluatedText.value = null
-    activeErrorId.value = null
-    saveEvaluateResult(null)
-  }
-})
-
 watch(draftText, (newText) => {
   if (evaluateResult.value && evaluatedText.value !== null && newText !== evaluatedText.value) {
-    evaluateResult.value = null
+    evalClearResult()
   }
   // 触发实时语法检查
   scheduleGrammarCheck()
@@ -802,6 +797,19 @@ function onReplaceSentence(payload: { start: number; end: number; original: stri
   showToast('已替换', 'success')
 }
 
+function onBubbleAction(action: 'explain' | 'rewrite' | 'translate') {
+  const panelMap: Record<string, import('./ToolRail.vue').PanelMode> = {
+    explain: 'explain',
+    rewrite: 'rewrite',
+    translate: 'translate',
+  }
+  activePanel.value = panelMap[action] ?? 'aiNote'
+}
+
+function onParagraphClick(offset: number) {
+  cursorPlacement.value = { at: offset }
+}
+
 function onStartPolish() {
   activePanel.value = 'rewrite'
 }
@@ -824,10 +832,7 @@ function onArchived() {
   showToast('Archived', 'success')
 }
 
-async function onSubmit() {
-  submitting.value = true
-  evaluateResult.value = null
-  evaluateError.value = null
+function onSubmit() {
   // 暂停语法检查
   grammarCheckActive.value = false
   grammarErrors.value = []
@@ -837,60 +842,51 @@ async function onSubmit() {
   grammarReChecked.value = false
   grammarCheckAbortController?.abort()
   if (grammarCheckTimer) clearTimeout(grammarCheckTimer)
-  const currentPollToken = ++evaluatePollToken
+
   const normalizedMode = writingMode.value === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? taskPrompt.value.trim() || undefined : undefined
-  try {
-    const submitRes = await submitEvaluateWriting({
-      essay: draftText.value.trim(),
-      aiHint: aiNote.value.trim() || undefined,
-      mode: normalizedMode,
-      taskPrompt: examTaskPrompt,
-      lang: 'en',
-    })
-    if (!submitRes.requestId) {
-      throw new Error('评估任务提交失败：缺少 requestId')
-    }
 
-    const startedAt = Date.now()
-    const pollIntervalMs = 1200
-    const pollTimeoutMs = 180000
-
-    let task: WritingEvaluateTaskStatusResponse | null = null
-    while (Date.now() - startedAt < pollTimeoutMs) {
-      if (currentPollToken !== evaluatePollToken) {
-        return
-      }
-
-      task = await getEvaluateTask(submitRes.requestId)
-      if (task.status === 'succeeded' && task.result) {
-        evaluateResult.value = task.result
-        break
-      }
-      if (task.status === 'failed') {
-        throw new Error(task.error || '评估任务失败')
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-    }
-
-    if (!task || task.status !== 'succeeded' || !task.result) {
-      throw new Error('评估超时，请稍后再试')
-    }
-
-    activePanel.value = 'score'
-    showToast('评估完成', 'success')
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : '评估失败'
-    evaluateError.value = msg
-    showToast(msg, 'error')
-  } finally {
-    if (currentPollToken === evaluatePollToken) {
-      submitting.value = false
-    }
-  }
+  wrappedEvalSubmit({
+    essay: draftText.value.trim(),
+    aiHint: aiNote.value.trim() || undefined,
+    mode: normalizedMode,
+    taskPrompt: examTaskPrompt,
+    lang: 'en',
+  })
 }
+
+// Track whether result came from fresh submission (vs. localStorage restore)
+let evalResultFromSubmit = false
+const origEvalSubmit = evalSubmit
+const wrappedEvalSubmit = (...args: Parameters<typeof origEvalSubmit>) => {
+  evalResultFromSubmit = true
+  return origEvalSubmit(...args)
+}
+
+// Watch for evaluation completion/error from the composable
+watch(evaluateResult, (result) => {
+  if (result) {
+    evaluatedText.value = draftText.value
+    saveEvaluateResult(result)
+    if (evalResultFromSubmit) {
+      activePanel.value = 'score'
+      showToast('评估完成', 'success')
+      evalResultFromSubmit = false
+    }
+  } else {
+    evaluatedText.value = null
+    activeErrorId.value = null
+    saveEvaluateResult(null)
+  }
+})
+
+watch(evaluateError, (err) => {
+  if (err && evalResultFromSubmit) {
+    showToast(err, 'error')
+    evalResultFromSubmit = false
+  }
+})
 
 function onDismissSelection() {
   lastDismissedPinned.value = selectedTextPinned.value
@@ -950,7 +946,7 @@ function onClear() {
   lastChatResult.value = null
   aiDocId.value = ''
   cursorPlacement.value = null
-  evaluateResult.value = null
+  evalClearResult()
   activeErrorId.value = null
   // 清空语法检查
   grammarErrors.value = []

@@ -80,6 +80,7 @@ const modeLabels: Record<PanelMode, string> = {
   score: '评分',
   grammarCheck: '语法检查',
   rewrite: '改写',
+  structure: '结构',
   improve: '提升',
   explain: '解释',
   translate: '翻译',

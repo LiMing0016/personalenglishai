@@ -285,7 +285,7 @@ interface InsightItem {
   text: string
 }
 
-function labelOf(key: DimensionKey): string {
+function labelOf(key: string): string {
   return props.dimensionLabels?.[key] ?? DEFAULT_LABELS[key] ?? key
 }
 
@@ -295,20 +295,36 @@ const priorityFocus = computed<DimensionKey[]>(() => {
   return all.filter((k): k is DimensionKey => valid.has(k))
 })
 
-const strengths = computed<InsightItem[]>(() => {
-  const items: InsightItem[] = []
-  const weakSet = new Set(priorityFocus.value)
+const orderedAnalysisKeys = computed<string[]>(() => {
   const analysisMap = props.evaluateResult?.analysis ?? {}
+  const keys: string[] = []
+  const seen = new Set<string>()
 
   for (const key of dimensionOrder.value) {
-    const grade = gradeMap.value[key]
-    if (weakSet.has(key) || (grade !== 'A' && grade !== 'B')) continue
-    const a = analysisMap[key]
+    const rec = analysisMap[key]
+    if (!rec) continue
+    keys.push(key)
+    seen.add(key)
+  }
+  for (const key of Object.keys(analysisMap)) {
+    if (seen.has(key)) continue
+    keys.push(key)
+    seen.add(key)
+  }
+  return keys
+})
+
+const strengths = computed<InsightItem[]>(() => {
+  const items: InsightItem[] = []
+  const analysisMap = props.evaluateResult?.analysis ?? {}
+
+  // 展示后端 analysis 中的全部 strength，避免遗漏模型返回内容
+  for (const key of orderedAnalysisKeys.value) {
+    const a = analysisMap[key as DimensionKey]
     const text = a?.strength?.trim()
-      || `${labelOf(key)}表现稳定（${grade}）。`
+    if (!text) continue
     const quote = a?.strength_quote?.trim() || a?.quote?.trim() || undefined
     items.push({ label: labelOf(key), quote, text })
-    if (items.length >= 3) break
   }
 
   if (!items.length) {
@@ -328,26 +344,26 @@ const strengths = computed<InsightItem[]>(() => {
 
 const weaknesses = computed<InsightItem[]>(() => {
   const items: InsightItem[] = []
-  const seen = new Set<DimensionKey>()
   const analysisMap = props.evaluateResult?.analysis ?? {}
+  const prioritySet = new Set<string>(priorityFocus.value)
+  const keyOrder = [
+    ...priorityFocus.value,
+    ...orderedAnalysisKeys.value.filter((k) => !prioritySet.has(k)),
+  ]
 
-  for (const key of priorityFocus.value) {
-    const a = analysisMap[key]
-    const text = (a?.suggestion ?? a?.weakness)?.trim()
-      || `建议优先改进${labelOf(key)}。`
-    const quote = a?.weakness_quote?.trim() || a?.quote?.trim() || undefined
-    items.push({ label: labelOf(key), quote, text })
-    seen.add(key)
-  }
-
-  for (const key of Object.keys(analysisMap) as DimensionKey[]) {
-    if (seen.has(key)) continue
-    const a = analysisMap[key]
-    const text = (a?.suggestion ?? a?.weakness)?.trim()
+  // 每个维度同时展示 weakness + suggestion（若都有），确保信息完整
+  for (const key of keyOrder) {
+    const a = analysisMap[key as DimensionKey]
+    if (!a) continue
+    const weaknessText = a.weakness?.trim() ?? ''
+    const suggestionText = a.suggestion?.trim() ?? ''
+    const parts: string[] = []
+    if (weaknessText) parts.push(`问题：${weaknessText}`)
+    if (suggestionText && suggestionText !== weaknessText) parts.push(`建议：${suggestionText}`)
+    const text = parts.join(' ') || (prioritySet.has(key) ? `建议优先改进${labelOf(key)}。` : '')
     if (!text) continue
     const quote = a?.weakness_quote?.trim() || a?.quote?.trim() || undefined
     items.push({ label: labelOf(key), quote, text })
-    seen.add(key)
   }
 
   if (!items.length) {
@@ -356,7 +372,6 @@ const weaknesses = computed<InsightItem[]>(() => {
 
   return items
 })
-
 // ── 行动建议 ──
 
 const focusDetail = computed(() => props.evaluateResult?.priority_focus_detail ?? null)
@@ -815,4 +830,5 @@ watch(
 /* ── 空状态 ── */
 .score-empty { padding: 32px 0; text-align: center; font-size: 14px; color: #9ca3af; }
 </style>
+
 
