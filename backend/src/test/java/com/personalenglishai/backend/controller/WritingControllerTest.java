@@ -9,6 +9,7 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
+import com.personalenglishai.backend.service.document.DocumentService;
 import com.personalenglishai.backend.service.writing.AuditTopicService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
@@ -66,6 +67,9 @@ class WritingControllerTest {
 
     @MockBean
     private AuditTopicService auditTopicService;
+
+    @MockBean
+    private DocumentService documentService;
 
     @MockBean
     private EssayEvaluationMapper essayEvaluationMapper;
@@ -336,4 +340,5 @@ class WritingControllerTest {
         return req;
     }
 }
+
 

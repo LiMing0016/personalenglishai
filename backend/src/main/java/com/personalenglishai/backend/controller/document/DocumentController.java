@@ -55,11 +55,19 @@ public class DocumentController {
             @PathVariable String docId,
             HttpServletRequest request) {
         Long userId = requireUserId(request);
-        return documentService.getLatestContent(String.valueOf(userId), "default", docId, userId)
-                .map(doc -> ResponseEntity.ok(Map.<String, Object>of(
-                        "title", doc.title,
-                        "latestRevision", doc.revision,
-                        "content", doc.content)))
+        String tenantId = String.valueOf(userId);
+        var docEntity = documentService.findByPublicId(tenantId, "default", docId);
+        return documentService.getLatestContent(tenantId, "default", docId, userId)
+                .map(doc -> {
+                    var resp = new java.util.LinkedHashMap<String, Object>();
+                    resp.put("title", doc.title);
+                    resp.put("latestRevision", doc.revision);
+                    resp.put("content", doc.content);
+                    if (docEntity != null) {
+                        resp.put("taskPrompt", docEntity.getTaskPrompt());
+                    }
+                    return ResponseEntity.ok((Map<String, Object>) resp);
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -75,6 +83,20 @@ public class DocumentController {
                         "revision", doc.revision,
                         "content", doc.content)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @PatchMapping("/{docId}/title")
+    public ResponseEntity<Void> rename(
+            @PathVariable String docId,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request) {
+        Long userId = requireUserId(request);
+        String title = body.getOrDefault("title", "").trim();
+        if (title.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        documentService.updateTitle(String.valueOf(userId), "default", docId, userId, title);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{docId}")

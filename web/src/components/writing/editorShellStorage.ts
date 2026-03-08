@@ -15,6 +15,11 @@ export const WRITING_STORAGE_KEYS = {
   polishSuggestions: 'peai:writing:polishSuggestions',
 } as const
 
+function scopedKey(baseKey: string, scope?: string | null): string {
+  const normalized = scope?.trim()
+  return normalized ? `${baseKey}:${normalized}` : baseKey
+}
+
 export interface LayoutState<T extends string> {
   rightPanelOpen: boolean
   activePanel: T | null
@@ -68,14 +73,22 @@ export function createConversationId(): string {
   return `conv_${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-export function loadConversationId(): string {
+export function loadConversationId(scope?: string | null): string {
   try {
-    const saved = localStorage.getItem(WRITING_STORAGE_KEYS.aiConversationId)?.trim()
+    const saved = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.aiConversationId, scope))?.trim()
     if (saved) return saved
   } catch {
     // fallback below
   }
   return createConversationId()
+}
+
+export function clearConversationId(scope?: string | null): void {
+  try {
+    localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.aiConversationId, scope))
+  } catch {
+    // ignore localStorage failure
+  }
 }
 
 export function loadWritingMode(): 'free' | 'exam' {
@@ -129,21 +142,21 @@ export function loadSplitRatio(): number {
   }
 }
 
-export function saveEvaluateResult(result: WritingEvaluateResponse | null): void {
+export function saveEvaluateResult(result: WritingEvaluateResponse | null, scope?: string | null): void {
   try {
     if (result) {
-      localStorage.setItem(WRITING_STORAGE_KEYS.evaluateResult, JSON.stringify(result))
+      localStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.evaluateResult, scope), JSON.stringify(result))
     } else {
-      localStorage.removeItem(WRITING_STORAGE_KEYS.evaluateResult)
+      localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.evaluateResult, scope))
     }
   } catch {
     // ignore localStorage failure
   }
 }
 
-export function loadEvaluateResult(): WritingEvaluateResponse | null {
+export function loadEvaluateResult(scope?: string | null): WritingEvaluateResponse | null {
   try {
-    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.evaluateResult)
+    const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.evaluateResult, scope))
     if (!raw) return null
     return JSON.parse(raw) as WritingEvaluateResponse
   } catch {
@@ -151,19 +164,27 @@ export function loadEvaluateResult(): WritingEvaluateResponse | null {
   }
 }
 
-export function saveDraftNow(text: string): void {
+export function clearEvaluateResult(scope?: string | null): void {
+  try {
+    localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.evaluateResult, scope))
+  } catch {
+    // ignore localStorage failure
+  }
+}
+
+export function saveDraftNow(text: string, scope?: string | null): void {
   try {
     const payload = { text, updatedAt: Date.now() }
-    localStorage.setItem(WRITING_STORAGE_KEYS.draft, JSON.stringify(payload))
-    console.log('[draft] saved', { len: text.length, head: text.slice(0, 30) })
+    localStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.draft, scope), JSON.stringify(payload))
+    console.log('[draft] saved', { len: text.length, head: text.slice(0, 30), scope: scope ?? 'global' })
   } catch (e) {
     console.error('[draft] save failed', e)
   }
 }
 
-export function loadDraftNow(): string | null {
+export function loadDraftNow(scope?: string | null): string | null {
   try {
-    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.draft)
+    const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.draft, scope))
     console.log('[draft] load raw', raw)
     if (!raw) return null
     const obj = JSON.parse(raw)
@@ -171,6 +192,14 @@ export function loadDraftNow(): string | null {
   } catch (e) {
     console.error('[draft] load failed', e)
     return null
+  }
+}
+
+export function clearDraftNow(scope?: string | null): void {
+  try {
+    localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.draft, scope))
+  } catch {
+    // ignore localStorage failure
   }
 }
 
@@ -215,19 +244,19 @@ export function loadDraft(): string {
   return ''
 }
 
-export function saveAiNoteDraftNow(text: string): void {
+export function saveAiNoteDraftNow(text: string, scope?: string | null): void {
   try {
     const payload = { text, updatedAt: Date.now() }
-    localStorage.setItem(WRITING_STORAGE_KEYS.aiNoteDraft, JSON.stringify(payload))
-    console.log('[aiNoteDraft] saved', { len: text.length, head: text.slice(0, 30) })
+    localStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.aiNoteDraft, scope), JSON.stringify(payload))
+    console.log('[aiNoteDraft] saved', { len: text.length, head: text.slice(0, 30), scope: scope ?? 'global' })
   } catch (e) {
     console.error('[aiNoteDraft] save failed', e)
   }
 }
 
-export function loadAiNoteDraftNow(): string | null {
+export function loadAiNoteDraftNow(scope?: string | null): string | null {
   try {
-    const raw = localStorage.getItem(WRITING_STORAGE_KEYS.aiNoteDraft)
+    const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.aiNoteDraft, scope))
     console.log('[aiNoteDraft] load', raw)
     if (!raw) return null
     const obj = JSON.parse(raw)
@@ -235,6 +264,14 @@ export function loadAiNoteDraftNow(): string | null {
   } catch (e) {
     console.error('[aiNoteDraft] load failed', e)
     return null
+  }
+}
+
+export function clearAiNoteDraftNow(scope?: string | null): void {
+  try {
+    localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.aiNoteDraft, scope))
+  } catch {
+    // ignore localStorage failure
   }
 }
 

@@ -27,11 +27,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
-const immersive = computed(() => Boolean(route.meta.immersive))
+const immersiveOverride = ref<boolean | null>(null)
+provide('setImmersive', (v: boolean | null) => { immersiveOverride.value = v })
+const immersive = computed(() =>
+  immersiveOverride.value !== null ? immersiveOverride.value : Boolean(route.meta.immersive)
+)
 
 const navLinks = [
   { to: '/app/writing', label: '写作' },

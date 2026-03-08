@@ -1,6 +1,9 @@
 spring:
   application:
     name: backend
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
   config:
     import: optional:file:./backend/.env[.properties],optional:file:./.env[.properties]
   datasource:

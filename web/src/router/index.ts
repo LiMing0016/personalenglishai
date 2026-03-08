@@ -84,7 +84,6 @@ const routes: RouteRecordRaw[] = [
         path: 'writing',
         name: 'Writing',
         component: () => import('@/pages/app/WritingPage.vue'),
-        meta: { immersive: true },
       },
       {
         path: 'vocabulary',

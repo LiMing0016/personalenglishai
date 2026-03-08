@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -42,4 +43,28 @@ public interface DocumentMapper {
     int softDelete(@Param("id") Long documentId, @Param("deletedAt") LocalDateTime deletedAt);
 
     int restore(@Param("id") Long documentId);
+
+    Document findByOwnerAndPromptHash(
+            @Param("ownerUserId") Long ownerUserId,
+            @Param("taskPromptHash") String taskPromptHash,
+            @Param("tenantId") String tenantId,
+            @Param("workspaceId") String workspaceId);
+
+    int updateScoreStats(@Param("id") Long documentId, @Param("score") Integer score);
+
+    List<Document> listByOwnerUserId(
+            @Param("ownerUserId") Long ownerUserId,
+            @Param("tenantId") String tenantId,
+            @Param("workspaceId") String workspaceId,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    int updateTitle(@Param("id") Long documentId, @Param("title") String title);
+
+    int updateStatus(@Param("id") Long documentId, @Param("status") int status);
+
+    long countByOwnerUserId(
+            @Param("ownerUserId") Long ownerUserId,
+            @Param("tenantId") String tenantId,
+            @Param("workspaceId") String workspaceId);
 }

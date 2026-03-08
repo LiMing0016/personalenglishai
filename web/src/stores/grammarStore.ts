@@ -261,6 +261,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   }
 
   function resetAll() {
+    evaluateResult.value = null
     grammarErrors.value = []
     grammarCheckError.value = null
     grammarFixedErrorIds.value = new Set()
