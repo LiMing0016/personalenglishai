@@ -9,6 +9,7 @@ export interface WritingEvaluateRequest {
   mode?: 'free' | 'exam'
   lang?: string
   taskPrompt?: string
+  documentId?: string
 }
 
 export interface WritingEvaluateResponse {
@@ -122,6 +123,7 @@ export function evaluateWriting(
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
+      documentId: payload.documentId ?? undefined,
     }, { timeout: 60000 })
     .then((res) => res.data)
 }
@@ -139,6 +141,7 @@ export function submitEvaluateWriting(
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
+      documentId: payload.documentId ?? undefined,
     }, { timeout: 60000 })
     .then((res) => res.data)
 }
@@ -417,3 +420,97 @@ export function recognizeTopicImage(req: RecognizeTopicImageRequest): Promise<Re
     .post<RecognizeTopicImageResponse>('/writing/recognize-topic-image', req, { timeout: 30000 })
     .then((res) => res.data)
 }
+
+// ── Writing Session (document binding) ──
+
+export interface StartSessionRequest {
+  mode: 'free' | 'exam'
+  taskPrompt?: string
+  title?: string
+  draft?: boolean
+}
+
+export interface StartSessionResponse {
+  docId: string
+  latestRevision: number
+  isNew?: boolean
+  existingContent?: string | null
+  initialScore?: number | null
+  latestScore?: number | null
+  submitCount?: number
+  mode?: 'free' | 'exam'
+}
+
+export function startWritingSession(req: StartSessionRequest): Promise<StartSessionResponse> {
+  return http
+    .post<StartSessionResponse>('/writing/start-session', req)
+    .then((res) => res.data)
+}
+
+export interface WritingDocumentItem {
+  docId: string
+  title: string
+  taskPrompt: string | null
+  initialScore: number | null
+  latestScore: number | null
+  submitCount: number
+  status: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WritingDocumentsResponse {
+  items: WritingDocumentItem[]
+  total: number
+}
+
+export function getWritingDocuments(page = 0, size = 10): Promise<WritingDocumentsResponse> {
+  return http
+    .get<WritingDocumentsResponse>('/writing/documents', { params: { page, size } })
+    .then((res) => res.data)
+}
+
+export interface DocumentEvaluationItem {
+  id: number
+  overallScore: number | null
+  gaokaoScore: number | null
+  band: string | null
+  contentQuality: number | null
+  taskAchievement: number | null
+  structureScore: number | null
+  vocabularyScore: number | null
+  grammarScore: number | null
+  expressionScore: number | null
+  grammarErrorCount: number | null
+  spellingErrorCount: number | null
+  vocabularyErrorCount: number | null
+  createdAt: string
+}
+
+export interface DocumentEvaluationsResponse {
+  items: DocumentEvaluationItem[]
+  total: number
+}
+
+export function getDocumentEvaluations(docId: string, page = 0, size = 20): Promise<DocumentEvaluationsResponse> {
+  return http
+    .get<DocumentEvaluationsResponse>(`/writing/documents/${encodeURIComponent(docId)}/evaluations`, { params: { page, size } })
+    .then((res) => res.data)
+}
+
+export interface WritingStatsResponse {
+  avgContentQuality: number | null
+  avgTaskAchievement: number | null
+  avgStructureScore: number | null
+  avgVocabularyScore: number | null
+  avgGrammarScore: number | null
+  avgExpressionScore: number | null
+  totalGrammarErrors: number
+  totalSpellingErrors: number
+  totalVocabularyErrors: number
+}
+
+export function getWritingStats(): Promise<WritingStatsResponse> {
+  return http.get<WritingStatsResponse>('/writing/stats').then((res) => res.data)
+}
+

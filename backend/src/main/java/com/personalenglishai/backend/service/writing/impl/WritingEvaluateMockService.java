@@ -12,6 +12,8 @@ import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.UserAbilityProfileMapper;
 import com.personalenglishai.backend.service.rubric.RubricService;
 import com.personalenglishai.backend.service.rubric.RubricTextBuilder;
+import com.personalenglishai.backend.entity.Document;
+import com.personalenglishai.backend.service.document.DocumentService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,6 +142,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private final ObjectMapper objectMapper;
     private final UserAbilityProfileMapper abilityProfileMapper;
     private final EssayEvaluationMapper essayEvaluationMapper;
+    private final DocumentService documentService;
     private final LanguageToolService languageToolService;
     private final SaplingService saplingService;
 
@@ -150,6 +153,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             ObjectMapper objectMapper,
             UserAbilityProfileMapper abilityProfileMapper,
             EssayEvaluationMapper essayEvaluationMapper,
+            DocumentService documentService,
             LanguageToolService languageToolService,
             SaplingService saplingService
     ) {
@@ -159,6 +163,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         this.objectMapper = objectMapper;
         this.abilityProfileMapper = abilityProfileMapper;
         this.essayEvaluationMapper = essayEvaluationMapper;
+        this.documentService = documentService;
         this.languageToolService = languageToolService;
         this.saplingService = saplingService;
     }
@@ -223,7 +228,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
 
             WritingEvaluateResponse response = buildResponse(requestId, enriched, mode, "ai", existingProfile);
             updateAbilityProfile(request.getUserId(), result.scoreByDimension());
-            saveEvaluationQuietly(request.getUserId(), request.getEssay(), mode, response);
+            saveEvaluationQuietly(request, mode, response);
             return response;
         } catch (Exception e) {
             log.warn("Evaluate with OpenAI failed. requestId={} mode={} reason={}", requestId, mode, e.getMessage());
@@ -907,14 +912,16 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     }
 
     /** 评分后静默保存历史记录，失败不影响主流程 */
-    private void saveEvaluationQuietly(Long userId, String essay, String mode,
+    private void saveEvaluationQuietly(WritingEvaluateRequest request, String mode,
                                        WritingEvaluateResponse response) {
+        Long userId = request.getUserId();
         if (userId == null) return;
         try {
             EssayEvaluation record = new EssayEvaluation();
             record.setUserId(userId);
             record.setMode(mode);
-            record.setEssayText(essay == null ? "" : essay);
+            record.setTaskPrompt(request.getTaskPrompt());
+            record.setEssayText(request.getEssay() == null ? "" : request.getEssay());
             if (response.getGaokaoScore() != null) {
                 record.setGaokaoScore(response.getGaokaoScore().getScore());
                 record.setMaxScore(response.getGaokaoScore().getMaxScore());
@@ -923,9 +930,49 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             if (response.getScore() != null) {
                 record.setOverallScore(response.getScore().getOverall());
             }
+            // 保存6维分数
+            Map<String, Integer> dims = response.getDimensionScores();
+            if (dims != null) {
+                record.setContentQuality(dims.get("content_quality"));
+                record.setTaskAchievement(dims.get("task_achievement"));
+                record.setStructureScore(dims.get("structure"));
+                record.setVocabularyScore(dims.get("vocabulary"));
+                record.setGrammarScore(dims.get("grammar"));
+                record.setExpressionScore(dims.get("expression"));
+            }
+            // 统计错误数量
+            if (response.getErrors() != null) {
+                int grammarErrors = 0, spellingErrors = 0, vocabErrors = 0;
+                for (var err : response.getErrors()) {
+                    String type = err.getType();
+                    if (type == null) continue;
+                    switch (type) {
+                        case "spelling", "morphology" -> spellingErrors++;
+                        case "word_choice", "collocation", "part_of_speech" -> vocabErrors++;
+                        default -> grammarErrors++;
+                    }
+                }
+                record.setGrammarErrorCount(grammarErrors);
+                record.setSpellingErrorCount(spellingErrors);
+                record.setVocabularyErrorCount(vocabErrors);
+            }
+            // 关联文档
+            Long resolvedDocId = null;
+            if (request.getDocumentId() != null && !request.getDocumentId().isBlank()) {
+                String tenantId = String.valueOf(userId);
+                Document doc = documentService.findByPublicId(tenantId, "default", request.getDocumentId());
+                if (doc != null) {
+                    resolvedDocId = doc.getId();
+                    record.setDocumentId(resolvedDocId);
+                }
+            }
             record.setResultJson(objectMapper.writeValueAsString(response));
+            // 先插入评估记录，再更新文档统计（避免不一致）
             essayEvaluationMapper.insert(record);
-            log.info("essayEvaluation saved. userId={} id={}", userId, record.getId());
+            if (resolvedDocId != null && record.getOverallScore() != null) {
+                documentService.updateScoreStats(resolvedDocId, record.getOverallScore());
+            }
+            log.info("essayEvaluation saved. userId={} id={} docId={}", userId, record.getId(), record.getDocumentId());
         } catch (Exception e) {
             log.warn("saveEvaluation failed (non-fatal). userId={} reason={}", userId, e.getMessage());
         }

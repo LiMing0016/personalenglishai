@@ -13,6 +13,11 @@ public class Document {
     private String workspaceId;
     private Long ownerUserId;
     private String title;
+    private String taskPrompt;
+    private String taskPromptHash;
+    private Integer initialScore;
+    private Integer latestScore;
+    private Integer submitCount;
     private Integer status;
     private Integer latestRevision;
     private LocalDateTime deletedAt;
@@ -31,6 +36,16 @@ public class Document {
     public void setOwnerUserId(Long ownerUserId) { this.ownerUserId = ownerUserId; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
+    public String getTaskPrompt() { return taskPrompt; }
+    public void setTaskPrompt(String taskPrompt) { this.taskPrompt = taskPrompt; }
+    public String getTaskPromptHash() { return taskPromptHash; }
+    public void setTaskPromptHash(String taskPromptHash) { this.taskPromptHash = taskPromptHash; }
+    public Integer getInitialScore() { return initialScore; }
+    public void setInitialScore(Integer initialScore) { this.initialScore = initialScore; }
+    public Integer getLatestScore() { return latestScore; }
+    public void setLatestScore(Integer latestScore) { this.latestScore = latestScore; }
+    public Integer getSubmitCount() { return submitCount; }
+    public void setSubmitCount(Integer submitCount) { this.submitCount = submitCount; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
     public Integer getLatestRevision() { return latestRevision; }

@@ -23,6 +23,9 @@ public class WritingEvaluateRequest {
     /** Optional exam task prompt/instruction. */
     private String taskPrompt;
 
+    /** Optional document public_id for binding evaluations to a document. */
+    private String documentId;
+
     /** 由 Controller 从 JWT 注入，不对外暴露 */
     @JsonIgnore
     private Long userId;
@@ -68,6 +71,14 @@ public class WritingEvaluateRequest {
 
     public void setTaskPrompt(String taskPrompt) {
         this.taskPrompt = taskPrompt;
+    }
+
+    public String getDocumentId() {
+        return documentId;
+    }
+
+    public void setDocumentId(String documentId) {
+        this.documentId = documentId;
     }
 
     public Long getUserId() {

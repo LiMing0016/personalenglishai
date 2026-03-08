@@ -241,9 +241,22 @@
         </div>
       </div>
 
+      <!-- 返回确认弹窗 -->
+      <div v-if="showBackConfirm" class="confirm-overlay">
+        <div class="confirm-card">
+          <button class="confirm-close" @click="showBackConfirm = false" title="取消">&times;</button>
+          <h3 class="confirm-title">是否保存草稿？</h3>
+          <p class="confirm-sub">你已填写了部分题目信息，是否保存后再离开？</p>
+          <div class="confirm-actions-3">
+            <button class="gate-btn" :disabled="saving" @click="saveAndLeave">{{ saving ? '保存中...' : '保存并退出' }}</button>
+            <button class="gate-btn gate-btn--danger" :disabled="saving" @click="confirmLeave">不保存退出</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 底部操作栏 -->
       <div class="action-bar">
-        <button class="btn-back" @click="$emit('back')">
+        <button class="btn-back" @click="handleBack">
           返回选择模式
         </button>
         <button
@@ -259,8 +272,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { auditTopic, recognizeTopicImage } from '@/api/writing'
+import { ref, computed, onMounted } from 'vue'
+import { useSessionStorage } from '@vueuse/core'
+import { auditTopic, recognizeTopicImage, startWritingSession } from '@/api/writing'
 
 export interface ExamTopicInfo {
   topic: string
@@ -270,9 +284,14 @@ export interface ExamTopicInfo {
   maxScore: number
 }
 
+const props = defineProps<{
+  initialTopic?: string
+}>()
+
 const emit = defineEmits<{
   confirm: [info: ExamTopicInfo]
   back: []
+  saveDraft: []
 }>()
 
 const tabs = [
@@ -442,6 +461,96 @@ async function onStartConfirm() {
 function onFinalConfirm() {
   emit('confirm', parsedResult.value)
   confirmStep.value = 'idle'
+}
+
+// ── 草稿持久化 ──
+
+const DRAFT_KEY = 'peai:examSetup:draft'
+
+interface ExamSetupDraft {
+  topic: string
+  genre: string | null
+  wordRange: string | null
+  customWordRange: string
+  showCustomWordRange: boolean
+  maxScore: number
+  uploadedImage: string | null
+  uploadedImageBase64: string | null
+}
+
+const savedDraft = useSessionStorage<ExamSetupDraft | null>(DRAFT_KEY, null)
+
+onMounted(() => {
+  if (savedDraft.value) {
+    const d = savedDraft.value
+    topic.value = d.topic
+    genre.value = d.genre
+    wordRange.value = d.wordRange
+    customWordRange.value = d.customWordRange
+    showCustomWordRange.value = d.showCustomWordRange
+    maxScore.value = d.maxScore
+    uploadedImage.value = d.uploadedImage
+    uploadedImageBase64.value = d.uploadedImageBase64
+    // 恢复后清除草稿
+    savedDraft.value = null
+  } else if (props.initialTopic) {
+    // 从草稿文档卡片进入，预填充题目
+    topic.value = props.initialTopic
+  }
+})
+
+// ── 返回确认 ──
+
+const showBackConfirm = ref(false)
+
+const isDirty = computed(() => {
+  return topic.value.trim().length > 0
+    || genre.value !== null
+    || wordRange.value !== null
+    || (showCustomWordRange.value && customWordRange.value.trim().length > 0)
+    || uploadedImage.value !== null
+    || maxScore.value !== 100
+})
+
+function handleBack() {
+  if (isDirty.value) {
+    showBackConfirm.value = true
+  } else {
+    emit('back')
+  }
+}
+
+const saving = ref(false)
+
+async function saveAndLeave() {
+  if (saving.value) return
+  saving.value = true
+  try {
+    const t = topic.value.trim()
+    console.log('[ExamSetup] saveAndLeave, topic:', t)
+    if (t) {
+      const res = await startWritingSession({
+        mode: 'exam',
+        taskPrompt: t,
+        title: t.slice(0, 100),
+        draft: true,
+      })
+      console.log('[ExamSetup] startWritingSession result:', JSON.stringify(res))
+    }
+  } catch (e) {
+    console.warn('[ExamSetup] save draft doc failed', e)
+  } finally {
+    saving.value = false
+  }
+  savedDraft.value = null
+  showBackConfirm.value = false
+  emit('saveDraft')
+}
+
+function confirmLeave() {
+  savedDraft.value = null
+  showBackConfirm.value = false
+  emit('back')
 }
 </script>
 
@@ -907,6 +1016,46 @@ function onFinalConfirm() {
   font-size: 14px;
   color: #6b7280;
   margin: 0;
+}
+
+.confirm-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #9ca3af;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.confirm-close:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+.confirm-card {
+  position: relative;
+}
+
+.confirm-actions-3 {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.gate-btn--danger {
+  background: #dc2626;
+}
+.gate-btn--danger:hover {
+  background: #b91c1c;
 }
 
 /* Responsive */

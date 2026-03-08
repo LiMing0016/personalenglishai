@@ -9,6 +9,11 @@
         <result column="workspace_id" property="workspaceId"/>
         <result column="owner_user_id" property="ownerUserId"/>
         <result column="title" property="title"/>
+        <result column="task_prompt" property="taskPrompt"/>
+        <result column="task_prompt_hash" property="taskPromptHash"/>
+        <result column="initial_score" property="initialScore"/>
+        <result column="latest_score" property="latestScore"/>
+        <result column="submit_count" property="submitCount"/>
         <result column="status" property="status"/>
         <result column="latest_revision" property="latestRevision"/>
         <result column="deleted_at" property="deletedAt"/>
@@ -27,18 +32,55 @@
     </resultMap>
 
     <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO documents (public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, created_at, updated_at)
-        VALUES (#{publicId}, #{tenantId}, #{workspaceId}, #{ownerUserId}, #{title}, #{status}, #{latestRevision}, NOW(), NOW())
+        INSERT INTO documents (public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, submit_count, status, latest_revision, created_at, updated_at)
+        VALUES (#{publicId}, #{tenantId}, #{workspaceId}, #{ownerUserId}, #{title}, #{taskPrompt}, #{taskPromptHash}, 0, #{status}, #{latestRevision}, NOW(), NOW())
     </insert>
 
+    <select id="findByOwnerAndPromptHash" resultMap="DocumentResultMap">
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+               initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
+        FROM documents
+        WHERE owner_user_id = #{ownerUserId} AND task_prompt_hash = #{taskPromptHash}
+              AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId} AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <update id="updateScoreStats">
+        UPDATE documents
+        SET initial_score = COALESCE(initial_score, #{score}),
+            latest_score = #{score},
+            submit_count = submit_count + 1,
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <select id="listByOwnerUserId" resultMap="DocumentResultMap">
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+               initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
+        FROM documents
+        WHERE owner_user_id = #{ownerUserId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
+              AND deleted_at IS NULL
+        ORDER BY updated_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByOwnerUserId" resultType="long">
+        SELECT COUNT(*)
+        FROM documents
+        WHERE owner_user_id = #{ownerUserId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
+              AND deleted_at IS NULL
+    </select>
+
     <select id="findByPublicIdAndTenantAndWorkspace" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, deleted_at, created_at, updated_at
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+               initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId} AND deleted_at IS NULL
     </select>
 
     <select id="findByPublicIdAndTenantAndWorkspaceIncludeDeleted" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, status, latest_revision, deleted_at, created_at, updated_at
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+               initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
     </select>
@@ -58,6 +100,14 @@
         FROM document_revisions
         WHERE document_id = #{documentId} AND revision = #{revision}
     </select>
+
+    <update id="updateTitle">
+        UPDATE documents SET title = #{title}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE documents SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
 
     <update id="softDelete">
         UPDATE documents SET deleted_at = #{deletedAt}, updated_at = NOW() WHERE id = #{id}

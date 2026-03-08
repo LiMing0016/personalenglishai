@@ -112,20 +112,26 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { useRouter } from 'vue-router'
+
+const emit = defineEmits<{
+  back: []
+}>()
 
 const props = withDefaults(defineProps<{
   initialWritingMode?: 'free' | 'exam'
   initialTaskPrompt?: string
+  initialDocId?: string | null
+  initialExistingContent?: string | null
   examMaxScore?: number | null
   studyStage?: string | null
 }>(), {
   initialWritingMode: undefined,
   initialTaskPrompt: undefined,
+  initialDocId: null,
+  initialExistingContent: null,
   examMaxScore: null,
   studyStage: null,
 })
-const router = useRouter()
 
 import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
@@ -234,14 +240,36 @@ const onLeftPaneScroll = () => {
 }
 
 onMounted(async () => {
+  // 重置旧文档状态，防止残留评价/语法数据
+  grammarStore.resetAll()
+  panelStore.activePanel = null
+
   const layout = panelStore.initLayout()
   draftStore.init({
     initialWritingMode: props.initialWritingMode,
     initialTaskPrompt: props.initialTaskPrompt,
+    initialDocId: props.initialDocId,
   })
+  aiDocId.value = draftStore.docId ?? ''
+
+  // Restore content: from prop, or fetch from backend for existing documents
+  if (props.initialExistingContent && (!draftStore.draftText || !draftStore.draftText.trim())) {
+    draftStore.draftText = props.initialExistingContent
+  } else if (props.initialDocId && (!draftStore.draftText || !draftStore.draftText.trim())) {
+    try {
+      const { getDocumentContent } = await import('@/api/document')
+      const doc = await getDocumentContent(props.initialDocId)
+      if (doc.content) {
+        draftStore.draftText = doc.content
+        draftStore.docRevision = doc.latestRevision
+      }
+    } catch (e) {
+      console.warn('[EditorShell] failed to load doc content', e)
+    }
+  }
 
   // Restore evaluate result
-  const savedResult = loadEvaluateResult()
+  const savedResult = loadEvaluateResult(draftStore.docId)
   if (savedResult && !evaluateResult.value) {
     evaluateResult.value = savedResult
     grammarStore.setEvaluateResult(savedResult)
@@ -285,7 +313,7 @@ watch(evaluateResult, (result) => {
   grammarStore.setEvaluateResult(result)
   if (result) {
     draftStore.evaluatedText = draftStore.draftText
-    saveEvaluateResult(result)
+    saveEvaluateResult(result, draftStore.docId)
     if (evalResultFromSubmit) {
       panelStore.activePanel = 'score'
       showToast('评估完成', 'success')
@@ -294,7 +322,7 @@ watch(evaluateResult, (result) => {
   } else {
     draftStore.evaluatedText = null
     activeErrorId.value = null
-    saveEvaluateResult(null)
+    saveEvaluateResult(null, draftStore.docId)
   }
 })
 
@@ -428,6 +456,7 @@ function onSubmit() {
     mode: normalizedMode,
     taskPrompt: examTaskPrompt,
     lang: 'en',
+    documentId: draftStore.docId || undefined,
   })
 }
 
@@ -457,30 +486,48 @@ function onBack() {
   }
 }
 
-function onExitSave() {
+async function onExitSave() {
   showExitDialog.value = false
-  doExit(false)
+  // 保存内容到后端
+  const docId = draftStore.docId
+  const content = draftStore.draftText ?? ''
+  const revision = draftStore.docRevision ?? 1
+  if (docId && content.trim()) {
+    try {
+      const { saveDocumentContent } = await import('@/api/document')
+      const res = await saveDocumentContent(docId, content, revision)
+      draftStore.docRevision = res.latestRevision
+    } catch (e) {
+      console.warn('[EditorShell] save to backend failed', e)
+    }
+  }
+  // 清除本地草稿（后端已保存）
+  draftStore.clearAll()
+  grammarStore.resetAll()
+  evalClearResult()
+  emit('back')
 }
 
 function onExitDiscard() {
   showExitDialog.value = false
-  try {
-    localStorage.removeItem(WRITING_STORAGE_KEYS.draft)
-    localStorage.removeItem(WRITING_STORAGE_KEYS.legacyDraft)
-    localStorage.removeItem(WRITING_STORAGE_KEYS.evaluateResult)
-  } catch (_) {}
-  doExit(true)
+  // 只清本地草稿，后端保留上次保存的版本
+  draftStore.clearAll()
+  grammarStore.resetAll()
+  evalClearResult()
+  emit('back')
 }
 
 function onExitCancel() {
   showExitDialog.value = false
 }
 
-function doExit(clearMode: boolean) {
-  if (clearMode) {
-    sessionStorage.removeItem('writingMode')
+function doExit(clearDraft: boolean) {
+  if (clearDraft) {
+    draftStore.clearAll()
+    grammarStore.resetAll()
+    evalClearResult()
   }
-  router.push('/app')
+  emit('back')
 }
 
 function onClear() {
@@ -494,7 +541,7 @@ function onClear() {
   cursorPlacement.value = null
   evalClearResult()
   activeErrorId.value = null
-  draftStore.clearAll()
+  draftStore.clearCurrentDraftContent()
   grammarStore.resetAll()
 }
 
@@ -561,6 +608,9 @@ async function onAiNoteSend() {
   aiAbortController = new AbortController()
   aiGenerating.value = true
   try {
+    if (!aiDocId.value && draftStore.docId) {
+      aiDocId.value = draftStore.docId
+    }
     if (!aiDocId.value) {
       const created = await createDocument({
         title: 'Untitled',
@@ -794,3 +844,6 @@ function onAiNoteStop() {
   background: #065f46;
 }
 </style>
+
+
+

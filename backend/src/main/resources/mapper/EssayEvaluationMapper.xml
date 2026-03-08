@@ -6,12 +6,23 @@
     <resultMap id="BaseResultMap" type="com.personalenglishai.backend.entity.EssayEvaluation">
         <id     property="id"           column="id"/>
         <result property="userId"       column="user_id"/>
+        <result property="documentId"  column="document_id"/>
         <result property="mode"         column="mode"/>
+        <result property="taskPrompt"  column="task_prompt"/>
         <result property="essayText"    column="essay_text"/>
         <result property="gaokaoScore"  column="gaokao_score"/>
         <result property="maxScore"     column="max_score"/>
         <result property="band"         column="band"/>
         <result property="overallScore" column="overall_score"/>
+        <result property="contentQuality"      column="content_quality"/>
+        <result property="taskAchievement"     column="task_achievement"/>
+        <result property="structureScore"      column="structure_score"/>
+        <result property="vocabularyScore"     column="vocabulary_score"/>
+        <result property="grammarScore"        column="grammar_score"/>
+        <result property="expressionScore"     column="expression_score"/>
+        <result property="grammarErrorCount"   column="grammar_error_count"/>
+        <result property="spellingErrorCount"  column="spelling_error_count"/>
+        <result property="vocabularyErrorCount" column="vocabulary_error_count"/>
         <result property="resultJson"   column="result_json"/>
         <result property="createdAt"    column="created_at"/>
     </resultMap>
@@ -19,19 +30,40 @@
     <insert id="insert" parameterType="com.personalenglishai.backend.entity.EssayEvaluation"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO essay_evaluation
-            (user_id, mode, essay_text, gaokao_score, max_score, band, overall_score, result_json)
+            (user_id, document_id, mode, task_prompt, essay_text, gaokao_score, max_score, band, overall_score,
+             content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
+             grammar_error_count, spelling_error_count, vocabulary_error_count, result_json)
         VALUES
-            (#{userId}, #{mode}, #{essayText}, #{gaokaoScore}, #{maxScore}, #{band}, #{overallScore}, #{resultJson})
+            (#{userId}, #{documentId}, #{mode}, #{taskPrompt}, #{essayText}, #{gaokaoScore}, #{maxScore}, #{band}, #{overallScore},
+             #{contentQuality}, #{taskAchievement}, #{structureScore}, #{vocabularyScore}, #{grammarScore}, #{expressionScore},
+             #{grammarErrorCount}, #{spellingErrorCount}, #{vocabularyErrorCount}, #{resultJson})
     </insert>
 
     <!-- 列表查询：不返回大字段 essay_text 和 result_json，保持响应轻量 -->
     <select id="selectByUserId" resultMap="BaseResultMap">
-        SELECT id, user_id, mode, gaokao_score, max_score, band, overall_score, created_at,
+        SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
+               grammar_error_count, spelling_error_count, vocabulary_error_count, created_at,
                LEFT(essay_text, 100) AS essay_text
         FROM essay_evaluation
         WHERE user_id = #{userId}
         ORDER BY created_at DESC
         LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="selectByDocumentId" resultMap="BaseResultMap">
+        SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
+               grammar_error_count, spelling_error_count, vocabulary_error_count, created_at,
+               LEFT(essay_text, 100) AS essay_text
+        FROM essay_evaluation
+        WHERE document_id = #{documentId}
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByDocumentId" resultType="long">
+        SELECT COUNT(*) FROM essay_evaluation WHERE document_id = #{documentId}
     </select>
 
     <select id="countByUserId" resultType="long">
@@ -40,7 +72,9 @@
 
     <!-- 详情查询：返回完整 result_json + essay_text -->
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT id, user_id, mode, gaokao_score, max_score, band, overall_score, result_json, created_at,
+        SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
+               grammar_error_count, spelling_error_count, vocabulary_error_count, result_json, created_at,
                essay_text
         FROM essay_evaluation
         WHERE id = #{id}
@@ -56,6 +90,21 @@
 
     <select id="countDistinctDaysByUserId" resultType="long">
         SELECT COUNT(DISTINCT DATE(created_at)) FROM essay_evaluation WHERE user_id = #{userId}
+    </select>
+
+    <select id="selectAggregatedStatsByUserId" resultType="java.util.LinkedHashMap">
+        SELECT
+            ROUND(AVG(content_quality), 1)   AS avgContentQuality,
+            ROUND(AVG(task_achievement), 1)  AS avgTaskAchievement,
+            ROUND(AVG(structure_score), 1)   AS avgStructureScore,
+            ROUND(AVG(vocabulary_score), 1)  AS avgVocabularyScore,
+            ROUND(AVG(grammar_score), 1)     AS avgGrammarScore,
+            ROUND(AVG(expression_score), 1)  AS avgExpressionScore,
+            COALESCE(SUM(grammar_error_count), 0)    AS totalGrammarErrors,
+            COALESCE(SUM(spelling_error_count), 0)   AS totalSpellingErrors,
+            COALESCE(SUM(vocabulary_error_count), 0)  AS totalVocabularyErrors
+        FROM essay_evaluation
+        WHERE user_id = #{userId} AND overall_score IS NOT NULL
     </select>
 
 </mapper>

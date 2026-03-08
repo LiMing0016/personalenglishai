@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS documents (
     workspace_id VARCHAR(64) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     title VARCHAR(255) NOT NULL DEFAULT '',
+    task_prompt TEXT NULL COMMENT 'essay topic / writing prompt',
+    task_prompt_hash VARCHAR(64) NULL COMMENT 'SHA-256 of task_prompt for dedup',
+    initial_score INT NULL COMMENT 'first evaluation score',
+    latest_score INT NULL COMMENT 'most recent evaluation score',
+    submit_count INT NOT NULL DEFAULT 0 COMMENT 'number of evaluation submissions',
     status TINYINT NOT NULL DEFAULT 0 COMMENT '0=draft,1=active,2=archived',
     latest_revision INT NOT NULL DEFAULT 1,
     deleted_at DATETIME NULL,
@@ -47,7 +52,9 @@ CREATE TABLE IF NOT EXISTS documents (
     UNIQUE KEY uk_tenant_workspace_public (tenant_id, workspace_id, public_id),
     INDEX idx_tenant_workspace_owner (tenant_id, workspace_id, owner_user_id),
     INDEX idx_tenant_workspace_updated (tenant_id, workspace_id, updated_at),
-    INDEX idx_deleted_at (deleted_at)
+    INDEX idx_owner_prompt_hash (owner_user_id, task_prompt_hash),
+    INDEX idx_deleted_at (deleted_at),
+    UNIQUE KEY uk_owner_prompt_hash (owner_user_id, task_prompt_hash, tenant_id, workspace_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='documents';
 
 -- document revisions
@@ -101,15 +108,27 @@ CREATE TABLE IF NOT EXISTS user_ability_profile (
 CREATE TABLE IF NOT EXISTS essay_evaluation (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_id BIGINT NOT NULL COMMENT 'users.id',
+    document_id BIGINT NULL COMMENT 'documents.id',
     mode VARCHAR(10) NOT NULL DEFAULT 'free' COMMENT 'free | exam',
+    task_prompt TEXT NULL COMMENT 'essay topic (denormalized)',
     essay_text MEDIUMTEXT NOT NULL,
     gaokao_score INT NULL,
     max_score INT NULL,
     band VARCHAR(20) NULL,
     overall_score INT NULL,
+    content_quality INT NULL COMMENT 'dimension: content quality',
+    task_achievement INT NULL COMMENT 'dimension: task achievement',
+    structure_score INT NULL COMMENT 'dimension: structure',
+    vocabulary_score INT NULL COMMENT 'dimension: vocabulary',
+    grammar_score INT NULL COMMENT 'dimension: grammar',
+    expression_score INT NULL COMMENT 'dimension: expression',
+    grammar_error_count INT NULL COMMENT 'grammar error count',
+    spelling_error_count INT NULL COMMENT 'spelling error count',
+    vocabulary_error_count INT NULL COMMENT 'vocabulary error count',
     result_json LONGTEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_user_created (user_id, created_at DESC)
+    INDEX idx_user_created (user_id, created_at DESC),
+    INDEX idx_document_created (document_id, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='essay evaluation history';
 
 -- essay favorites
@@ -134,3 +153,35 @@ CREATE TABLE IF NOT EXISTS evaluate_task (
     INDEX idx_status (status),
     INDEX idx_submitted (submitted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='evaluate task';
+-- writing stages
+CREATE TABLE IF NOT EXISTS writing_stage (
+    id INT PRIMARY KEY COMMENT 'align with app stage ids when possible',
+    code VARCHAR(32) NOT NULL COMMENT 'stable business code',
+    name VARCHAR(64) NOT NULL COMMENT 'display name',
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_stage_code (code),
+    INDEX idx_writing_stage_active_sort (is_active, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='writing stages';
+
+-- essay prompt library
+CREATE TABLE IF NOT EXISTS essay_prompt (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    stage_id INT NOT NULL COMMENT 'writing_stage.id',
+    paper VARCHAR(64) NOT NULL COMMENT 'stable paper code, e.g. 2025-06-set-1',
+    title VARCHAR(255) NOT NULL COMMENT 'display title',
+    prompt_text TEXT NOT NULL COMMENT 'essay prompt content',
+    source VARCHAR(255) NULL COMMENT 'source file or origin',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_stage_paper (stage_id, paper),
+    INDEX idx_stage_active (stage_id, is_active),
+    INDEX idx_stage_title (stage_id, title),
+    CONSTRAINT fk_essay_prompt_stage
+        FOREIGN KEY (stage_id) REFERENCES writing_stage(id)
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='essay prompt library';
