@@ -570,13 +570,19 @@ interface ExamSetupLiveState extends ExamSetupDraft {
 
 const liveState = useSessionStorage<ExamSetupLiveState | null>(LIVE_STATE_KEY, null)
 
+let liveStateCleared = false
+
 function clearExamSetupState() {
+  liveStateCleared = true
   savedDraft.value = null
   liveState.value = null
 }
 
+const restoringLiveState = ref(false)
+
 onMounted(() => {
   if (liveState.value) {
+    restoringLiveState.value = true
     try {
       const state = liveState.value
       const validTabs: TabKey[] = ['manual', 'ai', 'past']
@@ -607,6 +613,8 @@ onMounted(() => {
     } catch (e) {
       console.warn('[ExamSetup] liveState restore failed, clearing', e)
       liveState.value = null
+    } finally {
+      restoringLiveState.value = false
     }
   } else if (savedDraft.value) {
     try {
@@ -740,6 +748,7 @@ function useSelectedPrompt() {
 }
 
 const debouncedSaveLiveState = useDebounceFn(() => {
+  if (liveStateCleared) return
   liveState.value = {
     activeTab: activeTab.value,
     topic: topic.value,
@@ -785,8 +794,9 @@ watch(
   { deep: true }
 )
 
-// 切换到历年真题 tab 时自动加载（每次切换都刷新数据）
+// 切换到历年真题 tab 时自动加载（跳过 liveState 恢复期间，避免重复请求）
 watch(activeTab, (tab) => {
+  if (restoringLiveState.value) return
   if (tab === 'past' && !promptLoading.value) {
     loadPrompts(1)
   }
