@@ -79,10 +79,24 @@ const routes: RouteRecordRaw[] = [
         path: 'stage-setup',
         name: 'StageSetup',
         component: () => import('@/pages/app/StageSetupPage.vue'),
+      },      {
+        path: 'writing',
+        name: 'WritingDocList',
+        component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
-        path: 'writing',
-        name: 'Writing',
+        path: 'writing/mode',
+        name: 'WritingModeSelect',
+        component: () => import('@/pages/app/WritingPage.vue'),
+      },
+      {
+        path: 'writing/exam-setup',
+        name: 'WritingExamSetup',
+        component: () => import('@/pages/app/WritingPage.vue'),
+      },
+      {
+        path: 'writing/editor',
+        name: 'WritingEditor',
         component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
@@ -224,3 +238,4 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
+

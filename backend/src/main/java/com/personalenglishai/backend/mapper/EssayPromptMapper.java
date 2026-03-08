@@ -13,12 +13,16 @@ public interface EssayPromptMapper {
 
     List<EssayPrompt> searchActiveByStageId(@Param("stageId") Integer stageId,
                                             @Param("keyword") String keyword,
+                                            @Param("examYear") Integer examYear,
                                             @Param("offset") Integer offset,
                                             @Param("limit") Integer limit);
 
     long countSearchActiveByStageId(@Param("stageId") Integer stageId,
-                                    @Param("keyword") String keyword);
+                                    @Param("keyword") String keyword,
+                                    @Param("examYear") Integer examYear);
 
     EssayPrompt selectByPaper(@Param("stageId") Integer stageId,
                               @Param("paper") String paper);
+
+    List<Integer> selectDistinctYearsByStageId(@Param("stageId") Integer stageId);
 }

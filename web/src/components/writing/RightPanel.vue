@@ -65,18 +65,13 @@
       <PolishPanel v-else-if="panel === 'improve'" />
       <ExplainPanel v-else-if="panel === 'explain'" />
       <TranslatePanel v-else-if="panel === 'translate'" />
-      <ArchivePanel
-        v-else-if="panel === 'archive'"
-        @archived="$emit('archived')"
-        @load-result="$emit('load-history-result', $event)"
-      />
     </ToolPanel>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { WritingEvaluateResponse, EvaluationDetailResponse } from '@/api/writing'
+import type { WritingEvaluateResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
 import ScorePanel from './panels/ScorePanel.vue'
@@ -86,7 +81,6 @@ import StructurePanel from './panels/StructurePanel.vue'
 import PolishPanel from './panels/PolishPanel.vue'
 import ExplainPanel from './panels/ExplainPanel.vue'
 import TranslatePanel from './panels/TranslatePanel.vue'
-import ArchivePanel from './panels/ArchivePanel.vue'
 import AiNotePanel from './panels/AiNotePanel.vue'
 
 const props = defineProps<{
@@ -133,8 +127,6 @@ defineEmits<{
   'start-grammar-check': []
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
-  archived: []
-  'load-history-result': [detail: EvaluationDetailResponse]
   'update:aiNote': [value: string]
   'ai-note-send': []
   'ai-note-stop': []

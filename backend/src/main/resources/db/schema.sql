@@ -173,12 +173,16 @@ CREATE TABLE IF NOT EXISTS essay_prompt (
     paper VARCHAR(64) NOT NULL COMMENT 'stable paper code, e.g. 2025-06-set-1',
     title VARCHAR(255) NOT NULL COMMENT 'display title',
     prompt_text TEXT NOT NULL COMMENT 'essay prompt content',
+    exam_year INT NULL COMMENT 'exam year, e.g. 2025',
+    image_url VARCHAR(500) NULL COMMENT 'image URL for picture-based prompts',
+    material_text TEXT NULL COMMENT 'supplementary material text for material-based prompts',
     source VARCHAR(255) NULL COMMENT 'source file or origin',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_stage_paper (stage_id, paper),
     INDEX idx_stage_active (stage_id, is_active),
+    INDEX idx_stage_year (stage_id, exam_year),
     INDEX idx_stage_title (stage_id, title),
     CONSTRAINT fk_essay_prompt_stage
         FOREIGN KEY (stage_id) REFERENCES writing_stage(id)

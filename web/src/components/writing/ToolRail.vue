@@ -24,7 +24,6 @@ export type PanelMode =
   | 'improve'
   | 'explain'
   | 'translate'
-  | 'archive'
   | 'aiNote'
 
 defineProps<{
@@ -43,7 +42,6 @@ const items: { mode: PanelMode; label: string; title: string; icon: string }[] =
   { mode: 'improve', label: '提升', title: '润色/高级词', icon: '↑' },
   { mode: 'explain', label: '解释', title: '语法解释', icon: '?' },
   { mode: 'translate', label: '翻译', title: '翻译', icon: '⇄' },
-  { mode: 'archive', label: '归档', title: '归档', icon: '□' },
   { mode: 'aiNote', label: 'AI助手', title: 'AI 助手', icon: '✦' },
 ]
 </script>

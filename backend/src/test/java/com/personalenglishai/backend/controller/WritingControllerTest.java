@@ -16,6 +16,7 @@ import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
+import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
@@ -76,6 +77,9 @@ class WritingControllerTest {
 
     @MockBean
     private EssayFavoriteMapper essayFavoriteMapper;
+
+    @MockBean
+    private EssayPromptService essayPromptService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;

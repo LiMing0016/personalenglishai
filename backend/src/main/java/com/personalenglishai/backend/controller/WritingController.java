@@ -33,7 +33,11 @@ import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
+import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
+import com.personalenglishai.backend.dto.writing.EssayPromptResponse;
+import com.personalenglishai.backend.dto.writing.EssayPromptListResponse;
+import com.personalenglishai.backend.entity.EssayPrompt;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -57,6 +61,7 @@ public class WritingController {
     private final DocumentService documentService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
+    private final EssayPromptService essayPromptService;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -69,6 +74,7 @@ public class WritingController {
                              DocumentService documentService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
+                             EssayPromptService essayPromptService,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
@@ -80,6 +86,7 @@ public class WritingController {
         this.documentService = documentService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
+        this.essayPromptService = essayPromptService;
         this.objectMapper = objectMapper;
     }
 
@@ -451,5 +458,40 @@ public class WritingController {
             @Valid @RequestBody RecognizeTopicImageRequest request) {
         RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64());
         return ResponseEntity.ok(response);
+    }
+
+    /** 历年真题列表（分页 + 搜索 + 按年份筛选） */
+    @GetMapping("/prompts")
+    public ResponseEntity<EssayPromptListResponse> listPrompts(
+            @RequestParam(defaultValue = "2") Integer stageId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (size > 100) size = 100;
+        if (page < 1) page = 1;
+
+        java.util.List<EssayPrompt> items = essayPromptService.search(stageId, keyword, year, page, size);
+        long total = essayPromptService.countSearch(stageId, keyword, year);
+        java.util.List<Integer> years = essayPromptService.getAvailableYears(stageId);
+
+        EssayPromptListResponse response = new EssayPromptListResponse();
+        response.setItems(items.stream().map(this::toPromptResponse).collect(java.util.stream.Collectors.toList()));
+        response.setTotal(total);
+        response.setYears(years);
+        return ResponseEntity.ok(response);
+    }
+
+    private EssayPromptResponse toPromptResponse(EssayPrompt entity) {
+        EssayPromptResponse dto = new EssayPromptResponse();
+        dto.setId(entity.getId());
+        dto.setPaper(entity.getPaper());
+        dto.setTitle(entity.getTitle());
+        dto.setPromptText(entity.getPromptText());
+        dto.setExamYear(entity.getExamYear());
+        dto.setImageUrl(entity.getImageUrl());
+        dto.setMaterialText(entity.getMaterialText());
+        dto.setSource(entity.getSource());
+        return dto;
     }
 }

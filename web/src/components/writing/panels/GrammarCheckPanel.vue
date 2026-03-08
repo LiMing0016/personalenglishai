@@ -5,6 +5,7 @@
       <div class="gc-summary-row">
         <span class="gc-summary-title">语法检查</span>
         <span v-if="checking" class="gc-summary-status gc-summary-status--checking">检查中</span>
+        <span v-else-if="!hasContent" class="gc-summary-status gc-summary-status--idle">等待输入</span>
         <span v-else-if="errors.length === 0 && !error" class="gc-summary-status gc-summary-status--clean">全部正确</span>
         <span v-else-if="errors.length > 0" class="gc-summary-score">
           {{ errors.length }} <span class="gc-summary-unit">个问题</span>
@@ -88,8 +89,14 @@
       <p class="gc-error-detail">{{ error }}</p>
     </div>
 
+    <!-- 未输入内容 -->
+    <div v-if="!checking && !hasContent && !error" class="gc-empty">
+      <p class="gc-empty-text">请先输入作文内容</p>
+      <p class="gc-empty-hint">输入英文内容后，系统将自动进行语法检查。</p>
+    </div>
+
     <!-- 无错误空状态 + 润色引导 -->
-    <div v-if="!checking && errors.length === 0 && !error" class="gc-empty">
+    <div v-else-if="!checking && hasContent && errors.length === 0 && !error" class="gc-empty">
       <p class="gc-empty-text">未检测到语法错误</p>
       <p class="gc-empty-hint">继续输入，系统将自动重新检查。</p>
       <div class="gc-polish-guide">
@@ -244,6 +251,8 @@ const emit = defineEmits<{
   'gpt-errors-loaded': [errors: SuggestionErrorItem[]]
   'gpt-suggestions-loaded': [suggestions: SuggestionItem[]]
 }>()
+
+const hasContent = computed(() => (props.essayText ?? '').trim().length > 0)
 
 function errorTypeLabel(type: string): string {
   return ERROR_TYPE_LABELS[type] ?? type
@@ -420,6 +429,9 @@ function applyGptError(item: SuggestionErrorItem) {
   color: #6b7280;
 }
 
+.gc-summary-status--idle {
+  color: #9ca3af;
+}
 .gc-summary-status--clean {
   color: #059669;
   font-weight: 600;

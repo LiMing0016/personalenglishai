@@ -401,7 +401,7 @@ export interface AuditTopicResponse {
 
 export function auditTopic(req: AuditTopicRequest): Promise<AuditTopicResponse> {
   return http
-    .post<AuditTopicResponse>('/writing/audit-topic', req, { timeout: 15000 })
+    .post<AuditTopicResponse>('/writing/audit-topic', req, { timeout: 35000 })
     .then((res) => res.data)
 }
 
@@ -512,5 +512,36 @@ export interface WritingStatsResponse {
 
 export function getWritingStats(): Promise<WritingStatsResponse> {
   return http.get<WritingStatsResponse>('/writing/stats').then((res) => res.data)
+}
+
+// ── Essay Prompts (历年真题) ──
+
+export interface EssayPromptItem {
+  id: number
+  paper: string
+  title: string
+  promptText: string
+  examYear: number | null
+  imageUrl: string | null
+  materialText: string | null
+  source: string | null
+}
+
+export interface EssayPromptListResponse {
+  items: EssayPromptItem[]
+  total: number
+  years: number[]
+}
+
+export function getEssayPrompts(params: {
+  stageId?: number
+  keyword?: string
+  year?: number
+  page?: number
+  size?: number
+}): Promise<EssayPromptListResponse> {
+  return http
+    .get<EssayPromptListResponse>('/writing/prompts', { params })
+    .then((res) => res.data)
 }
 

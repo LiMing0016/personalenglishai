@@ -75,6 +75,8 @@ openai:
 logging:
   charset:
     console: UTF-8
+  level:
+    com.personalenglishai.backend.ai.client: DEBUG
 
 writing:
   evaluate:
@@ -115,4 +117,9 @@ qwen:
   base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
   model: ${QWEN_MODEL:qwen-turbo}
   vl-model: ${QWEN_VL_MODEL:qwen-vl-plus}
-  timeout-ms: ${QWEN_TIMEOUT_MS:15000}
+  timeout-ms: ${QWEN_TIMEOUT_MS:30000}
+  prompt:
+    debug: ${QWEN_PROMPT_DEBUG:false}
+    log-raw-enabled: ${QWEN_PROMPT_LOG_RAW_ENABLED:false}
+    log-raw-max-chars: ${QWEN_PROMPT_LOG_RAW_MAX_CHARS:12000}
+

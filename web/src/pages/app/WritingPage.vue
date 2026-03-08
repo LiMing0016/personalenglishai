@@ -10,7 +10,7 @@
     <!-- Header -->
     <div class="hub-header">
       <h2 class="hub-title">写作练习</h2>
-      <button class="new-doc-btn" @click="phase = 'mode-select'">+ 新建作文</button>
+      <button class="new-doc-btn" @click="navigateToPhase('mode-select')">+ 新建作文</button>
     </div>
 
     <!-- Stats cards -->
@@ -144,7 +144,7 @@
         <p class="empty-icon">&#128221;</p>
         <p class="empty-text">还没有写过作文</p>
         <p class="empty-hint">点击「新建作文」开始你的第一篇写作练习</p>
-        <button class="gate-btn" style="margin-top: 16px;" @click="phase = 'mode-select'">开始写作</button>
+        <button class="gate-btn" style="margin-top: 16px;" @click="navigateToPhase('mode-select')">开始写作</button>
       </div>
 
       <!-- No results after filter -->
@@ -180,7 +180,6 @@
             </div>
           </div>
           <h3 class="doc-card-title">{{ doc.title || '未命名作文' }}</h3>
-          <p v-if="doc.taskPrompt" class="doc-card-prompt">{{ trimText(doc.taskPrompt, 60) }}</p>
           <div class="doc-card-score-area">
             <template v-if="doc.latestScore != null">
               <span class="doc-score-num" :class="scoreColor(doc.latestScore)">{{ doc.latestScore }}</span>
@@ -268,13 +267,13 @@
         <span class="mode-name">自由模式</span>
         <span class="mode-desc">自由写作，AI 实时辅助与反馈</span>
       </button>
-      <button class="mode-card" @click="phase = 'exam-setup'">
+      <button class="mode-card" @click="navigateToPhase('exam-setup')">
         <span class="mode-icon">&#9200;</span>
         <span class="mode-name">考试模式</span>
         <span class="mode-desc">模拟考试环境，限时写作与评分</span>
       </button>
     </div>
-    <button class="back-link" @click="phase = 'doc-list'">&#8592; 返回文档列表</button>
+    <button class="back-link" @click="navigateToPhase('doc-list')">&#8592; 返回文档列表</button>
   </div>
 
   <!-- Exam setup -->
@@ -301,7 +300,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount, inject } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStorage, useEventListener } from '@vueuse/core'
 import * as echarts from 'echarts'
 import EditorShell from '@/components/writing/EditorShell.vue'
@@ -314,11 +313,13 @@ import type { WritingDocumentItem, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 
 type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
+type RoutePhase = Exclude<Phase, 'loading'>
 
 const router = useRouter()
+const route = useRoute()
 const setImmersive = inject<(v: boolean | null) => void>('setImmersive', () => {})
 
-const phase = useSessionStorage<Phase>('peai:writing:phase', 'loading')
+const booting = ref(true)
 const currentStage = ref<string | null>(null)
 const chosenMode = useSessionStorage<'free' | 'exam'>('peai:writing:chosenMode', 'free')
 const initialTaskPrompt = ref<string | undefined>(undefined)
@@ -326,6 +327,46 @@ const initialDocId = useSessionStorage<string | null>('peai:writing:docId', null
 const initialExistingContent = ref<string | null>(null)
 const examMaxScore = ref<number | null>(null)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
+
+function resolveRoutePhase(): RoutePhase {
+  switch (route.name) {
+    case 'WritingModeSelect':
+      return 'mode-select'
+    case 'WritingExamSetup':
+      return 'exam-setup'
+    case 'WritingEditor':
+      return 'editor'
+    default:
+      return 'doc-list'
+  }
+}
+
+const phase = computed<Phase>(() => {
+  if (booting.value) return 'loading'
+  return resolveRoutePhase()
+})
+
+function routeNameForPhase(nextPhase: RoutePhase) {
+  switch (nextPhase) {
+    case 'mode-select':
+      return 'WritingModeSelect'
+    case 'exam-setup':
+      return 'WritingExamSetup'
+    case 'editor':
+      return 'WritingEditor'
+    default:
+      return 'WritingDocList'
+  }
+}
+
+async function navigateToPhase(nextPhase: RoutePhase, replace = false) {
+  const target = { name: routeNameForPhase(nextPhase) }
+  if (replace) {
+    await router.replace(target)
+    return
+  }
+  await router.push(target)
+}
 
 // Document list & pagination
 const PAGE_SIZE = 9
@@ -400,8 +441,11 @@ const paginationPages = computed(() => {
 watch([filterMode, sortBy, searchQuery], () => { currentPage.value = 1 })
 
 // Immersive toggle: only editor is immersive
-watch(phase, (p) => {
+watch(phase, (p, prev) => {
   setImmersive(p === 'editor' ? true : false)
+  if (!booting.value && p === 'doc-list' && prev && prev !== 'doc-list') {
+    void loadDocList()
+  }
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -586,13 +630,24 @@ onMounted(async () => {
   }
   currentStage.value = cached
 
-  // 只恢复 editor 阶段（有进行中的写作），其他情况回到 doc-list
-  if (phase.value === 'editor' && initialDocId.value) {
+  const currentPhase = resolveRoutePhase()
+
+  if (currentPhase === 'editor') {
+    if (!initialDocId.value) {
+      await loadDocList()
+      booting.value = false
+      await navigateToPhase('doc-list', true)
+      return
+    }
+    booting.value = false
     return
   }
 
-  await loadDocList()
-  phase.value = 'doc-list'
+  if (currentPhase === 'doc-list') {
+    await loadDocList()
+  }
+
+  booting.value = false
 })
 
 async function loadDocList() {
@@ -627,7 +682,7 @@ async function createFreeDoc() {
     initialDocId.value = null
     initialExistingContent.value = null
   }
-  phase.value = 'editor'
+  await navigateToPhase('editor')
 }
 
 async function onExamConfirm(info: ExamTopicInfo) {
@@ -654,10 +709,10 @@ async function onExamConfirm(info: ExamTopicInfo) {
     initialDocId.value = null
     initialExistingContent.value = null
   }
-  phase.value = 'editor'
+  await navigateToPhase('editor')
 }
 
-function openDocument(doc: WritingDocumentItem) {
+async function openDocument(doc: WritingDocumentItem) {
   chosenMode.value = doc.taskPrompt ? 'exam' : 'free'
   initialTaskPrompt.value = doc.taskPrompt ?? undefined
   initialDocId.value = doc.docId
@@ -667,29 +722,29 @@ function openDocument(doc: WritingDocumentItem) {
   // 考试模式草稿（status=0，从题目设置页保存退出，未点击"开始写作"）→ 回到题目设置页
   if (doc.taskPrompt && doc.status === 0) {
     resumeTopicForSetup.value = doc.taskPrompt
-    phase.value = 'exam-setup'
+    void navigateToPhase('exam-setup')
     return
   }
 
-  phase.value = 'editor'
+  await navigateToPhase('editor')
 }
 
-function onExamSetupBack() {
+async function onExamSetupBack() {
   resumeTopicForSetup.value = undefined
-  phase.value = 'mode-select'
+  await navigateToPhase('mode-select')
 }
 
-function onEditorBack() {
+async function onEditorBack() {
   initialDocId.value = null
   initialExistingContent.value = null
   initialTaskPrompt.value = undefined
-  loadDocList()
-  phase.value = 'doc-list'
+  await loadDocList()
+  await navigateToPhase('doc-list')
 }
 
-function onExamSaveDraft() {
-  loadDocList()
-  phase.value = 'doc-list'
+async function onExamSaveDraft() {
+  await loadDocList()
+  await navigateToPhase('doc-list')
 }
 
 // ── Card menu ──
@@ -746,12 +801,6 @@ function scoreColor(score: number) {
   if (score >= 80) return 'high'
   if (score >= 60) return 'mid'
   return 'low'
-}
-
-function trimText(text: string, max: number) {
-  if (!text) return ''
-  const t = text.replace(/\n/g, ' ').trim()
-  return t.length <= max ? t : t.slice(0, max) + '…'
 }
 
 function formatTime(dateStr: string) {
@@ -1461,4 +1510,13 @@ function formatTime(dateStr: string) {
   .doc-section-header { flex-direction: column; align-items: flex-start; }
 }
 </style>
+
+
+
+
+
+
+
+
+
 
