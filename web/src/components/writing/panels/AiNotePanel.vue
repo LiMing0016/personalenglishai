@@ -3,18 +3,6 @@
     <header class="chat-header">
       <div class="chat-title-wrap">
         <h3 class="chat-title">AI Chat</h3>
-        <div class="mode-switch">
-          <button
-            v-for="m in modes"
-            :key="m"
-            type="button"
-            class="mode-btn"
-            :class="{ active: mode === m }"
-            @click="mode = m"
-          >
-            {{ m }}
-          </button>
-        </div>
       </div>
       <div class="chat-actions">
         <button type="button" class="action-btn" @click="onClear">Clear</button>
@@ -220,7 +208,6 @@ import { onClickOutside } from '@vueuse/core'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
 
-type Mode = 'sm' | 'md' | 'lg'
 type WritingMode = 'free' | 'exam'
 type MessageRole = 'user' | 'assistant'
 type ChatMessage = { role: MessageRole; text: string; at: number }
@@ -263,8 +250,6 @@ const emit = defineEmits<{
   'update:taskPrompt': [value: string]
 }>()
 
-const modes: Mode[] = ['sm', 'md', 'lg']
-const mode = ref<Mode>('md')
 const messageListRef = ref<HTMLElement | null>(null)
 const composerInputRef = ref<HTMLTextAreaElement | null>(null)
 const modeMenuRef = ref<HTMLElement | null>(null)
@@ -659,24 +644,6 @@ watch(
   font-size: 14px;
   font-weight: 700;
   color: #111827;
-}
-.mode-switch {
-  display: flex;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  overflow: hidden;
-}
-.mode-btn {
-  border: none;
-  background: #fff;
-  color: #4b5563;
-  font-size: 12px;
-  padding: 4px 8px;
-  cursor: pointer;
-}
-.mode-btn.active {
-  background: #047857;
-  color: #fff;
 }
 .chat-actions {
   display: flex;

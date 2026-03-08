@@ -157,11 +157,75 @@
         </div>
       </div>
 
-      <!-- 历年真题 Tab（占位） -->
+      <!-- 历年真题 Tab -->
       <div v-else-if="activeTab === 'past'" class="tab-content">
-        <div class="placeholder-box">
-          <p class="placeholder-text">历年真题库即将上线</p>
-          <p class="placeholder-sub">收录全国高考、各省模考英语写作真题</p>
+        <!-- 筛选栏 -->
+        <div class="prompt-filters">
+          <div class="prompt-search">
+            <input
+              v-model="promptKeyword"
+              type="text"
+              class="prompt-search-input"
+              placeholder="搜索题目关键词..."
+              @input="onPromptSearch"
+            />
+          </div>
+          <div class="prompt-year-filter">
+            <select v-model.number="promptYearSelect" class="prompt-year-select" @change="onYearChange">
+              <option :value="0">全部年份</option>
+              <option v-for="y in promptYears" :key="y" :value="y">{{ y }} 年</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 加载中 -->
+        <div v-if="promptLoading" class="prompt-loading">
+          <div class="gate-spinner" />
+          <p>加载中...</p>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="promptItems.length === 0" class="placeholder-box">
+          <p class="placeholder-text">{{ promptKeyword || promptYear ? '未找到匹配的题目' : '暂无真题数据' }}</p>
+          <p class="placeholder-sub">{{ promptKeyword || promptYear ? '请尝试其他关键词或年份' : '题库数据即将导入' }}</p>
+        </div>
+
+        <!-- 真题列表 -->
+        <div v-else class="prompt-list">
+          <div
+            v-for="item in promptItems"
+            :key="item.id"
+            class="prompt-card"
+            :class="{ selected: selectedPrompt?.id === item.id }"
+            @click="selectedPrompt = selectedPrompt?.id === item.id ? null : item"
+          >
+            <div class="prompt-card-header">
+              <span class="prompt-year-badge" v-if="item.examYear">{{ item.examYear }}</span>
+              <span class="prompt-paper">{{ item.paper }}</span>
+              <span v-if="item.imageUrl" class="prompt-tag prompt-tag--img">图</span>
+              <span v-if="item.materialText" class="prompt-tag prompt-tag--mat">材料</span>
+            </div>
+            <p class="prompt-text-preview">{{ item.promptText.slice(0, 150) }}{{ item.promptText.length > 150 ? '...' : '' }}</p>
+          </div>
+        </div>
+
+        <!-- 分页 -->
+        <div v-if="promptTotal > promptPageSize" class="prompt-pagination">
+          <button class="prompt-page-btn" :disabled="promptPage <= 1" @click="loadPrompts(promptPage - 1)">上一页</button>
+          <span class="prompt-page-info">{{ promptPage }} / {{ Math.ceil(promptTotal / promptPageSize) }}</span>
+          <button class="prompt-page-btn" :disabled="promptPage >= Math.ceil(promptTotal / promptPageSize)" @click="loadPrompts(promptPage + 1)">下一页</button>
+        </div>
+
+        <!-- 选中预览 -->
+        <div v-if="selectedPrompt" class="prompt-preview">
+          <h4 class="prompt-preview-title">{{ selectedPrompt.paper }}</h4>
+          <img v-if="selectedPrompt.imageUrl" :src="selectedPrompt.imageUrl" class="prompt-preview-image" alt="题目图片" />
+          <div v-if="selectedPrompt.materialText" class="prompt-material-box">
+            <p class="prompt-material-label">阅读材料</p>
+            <p class="prompt-material-text">{{ selectedPrompt.materialText }}</p>
+          </div>
+          <p class="prompt-preview-text">{{ selectedPrompt.promptText }}</p>
+          <button class="gate-btn prompt-use-btn" @click="useSelectedPrompt">使用此题目</button>
         </div>
       </div>
 
@@ -272,9 +336,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useSessionStorage } from '@vueuse/core'
-import { auditTopic, recognizeTopicImage, startWritingSession } from '@/api/writing'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useSessionStorage, useDebounceFn } from '@vueuse/core'
+import { auditTopic, recognizeTopicImage, startWritingSession, getEssayPrompts } from '@/api/writing'
+import type { EssayPromptItem } from '@/api/writing'
 
 export interface ExamTopicInfo {
   topic: string
@@ -394,6 +459,7 @@ const topicError = computed(() => {
 })
 
 const canStart = computed(() => {
+  if (activeTab.value === 'past') return !!selectedPrompt.value
   const t = topic.value.trim()
   if (!t) return false
   if (topicError.value) return false
@@ -415,6 +481,14 @@ function getEffectiveWordRange(): string | null {
 
 async function onStartConfirm() {
   if (!canStart.value) return
+
+  // 历年真题 tab：先提取选中题目文本，再切到手动 tab 避免 canStart 变 false
+  if (activeTab.value === 'past' && selectedPrompt.value) {
+    const promptText = selectedPrompt.value.promptText
+    topic.value = promptText
+    selectedPrompt.value = null
+    activeTab.value = 'manual'
+  }
 
   confirmStep.value = 'parsing'
   auditMessage.value = null
@@ -459,13 +533,15 @@ async function onStartConfirm() {
 }
 
 function onFinalConfirm() {
+  clearExamSetupState()
   emit('confirm', parsedResult.value)
   confirmStep.value = 'idle'
 }
 
-// ── 草稿持久化 ──
+// ── 草稿与页面状态持久化 ──
 
 const DRAFT_KEY = 'peai:examSetup:draft'
+const LIVE_STATE_KEY = 'peai:examSetup:live'
 
 interface ExamSetupDraft {
   topic: string
@@ -480,21 +556,74 @@ interface ExamSetupDraft {
 
 const savedDraft = useSessionStorage<ExamSetupDraft | null>(DRAFT_KEY, null)
 
+interface ExamSetupLiveState extends ExamSetupDraft {
+  activeTab: TabKey
+  customMaxScore: number | null
+  confirmStep: ConfirmStep
+  parsedResult: ExamTopicInfo
+  auditMessage: string | null
+  promptKeyword: string
+  promptYear: number | null
+  promptPage: number
+  selectedPrompt: EssayPromptItem | null
+}
+
+const liveState = useSessionStorage<ExamSetupLiveState | null>(LIVE_STATE_KEY, null)
+
+function clearExamSetupState() {
+  savedDraft.value = null
+  liveState.value = null
+}
+
 onMounted(() => {
-  if (savedDraft.value) {
-    const d = savedDraft.value
-    topic.value = d.topic
-    genre.value = d.genre
-    wordRange.value = d.wordRange
-    customWordRange.value = d.customWordRange
-    showCustomWordRange.value = d.showCustomWordRange
-    maxScore.value = d.maxScore
-    uploadedImage.value = d.uploadedImage
-    uploadedImageBase64.value = d.uploadedImageBase64
-    // 恢复后清除草稿
+  if (liveState.value) {
+    try {
+      const state = liveState.value
+      const validTabs: TabKey[] = ['manual', 'ai', 'past']
+      activeTab.value = validTabs.includes(state.activeTab) ? state.activeTab : 'manual'
+      topic.value = state.topic ?? ''
+      genre.value = state.genre ?? null
+      wordRange.value = state.wordRange ?? null
+      customWordRange.value = state.customWordRange ?? ''
+      showCustomWordRange.value = state.showCustomWordRange ?? false
+      maxScore.value = state.maxScore ?? 100
+      customMaxScore.value = state.customMaxScore ?? null
+      uploadedImage.value = state.uploadedImage ?? null
+      uploadedImageBase64.value = state.uploadedImageBase64 ?? null
+      confirmStep.value = 'idle'
+      parsedResult.value = state.parsedResult
+        ? { ...state.parsedResult }
+        : { topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100 }
+      auditMessage.value = state.auditMessage ?? null
+      promptKeyword.value = state.promptKeyword ?? ''
+      promptYear.value = state.promptYear ?? null
+      promptYearSelect.value = state.promptYear ?? 0
+      promptPage.value = state.promptPage ?? 1
+      selectedPrompt.value = state.selectedPrompt ?? null
+
+      if (activeTab.value === 'past') {
+        void loadPrompts(promptPage.value)
+      }
+    } catch (e) {
+      console.warn('[ExamSetup] liveState restore failed, clearing', e)
+      liveState.value = null
+    }
+  } else if (savedDraft.value) {
+    try {
+      const d = savedDraft.value
+      topic.value = d.topic ?? ''
+      genre.value = d.genre ?? null
+      wordRange.value = d.wordRange ?? null
+      customWordRange.value = d.customWordRange ?? ''
+      showCustomWordRange.value = d.showCustomWordRange ?? false
+      maxScore.value = d.maxScore ?? 100
+      uploadedImage.value = d.uploadedImage ?? null
+      uploadedImageBase64.value = d.uploadedImageBase64 ?? null
+    } catch (e) {
+      console.warn('[ExamSetup] draft restore failed, clearing', e)
+    }
     savedDraft.value = null
   } else if (props.initialTopic) {
-    // 从草稿文档卡片进入，预填充题目
     topic.value = props.initialTopic
   }
 })
@@ -516,6 +645,7 @@ function handleBack() {
   if (isDirty.value) {
     showBackConfirm.value = true
   } else {
+    clearExamSetupState()
     emit('back')
   }
 }
@@ -542,16 +672,126 @@ async function saveAndLeave() {
   } finally {
     saving.value = false
   }
-  savedDraft.value = null
+  clearExamSetupState()
   showBackConfirm.value = false
   emit('saveDraft')
 }
 
 function confirmLeave() {
-  savedDraft.value = null
+  clearExamSetupState()
   showBackConfirm.value = false
   emit('back')
 }
+
+// ── 历年真题 ──
+
+const promptKeyword = ref('')
+const promptYear = ref<number | null>(null)
+const promptYearSelect = ref(0)
+
+function onYearChange() {
+  promptYear.value = promptYearSelect.value === 0 ? null : promptYearSelect.value
+  selectedPrompt.value = null
+  loadPrompts(1)
+}
+const promptItems = ref<EssayPromptItem[]>([])
+const promptYears = ref<number[]>([])
+const promptTotal = ref(0)
+const promptPage = ref(1)
+const promptPageSize = 10
+const promptLoading = ref(false)
+const selectedPrompt = ref<EssayPromptItem | null>(null)
+
+async function loadPrompts(page = 1) {
+  promptPage.value = page
+  promptLoading.value = true
+  try {
+    const res = await getEssayPrompts({
+      stageId: 2,
+      keyword: promptKeyword.value.trim() || undefined,
+      year: promptYear.value ?? undefined,
+      page,
+      size: promptPageSize,
+    })
+    promptItems.value = res.items
+    promptTotal.value = res.total
+    if (res.years.length > 0) {
+      promptYears.value = res.years
+    }
+  } catch (e) {
+    console.warn('[ExamSetup] loadPrompts failed', e)
+  } finally {
+    promptLoading.value = false
+  }
+}
+
+const debouncedLoadPrompts = useDebounceFn(() => loadPrompts(1), 300)
+
+function onPromptSearch() {
+  selectedPrompt.value = null
+  debouncedLoadPrompts()
+}
+
+function useSelectedPrompt() {
+  if (!selectedPrompt.value) return
+  topic.value = selectedPrompt.value.promptText
+  activeTab.value = 'manual'
+  selectedPrompt.value = null
+}
+
+const debouncedSaveLiveState = useDebounceFn(() => {
+  liveState.value = {
+    activeTab: activeTab.value,
+    topic: topic.value,
+    genre: genre.value,
+    wordRange: wordRange.value,
+    customWordRange: customWordRange.value,
+    showCustomWordRange: showCustomWordRange.value,
+    maxScore: maxScore.value,
+    uploadedImage: uploadedImage.value,
+    uploadedImageBase64: uploadedImageBase64.value,
+    customMaxScore: customMaxScore.value,
+    confirmStep: 'idle' as ConfirmStep,
+    parsedResult: { ...parsedResult.value },
+    auditMessage: auditMessage.value,
+    promptKeyword: promptKeyword.value,
+    promptYear: promptYear.value,
+    promptPage: promptPage.value,
+    selectedPrompt: selectedPrompt.value,
+  }
+}, 150)
+
+watch(
+  [
+    activeTab,
+    topic,
+    genre,
+    wordRange,
+    customWordRange,
+    showCustomWordRange,
+    maxScore,
+    customMaxScore,
+    uploadedImage,
+    uploadedImageBase64,
+    confirmStep,
+    parsedResult,
+    auditMessage,
+    promptKeyword,
+    promptYear,
+    promptPage,
+    selectedPrompt,
+  ],
+  () => { debouncedSaveLiveState() },
+  { deep: true }
+)
+
+// 切换到历年真题 tab 时自动加载（每次切换都刷新数据）
+watch(activeTab, (tab) => {
+  if (tab === 'past' && !promptLoading.value) {
+    loadPrompts(1)
+  }
+})
+
 </script>
 
 <style src="@/styles/gate.css" />
@@ -563,6 +803,20 @@ function confirmLeave() {
   border-radius: 16px;
   padding: 40px 36px 32px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 输入区域允许选中 */
+.topic-input,
+.prompt-search-input,
+.custom-input,
+.confirm-input,
+.prompt-preview-text,
+.prompt-text-preview,
+.prompt-material-text {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Tab bar */
@@ -1058,6 +1312,222 @@ function confirmLeave() {
   background: #b91c1c;
 }
 
+/* ── Past Prompts ── */
+.prompt-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.prompt-search {
+  flex: 1;
+}
+
+.prompt-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #111827;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.prompt-search-input:focus {
+  outline: none;
+  border-color: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.1);
+}
+
+.prompt-year-select {
+  padding: 8px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+}
+.prompt-year-select:focus {
+  outline: none;
+  border-color: #047857;
+}
+
+.prompt-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.prompt-card {
+  padding: 12px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.prompt-card:hover {
+  border-color: #047857;
+  background: #f0fdf4;
+}
+.prompt-card.selected {
+  border-color: #047857;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 2px rgba(4, 120, 87, 0.15);
+}
+
+.prompt-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.prompt-year-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #047857;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.prompt-paper {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.prompt-text-preview {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.prompt-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.prompt-page-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.prompt-page-btn:hover:not(:disabled) {
+  border-color: #047857;
+  color: #047857;
+}
+.prompt-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.prompt-page-info {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.prompt-preview {
+  margin-top: 16px;
+  padding: 14px;
+  background: #f9fafb;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.prompt-preview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 8px;
+}
+
+.prompt-preview-text {
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.6;
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.prompt-use-btn {
+  font-size: 13px;
+  padding: 8px 20px;
+}
+
+.prompt-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+}
+.prompt-tag--img {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.prompt-tag--mat {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.prompt-preview-image {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 10px;
+}
+
+.prompt-material-box {
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.prompt-material-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #92400e;
+  margin: 0 0 4px;
+}
+
+.prompt-material-text {
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 /* Responsive */
 @media (max-width: 560px) {
   .setup-card {
@@ -1068,3 +1538,5 @@ function confirmLeave() {
   }
 }
 </style>
+
+

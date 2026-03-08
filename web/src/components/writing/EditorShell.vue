@@ -80,8 +80,6 @@
           @start-grammar-check="onStartGrammarCheck"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
-          @archived="onArchived"
-          @load-history-result="onLoadHistoryResult"
           @update:ai-note="draftStore.aiNote = $event"
           @update:writing-mode="draftStore.writingMode = $event"
           @update:task-prompt="draftStore.taskPrompt = $event"
@@ -137,7 +135,6 @@ import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
-import type { EvaluationDetailResponse } from '@/api/writing'
 import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
 import { aiCommand } from '@/api/ai'
 import { createDocument } from '@/api/document'
@@ -183,7 +180,6 @@ const {
   evaluateError,
   submitting,
 } = useEvaluateSubmission()
-const archivedList = ref<unknown[]>([])
 const activeErrorId = ref<string | null>(null)
 const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
 
@@ -426,22 +422,6 @@ function onStartGrammarCheck() {
   panelStore.activePanel = 'grammarCheck'
 }
 
-function onLoadHistoryResult(detail: EvaluationDetailResponse) {
-  evaluateResult.value = detail.result
-  if (detail.essayText) {
-    draftStore.draftText = detail.essayText
-  }
-  panelStore.activePanel = 'score'
-}
-
-function onArchived() {
-  archivedList.value.push({
-    draft: draftStore.draftText,
-    aiNote: draftStore.aiNote,
-    at: new Date().toISOString(),
-  })
-  showToast('Archived', 'success')
-}
 
 function onSubmit() {
   grammarStore.pauseForSubmit()

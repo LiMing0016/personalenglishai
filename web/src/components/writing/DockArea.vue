@@ -8,7 +8,6 @@
       <PolishPanel v-else-if="mode === 'improve'" />
       <ExplainPanel v-else-if="mode === 'explain'" />
       <TranslatePanel v-else-if="mode === 'translate'" />
-      <ArchivePanel v-else-if="mode === 'archive'" />
     </div>
     <footer class="dock-footer">
       <AiNoteComposer
@@ -61,7 +60,6 @@ import ScorePanel from './panels/ScorePanel.vue'
 import PolishPanel from './panels/PolishPanel.vue'
 import ExplainPanel from './panels/ExplainPanel.vue'
 import TranslatePanel from './panels/TranslatePanel.vue'
-import ArchivePanel from './panels/ArchivePanel.vue'
 
 const props = defineProps<{
   mode: PanelMode
@@ -84,7 +82,6 @@ const modeLabels: Record<PanelMode, string> = {
   improve: '提升',
   explain: '解释',
   translate: '翻译',
-  archive: '归档',
   aiNote: 'AI 助手',
 }
 

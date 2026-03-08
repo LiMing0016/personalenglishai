@@ -9,6 +9,9 @@
         <result property="paper" column="paper"/>
         <result property="title" column="title"/>
         <result property="promptText" column="prompt_text"/>
+        <result property="examYear" column="exam_year"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="materialText" column="material_text"/>
         <result property="source" column="source"/>
         <result property="isActive" column="is_active"/>
         <result property="createdAt" column="created_at"/>
@@ -16,17 +19,20 @@
     </resultMap>
 
     <select id="selectActiveByStageId" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId} AND is_active = 1
-        ORDER BY paper ASC
+        ORDER BY paper DESC
     </select>
 
     <select id="searchActiveByStageId" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId}
           AND is_active = 1
+          <if test="examYear != null">
+              AND exam_year = #{examYear}
+          </if>
           <if test="keyword != null and keyword != ''">
               AND (
                   paper LIKE CONCAT('%', #{keyword}, '%')
@@ -34,7 +40,7 @@
                   OR prompt_text LIKE CONCAT('%', #{keyword}, '%')
               )
           </if>
-        ORDER BY paper ASC
+        ORDER BY paper DESC
         <if test="limit != null and offset != null">
             LIMIT #{limit} OFFSET #{offset}
         </if>
@@ -45,6 +51,9 @@
         FROM essay_prompt
         WHERE stage_id = #{stageId}
           AND is_active = 1
+          <if test="examYear != null">
+              AND exam_year = #{examYear}
+          </if>
           <if test="keyword != null and keyword != ''">
               AND (
                   paper LIKE CONCAT('%', #{keyword}, '%')
@@ -55,9 +64,16 @@
     </select>
 
     <select id="selectByPaper" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId} AND paper = #{paper}
         LIMIT 1
+    </select>
+
+    <select id="selectDistinctYearsByStageId" resultType="int">
+        SELECT DISTINCT exam_year
+        FROM essay_prompt
+        WHERE stage_id = #{stageId} AND is_active = 1 AND exam_year IS NOT NULL
+        ORDER BY exam_year DESC
     </select>
 </mapper>
