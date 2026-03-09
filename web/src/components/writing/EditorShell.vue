@@ -52,6 +52,7 @@
           :conversation-id="draftStore.aiConversationId"
           :ai-generating="aiGenerating"
           :writing-mode="draftStore.writingMode"
+          :study-stage="props.studyStage"
           :task-prompt="draftStore.taskPrompt"
           :ai-note="draftStore.aiNote"
           :evaluate-result="grammarStore.evaluateResult"
@@ -878,6 +879,9 @@ function onAiNoteStop() {
   background: #065f46;
 }
 </style>
+
+
+
 
 
 

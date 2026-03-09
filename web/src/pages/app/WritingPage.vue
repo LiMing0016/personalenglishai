@@ -312,6 +312,7 @@ import { getStageLabel } from '@/constants/stage'
 import { startWritingSession, getWritingDocuments, getWritingStats } from '@/api/writing'
 import type { WritingDocumentItem, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
+import { showToast } from '@/utils/toast'
 
 type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
@@ -689,6 +690,8 @@ async function createFreeDoc() {
     console.warn('[WritingPage] create free doc failed', e)
     initialDocId.value = null
     initialExistingContent.value = null
+    showToast('创建写作会话失败，请重试', 'error')
+    return
   }
   await navigateToPhase('editor')
 }
@@ -718,6 +721,8 @@ async function onExamConfirm(info: ExamTopicInfo) {
     console.warn('[WritingPage] create exam doc failed', e)
     initialDocId.value = null
     initialExistingContent.value = null
+    showToast('创建考试写作会话失败，请重试', 'error')
+    return
   }
   await navigateToPhase('editor')
 }
@@ -749,12 +754,10 @@ async function onEditorBack() {
   initialDocId.value = null
   initialExistingContent.value = null
   initialTaskPrompt.value = undefined
-  await loadDocList()
   await navigateToPhase('doc-list')
 }
 
 async function onExamSaveDraft() {
-  await loadDocList()
   await navigateToPhase('doc-list')
 }
 

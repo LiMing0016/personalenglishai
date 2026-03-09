@@ -69,6 +69,7 @@ public class OpenAiClient {
     // Per-call overrides (thread-local would be safer but this is simpler for single-threaded use)
     private volatile Double overrideTemperature;
     private volatile Integer overrideMaxTokens;
+    private volatile String overrideModel;
 
     public OpenAiClient(
             @Value("${OPENAI_API_KEY:}") String apiKey,
@@ -200,6 +201,23 @@ public class OpenAiClient {
         }
     }
 
+    /**
+     * Call with custom model, temperature and maxTokens.
+     */
+    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId,
+                                   String modelOverride, Double temperature, Integer maxTokens) {
+        this.overrideModel = modelOverride;
+        this.overrideTemperature = temperature;
+        this.overrideMaxTokens = maxTokens;
+        try {
+            return callWithTraceId(systemPrompt, userPrompt, traceId, null);
+        } finally {
+            this.overrideModel = null;
+            this.overrideTemperature = null;
+            this.overrideMaxTokens = null;
+        }
+    }
+
     public String callWithTraceId(String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
         long startTime = System.currentTimeMillis();
         int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
@@ -209,7 +227,7 @@ public class OpenAiClient {
         boolean parseSuccess = false;
         int payloadBytes = 0;
         String effectiveEndpoint = endpointMode;
-        String effectiveModel = model;
+        String effectiveModel = overrideModel != null ? overrideModel : model;
         String output;
 
         try {

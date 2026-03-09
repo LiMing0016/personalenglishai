@@ -15,6 +15,7 @@ import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
+import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
@@ -59,6 +60,9 @@ class WritingControllerTest {
 
     @MockBean
     private WritingPolishService writingPolishService;
+
+    @MockBean
+    private WritingTranslateService writingTranslateService;
 
     @MockBean
     private GrammarCheckService grammarCheckService;

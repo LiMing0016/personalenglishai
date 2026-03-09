@@ -141,9 +141,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import type { PolishTier, PolishEssaySummary } from '@/api/writing'
 import { polishEssay } from '@/api/writing'
+import { savePolishResult, loadPolishResult } from '@/components/writing/editorShellStorage'
 
 interface SentenceItem {
   text: string
@@ -180,6 +181,30 @@ const replacedSet = ref<Set<number>>(new Set())
 const sentences = ref<SentenceItem[]>([])
 let polishAbortToken = 0
 let ignoreNextEssayChange = false
+let cacheRestored = false
+
+function persistState() {
+  if (!polishTier.value) return
+  savePolishResult({
+    tier: polishTier.value,
+    summary: polishSummary.value,
+    sentences: sentences.value,
+    replacedIndices: [...replacedSet.value],
+    essaySnapshot: props.fullEssay,
+  })
+}
+
+// 恢复缓存
+onMounted(() => {
+  const cached = loadPolishResult()
+  if (cached && cached.sentences.length > 0 && cached.essaySnapshot === props.fullEssay) {
+    polishTier.value = cached.tier as PolishTier
+    polishSummary.value = cached.summary as PolishEssaySummary | null
+    sentences.value = cached.sentences as SentenceItem[]
+    replacedSet.value = new Set(cached.replacedIndices ?? [])
+    cacheRestored = true
+  }
+})
 
 const tierLabel = computed(() => {
   if (!polishTier.value) return ''
@@ -215,6 +240,11 @@ function splitSentences(text: string): SentenceItem[] {
 // Split sentences on mount (but don't call GPT yet)
 // Skip reset when the change was caused by a sentence replacement
 watch(() => props.fullEssay, () => {
+  // Skip first trigger if cache was restored
+  if (cacheRestored) {
+    cacheRestored = false
+    return
+  }
   if (ignoreNextEssayChange) {
     ignoreNextEssayChange = false
     // Re-split to update positions, but preserve polish results
@@ -316,6 +346,7 @@ async function doPolishAll() {
       available.delete(idx)
       cursor = (idx + 1) % Math.max(1, sentences.value.length)
     }
+    persistState()
   } catch {
     if (token !== polishAbortToken) return
     polishError.value = '润色请求失败，请重试。'
@@ -348,6 +379,7 @@ function applyCandidate(idx: number) {
     replacement: s.polished,
   })
   replacedSet.value = new Set([...replacedSet.value, idx])
+  persistState()
 }
 
 function dismissSentence(idx: number) {
@@ -358,6 +390,7 @@ function dismissSentence(idx: number) {
   }
   expandedIdx.value = null
   emit('sentence-focus', null)
+  persistState()
 }
 
 function diffHighlight(original: string, polished: string): string {

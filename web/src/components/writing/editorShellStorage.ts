@@ -13,6 +13,10 @@ export const WRITING_STORAGE_KEYS = {
   splitRatio: 'writing.split.ratio',
   grammarErrors: 'peai:writing:grammarErrors',
   polishSuggestions: 'peai:writing:polishSuggestions',
+  translateResult: 'peai:writing:translateResult',
+  polishResult: 'peai:writing:polishResult',
+  grammarFixedIds: 'peai:writing:grammarFixedIds',
+  appliedSuggestionIds: 'peai:writing:appliedSuggestionIds',
 } as const
 
 function scopedKey(baseKey: string, scope?: string | null): string {
@@ -316,4 +320,106 @@ export function loadPolishSuggestions(): { errors: unknown[]; suggestions: unkno
 
 export function clearPolishSuggestions(): void {
   try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.polishSuggestions) } catch { /* ignore */ }
+}
+
+// ── 翻译结果缓存（sessionStorage） ──
+
+export interface TranslateCache {
+  mode: 'full' | 'detailed'
+  fullTranslation: string | null
+  sentences: unknown[]
+  lastTranslatedText: string
+}
+
+export function saveTranslateResult(data: TranslateCache, scope?: string | null): void {
+  try {
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.translateResult, scope), JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadTranslateResult(scope?: string | null): TranslateCache | null {
+  try {
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.translateResult, scope))
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.sentences)) return obj as TranslateCache
+    return null
+  } catch { return null }
+}
+
+export function clearTranslateResult(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.translateResult, scope)) } catch { /* ignore */ }
+}
+
+// ── 润色结果缓存（sessionStorage） ──
+
+export interface PolishCache {
+  tier: string
+  summary: unknown | null
+  sentences: unknown[]
+  replacedIndices: number[]
+  essaySnapshot: string
+}
+
+export function savePolishResult(data: PolishCache): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.polishResult, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadPolishResult(): PolishCache | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.polishResult)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.sentences)) return obj as PolishCache
+    return null
+  } catch { return null }
+}
+
+export function clearPolishResult(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.polishResult) } catch { /* ignore */ }
+}
+
+// ── 语法修正 ID 缓存（sessionStorage） ──
+
+export function saveGrammarFixedIds(ids: string[]): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.grammarFixedIds, JSON.stringify(ids))
+  } catch { /* ignore */ }
+}
+
+export function loadGrammarFixedIds(): string[] | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.grammarFixedIds)
+    if (!raw) return null
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr : null
+  } catch { return null }
+}
+
+export function clearGrammarFixedIds(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.grammarFixedIds) } catch { /* ignore */ }
+}
+
+// ── 已应用建议 ID 缓存（sessionStorage） ──
+
+export function saveAppliedSuggestionIds(data: { suggestions: string[]; gptErrors: string[] }): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.appliedSuggestionIds, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadAppliedSuggestionIds(): { suggestions: string[]; gptErrors: string[] } | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.appliedSuggestionIds)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.suggestions) && Array.isArray(obj.gptErrors)) return obj
+    return null
+  } catch { return null }
+}
+
+export function clearAppliedSuggestionIds(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.appliedSuggestionIds) } catch { /* ignore */ }
 }
