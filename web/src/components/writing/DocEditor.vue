@@ -202,9 +202,9 @@ onMounted(() => {
         class: 'doc-content',
         spellcheck: 'false',
       },
-      // 纯文本粘贴：单个换行合并为空格，仅空行（\n\n+）分段
+      // 纯文本粘贴：每个换行都视为段落分隔
       transformPastedText(text) {
-        return text.replace(/\r\n/g, '\n').replace(/([^\n])\n(?!\n)/g, '$1 ')
+        return text.replace(/\r\n/g, '\n').replace(/\n+/g, '\n\n')
       },
       // HTML 粘贴（OneNote/Word 等）：合并连续非空 <p> 为一个段落
       transformPastedHTML(html) {
@@ -557,7 +557,10 @@ function mergeParagraphsInHtml(html: string): string {
           processNode(child)
         }
       } else {
+        // 每个非空块级元素独立成段
+        flushParagraph()
         currentParts.push(text)
+        flushParagraph()
       }
       return
     }

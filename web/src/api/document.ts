@@ -24,6 +24,10 @@ export interface DocContentResponse {
   latestRevision: number
   content: string
   taskPrompt?: string | null
+  submitCount?: number
+  initialScore?: number | null
+  latestScore?: number | null
+  mode?: 'free' | 'exam'
 }
 
 export function getDocumentContent(docId: string): Promise<DocContentResponse> {

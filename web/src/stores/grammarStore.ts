@@ -63,6 +63,14 @@ export const useGrammarStore = defineStore('grammar', () => {
     return base
   })
 
+  /** Number of fixable grammar errors that the user has NOT yet fixed or dismissed. */
+  const unfixedFixableCount = computed(() => {
+    const fixed = grammarFixedErrorIds.value
+    return grammarPanelErrors.value.filter(
+      (e) => !fixed.has(e.id) && hasValidSuggestion(e),
+    ).length
+  })
+
   const rewritePanelSuggestions = computed(() => {
     const fromEvaluate = (evaluateResult.value?.errors ?? []).filter((e) => e.category === 'suggestion')
     if (gptSuggestionErrors.value.length === 0) return fromEvaluate
@@ -294,6 +302,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarPanelFixedIds,
     displayEditorErrors,
     rewritePanelSuggestions,
+    unfixedFixableCount,
     // Actions
     scheduleGrammarCheck,
     fixError,

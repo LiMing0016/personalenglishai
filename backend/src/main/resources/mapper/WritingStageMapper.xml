@@ -7,6 +7,7 @@
         <id property="id" column="id"/>
         <result property="code" column="code"/>
         <result property="name" column="name"/>
+        <result property="minWordCount" column="min_word_count"/>
         <result property="sortOrder" column="sort_order"/>
         <result property="isActive" column="is_active"/>
         <result property="createdAt" column="created_at"/>
@@ -14,20 +15,20 @@
     </resultMap>
 
     <select id="selectAllActive" resultMap="BaseResultMap">
-        SELECT id, code, name, sort_order, is_active, created_at, updated_at
+        SELECT id, code, name, min_word_count, sort_order, is_active, created_at, updated_at
         FROM writing_stage
         WHERE is_active = 1
         ORDER BY sort_order ASC, id ASC
     </select>
 
     <select id="selectById" resultMap="BaseResultMap">
-        SELECT id, code, name, sort_order, is_active, created_at, updated_at
+        SELECT id, code, name, min_word_count, sort_order, is_active, created_at, updated_at
         FROM writing_stage
         WHERE id = #{id}
     </select>
 
     <select id="selectByCode" resultMap="BaseResultMap">
-        SELECT id, code, name, sort_order, is_active, created_at, updated_at
+        SELECT id, code, name, min_word_count, sort_order, is_active, created_at, updated_at
         FROM writing_stage
         WHERE code = #{code}
         LIMIT 1

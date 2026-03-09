@@ -65,6 +65,11 @@ public class DocumentController {
                     resp.put("content", doc.content);
                     if (docEntity != null) {
                         resp.put("taskPrompt", docEntity.getTaskPrompt());
+                        resp.put("submitCount", docEntity.getSubmitCount() != null ? docEntity.getSubmitCount() : 0);
+                        resp.put("initialScore", docEntity.getInitialScore());
+                        resp.put("latestScore", docEntity.getLatestScore());
+                        // mode: 有 taskPrompt 则为 exam，否则 free
+                        resp.put("mode", docEntity.getTaskPrompt() != null && !docEntity.getTaskPrompt().isBlank() ? "exam" : "free");
                     }
                     return ResponseEntity.ok((Map<String, Object>) resp);
                 })

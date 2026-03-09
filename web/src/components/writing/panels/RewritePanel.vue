@@ -1,5 +1,18 @@
 <template>
   <div class="polish-panel">
+    <!-- ── 考试模式首次写作锁定 ── -->
+    <div v-if="locked" class="polish-locked">
+      <div class="polish-locked-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0110 0v4" />
+        </svg>
+      </div>
+      <p class="polish-locked-title">首次写作模式</p>
+      <p class="polish-locked-hint">当前为考试模式下的首次写作，润色功能将在提交作文后解锁。<br/>请先独立完成写作，以便系统准确评估你的真实水平。</p>
+    </div>
+
+    <template v-else>
     <!-- 全局润色档次选择 -->
     <div class="polish-tier-global">
       <span class="polish-tier-label">润色档次</span>
@@ -123,6 +136,7 @@
         <p>选择润色档次，AI 将逐句润色全文。</p>
       </div>
     </template>
+    </template>
   </div>
 </template>
 
@@ -148,6 +162,7 @@ const tierOptions: { value: PolishTier; label: string }[] = [
 
 const props = defineProps<{
   fullEssay: string
+  locked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -370,6 +385,34 @@ function escapeHtml(text: string): string {
 <style scoped>
 .polish-panel {
   padding: 16px;
+}
+
+/* ── 首次写作锁定 ── */
+.polish-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.polish-locked-icon {
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.polish-locked-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.polish-locked-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.6;
 }
 
 /* ── AI 总结卡片（可折叠） ── */

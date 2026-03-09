@@ -64,6 +64,7 @@
           :grammar-check-error="grammarStore.grammarCheckError"
           :grammar-fixed-error-ids="grammarStore.grammarPanelFixedIds"
           :rewrite-suggestions="grammarStore.rewritePanelSuggestions"
+          :exam-first-write-locked="examFirstWriteLocked"
           @close="panelStore.activePanel = null"
           @error-click="onPanelErrorClick"
           @apply-polish="onApplyPolish"
@@ -108,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, provide } from 'vue'
 import { useEventListener } from '@vueuse/core'
 
 const emit = defineEmits<{
@@ -121,6 +122,7 @@ const props = withDefaults(defineProps<{
   initialDocId?: string | null
   initialExistingContent?: string | null
   examMaxScore?: number | null
+  initialSubmitCount?: number
   studyStage?: string | null
 }>(), {
   initialWritingMode: undefined,
@@ -128,8 +130,16 @@ const props = withDefaults(defineProps<{
   initialDocId: null,
   initialExistingContent: null,
   examMaxScore: null,
+  initialSubmitCount: 0,
   studyStage: null,
 })
+
+/** Whether this mount is a refresh vs a fresh navigation from WritingPage. */
+const isRefreshMount = (() => {
+  const fresh = sessionStorage.getItem('peai:writing:freshNav')
+  sessionStorage.removeItem('peai:writing:freshNav')
+  return fresh !== '1'
+})()
 
 import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
@@ -149,10 +159,13 @@ import {
 import { usePanelStore, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_LEFT_WIDTH } from '@/stores/panelStore'
 import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { useGrammarStore } from '@/stores/grammarStore'
+import { stageCache } from '@/stores/stageCache'
+import { getStageConfig } from '@/api/writing'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
 const grammarStore = useGrammarStore()
+const minWordCount = ref(60)
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
 
@@ -182,6 +195,9 @@ const {
 } = useEvaluateSubmission()
 const activeErrorId = ref<string | null>(null)
 const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
+const examFirstWriteLocked = computed(() =>
+  draftStore.writingMode === 'exam' && draftStore.submitCount === 0,
+)
 
 const selectionStore = createWritingSelectionStore()
 provide(writingSelectionStoreKey, selectionStore)
@@ -241,30 +257,33 @@ onMounted(async () => {
   panelStore.activePanel = null
 
   const layout = panelStore.initLayout()
-  draftStore.init({
-    initialWritingMode: props.initialWritingMode,
-    initialTaskPrompt: props.initialTaskPrompt,
-    initialDocId: props.initialDocId,
-  })
-  aiDocId.value = draftStore.docId ?? ''
 
-  // Restore content: from prop, or fetch from backend for existing documents
-  if (props.initialExistingContent && (!draftStore.draftText || !draftStore.draftText.trim())) {
-    draftStore.draftText = props.initialExistingContent
-  } else if (props.initialDocId && (!draftStore.draftText || !draftStore.draftText.trim())) {
-    try {
-      const { getDocumentContent } = await import('@/api/document')
-      const doc = await getDocumentContent(props.initialDocId)
-      if (doc.content) {
-        draftStore.draftText = doc.content
-        draftStore.docRevision = doc.latestRevision
-      }
-    } catch (e) {
-      console.warn('[EditorShell] failed to load doc content', e)
+  // ── Single-channel hydration ──
+  const targetDocId = props.initialDocId?.trim()
+    || sessionStorage.getItem('peai:writing:docId')?.trim()
+    || null
+
+  if (targetDocId && isRefreshMount) {
+    // Refresh path: hydrate all state from backend + local cache atomically
+    await draftStore.hydrateByDocId(targetDocId)
+  } else {
+    // Normal navigation path: use props as startup parameters
+    draftStore.init({
+      initialWritingMode: props.initialWritingMode,
+      initialTaskPrompt: props.initialTaskPrompt,
+      initialDocId: props.initialDocId,
+      initialSubmitCount: props.initialSubmitCount,
+    })
+
+    // Apply initial content from prop if available
+    if (props.initialExistingContent && (!draftStore.draftText || !draftStore.draftText.trim())) {
+      draftStore.draftText = props.initialExistingContent
     }
   }
 
-  // Restore evaluate result
+  aiDocId.value = draftStore.docId ?? ''
+
+  // Restore evaluate result from localStorage (keyed by docId)
   const savedResult = loadEvaluateResult(draftStore.docId)
   if (savedResult && !evaluateResult.value) {
     evaluateResult.value = savedResult
@@ -277,7 +296,21 @@ onMounted(async () => {
   // Restore grammar cache
   grammarStore.restoreFromCache()
 
+  // Fetch min word count for current stage (non-blocking)
+  const stage = stageCache.value
+  if (stage && stage !== '__error__') {
+    getStageConfig(stage)
+      .then((cfg) => { minWordCount.value = cfg.minWordCount ?? 60 })
+      .catch(() => {})
+  }
+
+  // Wait for TipTap to initialize and normalize text, then re-sync evaluatedText
+  // to prevent the draftText watch from clearing the restored evaluate result.
   await nextTick()
+  if (evaluateResult.value) {
+    draftStore.evaluatedText = draftStore.draftText
+  }
+
   try {
     const s = localStorage.getItem(WRITING_STORAGE_KEYS.scrollTop)
     if (s != null && leftPaneRef.value) {
@@ -291,6 +324,8 @@ onMounted(async () => {
 useEventListener(leftPaneRef, 'scroll', onLeftPaneScroll)
 useEventListener(leftPaneRef, 'mouseup', syncSelectionStoreFromLeftMouseup)
 useEventListener(window, 'resize', () => panelStore.recalcDockWidth())
+// Flush debounced draft on refresh/close to avoid losing last 500ms of typing
+useEventListener(window, 'beforeunload', () => draftStore.flushDraft())
 
 onBeforeUnmount(() => {
   evalCancel()
@@ -311,6 +346,7 @@ watch(evaluateResult, (result) => {
     draftStore.evaluatedText = draftStore.draftText
     saveEvaluateResult(result, draftStore.docId)
     if (evalResultFromSubmit) {
+      draftStore.submitCount++
       panelStore.activePanel = 'score'
       showToast('评估完成', 'success')
       evalResultFromSubmit = false
@@ -330,10 +366,13 @@ watch(evaluateError, (err) => {
 })
 
 watch(() => draftStore.draftText, (newText) => {
+  if (draftStore.isHydrating) return
   if (evaluateResult.value && draftStore.evaluatedText !== null && newText !== draftStore.evaluatedText) {
     evalClearResult()
   }
-  grammarStore.scheduleGrammarCheck()
+  if (!examFirstWriteLocked.value) {
+    grammarStore.scheduleGrammarCheck()
+  }
 })
 
 function onEditorErrorClick(errorId: string) {
@@ -424,6 +463,27 @@ function onStartGrammarCheck() {
 
 
 function onSubmit() {
+  // ── Grammar fix gate ──
+  // Exempt: exam first write (grammar panel is locked, user can't fix)
+  if (!examFirstWriteLocked.value) {
+    if (grammarStore.grammarChecking) {
+      showToast('语法检查进行中，请稍候', 'info')
+      return
+    }
+    if (grammarStore.unfixedFixableCount > 0) {
+      showToast('请先修正语法错误后再提交', 'error')
+      panelStore.activePanel = 'grammarCheck'
+      return
+    }
+  }
+
+  // ── Word count gate ──
+  const wordCount = draftStore.draftText.trim().split(/\s+/).filter(Boolean).length
+  if (wordCount < minWordCount.value) {
+    showToast(`作文至少需要 ${minWordCount.value} 个单词才能提交（当前 ${wordCount} 个）`, 'error')
+    return
+  }
+
   grammarStore.pauseForSubmit()
 
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
