@@ -221,10 +221,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, nextTick, ref } from 'vue'
+import { computed, watch, nextTick, ref, onMounted } from 'vue'
 import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
 import { useWritingSuggestions } from '@/composables/useWritingSuggestions'
-import { savePolishSuggestions } from '../editorShellStorage'
+import { savePolishSuggestions, saveAppliedSuggestionIds, loadAppliedSuggestionIds } from '../editorShellStorage'
 
 type ErrorItem = WritingEvaluateResponse['errors'][number]
 
@@ -367,6 +367,21 @@ const suggestionsCollapsed = ref(false)
 const appliedSuggestionIds = ref(new Set<string>())
 const appliedGptErrorIds = ref(new Set<string>())
 
+function persistAppliedIds() {
+  saveAppliedSuggestionIds({
+    suggestions: [...appliedSuggestionIds.value],
+    gptErrors: [...appliedGptErrorIds.value],
+  })
+}
+
+onMounted(() => {
+  const cached = loadAppliedSuggestionIds()
+  if (cached) {
+    if (cached.suggestions.length > 0) appliedSuggestionIds.value = new Set(cached.suggestions)
+    if (cached.gptErrors.length > 0) appliedGptErrorIds.value = new Set(cached.gptErrors)
+  }
+})
+
 // Emit GPT results to parent + cache to sessionStorage when data changes
 watch([suggestions, gptHardErrors], ([sgs, errs]) => {
   if (sgs.length > 0 || errs.length > 0) {
@@ -388,6 +403,7 @@ function applySuggestion(item: SuggestionItem) {
   const text = props.essayText ?? ''
   if (!text.includes(item.original)) return
   appliedSuggestionIds.value.add(item.id)
+  persistAppliedIds()
   emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
 }
 
@@ -398,6 +414,7 @@ function applyAllSuggestions() {
     appliedSuggestionIds.value.add(item.id)
     emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
   }
+  persistAppliedIds()
 }
 
 function isGptErrorApplied(id: string): boolean {
@@ -408,6 +425,7 @@ function applyGptError(item: SuggestionErrorItem) {
   const text = props.essayText ?? ''
   if (!item.original || !item.suggestion || !text.includes(item.original)) return
   appliedGptErrorIds.value.add(item.id)
+  persistAppliedIds()
   emit('apply-suggestion', { original: item.original, suggestion: item.suggestion })
 }
 </script>

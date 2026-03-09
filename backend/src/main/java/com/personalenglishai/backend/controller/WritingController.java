@@ -33,7 +33,10 @@ import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
+import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
+import com.personalenglishai.backend.dto.writing.TranslateRequest;
+import com.personalenglishai.backend.dto.writing.TranslateResponse;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.dto.writing.EssayPromptResponse;
 import com.personalenglishai.backend.dto.writing.EssayPromptListResponse;
@@ -55,6 +58,7 @@ public class WritingController {
     private final WritingEvaluateTaskService writingEvaluateTaskService;
     private final WritingChatService writingChatService;
     private final WritingPolishService writingPolishService;
+    private final WritingTranslateService writingTranslateService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
     private final AuditTopicService auditTopicService;
@@ -68,6 +72,7 @@ public class WritingController {
                              WritingEvaluateTaskService writingEvaluateTaskService,
                              WritingChatService writingChatService,
                              WritingPolishService writingPolishService,
+                             WritingTranslateService writingTranslateService,
                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
                              AuditTopicService auditTopicService,
@@ -80,6 +85,7 @@ public class WritingController {
         this.writingEvaluateTaskService = writingEvaluateTaskService;
         this.writingChatService = writingChatService;
         this.writingPolishService = writingPolishService;
+        this.writingTranslateService = writingTranslateService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
         this.auditTopicService = auditTopicService;
@@ -168,6 +174,18 @@ public class WritingController {
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
         PolishEssayResponse response = writingPolishService.polishEssay(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 翻译：全文翻译 (mode=full) 或逐句精讲 (mode=detailed)
+     */
+    @PostMapping("/translate")
+    public ResponseEntity<TranslateResponse> translate(
+            @Valid @RequestBody TranslateRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        TranslateResponse response = writingTranslateService.translate(request);
         return ResponseEntity.ok(response);
     }
 

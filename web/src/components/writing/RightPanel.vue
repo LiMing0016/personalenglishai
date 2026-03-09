@@ -66,7 +66,10 @@
       />
       <PolishPanel v-else-if="panel === 'improve'" />
       <ExplainPanel v-else-if="panel === 'explain'" />
-      <TranslatePanel v-else-if="panel === 'translate'" />
+      <TranslatePanel
+        v-else-if="panel === 'translate'"
+        @sentence-focus="$emit('sentence-focus', $event)"
+      />
     </ToolPanel>
   </aside>
 </template>
@@ -111,6 +114,7 @@ const props = defineProps<{
   rewriteSuggestions?: WritingEvaluateResponse['errors']
   examMaxScore?: number | null
   examFirstWriteLocked?: boolean
+  studyStage?: string | null
 }>()
 
 defineEmits<{
@@ -207,4 +211,3 @@ defineExpose<{
   box-sizing: border-box;
 }
 </style>
-

@@ -11,6 +11,9 @@ import {
   savePolishSuggestions,
   loadPolishSuggestions,
   clearPolishSuggestions,
+  saveGrammarFixedIds,
+  loadGrammarFixedIds,
+  clearGrammarFixedIds,
 } from '@/components/writing/editorShellStorage'
 import { showToast } from '@/utils/toast'
 import { useWritingDraftStore } from './writingDraftStore'
@@ -26,6 +29,9 @@ export const useGrammarStore = defineStore('grammar', () => {
   const grammarChecking = ref(false)
   const grammarCheckError = ref<string | null>(null)
   const grammarFixedErrorIds = ref<Set<string>>(new Set())
+  function persistFixedIds() {
+    saveGrammarFixedIds([...grammarFixedErrorIds.value])
+  }
   const grammarReChecked = ref(false)
   const gptErrors = ref<CorrectionError[]>([])
   const gptSuggestionErrors = ref<CorrectionError[]>([])
@@ -120,6 +126,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       const res = await grammarCheckApi({ text }, { signal: abortController.signal })
       grammarErrors.value = res.errors ?? []
       grammarFixedErrorIds.value = new Set()
+      persistFixedIds()
       gptErrors.value = []
       gptSuggestionErrors.value = []
       lastCheckedText = text
@@ -148,6 +155,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     }
 
     grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
+    persistFixedIds()
     const newText = text.slice(0, resolved.start) + err.suggestion! + text.slice(resolved.end)
     draftStore.evaluatedText = newText
     grammarCheckActive.value = true
@@ -177,6 +185,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarCheckActive.value = true
     draftStore.draftText = text
     grammarFixedErrorIds.value = newFixed
+    persistFixedIds()
   }
 
   function inlineFixError(errorId: string) {
@@ -199,6 +208,7 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   function dismissError(errorId: string) {
     grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
+    persistFixedIds()
     gptErrors.value = gptErrors.value.filter((e) => e.id !== errorId)
     gptSuggestionErrors.value = gptSuggestionErrors.value.filter((e) => e.id !== errorId)
   }
@@ -256,6 +266,10 @@ export const useGrammarStore = defineStore('grammar', () => {
     if (cached && cached.length > 0 && grammarErrors.value.length === 0) {
       grammarErrors.value = cached as CorrectionError[]
     }
+    const cachedFixedIds = loadGrammarFixedIds()
+    if (cachedFixedIds && cachedFixedIds.length > 0 && grammarFixedErrorIds.value.size === 0) {
+      grammarFixedErrorIds.value = new Set(cachedFixedIds)
+    }
     const cachedPolish = loadPolishSuggestions()
     if (cachedPolish) {
       if (cachedPolish.errors.length > 0 && gptErrors.value.length === 0) {
@@ -273,9 +287,11 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptErrors.value = []
     gptSuggestionErrors.value = []
     grammarCheckError.value = null
+    grammarFixedErrorIds.value = new Set()
     grammarReChecked.value = false
     lastCheckedText = ''
     abortController?.abort()
+    clearGrammarFixedIds()
   }
 
   function resetAll() {
@@ -291,6 +307,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     abortController?.abort()
     clearGrammarErrors()
     clearPolishSuggestions()
+    clearGrammarFixedIds()
   }
 
   function destroy() {

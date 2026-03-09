@@ -299,6 +299,43 @@ export function polishEssay(req: PolishEssayRequest): Promise<PolishEssayRespons
     .then((res) => res.data)
 }
 
+// ── Translate (全文翻译 / 逐句精讲) ──
+
+export interface TranslateRequest {
+  text: string
+  mode: 'full' | 'detailed'
+}
+
+export interface HighlightItem {
+  word: string
+  meaning?: string | null
+  detail?: string | null
+}
+
+export interface SentenceTranslation {
+  english: string
+  chinese: string
+  structure?: string | null
+  highlights?: HighlightItem[]
+}
+
+export interface TranslateResponse {
+  translation?: string | null
+  sentences?: SentenceTranslation[]
+}
+
+export function translateEssay(
+  req: TranslateRequest,
+  options?: { signal?: AbortSignal },
+): Promise<TranslateResponse> {
+  return http
+    .post<TranslateResponse>('/writing/translate', req, {
+      timeout: 120000,
+      signal: options?.signal,
+    })
+    .then((res) => res.data)
+}
+
 export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }> {
   return http
     .post<{ favorited: boolean }>(`/writing/history/${id}/favorite`)
