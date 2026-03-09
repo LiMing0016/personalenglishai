@@ -134,13 +134,6 @@ const props = withDefaults(defineProps<{
   studyStage: null,
 })
 
-/** Whether this mount is a refresh vs a fresh navigation from WritingPage. */
-const isRefreshMount = (() => {
-  const fresh = sessionStorage.getItem('peai:writing:freshNav')
-  sessionStorage.removeItem('peai:writing:freshNav')
-  return fresh !== '1'
-})()
-
 import DocEditor from './DocEditor.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
@@ -263,11 +256,12 @@ onMounted(async () => {
     || sessionStorage.getItem('peai:writing:docId')?.trim()
     || null
 
-  if (targetDocId && isRefreshMount) {
-    // Refresh path: hydrate all state from backend + local cache atomically
+  if (targetDocId) {
+    // Has docId (refresh or navigation): always hydrate from backend
+    // to guarantee server content is available even in a fresh session.
     await draftStore.hydrateByDocId(targetDocId)
   } else {
-    // Normal navigation path: use props as startup parameters
+    // New document (no docId): use props as startup parameters
     draftStore.init({
       initialWritingMode: props.initialWritingMode,
       initialTaskPrompt: props.initialTaskPrompt,
@@ -466,7 +460,7 @@ function onSubmit() {
   // ── Grammar fix gate ──
   // Exempt: exam first write (grammar panel is locked, user can't fix)
   if (!examFirstWriteLocked.value) {
-    if (grammarStore.grammarChecking) {
+    if (grammarStore.grammarChecking || grammarStore.hasUncheckedChanges) {
       showToast('语法检查进行中，请稍候', 'info')
       return
     }
