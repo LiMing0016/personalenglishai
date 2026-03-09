@@ -30,6 +30,8 @@ export const useGrammarStore = defineStore('grammar', () => {
   const gptErrors = ref<CorrectionError[]>([])
   const gptSuggestionErrors = ref<CorrectionError[]>([])
   const evaluateResult = ref<WritingEvaluateResponse | null>(null)
+  /** Text snapshot of the last completed grammar check, used to detect stale/pending checks. */
+  let lastCheckedText = ''
   let abortController: AbortController | null = null
 
   // ── Computed ──
@@ -61,6 +63,20 @@ export const useGrammarStore = defineStore('grammar', () => {
       return [...(base ?? []), ...extras]
     }
     return base
+  })
+
+  /** True when the user has typed since the last grammar check completed (debounce pending). */
+  const hasUncheckedChanges = computed(() => {
+    const current = draftStore.draftText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+    return current.length >= 10 && current !== lastCheckedText
+  })
+
+  /** Number of fixable grammar errors that the user has NOT yet fixed or dismissed. */
+  const unfixedFixableCount = computed(() => {
+    const fixed = grammarFixedErrorIds.value
+    return grammarPanelErrors.value.filter(
+      (e) => !fixed.has(e.id) && hasValidSuggestion(e),
+    ).length
   })
 
   const rewritePanelSuggestions = computed(() => {
@@ -106,6 +122,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       grammarFixedErrorIds.value = new Set()
       gptErrors.value = []
       gptSuggestionErrors.value = []
+      lastCheckedText = text
       saveGrammarErrors(grammarErrors.value)
       if (evaluateResult.value) grammarReChecked.value = true
     } catch (e: any) {
@@ -257,6 +274,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptSuggestionErrors.value = []
     grammarCheckError.value = null
     grammarReChecked.value = false
+    lastCheckedText = ''
     abortController?.abort()
   }
 
@@ -269,6 +287,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptSuggestionErrors.value = []
     grammarCheckActive.value = true
     grammarReChecked.value = false
+    lastCheckedText = ''
     abortController?.abort()
     clearGrammarErrors()
     clearPolishSuggestions()
@@ -294,6 +313,8 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarPanelFixedIds,
     displayEditorErrors,
     rewritePanelSuggestions,
+    unfixedFixableCount,
+    hasUncheckedChanges,
     // Actions
     scheduleGrammarCheck,
     fixError,

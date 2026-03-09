@@ -7,6 +7,7 @@ public class WritingStage {
     private Integer id;
     private String code;
     private String name;
+    private Integer minWordCount;
     private Integer sortOrder;
     private Integer isActive;
     private LocalDateTime createdAt;
@@ -20,6 +21,9 @@ public class WritingStage {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+
+    public Integer getMinWordCount() { return minWordCount; }
+    public void setMinWordCount(Integer minWordCount) { this.minWordCount = minWordCount; }
 
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }

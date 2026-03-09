@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS writing_stage (
     id INT PRIMARY KEY COMMENT 'align with app stage ids when possible',
     code VARCHAR(32) NOT NULL COMMENT 'stable business code',
     name VARCHAR(64) NOT NULL COMMENT 'display name',
+    min_word_count INT NOT NULL DEFAULT 60 COMMENT 'minimum word count for submission',
     sort_order INT NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

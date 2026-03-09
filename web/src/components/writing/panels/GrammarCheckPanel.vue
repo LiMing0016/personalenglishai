@@ -1,5 +1,18 @@
 <template>
   <div class="gc-panel">
+    <!-- ── 考试模式首次写作锁定 ── -->
+    <div v-if="locked" class="gc-locked">
+      <div class="gc-locked-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0110 0v4" />
+        </svg>
+      </div>
+      <p class="gc-locked-title">首次写作模式</p>
+      <p class="gc-locked-hint">当前为考试模式下的首次写作，语法检查将在提交作文后解锁。<br/>请先独立完成写作，以便系统准确评估你的真实水平。</p>
+    </div>
+
+    <template v-else>
     <!-- ── Grammarly 风格摘要区 ── -->
     <div class="gc-summary">
       <div class="gc-summary-row">
@@ -203,6 +216,7 @@
         </template>
       </template>
     </div>
+    </template>
   </div>
 </template>
 
@@ -240,6 +254,7 @@ const props = defineProps<{
   fixedErrorIds: Set<string>
   activeErrorId?: string | null
   essayText?: string
+  locked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -400,6 +415,34 @@ function applyGptError(item: SuggestionErrorItem) {
 <style scoped>
 .gc-panel {
   padding: 16px;
+}
+
+/* ── 首次写作锁定 ── */
+.gc-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.gc-locked-icon {
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.gc-locked-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.gc-locked-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #9ca3af;
+  line-height: 1.6;
 }
 
 /* ── 摘要区 ── */

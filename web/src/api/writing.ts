@@ -545,3 +545,15 @@ export function getEssayPrompts(params: {
     .then((res) => res.data)
 }
 
+export interface StageConfigResponse {
+  code: string
+  name: string
+  minWordCount: number
+}
+
+export function getStageConfig(stageCode: string): Promise<StageConfigResponse> {
+  return http
+    .get<StageConfigResponse>(`/writing/stage-config/${encodeURIComponent(stageCode)}`)
+    .then((res) => res.data)
+}
+

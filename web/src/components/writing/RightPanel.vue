@@ -43,6 +43,7 @@
         :fixed-error-ids="grammarFixedErrorIds ?? new Set()"
         :active-error-id="activeErrorId"
         :essay-text="essay"
+        :locked="examFirstWriteLocked"
         @fix-error="$emit('grammar-fix-error', $event)"
         @fix-all="$emit('grammar-fix-all')"
         @error-click="$emit('error-click', $event)"
@@ -59,6 +60,7 @@
       <RewritePanel
         v-else-if="panel === 'rewrite'"
         :full-essay="essay"
+        :locked="examFirstWriteLocked"
         @replace-sentence="$emit('replace-sentence', $event)"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
@@ -108,6 +110,7 @@ const props = defineProps<{
   grammarFixedErrorIds?: Set<string>
   rewriteSuggestions?: WritingEvaluateResponse['errors']
   examMaxScore?: number | null
+  examFirstWriteLocked?: boolean
 }>()
 
 defineEmits<{

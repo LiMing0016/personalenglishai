@@ -293,6 +293,7 @@
     :initial-doc-id="initialDocId"
     :initial-existing-content="initialExistingContent"
     :exam-max-score="examMaxScore"
+    :initial-submit-count="initialSubmitCount"
     :study-stage="currentStage ?? ''"
     @back="onEditorBack"
   />
@@ -326,6 +327,7 @@ const initialTaskPrompt = ref<string | undefined>(undefined)
 const initialDocId = useSessionStorage<string | null>('peai:writing:docId', null)
 const initialExistingContent = ref<string | null>(null)
 const examMaxScore = ref<number | null>(null)
+const initialSubmitCount = ref(0)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
 
 function resolveRoutePhase(): RoutePhase {
@@ -360,6 +362,10 @@ function routeNameForPhase(nextPhase: RoutePhase) {
 }
 
 async function navigateToPhase(nextPhase: RoutePhase, replace = false) {
+  // Mark navigation to editor so EditorShell can distinguish from refresh
+  if (nextPhase === 'editor') {
+    try { sessionStorage.setItem('peai:writing:freshNav', '1') } catch {}
+  }
   const target = { name: routeNameForPhase(nextPhase) }
   if (replace) {
     await router.replace(target)
@@ -671,12 +677,14 @@ async function createFreeDoc() {
   initialTaskPrompt.value = undefined
   examMaxScore.value = null
   initialExistingContent.value = null
+  initialSubmitCount.value = 0
   try {
     const now = new Date()
     const freeTitle = `自由写作 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     const session = await startWritingSession({ mode: 'free', title: freeTitle })
     initialDocId.value = session.docId
     initialExistingContent.value = session.existingContent ?? null
+    initialSubmitCount.value = session.submitCount ?? 0
   } catch (e) {
     console.warn('[WritingPage] create free doc failed', e)
     initialDocId.value = null
@@ -696,6 +704,7 @@ async function onExamConfirm(info: ExamTopicInfo) {
   examMaxScore.value = info.maxScore ?? 100
   initialTaskPrompt.value = prompt
   initialExistingContent.value = null
+  initialSubmitCount.value = 0
   try {
     const session = await startWritingSession({
       mode: 'exam',
@@ -704,6 +713,7 @@ async function onExamConfirm(info: ExamTopicInfo) {
     })
     initialDocId.value = session.docId
     initialExistingContent.value = session.existingContent ?? null
+    initialSubmitCount.value = session.submitCount ?? 0
   } catch (e) {
     console.warn('[WritingPage] create exam doc failed', e)
     initialDocId.value = null
@@ -718,6 +728,7 @@ async function openDocument(doc: WritingDocumentItem) {
   initialDocId.value = doc.docId
   initialExistingContent.value = null
   examMaxScore.value = null
+  initialSubmitCount.value = doc.submitCount ?? 0
 
   // 考试模式草稿（status=0，从题目设置页保存退出，未点击"开始写作"）→ 回到题目设置页
   if (doc.taskPrompt && doc.status === 0) {
