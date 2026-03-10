@@ -17,6 +17,8 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
 
     private final LanguageToolService languageToolService;
     private final SaplingService saplingService;
+    private final TextGearsService textGearsService;
+    private final TrinkaService trinkaService;
 
     /**
      * Sapling 段落级缓存：key = 段落文本, value = 该段落的错误列表。
@@ -27,10 +29,20 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             new ConcurrentHashMap<>();
     private static final int MAX_CACHE_SIZE = 200;
 
+    /**
+     * TextGears 段落级缓存，同 Sapling 缓存策略。
+     */
+    private final ConcurrentHashMap<String, List<WritingEvaluateResponse.ErrorDto>> textGearsCache =
+            new ConcurrentHashMap<>();
+
     public GrammarCheckServiceImpl(LanguageToolService languageToolService,
-                                   SaplingService saplingService) {
+                                   SaplingService saplingService,
+                                   TextGearsService textGearsService,
+                                   TrinkaService trinkaService) {
         this.languageToolService = languageToolService;
         this.saplingService = saplingService;
+        this.textGearsService = textGearsService;
+        this.trinkaService = trinkaService;
     }
 
     @Override
@@ -43,26 +55,38 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
 
         long start = System.currentTimeMillis();
 
-        // Run LT (full text) and Sapling (paragraph-cached) in parallel
+        // Run LT, Sapling, TextGears and Trinka in parallel
         final String normalizedText = text;
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> ltFuture =
                 CompletableFuture.supplyAsync(() -> languageToolService.check(normalizedText));
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> saplingFuture =
                 CompletableFuture.supplyAsync(() -> checkSaplingWithCache(normalizedText));
+        CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> textGearsFuture =
+                CompletableFuture.supplyAsync(() -> checkTextGearsWithCache(normalizedText));
+        CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> trinkaFuture =
+                CompletableFuture.supplyAsync(() -> trinkaService.check(normalizedText));
 
         List<WritingEvaluateResponse.ErrorDto> ltErrors;
         List<WritingEvaluateResponse.ErrorDto> saplingErrors;
+        List<WritingEvaluateResponse.ErrorDto> textGearsErrors;
+        List<WritingEvaluateResponse.ErrorDto> trinkaErrors;
         try {
             ltErrors = ltFuture.join();
             saplingErrors = saplingFuture.join();
+            textGearsErrors = textGearsFuture.join();
+            trinkaErrors = trinkaFuture.join();
         } catch (Exception e) {
             log.warn("Grammar check parallel execution failed: {}", e.getMessage());
             ltErrors = languageToolService.check(normalizedText);
             saplingErrors = List.of();
+            textGearsErrors = List.of();
+            trinkaErrors = List.of();
         }
 
-        // Merge: LT as primary, Sapling as secondary (dedup by original text overlap)
+        // Merge: LT as primary, others as secondary (dedup by original text overlap)
         List<WritingEvaluateResponse.ErrorDto> merged = mergeErrors(ltErrors, saplingErrors);
+        merged = mergeErrors(merged, textGearsErrors);
+        merged = mergeErrors(merged, trinkaErrors);
 
         // Sort by span.start and assign sequential IDs
         merged.sort(Comparator.comparingInt(e -> e.getSpan() != null ? e.getSpan().getStart() : 0));
@@ -72,8 +96,9 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         }
 
         long elapsed = System.currentTimeMillis() - start;
-        log.info("Grammar check done. lt={} sapling={} merged={} elapsed={}ms",
-                ltErrors.size(), saplingErrors.size(), merged.size(), elapsed);
+        log.info("Grammar check done. lt={} sapling={} textgears={} trinka={} merged={} elapsed={}ms",
+                ltErrors.size(), saplingErrors.size(), textGearsErrors.size(), trinkaErrors.size(),
+                merged.size(), elapsed);
 
         return merged;
     }
@@ -147,6 +172,8 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         copy.setOriginal(src.getOriginal());
         copy.setSuggestion(src.getSuggestion());
         copy.setReason(src.getReason());
+        copy.setLangCategory(src.getLangCategory());
+        copy.setAlternatives(src.getAlternatives());
         copy.setSpan(new WritingEvaluateResponse.SpanDto(
                 src.getSpan().getStart(), src.getSpan().getEnd()));
         return copy;
@@ -197,5 +224,53 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         }
 
         return merged;
+    }
+
+    /**
+     * TextGears 段落级缓存检查，同 Sapling 缓存策略。
+     */
+    private List<WritingEvaluateResponse.ErrorDto> checkTextGearsWithCache(String text) {
+        String[] paragraphs = text.split("(?<=\\n)");
+        List<WritingEvaluateResponse.ErrorDto> allErrors = new ArrayList<>();
+        int offset = 0;
+
+        for (String para : paragraphs) {
+            if (para.isBlank()) {
+                offset += para.length();
+                continue;
+            }
+
+            String trimmed = para.trim();
+            int leadingWs = para.indexOf(trimmed.charAt(0));
+            int trimmedBase = offset + Math.max(0, leadingWs);
+
+            List<WritingEvaluateResponse.ErrorDto> cached = textGearsCache.get(trimmed);
+            if (cached != null) {
+                for (var e : cached) {
+                    WritingEvaluateResponse.ErrorDto copy = copyError(e);
+                    copy.setSpan(new WritingEvaluateResponse.SpanDto(
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
+                    allErrors.add(copy);
+                }
+            } else {
+                List<WritingEvaluateResponse.ErrorDto> fresh = textGearsService.check(trimmed);
+                List<WritingEvaluateResponse.ErrorDto> cacheEntry = new ArrayList<>();
+                for (var e : fresh) {
+                    cacheEntry.add(copyError(e));
+                    WritingEvaluateResponse.ErrorDto global = copyError(e);
+                    global.setSpan(new WritingEvaluateResponse.SpanDto(
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
+                    allErrors.add(global);
+                }
+                if (textGearsCache.size() > MAX_CACHE_SIZE) {
+                    textGearsCache.clear();
+                }
+                textGearsCache.put(trimmed, cacheEntry);
+            }
+            offset += para.length();
+        }
+        return allErrors;
     }
 }

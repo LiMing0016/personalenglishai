@@ -8,12 +8,19 @@ import {
   type WritingEvaluateTaskStatusResponse,
 } from '@/api/writing'
 
+const POLL_INTERVAL_MS = 1200
+const POLL_TIMEOUT_MS = 180_000
+const MAX_CONSECUTIVE_ERRORS = 5
+
 export function useEvaluateSubmission() {
   const requestId = ref<string | null>(null)
   const pollEnabled = ref(false)
   const evaluateResult = ref<WritingEvaluateResponse | null>(null)
   const evaluateError = ref<string | null>(null)
   const submitting = ref(false)
+
+  let pollStartTime = 0
+  let consecutiveErrors = 0
 
   // Step 1: Mutation to submit essay
   const submitMutation = useMutation({
@@ -38,55 +45,72 @@ export function useEvaluateSubmission() {
     queryKey: computed(() => ['evaluateTask', requestId.value]),
     queryFn: () => getEvaluateTask(requestId.value!),
     enabled: computed(() => pollEnabled.value && requestId.value != null),
-    refetchInterval: computed(() => (pollEnabled.value ? 1200 : false)),
+    refetchInterval: computed(() => (pollEnabled.value ? POLL_INTERVAL_MS : false)),
     retry: 2,
   })
 
-  // Watch poll results
+  function stopPolling(error?: string) {
+    pollEnabled.value = false
+    submitting.value = false
+    if (error) evaluateError.value = error
+  }
+
+  // Watch poll results — handle success/failure status
   watch(
     () => pollQuery.data.value,
     (task: WritingEvaluateTaskStatusResponse | undefined) => {
       if (!task || !pollEnabled.value) return
 
+      // Reset consecutive error counter on successful data fetch
+      consecutiveErrors = 0
+
       if (task.status === 'succeeded' && task.result) {
         evaluateResult.value = task.result
-        pollEnabled.value = false
-        submitting.value = false
+        stopPolling()
       } else if (task.status === 'failed') {
-        evaluateError.value = task.error || '评估任务失败'
-        pollEnabled.value = false
-        submitting.value = false
+        stopPolling(task.error || '评估任务失败')
       }
     },
   )
 
-  // Timeout: stop polling after 3 minutes
-  let pollStartTime = 0
+  // Watch poll errors — handle network failures / persistent request errors
+  watch(
+    () => pollQuery.error.value,
+    (err) => {
+      if (!err || !pollEnabled.value) return
+      consecutiveErrors++
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        stopPolling(`评估轮询连续失败 ${consecutiveErrors} 次，请检查网络后重试`)
+      }
+    },
+  )
+
+  // Timeout: stop polling after POLL_TIMEOUT_MS
   watch(pollEnabled, (enabled) => {
     if (enabled) {
       pollStartTime = Date.now()
+      consecutiveErrors = 0
     }
   })
 
+  // Check timeout on both successful fetches AND errors
   watch(
-    () => pollQuery.dataUpdatedAt.value,
+    [() => pollQuery.dataUpdatedAt.value, () => pollQuery.errorUpdatedAt.value],
     () => {
       if (!pollEnabled.value) return
-      if (Date.now() - pollStartTime > 180_000) {
-        evaluateError.value = '评估超时，请稍后再试'
-        pollEnabled.value = false
-        submitting.value = false
+      if (Date.now() - pollStartTime > POLL_TIMEOUT_MS) {
+        stopPolling('评估超时，请稍后再试')
       }
     },
   )
 
   function submit(payload: WritingEvaluateRequest) {
-    // Reset state
     evaluateResult.value = null
     evaluateError.value = null
     submitting.value = true
     requestId.value = null
     pollEnabled.value = false
+    consecutiveErrors = 0
 
     submitMutation.mutate(payload)
   }

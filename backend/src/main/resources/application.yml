@@ -104,13 +104,29 @@ ai:
     enabled: ${AI_REPAIR_ENABLED:false}
 
 languagetool:
-  enabled: ${LANGUAGETOOL_ENABLED:true}
+  enabled: ${LANGUAGETOOL_ENABLED:false}
 
 sapling:
   enabled: ${SAPLING_ENABLED:false}
   api-key: ${SAPLING_API_KEY:}
   base-url: ${SAPLING_BASE_URL:https://api.sapling.ai}
   timeout-ms: ${SAPLING_TIMEOUT_MS:5000}
+
+trinka:
+  enabled: ${TRINKA_ENABLED:false}
+  api-key: ${TRINKA_API_KEY:}
+  base-url: ${TRINKA_BASE_URL:https://api-platform.trinka.ai}
+  timeout-ms: ${TRINKA_TIMEOUT_MS:15000}
+  language: ${TRINKA_LANGUAGE:US}
+  pipeline: ${TRINKA_PIPELINE:advanced}
+
+textgears:
+  enabled: ${TEXTGEARS_ENABLED:true}
+  api-key: ${TEXTGEARS_API_KEY:}
+  base-url: ${TEXTGEARS_BASE_URL:https://api.textgears.com}
+  timeout-ms: ${TEXTGEARS_TIMEOUT_MS:5000}
+  language: ${TEXTGEARS_LANGUAGE:en-US}
+  ai: ${TEXTGEARS_AI:true}
 
 qwen:
   api-key: ${QWEN_API_KEY:}

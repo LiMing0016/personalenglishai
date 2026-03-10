@@ -145,6 +145,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private final DocumentService documentService;
     private final LanguageToolService languageToolService;
     private final SaplingService saplingService;
+    private final TextGearsService textGearsService;
+    private final TrinkaService trinkaService;
 
     public WritingEvaluateMockService(
             RubricService rubricService,
@@ -155,7 +157,9 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             EssayEvaluationMapper essayEvaluationMapper,
             DocumentService documentService,
             LanguageToolService languageToolService,
-            SaplingService saplingService
+            SaplingService saplingService,
+            TextGearsService textGearsService,
+            TrinkaService trinkaService
     ) {
         this.rubricService = rubricService;
         this.rubricTextBuilder = rubricTextBuilder;
@@ -166,6 +170,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         this.documentService = documentService;
         this.languageToolService = languageToolService;
         this.saplingService = saplingService;
+        this.textGearsService = textGearsService;
+        this.trinkaService = trinkaService;
     }
 
     // ================================================================
@@ -204,22 +210,32 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                 result = parseResult(raw, rubric, mode, request.getEssay());
             }
 
-            // ── 规则引擎：LT + Sapling 并行调用 ──
+            // ── 规则引擎：LT + Sapling + TextGears + Trinka 并行调用 ──
+            // 统一换行符，防止 span 偏移不一致
+            final String normalizedEssay = request.getEssay().replace("\r\n", "\n").replace("\r", "\n");
             var ltFuture = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> languageToolService.check(request.getEssay()));
+                    () -> languageToolService.check(normalizedEssay));
             var saplingFuture = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> saplingService.check(request.getEssay()));
+                    () -> saplingService.check(normalizedEssay));
+            var textGearsFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> textGearsService.check(normalizedEssay));
+            var trinkaFuture = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> trinkaService.check(normalizedEssay));
 
             List<WritingEvaluateResponse.ErrorDto> ltErrors = ltFuture.join();
             List<WritingEvaluateResponse.ErrorDto> saplingErrors = saplingFuture.join();
+            List<WritingEvaluateResponse.ErrorDto> textGearsErrors = textGearsFuture.join();
+            List<WritingEvaluateResponse.ErrorDto> trinkaErrors = trinkaFuture.join();
 
-            // LT + Sapling 合并（LT 为 primary）
+            // LT + Sapling + TextGears + Trinka 合并（LT 为 primary）
             List<WritingEvaluateResponse.ErrorDto> ruleErrors = mergeErrors(
-                    ltErrors, saplingErrors, request.getEssay());
+                    ltErrors, saplingErrors, normalizedEssay);
+            ruleErrors = mergeErrors(ruleErrors, textGearsErrors, normalizedEssay);
+            ruleErrors = mergeErrors(ruleErrors, trinkaErrors, normalizedEssay);
 
-            log.info("[Evaluate] 错误统计 requestId={} LT={} Sapling={} 合并后={}",
+            log.info("[Evaluate] 错误统计 requestId={} LT={} Sapling={} TextGears={} Trinka={} 合并后={}",
                     requestId, ltErrors.size(), saplingErrors.size(),
-                    ruleErrors.size());
+                    textGearsErrors.size(), trinkaErrors.size(), ruleErrors.size());
 
             EvaluationResult enriched = new EvaluationResult(
                     result.mode(), result.gradeByDimension(), result.analysisByDimension(),

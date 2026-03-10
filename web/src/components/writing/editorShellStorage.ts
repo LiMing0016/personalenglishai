@@ -19,6 +19,8 @@ export const WRITING_STORAGE_KEYS = {
   grammarFixedIds: 'peai:writing:grammarFixedIds',
   appliedSuggestionIds: 'peai:writing:appliedSuggestionIds',
   materialResult: 'peai:writing:materialResult',
+  evaluatedText: 'peai:writing:evaluatedText',
+  grammarReChecked: 'peai:writing:grammarReChecked',
 } as const
 
 function scopedKey(baseKey: string, scope?: string | null): string {
@@ -281,38 +283,38 @@ export function clearAiNoteDraftNow(scope?: string | null): void {
   }
 }
 
-// ── 语法检查结果缓存（sessionStorage） ──
+// ── 语法检查结果缓存（sessionStorage，按 docId 分桶） ──
 
-export function saveGrammarErrors(errors: unknown[]): void {
+export function saveGrammarErrors(errors: unknown[], scope?: string | null): void {
   try {
-    sessionStorage.setItem(WRITING_STORAGE_KEYS.grammarErrors, JSON.stringify(errors))
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.grammarErrors, scope), JSON.stringify(errors))
   } catch { /* ignore */ }
 }
 
-export function loadGrammarErrors(): unknown[] | null {
+export function loadGrammarErrors(scope?: string | null): unknown[] | null {
   try {
-    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.grammarErrors)
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.grammarErrors, scope))
     if (!raw) return null
     const arr = JSON.parse(raw)
     return Array.isArray(arr) ? arr : null
   } catch { return null }
 }
 
-export function clearGrammarErrors(): void {
-  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.grammarErrors) } catch { /* ignore */ }
+export function clearGrammarErrors(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.grammarErrors, scope)) } catch { /* ignore */ }
 }
 
-// ── 润色建议缓存（sessionStorage） ──
+// ── 润色建议缓存（sessionStorage，按 docId 分桶） ──
 
-export function savePolishSuggestions(data: { errors: unknown[]; suggestions: unknown[] }): void {
+export function savePolishSuggestions(data: { errors: unknown[]; suggestions: unknown[] }, scope?: string | null): void {
   try {
-    sessionStorage.setItem(WRITING_STORAGE_KEYS.polishSuggestions, JSON.stringify(data))
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.polishSuggestions, scope), JSON.stringify(data))
   } catch { /* ignore */ }
 }
 
-export function loadPolishSuggestions(): { errors: unknown[]; suggestions: unknown[] } | null {
+export function loadPolishSuggestions(scope?: string | null): { errors: unknown[]; suggestions: unknown[] } | null {
   try {
-    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.polishSuggestions)
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.polishSuggestions, scope))
     if (!raw) return null
     const obj = JSON.parse(raw)
     if (obj && Array.isArray(obj.errors) && Array.isArray(obj.suggestions)) return obj
@@ -320,8 +322,8 @@ export function loadPolishSuggestions(): { errors: unknown[]; suggestions: unkno
   } catch { return null }
 }
 
-export function clearPolishSuggestions(): void {
-  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.polishSuggestions) } catch { /* ignore */ }
+export function clearPolishSuggestions(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.polishSuggestions, scope)) } catch { /* ignore */ }
 }
 
 // ── 翻译结果缓存（sessionStorage） ──
@@ -413,38 +415,38 @@ export function loadWritingTemplateResult(): WritingTemplateCache | null {
 export function clearWritingTemplateResult(): void {
   try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.templateResult) } catch { /* ignore */ }
 }
-// ── 语法修正 ID 缓存（sessionStorage） ──
+// ── 语法修正 ID 缓存（sessionStorage，按 docId 分桶） ──
 
-export function saveGrammarFixedIds(ids: string[]): void {
+export function saveGrammarFixedIds(ids: string[], scope?: string | null): void {
   try {
-    sessionStorage.setItem(WRITING_STORAGE_KEYS.grammarFixedIds, JSON.stringify(ids))
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.grammarFixedIds, scope), JSON.stringify(ids))
   } catch { /* ignore */ }
 }
 
-export function loadGrammarFixedIds(): string[] | null {
+export function loadGrammarFixedIds(scope?: string | null): string[] | null {
   try {
-    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.grammarFixedIds)
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.grammarFixedIds, scope))
     if (!raw) return null
     const arr = JSON.parse(raw)
     return Array.isArray(arr) ? arr : null
   } catch { return null }
 }
 
-export function clearGrammarFixedIds(): void {
-  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.grammarFixedIds) } catch { /* ignore */ }
+export function clearGrammarFixedIds(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.grammarFixedIds, scope)) } catch { /* ignore */ }
 }
 
-// ── 已应用建议 ID 缓存（sessionStorage） ──
+// ── 已应用建议 ID 缓存（sessionStorage，按 docId 分桶） ──
 
-export function saveAppliedSuggestionIds(data: { suggestions: string[]; gptErrors: string[] }): void {
+export function saveAppliedSuggestionIds(data: { suggestions: string[]; gptErrors: string[] }, scope?: string | null): void {
   try {
-    sessionStorage.setItem(WRITING_STORAGE_KEYS.appliedSuggestionIds, JSON.stringify(data))
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.appliedSuggestionIds, scope), JSON.stringify(data))
   } catch { /* ignore */ }
 }
 
-export function loadAppliedSuggestionIds(): { suggestions: string[]; gptErrors: string[] } | null {
+export function loadAppliedSuggestionIds(scope?: string | null): { suggestions: string[]; gptErrors: string[] } | null {
   try {
-    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.appliedSuggestionIds)
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.appliedSuggestionIds, scope))
     if (!raw) return null
     const obj = JSON.parse(raw)
     if (obj && Array.isArray(obj.suggestions) && Array.isArray(obj.gptErrors)) return obj
@@ -452,8 +454,8 @@ export function loadAppliedSuggestionIds(): { suggestions: string[]; gptErrors: 
   } catch { return null }
 }
 
-export function clearAppliedSuggestionIds(): void {
-  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.appliedSuggestionIds) } catch { /* ignore */ }
+export function clearAppliedSuggestionIds(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.appliedSuggestionIds, scope)) } catch { /* ignore */ }
 }
 
 // ── 写作素材结果缓存（sessionStorage） ──
@@ -476,5 +478,45 @@ export function loadWritingMaterialResult(): unknown | null {
 
 export function clearWritingMaterialResult(): void {
   try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.materialResult) } catch { /* ignore */ }
+}
+
+// ── evaluatedText 缓存（sessionStorage，按 docId 分桶） ──
+
+export function saveEvaluatedText(text: string | null, scope?: string | null): void {
+  try {
+    if (text != null) {
+      sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.evaluatedText, scope), text)
+    } else {
+      sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.evaluatedText, scope))
+    }
+  } catch { /* ignore */ }
+}
+
+export function loadEvaluatedText(scope?: string | null): string | null {
+  try {
+    return sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.evaluatedText, scope))
+  } catch { return null }
+}
+
+export function clearEvaluatedText(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.evaluatedText, scope)) } catch { /* ignore */ }
+}
+
+// ── grammarReChecked 缓存（sessionStorage，按 docId 分桶） ──
+
+export function saveGrammarReChecked(val: boolean, scope?: string | null): void {
+  try {
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.grammarReChecked, scope), val ? '1' : '0')
+  } catch { /* ignore */ }
+}
+
+export function loadGrammarReChecked(scope?: string | null): boolean {
+  try {
+    return sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.grammarReChecked, scope)) === '1'
+  } catch { return false }
+}
+
+export function clearGrammarReChecked(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.grammarReChecked, scope)) } catch { /* ignore */ }
 }
 

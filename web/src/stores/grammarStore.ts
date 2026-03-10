@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDebounceFn } from '@vueuse/core'
 import { grammarCheck as grammarCheckApi } from '@/api/writing'
@@ -17,11 +17,13 @@ import {
 } from '@/components/writing/editorShellStorage'
 import { showToast } from '@/utils/toast'
 import { useWritingDraftStore } from './writingDraftStore'
+import { useEvaluateStore } from './evaluateStore'
 
 type CorrectionError = WritingEvaluateResponse['errors'][number]
 
 export const useGrammarStore = defineStore('grammar', () => {
   const draftStore = useWritingDraftStore()
+  const evaluateStore = useEvaluateStore()
 
   // ── State ──
   const grammarErrors = ref<CorrectionError[]>([])
@@ -29,24 +31,30 @@ export const useGrammarStore = defineStore('grammar', () => {
   const grammarChecking = ref(false)
   const grammarCheckError = ref<string | null>(null)
   const grammarFixedErrorIds = ref<Set<string>>(new Set())
+  function getScope() { return draftStore.docId?.trim() || null }
   function persistFixedIds() {
-    saveGrammarFixedIds([...grammarFixedErrorIds.value])
+    saveGrammarFixedIds([...grammarFixedErrorIds.value], getScope())
   }
-  const grammarReChecked = ref(false)
   const gptErrors = ref<CorrectionError[]>([])
   const gptSuggestionErrors = ref<CorrectionError[]>([])
-  const evaluateResult = ref<WritingEvaluateResponse | null>(null)
   /** Text snapshot of the last completed grammar check, used to detect stale/pending checks. */
   let lastCheckedText = ''
   let abortController: AbortController | null = null
 
+  // Re-enable grammar checking when evaluateResult arrives
+  watch(() => evaluateStore.evaluateResult, (result) => {
+    if (result != null) {
+      grammarCheckActive.value = true
+    }
+  })
+
   // ── Computed ──
   const grammarPanelErrors = computed(() => {
-    if (grammarReChecked.value && grammarErrors.value.length > 0) {
+    if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
       return grammarErrors.value
     }
-    if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
-      return evaluateResult.value.errors.filter((e) => e.category !== 'suggestion')
+    if (!evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+      return evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion')
     }
     return grammarErrors.value
   })
@@ -55,20 +63,33 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   const displayEditorErrors = computed(() => {
     let base: CorrectionError[] | undefined
-    if (grammarReChecked.value && grammarErrors.value.length > 0) {
+    if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
       const fixed = grammarFixedErrorIds.value
       base = grammarErrors.value.filter((e) => !fixed.has(e.id))
-    } else if (!grammarReChecked.value && evaluateResult.value?.errors?.length) {
-      base = evaluateResult.value.errors
+    } else if (!evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+      base = evaluateStore.evaluateResult.errors
     } else if (grammarErrors.value.length > 0) {
       const fixed = grammarFixedErrorIds.value
       base = grammarErrors.value.filter((e) => !fixed.has(e.id))
     }
     const extras = [...gptErrors.value, ...gptSuggestionErrors.value]
+    let all: CorrectionError[] | undefined
     if (extras.length > 0) {
-      return [...(base ?? []), ...extras]
+      all = [...(base ?? []), ...extras]
+    } else {
+      all = base
     }
-    return base
+    // Re-resolve spans against current editor text to fix any offset drift
+    if (!all || all.length === 0) return all
+    const text = draftStore.draftText
+    if (!text) return all
+    return all.map((e) => {
+      if (!e.original || !e.span) return e
+      const resolved = resolveErrorSpan(e, text)
+      if (!resolved) return e
+      if (resolved.start === e.span.start && resolved.end === e.span.end) return e
+      return { ...e, span: resolved }
+    })
   })
 
   /** True when the user has typed since the last grammar check completed (debounce pending). */
@@ -86,7 +107,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   })
 
   const rewritePanelSuggestions = computed(() => {
-    const fromEvaluate = (evaluateResult.value?.errors ?? []).filter((e) => e.category === 'suggestion')
+    const fromEvaluate = (evaluateStore.evaluateResult?.errors ?? []).filter((e) => e.category === 'suggestion')
     if (gptSuggestionErrors.value.length === 0) return fromEvaluate
 
     const merged = [...fromEvaluate]
@@ -130,8 +151,8 @@ export const useGrammarStore = defineStore('grammar', () => {
       gptErrors.value = []
       gptSuggestionErrors.value = []
       lastCheckedText = text
-      saveGrammarErrors(grammarErrors.value)
-      if (evaluateResult.value) grammarReChecked.value = true
+      saveGrammarErrors(grammarErrors.value, getScope())
+      if (evaluateStore.evaluateResult) evaluateStore.grammarReChecked = true
     } catch (e: any) {
       if (e?.name === 'CanceledError' || e?.name === 'AbortError' || e?.code === 'ERR_CANCELED') return
       grammarErrors.value = []
@@ -157,7 +178,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
     persistFixedIds()
     const newText = text.slice(0, resolved.start) + err.suggestion! + text.slice(resolved.end)
-    draftStore.evaluatedText = newText
+    evaluateStore.evaluatedText = newText
     grammarCheckActive.value = true
     draftStore.draftText = newText
   }
@@ -181,7 +202,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       newFixed.add(err.id)
     }
 
-    draftStore.evaluatedText = text
+    evaluateStore.evaluatedText = text
     grammarCheckActive.value = true
     draftStore.draftText = text
     grammarFixedErrorIds.value = newFixed
@@ -201,7 +222,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       const resolved = resolveErrorSpan(gptErr, text)
       if (!resolved) return
       const newText = text.slice(0, resolved.start) + gptErr.suggestion + text.slice(resolved.end)
-      draftStore.evaluatedText = newText
+      evaluateStore.evaluatedText = newText
       draftStore.draftText = newText
     }
   }
@@ -232,7 +253,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       })
     }
     gptErrors.value = converted
-    savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value })
+    savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value }, getScope())
   }
 
   function setGptSuggestions(suggestions: SuggestionItem[]) {
@@ -253,24 +274,21 @@ export const useGrammarStore = defineStore('grammar', () => {
       })
     }
     gptSuggestionErrors.value = converted
-    savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value })
-  }
-
-  function setEvaluateResult(result: WritingEvaluateResponse | null) {
-    evaluateResult.value = result
+    savePolishSuggestions({ errors: gptErrors.value, suggestions: gptSuggestionErrors.value }, getScope())
   }
 
   // ── Lifecycle ──
   function restoreFromCache() {
-    const cached = loadGrammarErrors()
+    const scope = getScope()
+    const cached = loadGrammarErrors(scope)
     if (cached && cached.length > 0 && grammarErrors.value.length === 0) {
       grammarErrors.value = cached as CorrectionError[]
     }
-    const cachedFixedIds = loadGrammarFixedIds()
+    const cachedFixedIds = loadGrammarFixedIds(scope)
     if (cachedFixedIds && cachedFixedIds.length > 0 && grammarFixedErrorIds.value.size === 0) {
       grammarFixedErrorIds.value = new Set(cachedFixedIds)
     }
-    const cachedPolish = loadPolishSuggestions()
+    const cachedPolish = loadPolishSuggestions(scope)
     if (cachedPolish) {
       if (cachedPolish.errors.length > 0 && gptErrors.value.length === 0) {
         gptErrors.value = cachedPolish.errors as CorrectionError[]
@@ -288,26 +306,34 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptSuggestionErrors.value = []
     grammarCheckError.value = null
     grammarFixedErrorIds.value = new Set()
-    grammarReChecked.value = false
+    evaluateStore.grammarReChecked = false
     lastCheckedText = ''
     abortController?.abort()
-    clearGrammarFixedIds()
+    clearGrammarFixedIds(getScope())
   }
 
+  /**
+   * Reset in-memory state only. Does NOT clear sessionStorage —
+   * that is done explicitly via clearAllCaches() when user discards/exits.
+   * This allows restoreFromCache() to recover state after a page refresh.
+   */
   function resetAll() {
-    evaluateResult.value = null
     grammarErrors.value = []
     grammarCheckError.value = null
     grammarFixedErrorIds.value = new Set()
     gptErrors.value = []
     gptSuggestionErrors.value = []
     grammarCheckActive.value = true
-    grammarReChecked.value = false
     lastCheckedText = ''
     abortController?.abort()
-    clearGrammarErrors()
-    clearPolishSuggestions()
-    clearGrammarFixedIds()
+  }
+
+  /** Clear all sessionStorage caches — call on explicit discard/exit, not on refresh */
+  function clearAllCaches(scopeOverride?: string | null) {
+    const scope = scopeOverride?.trim() || getScope()
+    clearGrammarErrors(scope)
+    clearPolishSuggestions(scope)
+    clearGrammarFixedIds(scope)
   }
 
   function destroy() {
@@ -321,10 +347,8 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarChecking,
     grammarCheckError,
     grammarFixedErrorIds,
-    grammarReChecked,
     gptErrors,
     gptSuggestionErrors,
-    evaluateResult,
     // Computed
     grammarPanelErrors,
     grammarPanelFixedIds,
@@ -340,10 +364,10 @@ export const useGrammarStore = defineStore('grammar', () => {
     dismissError,
     setGptErrors,
     setGptSuggestions,
-    setEvaluateResult,
     restoreFromCache,
     pauseForSubmit,
     resetAll,
+    clearAllCaches,
     destroy,
   }
 })

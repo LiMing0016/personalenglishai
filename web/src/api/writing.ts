@@ -65,6 +65,8 @@ export interface WritingEvaluateResponse {
     original?: string
     suggestion?: string
     reason?: string
+    lang_category?: string
+    alternatives?: string[]
   }>
 }
 
@@ -452,7 +454,7 @@ export function grammarCheck(
 ): Promise<GrammarCheckResponse> {
   return http
     .post<GrammarCheckResponse>('/writing/grammar-check', payload, {
-      timeout: 8000,
+      timeout: 25000,
       signal: options?.signal,
     })
     .then((res) => res.data)
