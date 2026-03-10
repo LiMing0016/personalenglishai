@@ -174,6 +174,10 @@ watch(() => [props.fullEssay, props.taskPrompt], () => {
   const cached = loadWritingTemplateResult()
   const snapshot = currentSnapshot()
   if (cached && cached.essaySnapshot === snapshot.essaySnapshot && cached.taskPromptSnapshot === snapshot.taskPromptSnapshot) {
+    // Props hydrated after mount — restore cache if result is still empty
+    if (!result.value) {
+      restoreCache()
+    }
     return
   }
   result.value = null
