@@ -15,7 +15,6 @@ import {
   loadAiNoteDraftNow,
   saveAiNoteDraftNow,
   clearAiNoteDraftNow,
-  clearEvaluateResult,
 } from '@/components/writing/editorShellStorage'
 import { getDocumentContent } from '@/api/document'
 
@@ -25,7 +24,6 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
   const taskPrompt = ref('')
   const aiNote = ref('')
   const aiConversationId = ref(createConversationId())
-  const evaluatedText = ref<string | null>(null)
   const docId = ref<string | null>(null)
   const docRevision = ref<number | null>(null)
   const submitCount = ref(0)
@@ -140,8 +138,6 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     // Restore AI note by scope.
     const savedAiNote = loadAiNoteDraftNow(scope)
     aiNote.value = savedAiNote ?? ''
-
-    evaluatedText.value = null
   }
 
   /**
@@ -179,7 +175,6 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
       // Restore conversation
       aiConversationId.value = loadConversationId(scope)
 
-      evaluatedText.value = null
       return true
     } catch (e) {
       console.warn('[writingDraftStore] hydrateByDocId failed', e)
@@ -193,12 +188,10 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     const scope = getScope()
     draftText.value = ''
     aiNote.value = ''
-    evaluatedText.value = null
     submitCount.value = 0
     try {
       clearDraftNow(scope)
       clearAiNoteDraftNow(scope)
-      clearEvaluateResult(scope)
     } catch (_) {}
   }
 
@@ -223,7 +216,6 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     taskPrompt,
     aiNote,
     aiConversationId,
-    evaluatedText,
     docId,
     docRevision,
     submitCount,

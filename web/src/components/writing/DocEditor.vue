@@ -185,6 +185,7 @@ onMounted(() => {
         orderedList: false,
         listItem: false,
         horizontalRule: false,
+        underline: false,
       }),
       TextStyle,
       Color,

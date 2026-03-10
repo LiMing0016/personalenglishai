@@ -65,7 +65,10 @@
         @click="emit('error-click', err.id)"
       >
         <div class="gc-item-header">
-          <span class="gc-type">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
+          <div class="gc-item-tags">
+            <span class="gc-type">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
+            <span v-if="err.lang_category" class="gc-lang-cat">{{ langCategoryLabel(err.lang_category) }}</span>
+          </div>
           <span v-if="isFixed(err.id)" class="badge-fixed">已修改</span>
           <button
             v-else-if="canFix(err)"
@@ -86,6 +89,16 @@
         </div>
         <div v-else-if="err.original" class="gc-correction">
           <span class="gc-original">{{ err.original }}</span>
+        </div>
+        <div v-if="err.alternatives && err.alternatives.length > 1 && !isFixed(err.id)" class="gc-alternatives">
+          <span class="gc-alt-label">其他建议：</span>
+          <button
+            v-for="(alt, i) in err.alternatives.slice(1, 4)"
+            :key="i"
+            type="button"
+            class="gc-alt-btn"
+            @click.stop="emit('apply-suggestion', { original: err.original!, suggestion: alt })"
+          >{{ alt }}</button>
         </div>
         <p v-if="err.reason" class="gc-reason">{{ err.reason }}</p>
       </li>
@@ -225,6 +238,10 @@ import { computed, watch, nextTick, ref, onMounted } from 'vue'
 import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
 import { useWritingSuggestions } from '@/composables/useWritingSuggestions'
 import { savePolishSuggestions, saveAppliedSuggestionIds, loadAppliedSuggestionIds } from '../editorShellStorage'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
+
+const draftStore = useWritingDraftStore()
+function getScope() { return draftStore.docId || undefined }
 
 type ErrorItem = WritingEvaluateResponse['errors'][number]
 
@@ -245,6 +262,41 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
   expression: '表达',
   coherence: '连贯',
   format: '格式',
+}
+
+/** Fallback: backend already returns Chinese, this handles any edge cases */
+const LANG_CATEGORY_LABELS: Record<string, string> = {
+  // Correctness → Grammar
+  'Articles': '冠词', 'Conjunctions': '连词', 'Prepositions': '介词',
+  'Pronouns & Determiners': '代词/限定词', 'Singular-Plural Nouns': '单复数',
+  'Singular-Plural nouns': '单复数', 'Subject-Verb Agreement': '主谓一致',
+  'Tense': '时态', 'Verbs': '动词', 'Verb Forms': '动词形式',
+  'Word Form': '词形', 'Adjectives/Adverbs': '形容词/副词',
+  'Modal Verbs': '情态动词', 'Gerunds & Infinitives': '动名词/不定式',
+  'Conditional Sentences': '条件句', 'Relative Clauses': '定语从句',
+  'Reported Speech': '间接引语', 'Double Negatives': '双重否定',
+  'Comparatives & Superlatives': '比较级/最高级', 'Modifiers': '修饰语',
+  // Correctness → Spelling
+  'Spellings': '拼写', 'Spelling': '拼写', 'Spellings & Typos': '拼写/错字',
+  // Correctness → Punctuation
+  'Punctuation': '标点', 'Comma Usage': '逗号用法', 'Hyphenation': '连字符', 'Apostrophe': '撇号',
+  // Correctness → Syntax & Vocabulary
+  'Syntax': '句法', 'Other Errors': '其他错误', 'Accurate Phrasing': '精确措辞',
+  'Run-on Sentences': '连写句', 'Sentence Fragments': '句子残缺',
+  'Parallelism': '平行结构', 'Word Order': '语序',
+  // Clarity
+  'Word Choice': '用词', 'Word choice': '用词', 'Brevity': '简洁',
+  'Vague Words/Phrases': '模糊表达', 'Hedge Words': '模糊词', 'Idioms/Clichés': '习语/陈词',
+  // Fluency
+  'Redundancy': '冗余', 'Noun Stacks': '名词堆砌', 'Plain Language': '通俗表达',
+  'Enhancement': '表达优化', 'Active/Passive Voice': '主动/被动语态', 'Passive Voice': '被动语态',
+  // Style
+  'Capitalization & Spacing': '大小写/间距', 'Number Style': '数字格式',
+  'Contractions': '缩写', 'Formal Word/Phrase Choice': '正式用词', 'Consistency': '一致性',
+  // Top-level
+  'Grammar': '语法', 'Correctness': '正确性', 'Clarity': '清晰度',
+  'Fluency': '流畅度', 'Style': '风格', 'Inclusivity': '包容性',
+  'Style Guide Compliance': '风格规范', 'Other': '其他',
 }
 
 const props = defineProps<{
@@ -271,6 +323,10 @@ const hasContent = computed(() => (props.essayText ?? '').trim().length > 0)
 
 function errorTypeLabel(type: string): string {
   return ERROR_TYPE_LABELS[type] ?? type
+}
+
+function langCategoryLabel(cat: string): string {
+  return LANG_CATEGORY_LABELS[cat] ?? cat
 }
 
 function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
@@ -371,11 +427,11 @@ function persistAppliedIds() {
   saveAppliedSuggestionIds({
     suggestions: [...appliedSuggestionIds.value],
     gptErrors: [...appliedGptErrorIds.value],
-  })
+  }, getScope())
 }
 
 onMounted(() => {
-  const cached = loadAppliedSuggestionIds()
+  const cached = loadAppliedSuggestionIds(getScope())
   if (cached) {
     if (cached.suggestions.length > 0) appliedSuggestionIds.value = new Set(cached.suggestions)
     if (cached.gptErrors.length > 0) appliedGptErrorIds.value = new Set(cached.gptErrors)
@@ -387,7 +443,7 @@ watch([suggestions, gptHardErrors], ([sgs, errs]) => {
   if (sgs.length > 0 || errs.length > 0) {
     emit('gpt-errors-loaded', errs)
     emit('gpt-suggestions-loaded', sgs)
-    savePolishSuggestions({ errors: errs, suggestions: sgs })
+    savePolishSuggestions({ errors: errs, suggestions: sgs }, getScope())
   }
 })
 
@@ -602,7 +658,24 @@ function applyGptError(item: SuggestionErrorItem) {
   align-items: center;
   gap: 8px;
 }
-.gc-item-header .gc-type { flex: 1; }
+.gc-item-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.gc-lang-cat {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  white-space: nowrap;
+}
 
 .gc-type {
   font-size: 12px;
@@ -666,6 +739,36 @@ function applyGptError(item: SuggestionErrorItem) {
   color: #dc2626;
   font-style: italic;
   font-size: 12px;
+}
+
+.gc-alternatives {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.gc-alt-label {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.gc-alt-btn {
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: monospace;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.gc-alt-btn:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0369a1;
 }
 
 .gc-reason {

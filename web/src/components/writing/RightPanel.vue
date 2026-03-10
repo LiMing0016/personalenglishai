@@ -86,18 +86,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import type { WritingEvaluateResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
-import ScorePanel from './panels/ScorePanel.vue'
-import RewritePanel from './panels/RewritePanel.vue'
-import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
-import StructurePanel from './panels/StructurePanel.vue'
-import PolishPanel from './panels/PolishPanel.vue'
-import ExplainPanel from './panels/ExplainPanel.vue'
-import TranslatePanel from './panels/TranslatePanel.vue'
+// Static: high-frequency panels loaded on first visit
 import AiNotePanel from './panels/AiNotePanel.vue'
+import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
+// Lazy: low-frequency panels loaded on demand
+const ScorePanel = defineAsyncComponent(() => import('./panels/ScorePanel.vue'))
+const RewritePanel = defineAsyncComponent(() => import('./panels/RewritePanel.vue'))
+const StructurePanel = defineAsyncComponent(() => import('./panels/StructurePanel.vue'))
+const PolishPanel = defineAsyncComponent(() => import('./panels/PolishPanel.vue'))
+const ExplainPanel = defineAsyncComponent(() => import('./panels/ExplainPanel.vue'))
+const TranslatePanel = defineAsyncComponent(() => import('./panels/TranslatePanel.vue'))
 
 const props = defineProps<{
   panel: PanelMode

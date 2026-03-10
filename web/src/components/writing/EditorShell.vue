@@ -6,7 +6,7 @@
         <DocEditor
           v-model:draft-text="draftStore.draftText"
           :correction-mode="false"
-          :submitting="submitting"
+          :submitting="evaluateStore.submitting"
           :writing-mode="draftStore.writingMode"
           :cursor-placement="cursorPlacement"
           :selection-capture-enabled="panelStore.assistantOpen"
@@ -55,10 +55,10 @@
           :study-stage="props.studyStage"
           :task-prompt="draftStore.taskPrompt"
           :ai-note="draftStore.aiNote"
-          :evaluate-result="grammarStore.evaluateResult"
+          :evaluate-result="evaluateStore.evaluateResult"
           :active-error-id="activeErrorId"
-          :submitting="submitting"
-          :evaluate-error="evaluateError"
+          :submitting="evaluateStore.submitting"
+          :evaluate-error="evaluateStore.evaluateError"
           :exam-max-score="props.examMaxScore"
           :grammar-errors="grammarStore.grammarPanelErrors"
           :grammar-checking="grammarStore.grammarChecking"
@@ -145,20 +145,18 @@ import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
 import { resolveErrorSpan, findClosestMatch, shouldUseWordBoundary } from './errorSpanResolver'
-import {
-  WRITING_STORAGE_KEYS,
-  loadEvaluateResult,
-  saveEvaluateResult,
-} from './editorShellStorage'
+import { WRITING_STORAGE_KEYS } from './editorShellStorage'
 import { usePanelStore, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_LEFT_WIDTH } from '@/stores/panelStore'
 import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { useGrammarStore } from '@/stores/grammarStore'
+import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
 import { getStageConfig } from '@/api/writing'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
 const grammarStore = useGrammarStore()
+const evaluateStore = useEvaluateStore()
 const minWordCount = ref(60)
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
@@ -182,10 +180,10 @@ let aiAbortController: AbortController | null = null
 const {
   submit: evalSubmit,
   cancel: evalCancel,
-  clearResult: evalClearResult,
-  evaluateResult,
-  evaluateError,
-  submitting,
+  clearResult: composableClearResult,
+  evaluateResult: composableEvalResult,
+  evaluateError: composableEvalError,
+  submitting: composableSubmitting,
 } = useEvaluateSubmission()
 const activeErrorId = ref<string | null>(null)
 const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
@@ -246,37 +244,27 @@ const onLeftPaneScroll = () => {
 }
 
 onMounted(async () => {
-  // Snapshot evaluate result from localStorage BEFORE resetAll clears it.
-  // resetAll sets evaluateResult to null, whose watch callback would wipe
-  // localStorage during the subsequent await (Vue flushes watchers between ticks).
   const preloadedDocId = props.initialDocId?.trim()
     || sessionStorage.getItem('peai:writing:docId')?.trim()
     || null
-  const cachedEvalResult = loadEvaluateResult(preloadedDocId)
 
   // 重置旧文档状态，防止残留评价/语法数据
   grammarStore.resetAll()
+  evaluateStore.resetAll()
   panelStore.activePanel = null
 
   const layout = panelStore.initLayout()
 
   // ── Single-channel hydration ──
-  const targetDocId = preloadedDocId
-
-  if (targetDocId) {
-    // Has docId (refresh or navigation): always hydrate from backend
-    // to guarantee server content is available even in a fresh session.
-    await draftStore.hydrateByDocId(targetDocId)
+  if (preloadedDocId) {
+    await draftStore.hydrateByDocId(preloadedDocId)
   } else {
-    // New document (no docId): use props as startup parameters
     draftStore.init({
       initialWritingMode: props.initialWritingMode,
       initialTaskPrompt: props.initialTaskPrompt,
       initialDocId: props.initialDocId,
       initialSubmitCount: props.initialSubmitCount,
     })
-
-    // Apply initial content from prop if available
     if (props.initialExistingContent && (!draftStore.draftText || !draftStore.draftText.trim())) {
       draftStore.draftText = props.initialExistingContent
     }
@@ -284,14 +272,11 @@ onMounted(async () => {
 
   aiDocId.value = draftStore.docId ?? ''
 
-  // Restore evaluate result from pre-loaded cache (survives resetAll + watch flush)
-  const savedResult = cachedEvalResult ?? loadEvaluateResult(draftStore.docId)
-  if (savedResult && !evaluateResult.value) {
-    evaluateResult.value = savedResult
-    grammarStore.setEvaluateResult(savedResult)
-    if (layout.activePanel === 'score') {
-      panelStore.activePanel = 'score'
-    }
+  // Restore evaluate state from sessionStorage (single source of truth)
+  evaluateStore.docScope = draftStore.docId
+  evaluateStore.restore(draftStore.docId)
+  if (evaluateStore.evaluateResult && layout.activePanel === 'score') {
+    panelStore.activePanel = 'score'
   }
 
   // Restore grammar cache
@@ -308,8 +293,8 @@ onMounted(async () => {
   // Wait for TipTap to initialize and normalize text, then re-sync evaluatedText
   // to prevent the draftText watch from clearing the restored evaluate result.
   await nextTick()
-  if (evaluateResult.value) {
-    draftStore.evaluatedText = draftStore.draftText
+  if (evaluateStore.evaluateResult && evaluateStore.evaluatedText == null) {
+    evaluateStore.evaluatedText = draftStore.draftText
   }
 
   try {
@@ -331,6 +316,7 @@ useEventListener(window, 'beforeunload', () => draftStore.flushDraft())
 onBeforeUnmount(() => {
   evalCancel()
   grammarStore.destroy()
+  // Do NOT reset evaluateStore here — it should survive component remount for refresh
 })
 
 watch(() => panelStore.activePanel, (newPanel, oldPanel) => {
@@ -340,36 +326,40 @@ watch(() => panelStore.activePanel, (newPanel, oldPanel) => {
   panelStore.saveState()
 }, { flush: 'post' })
 
-// Sync evaluateResult from composable to grammar store
-watch(evaluateResult, (result) => {
-  grammarStore.setEvaluateResult(result)
+// Sync composable → evaluateStore (single source of truth)
+watch(composableEvalResult, (result) => {
+  evaluateStore.setResult(result)
   if (result) {
-    draftStore.evaluatedText = draftStore.draftText
-    saveEvaluateResult(result, draftStore.docId)
-    if (evalResultFromSubmit) {
+    evaluateStore.evaluatedText = draftStore.draftText
+    if (evaluateStore.resultFromSubmit) {
       draftStore.submitCount++
       panelStore.activePanel = 'score'
       showToast('评估完成', 'success')
-      evalResultFromSubmit = false
+      evaluateStore.resultFromSubmit = false
     }
   } else {
-    draftStore.evaluatedText = null
     activeErrorId.value = null
-    saveEvaluateResult(null, draftStore.docId)
   }
 })
 
-watch(evaluateError, (err) => {
-  if (err && evalResultFromSubmit) {
+watch(composableEvalError, (err) => {
+  evaluateStore.evaluateError = err
+  if (err && evaluateStore.resultFromSubmit) {
     showToast(err, 'error')
-    evalResultFromSubmit = false
+    evaluateStore.resultFromSubmit = false
+    grammarStore.grammarCheckActive = true
   }
+})
+
+watch(composableSubmitting, (val) => {
+  evaluateStore.submitting = val
 })
 
 watch(() => draftStore.draftText, (newText) => {
   if (draftStore.isHydrating) return
-  if (evaluateResult.value && draftStore.evaluatedText !== null && newText !== draftStore.evaluatedText) {
-    evalClearResult()
+  if (evaluateStore.evaluateResult && evaluateStore.evaluatedText !== null && newText !== evaluateStore.evaluatedText) {
+    composableClearResult()
+    evaluateStore.clearResult()
   }
   if (!examFirstWriteLocked.value) {
     grammarStore.scheduleGrammarCheck()
@@ -388,7 +378,7 @@ function onPanelErrorClick(errorId: string) {
 }
 
 function onApplyPolish(payload: { errorId: string; polished: string }) {
-  const errors = evaluateResult.value?.errors
+  const errors = evaluateStore.evaluateResult?.errors
   if (!errors) return
   const err = errors.find((e) => e.id === payload.errorId)
   if (!err?.original) return
@@ -401,7 +391,7 @@ function onApplyPolish(payload: { errorId: string; polished: string }) {
   }
 
   draftStore.draftText = text.slice(0, resolved.start) + payload.polished + text.slice(resolved.end)
-  draftStore.evaluatedText = draftStore.draftText
+  evaluateStore.evaluatedText = draftStore.draftText
   showToast('已替换', 'success')
 }
 
@@ -423,7 +413,7 @@ function onReplaceSentence(payload: { start: number; end: number; original: stri
   }
 
   draftStore.draftText = text.slice(0, start) + payload.replacement + text.slice(end)
-  draftStore.evaluatedText = draftStore.draftText
+  evaluateStore.evaluatedText = draftStore.draftText
   showToast('已替换', 'success')
 }
 
@@ -501,11 +491,9 @@ function onSubmit() {
   })
 }
 
-let evalResultFromSubmit = false
-const origEvalSubmit = evalSubmit
-const wrappedEvalSubmit = (...args: Parameters<typeof origEvalSubmit>) => {
-  evalResultFromSubmit = true
-  return origEvalSubmit(...args)
+const wrappedEvalSubmit = (...args: Parameters<typeof evalSubmit>) => {
+  evaluateStore.resultFromSubmit = true
+  return evalSubmit(...args)
 }
 
 function onDismissSelection() {
@@ -542,19 +530,30 @@ async function onExitSave() {
       console.warn('[EditorShell] save to backend failed', e)
     }
   }
+
+  const scope = draftStore.docId
+  evalCancel()
+  composableClearResult()
+  grammarStore.resetAll()
+  evaluateStore.resetAll()
+  grammarStore.clearAllCaches(scope)
+  evaluateStore.clearAllCaches(scope)
   // 清除本地草稿（后端已保存）
   draftStore.clearAll()
-  grammarStore.resetAll()
-  evalClearResult()
   emit('back')
 }
 
 function onExitDiscard() {
   showExitDialog.value = false
+  const scope = draftStore.docId
+  evalCancel()
+  composableClearResult()
+  grammarStore.resetAll()
+  evaluateStore.resetAll()
+  grammarStore.clearAllCaches(scope)
+  evaluateStore.clearAllCaches(scope)
   // 只清本地草稿，后端保留上次保存的版本
   draftStore.clearAll()
-  grammarStore.resetAll()
-  evalClearResult()
   emit('back')
 }
 
@@ -564,14 +563,20 @@ function onExitCancel() {
 
 function doExit(clearDraft: boolean) {
   if (clearDraft) {
-    draftStore.clearAll()
+    const scope = draftStore.docId
+    evalCancel()
+    composableClearResult()
     grammarStore.resetAll()
-    evalClearResult()
+    evaluateStore.resetAll()
+    grammarStore.clearAllCaches(scope)
+    evaluateStore.clearAllCaches(scope)
+    draftStore.clearAll()
   }
   emit('back')
 }
 
 function onClear() {
+  const scope = draftStore.docId
   selectionState.value = null
   selectionDismissed.value = false
   selectedTextPinned.value = ''
@@ -580,12 +585,16 @@ function onClear() {
   lastChatResult.value = null
   aiDocId.value = ''
   cursorPlacement.value = null
-  evalClearResult()
+
+  evalCancel()
+  composableClearResult()
+  evaluateStore.resetAll()
+  evaluateStore.clearAllCaches(scope)
   activeErrorId.value = null
   draftStore.clearCurrentDraftContent()
   grammarStore.resetAll()
+  grammarStore.clearAllCaches(scope)
 }
-
 function onReplaceSelectionWith(resultText: string) {
   const span = selectedSpanPinned.value
   if (!span) {

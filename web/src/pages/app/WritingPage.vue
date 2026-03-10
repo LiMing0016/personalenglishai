@@ -304,7 +304,21 @@
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStorage, useEventListener } from '@vueuse/core'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { LineChart, RadarChart, PieChart } from 'echarts/charts'
+import {
+  GridComponent,
+  TooltipComponent,
+  RadarComponent,
+  LegendComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([
+  LineChart, RadarChart, PieChart,
+  GridComponent, TooltipComponent, RadarComponent, LegendComponent,
+  CanvasRenderer,
+])
 import EditorShell from '@/components/writing/EditorShell.vue'
 import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
 import type { ExamTopicInfo } from '@/pages/app/ExamSetupPage.vue'

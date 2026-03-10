@@ -222,6 +222,11 @@ public class WritingEvaluateResponse {
         private String suggestion;
         /** 错误原因（中文说明） */
         private String reason;
+        /** 语言分类，如 Articles, Prepositions, Singular-Plural nouns */
+        @JsonProperty("lang_category")
+        private String langCategory;
+        /** 多个修改建议（第一个同 suggestion） */
+        private List<String> alternatives;
 
         public ErrorDto() {
         }
@@ -242,6 +247,10 @@ public class WritingEvaluateResponse {
         public void setSuggestion(String suggestion) { this.suggestion = suggestion; }
         public String getReason() { return reason; }
         public void setReason(String reason) { this.reason = reason; }
+        public String getLangCategory() { return langCategory; }
+        public void setLangCategory(String langCategory) { this.langCategory = langCategory; }
+        public List<String> getAlternatives() { return alternatives; }
+        public void setAlternatives(List<String> alternatives) { this.alternatives = alternatives; }
     }
 
     public static class AnalysisDto {
