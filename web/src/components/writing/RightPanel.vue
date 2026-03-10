@@ -64,8 +64,19 @@
         @replace-sentence="$emit('replace-sentence', $event)"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
-      <PolishPanel v-else-if="panel === 'improve'" />
-      <ExplainPanel v-else-if="panel === 'explain'" />
+      <PolishPanel
+        v-else-if="panel === 'improve'"
+        :full-essay="essay"
+        :task-prompt="taskPrompt"
+        :study-stage="studyStage"
+        :writing-mode="writingMode"
+      />
+      <ExplainPanel
+        v-else-if="panel === 'explain'"
+        :task-prompt="taskPrompt"
+        :study-stage="studyStage"
+        :writing-mode="writingMode"
+      />
       <TranslatePanel
         v-else-if="panel === 'translate'"
         @sentence-focus="$emit('sentence-focus', $event)"
@@ -147,6 +158,9 @@ const scorePanelTitle = computed(() => {
   if (props.panel === 'grammarCheck') return '语法检查'
   if (props.panel === 'structure') return '段落结构'
   if (props.panel === 'rewrite') return '润色'
+  if (props.panel === 'improve') return '写作模版'
+  if (props.panel === 'explain') return '写作素材'
+  if (props.panel === 'translate') return '翻译'
   return props.title
 })
 

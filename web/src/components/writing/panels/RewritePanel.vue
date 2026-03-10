@@ -145,6 +145,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import type { PolishTier, PolishEssaySummary } from '@/api/writing'
 import { polishEssay } from '@/api/writing'
 import { savePolishResult, loadPolishResult } from '@/components/writing/editorShellStorage'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
 
 interface SentenceItem {
   text: string
@@ -171,6 +172,8 @@ const emit = defineEmits<{
   'sentence-focus': [range: { start: number; end: number } | null]
 }>()
 
+const draftStore = useWritingDraftStore()
+
 const polishTier = ref<PolishTier | null>(null)
 const expandedIdx = ref<number | null>(null)
 const polishingAll = ref(false)
@@ -183,6 +186,24 @@ let polishAbortToken = 0
 let ignoreNextEssayChange = false
 let cacheRestored = false
 
+function normalizeEssaySnapshot(text: string): string {
+  return (text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+}
+
+function tryRestoreCachedState(): boolean {
+  const scope = draftStore.docId
+  const cached = loadPolishResult(scope)
+  if (!cached || cached.sentences.length === 0) return false
+  if (normalizeEssaySnapshot(cached.essaySnapshot) !== normalizeEssaySnapshot(props.fullEssay)) return false
+
+  polishTier.value = cached.tier as PolishTier
+  polishSummary.value = cached.summary as PolishEssaySummary | null
+  sentences.value = cached.sentences as SentenceItem[]
+  replacedSet.value = new Set(cached.replacedIndices ?? [])
+  cacheRestored = true
+  return true
+}
+
 function persistState() {
   if (!polishTier.value) return
   savePolishResult({
@@ -190,20 +211,13 @@ function persistState() {
     summary: polishSummary.value,
     sentences: sentences.value,
     replacedIndices: [...replacedSet.value],
-    essaySnapshot: props.fullEssay,
-  })
+    essaySnapshot: normalizeEssaySnapshot(props.fullEssay),
+  }, draftStore.docId)
 }
 
 // 恢复缓存
 onMounted(() => {
-  const cached = loadPolishResult()
-  if (cached && cached.sentences.length > 0 && cached.essaySnapshot === props.fullEssay) {
-    polishTier.value = cached.tier as PolishTier
-    polishSummary.value = cached.summary as PolishEssaySummary | null
-    sentences.value = cached.sentences as SentenceItem[]
-    replacedSet.value = new Set(cached.replacedIndices ?? [])
-    cacheRestored = true
-  }
+  tryRestoreCachedState()
 })
 
 const tierLabel = computed(() => {
@@ -240,6 +254,7 @@ function splitSentences(text: string): SentenceItem[] {
 // Split sentences on mount (but don't call GPT yet)
 // Skip reset when the change was caused by a sentence replacement
 watch(() => props.fullEssay, () => {
+  if (!cacheRestored && tryRestoreCachedState()) return
   // Skip first trigger if cache was restored
   if (cacheRestored) {
     cacheRestored = false
@@ -721,5 +736,4 @@ function escapeHtml(text: string): string {
 .btn-primary:hover { background: #065f46; }
 .btn-sm { padding: 6px 16px; font-size: 13px; }
 </style>
-
 

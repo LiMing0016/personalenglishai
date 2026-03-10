@@ -16,9 +16,15 @@ import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.WritingTranslateService;
+import com.personalenglishai.backend.service.writing.WritingTemplateService;
+import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
+import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
+import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
+import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
+import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -84,6 +90,12 @@ class WritingControllerTest {
 
     @MockBean
     private EssayPromptService essayPromptService;
+
+    @MockBean
+    private WritingTemplateService writingTemplateService;
+
+    @MockBean
+    private WritingMaterialService writingMaterialService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -338,6 +350,67 @@ class WritingControllerTest {
                     .andExpect(jsonPath("$.essayText").value("Original essay text"))
                     .andExpect(jsonPath("$.result.requestId").value("eval-100"))
                     .andExpect(jsonPath("$.result.summary").value("Well done"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/template")
+    class Template {
+
+        @Test
+        @DisplayName("returns 200 with valid text")
+        void template_success() throws Exception {
+            WritingTemplateResponse mockResponse = new WritingTemplateResponse();
+            mockResponse.setParagraphs(List.of());
+            mockResponse.setUsageTips(List.of());
+            when(writingTemplateService.extract(any())).thenReturn(mockResponse);
+
+            mockMvc.perform(post("/api/writing/template")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{\"text\":\"" + VALID_ESSAY + "\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("rejects blank text")
+        void template_blankText() throws Exception {
+            mockMvc.perform(post("/api/writing/template")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{\"text\":\"\"}"))
+                    .andExpect(status().is4xxClientError());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/material")
+    class Material {
+
+        @Test
+        @DisplayName("returns 200 with valid taskPrompt")
+        void material_success() throws Exception {
+            WritingMaterialResponse mockResponse = new WritingMaterialResponse();
+            mockResponse.setVocabulary(List.of());
+            mockResponse.setPhrases(List.of());
+            mockResponse.setSentences(List.of());
+            when(writingMaterialService.generate(any())).thenReturn(mockResponse);
+
+            mockMvc.perform(post("/api/writing/material")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{\"taskPrompt\":\"Discuss the impact of AI on education\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("rejects blank taskPrompt")
+        void material_blankPrompt() throws Exception {
+            mockMvc.perform(post("/api/writing/material")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{\"taskPrompt\":\"\"}"))
+                    .andExpect(status().is4xxClientError());
         }
     }
 

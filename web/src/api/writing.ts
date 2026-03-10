@@ -299,6 +299,100 @@ export function polishEssay(req: PolishEssayRequest): Promise<PolishEssayRespons
     .then((res) => res.data)
 }
 
+
+// ── Template Extract (作文模板提炼) ──
+
+export interface WritingTemplateRequest {
+  text: string
+  taskPrompt?: string
+  studyStage?: string | null
+  writingMode?: 'free' | 'exam'
+}
+
+export interface TemplateItem {
+  template: string
+  placeholders?: Record<string, string[]>
+}
+
+export interface KeyExpression {
+  expression: string
+  usage?: string
+  usageTips?: string[]
+}
+
+export interface ParagraphTemplate {
+  paragraphIndex: number
+  function: string
+  summary: string
+  templates: TemplateItem[]
+  keyExpressions: KeyExpression[]
+}
+
+export interface WritingTemplateResponse {
+  essayType?: string | null
+  paragraphs: ParagraphTemplate[]
+  usageTips: string[]
+}
+
+export function extractWritingTemplate(req: WritingTemplateRequest): Promise<WritingTemplateResponse> {
+  return http
+    .post<WritingTemplateResponse>('/writing/template', req, { timeout: 120000 })
+    .then((res) => ({
+      essayType: res.data.essayType ?? null,
+      paragraphs: res.data.paragraphs ?? [],
+      usageTips: res.data.usageTips ?? [],
+    }))
+}
+
+// ── Material (写作素材) ──
+
+export interface WritingMaterialRequest {
+  taskPrompt: string
+  essayText?: string
+  studyStage?: string | null
+  writingMode?: 'free' | 'exam'
+}
+
+export interface VocabularyItem {
+  word: string
+  meaning: string
+}
+
+export interface VocabularyGroup {
+  category: string
+  words: VocabularyItem[]
+}
+
+export interface PhraseItem {
+  phrase: string
+  meaning: string
+}
+
+export interface SentenceItem {
+  sentence: string
+  description: string
+}
+
+export interface WritingMaterialResponse {
+  topic?: string | null
+  stage?: string | null
+  vocabulary: VocabularyGroup[]
+  phrases: PhraseItem[]
+  sentences: SentenceItem[]
+}
+
+export function generateWritingMaterial(req: WritingMaterialRequest): Promise<WritingMaterialResponse> {
+  return http
+    .post<WritingMaterialResponse>('/writing/material', req, { timeout: 120000 })
+    .then((res) => ({
+      topic: res.data.topic ?? null,
+      stage: res.data.stage ?? null,
+      vocabulary: res.data.vocabulary ?? [],
+      phrases: res.data.phrases ?? [],
+      sentences: res.data.sentences ?? [],
+    }))
+}
+
 // ── Translate (全文翻译 / 逐句精讲) ──
 
 export interface TranslateRequest {
@@ -593,4 +687,5 @@ export function getStageConfig(stageCode: string): Promise<StageConfigResponse> 
     .get<StageConfigResponse>(`/writing/stage-config/${encodeURIComponent(stageCode)}`)
     .then((res) => res.data)
 }
+
 
