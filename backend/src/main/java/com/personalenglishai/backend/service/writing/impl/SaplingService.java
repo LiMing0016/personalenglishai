@@ -161,6 +161,7 @@ public class SaplingService {
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId("sp" + idx);
+        dto.setEngine("sapling");
         dto.setType(mapType(errorType, generalErrorType));
         dto.setCategory("error");
         dto.setSeverity(mapSeverity(generalErrorType));

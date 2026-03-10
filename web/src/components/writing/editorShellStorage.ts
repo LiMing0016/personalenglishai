@@ -21,7 +21,6 @@ export const WRITING_STORAGE_KEYS = {
   materialResult: 'peai:writing:materialResult',
   evaluatedText: 'peai:writing:evaluatedText',
   grammarReChecked: 'peai:writing:grammarReChecked',
-  recentFixes: 'peai:writing:recentFixes',
 } as const
 
 function scopedKey(baseKey: string, scope?: string | null): string {
@@ -521,24 +520,5 @@ export function clearGrammarReChecked(scope?: string | null): void {
   try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.grammarReChecked, scope)) } catch { /* ignore */ }
 }
 
-// ── recentFixes 缓存（sessionStorage，按 docId 分桶） ──
 
-export function saveRecentFixes(fixes: { original: string; suggestion: string }[], scope?: string | null): void {
-  try {
-    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.recentFixes, scope), JSON.stringify(fixes))
-  } catch { /* ignore */ }
-}
-
-export function loadRecentFixes(scope?: string | null): { original: string; suggestion: string }[] | null {
-  try {
-    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.recentFixes, scope))
-    if (!raw) return null
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? arr : null
-  } catch { return null }
-}
-
-export function clearRecentFixes(scope?: string | null): void {
-  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.recentFixes, scope)) } catch { /* ignore */ }
-}
 

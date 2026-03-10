@@ -46,6 +46,7 @@
         :locked="examFirstWriteLocked"
         @fix-error="$emit('grammar-fix-error', $event)"
         @fix-all="$emit('grammar-fix-all')"
+        @dismiss-error="$emit('grammar-dismiss-error', $event)"
         @error-click="$emit('error-click', $event)"
         @apply-suggestion="$emit('apply-suggestion', $event)"
         @start-polish="$emit('start-polish')"
@@ -139,6 +140,7 @@ defineEmits<{
   'start-polish': []
   'grammar-fix-error': [errorId: string]
   'grammar-fix-all': []
+  'grammar-dismiss-error': [errorId: string]
   'apply-suggestion': [payload: { original: string; suggestion: string }]
   'gpt-errors-loaded': [errors: import('@/api/writing').SuggestionErrorItem[]]
   'gpt-suggestions-loaded': [suggestions: import('@/api/writing').SuggestionItem[]]

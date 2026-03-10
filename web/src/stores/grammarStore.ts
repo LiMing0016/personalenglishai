@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDebounceFn } from '@vueuse/core'
-import { grammarCheck as grammarCheckApi } from '@/api/writing'
+import { grammarCheck as grammarCheckApi, grammarSuppress } from '@/api/writing'
 import type { WritingEvaluateResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
 import { findClosestMatch, hasValidSuggestion, resolveErrorSpan, shouldUseWordBoundary } from '@/components/writing/errorSpanResolver'
 import {
@@ -14,15 +14,15 @@ import {
   saveGrammarFixedIds,
   loadGrammarFixedIds,
   clearGrammarFixedIds,
-  saveRecentFixes,
-  loadRecentFixes,
-  clearRecentFixes,
 } from '@/components/writing/editorShellStorage'
 import { showToast } from '@/utils/toast'
 import { useWritingDraftStore } from './writingDraftStore'
 import { useEvaluateStore } from './evaluateStore'
 
 type CorrectionError = WritingEvaluateResponse['errors'][number]
+
+/** Context window chars before/after error span for suppress context hash. */
+const CONTEXT_WINDOW = 30
 
 export const useGrammarStore = defineStore('grammar', () => {
   const draftStore = useWritingDraftStore()
@@ -33,19 +33,28 @@ export const useGrammarStore = defineStore('grammar', () => {
   const grammarCheckActive = ref(true)
   const grammarChecking = ref(false)
   const grammarCheckError = ref<string | null>(null)
-  const grammarFixedErrorIds = ref<Set<string>>(new Set())
+  const preferEvaluateErrors = ref(false)
+
+  /** Errors the user explicitly dismissed (local UI hide, backend Redis handles persistence). */
+  const dismissedLocally = ref<Set<string>>(new Set())
+  /** Errors the user applied a fix to (local UI hide, backend Redis handles persistence). */
+  const recentFixedLocally = ref<Set<string>>(new Set())
+
   function getScope() { return draftStore.docId?.trim() || null }
-  function persistFixedIds() {
-    saveGrammarFixedIds([...grammarFixedErrorIds.value], getScope())
+
+  /** Combined set of locally hidden error IDs (for panel display). */
+  const locallyHiddenIds = computed(() => {
+    const combined = new Set(dismissedLocally.value)
+    for (const id of recentFixedLocally.value) combined.add(id)
+    return combined
+  })
+
+  function persistLocalIds() {
+    saveGrammarFixedIds([...locallyHiddenIds.value], getScope())
   }
-  function persistRecentFixes() {
-    saveRecentFixes(recentFixes, getScope())
-  }
+
   const gptErrors = ref<CorrectionError[]>([])
   const gptSuggestionErrors = ref<CorrectionError[]>([])
-  /** Recently applied fixes: used to suppress reverse suggestions (A→B then B→A). */
-  const recentFixes: { original: string; suggestion: string }[] = []
-  const MAX_RECENT_FIXES = 50
   /** Text snapshot of the last completed grammar check, used to detect stale/pending checks. */
   let lastCheckedText = ''
   let abortController: AbortController | null = null
@@ -62,24 +71,23 @@ export const useGrammarStore = defineStore('grammar', () => {
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
       return grammarErrors.value
     }
-    if (!evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+    if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
       return evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion')
     }
     return grammarErrors.value
   })
 
-  const grammarPanelFixedIds = computed(() => grammarFixedErrorIds.value)
+  const grammarPanelFixedIds = computed(() => locallyHiddenIds.value)
 
   const displayEditorErrors = computed(() => {
     let base: CorrectionError[] | undefined
+    const hidden = locallyHiddenIds.value
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
-      const fixed = grammarFixedErrorIds.value
-      base = grammarErrors.value.filter((e) => !fixed.has(e.id))
-    } else if (!evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+      base = grammarErrors.value.filter((e) => !hidden.has(e.id))
+    } else if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
       base = evaluateStore.evaluateResult.errors
     } else if (grammarErrors.value.length > 0) {
-      const fixed = grammarFixedErrorIds.value
-      base = grammarErrors.value.filter((e) => !fixed.has(e.id))
+      base = grammarErrors.value.filter((e) => !hidden.has(e.id))
     }
     const extras = [...gptErrors.value, ...gptSuggestionErrors.value]
     let all: CorrectionError[] | undefined
@@ -109,14 +117,16 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   /** Number of fixable grammar errors that the user has NOT yet fixed or dismissed. */
   const unfixedFixableCount = computed(() => {
-    const fixed = grammarFixedErrorIds.value
+    const hidden = locallyHiddenIds.value
     return grammarPanelErrors.value.filter(
-      (e) => !fixed.has(e.id) && hasValidSuggestion(e),
+      (e) => !hidden.has(e.id) && hasValidSuggestion(e),
     ).length
   })
 
   const rewritePanelSuggestions = computed(() => {
-    const fromEvaluate = (evaluateStore.evaluateResult?.errors ?? []).filter((e) => e.category === 'suggestion')
+    const fromEvaluate = preferEvaluateErrors.value
+      ? (evaluateStore.evaluateResult?.errors ?? []).filter((e) => e.category === 'suggestion')
+      : []
     if (gptSuggestionErrors.value.length === 0) return fromEvaluate
 
     const merged = [...fromEvaluate]
@@ -153,23 +163,13 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarChecking.value = true
     grammarCheckError.value = null
     try {
-      const res = await grammarCheckApi({ text }, { signal: abortController.signal })
-      // Filter out reverse suggestions (e.g. A→B was applied, now B→A comes back)
-      const norm = (s: string) => s.toLowerCase().trim()
-        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")  // curly single quotes → straight
-        .replace(/[\u201C\u201D\u201E\u201F]/g, '"')   // curly double quotes → straight
-      const filtered = (res.errors ?? []).filter((e) => {
-        if (!e.original || !e.suggestion) return true
-        const origN = norm(e.original)
-        const sugN = norm(e.suggestion)
-        const isReverse = recentFixes.some(
-          (f) => norm(f.original) === sugN && norm(f.suggestion) === origN,
-        )
-        return !isReverse
-      })
-      grammarErrors.value = filtered
-      grammarFixedErrorIds.value = new Set()
-      persistFixedIds()
+      const docId = draftStore.docId ?? undefined
+      const res = await grammarCheckApi({ text, docId }, { signal: abortController.signal })
+      // Suppressed errors are already filtered by backend (Redis-based suppress)
+      grammarErrors.value = res.errors ?? []
+      dismissedLocally.value = new Set()
+      recentFixedLocally.value = new Set()
+      persistLocalIds()
       gptErrors.value = []
       gptSuggestionErrors.value = []
       lastCheckedText = text
@@ -188,7 +188,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   function fixError(errorId: string) {
     const err = grammarPanelErrors.value.find((e) => e.id === errorId)
     if (!err || !err.original || !hasValidSuggestion(err)) return
-    if (grammarFixedErrorIds.value.has(errorId)) return
+    if (locallyHiddenIds.value.has(errorId)) return
 
     const text = draftStore.draftText
     const resolved = resolveErrorSpan(err, text)
@@ -197,12 +197,19 @@ export const useGrammarStore = defineStore('grammar', () => {
       return
     }
 
-    grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
-    persistFixedIds()
-    // Record fix to suppress future reverse suggestions
-    recentFixes.push({ original: err.original, suggestion: err.suggestion! })
-    if (recentFixes.length > MAX_RECENT_FIXES) recentFixes.splice(0, recentFixes.length - MAX_RECENT_FIXES)
-    persistRecentFixes()
+    recentFixedLocally.value = new Set([...recentFixedLocally.value, errorId])
+    persistLocalIds()
+    // Suppress in backend (Redis, short TTL) to prevent reverse suggestions
+    const context = extractContextWindow(text, resolved.start, resolved.end)
+    grammarSuppress({
+      docId: draftStore.docId ?? '',
+      original: err.original,
+      suggestion: err.suggestion!,
+      ruleType: err.type,
+      engine: err.engine ?? '',
+      context,
+      action: 'fix',
+    }).catch(() => {}) // fire-and-forget
     const newText = text.slice(0, resolved.start) + err.suggestion! + text.slice(resolved.end)
     evaluateStore.evaluatedText = newText
     grammarCheckActive.value = true
@@ -211,10 +218,10 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   function fixAll() {
     const unfixed = grammarPanelErrors.value
-      .filter((e) => !grammarFixedErrorIds.value.has(e.id) && e.original && hasValidSuggestion(e))
+      .filter((e) => !locallyHiddenIds.value.has(e.id) && e.original && hasValidSuggestion(e))
 
     let text = draftStore.draftText
-    const newFixed = new Set(grammarFixedErrorIds.value)
+    const newFixed = new Set(recentFixedLocally.value)
 
     const resolved: { err: typeof unfixed[number]; start: number; end: number }[] = []
     for (const err of unfixed) {
@@ -224,18 +231,26 @@ export const useGrammarStore = defineStore('grammar', () => {
     resolved.sort((a, b) => b.start - a.start)
 
     for (const { err, start, end } of resolved) {
+      const context = extractContextWindow(text, start, end)
       text = text.slice(0, start) + err.suggestion! + text.slice(end)
       newFixed.add(err.id)
-      recentFixes.push({ original: err.original!, suggestion: err.suggestion! })
+      // Suppress in backend (fire-and-forget, short TTL)
+      grammarSuppress({
+        docId: draftStore.docId ?? '',
+        original: err.original!,
+        suggestion: err.suggestion!,
+        ruleType: err.type,
+        engine: err.engine ?? '',
+        context,
+        action: 'fix',
+      }).catch(() => {})
     }
-    if (recentFixes.length > MAX_RECENT_FIXES) recentFixes.splice(0, recentFixes.length - MAX_RECENT_FIXES)
-    persistRecentFixes()
 
     evaluateStore.evaluatedText = text
     grammarCheckActive.value = true
     draftStore.draftText = text
-    grammarFixedErrorIds.value = newFixed
-    persistFixedIds()
+    recentFixedLocally.value = newFixed
+    persistLocalIds()
   }
 
   function inlineFixError(errorId: string) {
@@ -257,10 +272,31 @@ export const useGrammarStore = defineStore('grammar', () => {
   }
 
   function dismissError(errorId: string) {
-    grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
-    persistFixedIds()
+    // Find the error to get its content for backend suppress
+    const err = grammarPanelErrors.value.find((e) => e.id === errorId)
+      ?? gptErrors.value.find((e) => e.id === errorId)
+      ?? gptSuggestionErrors.value.find((e) => e.id === errorId)
+
+    // Local immediate hide
+    dismissedLocally.value = new Set([...dismissedLocally.value, errorId])
+    persistLocalIds()
     gptErrors.value = gptErrors.value.filter((e) => e.id !== errorId)
     gptSuggestionErrors.value = gptSuggestionErrors.value.filter((e) => e.id !== errorId)
+
+    // Suppress in backend (Redis, long TTL) so it doesn't come back
+    if (err?.original) {
+      const text = draftStore.draftText
+      const context = err.span ? extractContextWindow(text, err.span.start, err.span.end) : ''
+      grammarSuppress({
+        docId: draftStore.docId ?? '',
+        original: err.original,
+        suggestion: err.suggestion ?? '',
+        ruleType: err.type,
+        engine: err.engine ?? '',
+        context,
+        action: 'dismiss',
+      }).catch(() => {})
+    }
   }
 
   // ── GPT Error/Suggestion Handlers ──
@@ -279,6 +315,7 @@ export const useGrammarStore = defineStore('grammar', () => {
         original: e.original,
         suggestion: e.suggestion,
         reason: e.reason,
+        engine: 'gpt',
       })
     }
     gptErrors.value = converted
@@ -300,6 +337,7 @@ export const useGrammarStore = defineStore('grammar', () => {
         original: s.original,
         suggestion: s.suggestion,
         reason: s.reason,
+        engine: 'gpt',
       })
     }
     gptSuggestionErrors.value = converted
@@ -314,8 +352,9 @@ export const useGrammarStore = defineStore('grammar', () => {
       grammarErrors.value = cached as CorrectionError[]
     }
     const cachedFixedIds = loadGrammarFixedIds(scope)
-    if (cachedFixedIds && cachedFixedIds.length > 0 && grammarFixedErrorIds.value.size === 0) {
-      grammarFixedErrorIds.value = new Set(cachedFixedIds)
+    if (cachedFixedIds && cachedFixedIds.length > 0 && locallyHiddenIds.value.size === 0) {
+      // We can't distinguish dismiss vs fix from storage, treat all as dismissed
+      dismissedLocally.value = new Set(cachedFixedIds)
     }
     const cachedPolish = loadPolishSuggestions(scope)
     if (cachedPolish) {
@@ -326,10 +365,6 @@ export const useGrammarStore = defineStore('grammar', () => {
         gptSuggestionErrors.value = cachedPolish.suggestions as CorrectionError[]
       }
     }
-    const cachedFixes = loadRecentFixes(scope)
-    if (cachedFixes && cachedFixes.length > 0 && recentFixes.length === 0) {
-      recentFixes.push(...cachedFixes)
-    }
   }
 
   function pauseForSubmit() {
@@ -338,7 +373,9 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptErrors.value = []
     gptSuggestionErrors.value = []
     grammarCheckError.value = null
-    grammarFixedErrorIds.value = new Set()
+    preferEvaluateErrors.value = false
+    dismissedLocally.value = new Set()
+    recentFixedLocally.value = new Set()
     evaluateStore.grammarReChecked = false
     lastCheckedText = ''
     abortController?.abort()
@@ -353,12 +390,13 @@ export const useGrammarStore = defineStore('grammar', () => {
   function resetAll() {
     grammarErrors.value = []
     grammarCheckError.value = null
-    grammarFixedErrorIds.value = new Set()
+    preferEvaluateErrors.value = false
+    dismissedLocally.value = new Set()
+    recentFixedLocally.value = new Set()
     gptErrors.value = []
     gptSuggestionErrors.value = []
     grammarCheckActive.value = true
     lastCheckedText = ''
-    recentFixes.length = 0
     abortController?.abort()
   }
 
@@ -368,11 +406,29 @@ export const useGrammarStore = defineStore('grammar', () => {
     clearGrammarErrors(scope)
     clearPolishSuggestions(scope)
     clearGrammarFixedIds(scope)
-    clearRecentFixes(scope)
+  }
+
+  /**
+   * Extract a context window of ±CONTEXT_WINDOW chars around the error span.
+   * This is stable against edits outside the window (unlike full-sentence hash).
+   */
+  function extractContextWindow(text: string, start: number, end: number): string {
+    if (!text) return ''
+    const windowStart = Math.max(0, start - CONTEXT_WINDOW)
+    const windowEnd = Math.min(text.length, end + CONTEXT_WINDOW)
+    return text.slice(windowStart, windowEnd).trim()
   }
 
   function destroy() {
     abortController?.abort()
+  }
+
+  function useEvaluateErrorsForPanels() {
+    preferEvaluateErrors.value = true
+  }
+
+  function clearEvaluateErrorSource() {
+    preferEvaluateErrors.value = false
   }
 
   return {
@@ -381,7 +437,8 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarCheckActive,
     grammarChecking,
     grammarCheckError,
-    grammarFixedErrorIds,
+    dismissedLocally,
+    recentFixedLocally,
     gptErrors,
     gptSuggestionErrors,
     // Computed
@@ -403,6 +460,8 @@ export const useGrammarStore = defineStore('grammar', () => {
     pauseForSubmit,
     resetAll,
     clearAllCaches,
+    useEvaluateErrorsForPanels,
+    clearEvaluateErrorSource,
     destroy,
   }
 })

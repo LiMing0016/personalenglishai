@@ -188,6 +188,7 @@ public class TrinkaService {
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId("tk" + idx);
+        dto.setEngine("trinka");
         dto.setType(mapType(type, errorCategory));
         dto.setCategory("error");
         dto.setSeverity(critical ? "major" : mapSeverity(type));

@@ -218,6 +218,7 @@ public class TextGearsService {
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId(id);
+        dto.setEngine("textgears");
         dto.setType(mapType(type));
         dto.setCategory("error");
         dto.setSeverity(mapSeverity(type));
