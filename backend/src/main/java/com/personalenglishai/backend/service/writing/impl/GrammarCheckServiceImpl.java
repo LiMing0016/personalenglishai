@@ -35,6 +35,12 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
     private final ConcurrentHashMap<String, List<WritingEvaluateResponse.ErrorDto>> textGearsCache =
             new ConcurrentHashMap<>();
 
+    /**
+     * Trinka 段落级缓存，同 Sapling 缓存策略。
+     */
+    private final ConcurrentHashMap<String, List<WritingEvaluateResponse.ErrorDto>> trinkaCache =
+            new ConcurrentHashMap<>();
+
     public GrammarCheckServiceImpl(LanguageToolService languageToolService,
                                    SaplingService saplingService,
                                    TextGearsService textGearsService,
@@ -64,7 +70,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> textGearsFuture =
                 CompletableFuture.supplyAsync(() -> checkTextGearsWithCache(normalizedText));
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> trinkaFuture =
-                CompletableFuture.supplyAsync(() -> trinkaService.check(normalizedText));
+                CompletableFuture.supplyAsync(() -> checkTrinkaWithCache(normalizedText));
 
         List<WritingEvaluateResponse.ErrorDto> ltErrors;
         List<WritingEvaluateResponse.ErrorDto> saplingErrors;
@@ -268,6 +274,55 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
                     textGearsCache.clear();
                 }
                 textGearsCache.put(trimmed, cacheEntry);
+            }
+            offset += para.length();
+        }
+        return allErrors;
+    }
+
+    /**
+     * Trinka 段落级缓存检查，同 Sapling/TextGears 缓存策略。
+     * Trinka /check/paragraph 接口对长文本返回 500，必须按段落拆分。
+     */
+    private List<WritingEvaluateResponse.ErrorDto> checkTrinkaWithCache(String text) {
+        String[] paragraphs = text.split("(?<=\\n)");
+        List<WritingEvaluateResponse.ErrorDto> allErrors = new ArrayList<>();
+        int offset = 0;
+
+        for (String para : paragraphs) {
+            if (para.isBlank()) {
+                offset += para.length();
+                continue;
+            }
+
+            String trimmed = para.trim();
+            int leadingWs = para.indexOf(trimmed.charAt(0));
+            int trimmedBase = offset + Math.max(0, leadingWs);
+
+            List<WritingEvaluateResponse.ErrorDto> cached = trinkaCache.get(trimmed);
+            if (cached != null) {
+                for (var e : cached) {
+                    WritingEvaluateResponse.ErrorDto copy = copyError(e);
+                    copy.setSpan(new WritingEvaluateResponse.SpanDto(
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
+                    allErrors.add(copy);
+                }
+            } else {
+                List<WritingEvaluateResponse.ErrorDto> fresh = trinkaService.check(trimmed);
+                List<WritingEvaluateResponse.ErrorDto> cacheEntry = new ArrayList<>();
+                for (var e : fresh) {
+                    cacheEntry.add(copyError(e));
+                    WritingEvaluateResponse.ErrorDto global = copyError(e);
+                    global.setSpan(new WritingEvaluateResponse.SpanDto(
+                            e.getSpan().getStart() + trimmedBase,
+                            e.getSpan().getEnd() + trimmedBase));
+                    allErrors.add(global);
+                }
+                if (trinkaCache.size() > MAX_CACHE_SIZE) {
+                    trinkaCache.clear();
+                }
+                trinkaCache.put(trimmed, cacheEntry);
             }
             offset += para.length();
         }

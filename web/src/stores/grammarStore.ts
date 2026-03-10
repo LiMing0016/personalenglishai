@@ -14,6 +14,9 @@ import {
   saveGrammarFixedIds,
   loadGrammarFixedIds,
   clearGrammarFixedIds,
+  saveRecentFixes,
+  loadRecentFixes,
+  clearRecentFixes,
 } from '@/components/writing/editorShellStorage'
 import { showToast } from '@/utils/toast'
 import { useWritingDraftStore } from './writingDraftStore'
@@ -35,8 +38,14 @@ export const useGrammarStore = defineStore('grammar', () => {
   function persistFixedIds() {
     saveGrammarFixedIds([...grammarFixedErrorIds.value], getScope())
   }
+  function persistRecentFixes() {
+    saveRecentFixes(recentFixes, getScope())
+  }
   const gptErrors = ref<CorrectionError[]>([])
   const gptSuggestionErrors = ref<CorrectionError[]>([])
+  /** Recently applied fixes: used to suppress reverse suggestions (A→B then B→A). */
+  const recentFixes: { original: string; suggestion: string }[] = []
+  const MAX_RECENT_FIXES = 50
   /** Text snapshot of the last completed grammar check, used to detect stale/pending checks. */
   let lastCheckedText = ''
   let abortController: AbortController | null = null
@@ -145,7 +154,20 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarCheckError.value = null
     try {
       const res = await grammarCheckApi({ text }, { signal: abortController.signal })
-      grammarErrors.value = res.errors ?? []
+      // Filter out reverse suggestions (e.g. A→B was applied, now B→A comes back)
+      const norm = (s: string) => s.toLowerCase().trim()
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")  // curly single quotes → straight
+        .replace(/[\u201C\u201D\u201E\u201F]/g, '"')   // curly double quotes → straight
+      const filtered = (res.errors ?? []).filter((e) => {
+        if (!e.original || !e.suggestion) return true
+        const origN = norm(e.original)
+        const sugN = norm(e.suggestion)
+        const isReverse = recentFixes.some(
+          (f) => norm(f.original) === sugN && norm(f.suggestion) === origN,
+        )
+        return !isReverse
+      })
+      grammarErrors.value = filtered
       grammarFixedErrorIds.value = new Set()
       persistFixedIds()
       gptErrors.value = []
@@ -177,6 +199,10 @@ export const useGrammarStore = defineStore('grammar', () => {
 
     grammarFixedErrorIds.value = new Set([...grammarFixedErrorIds.value, errorId])
     persistFixedIds()
+    // Record fix to suppress future reverse suggestions
+    recentFixes.push({ original: err.original, suggestion: err.suggestion! })
+    if (recentFixes.length > MAX_RECENT_FIXES) recentFixes.splice(0, recentFixes.length - MAX_RECENT_FIXES)
+    persistRecentFixes()
     const newText = text.slice(0, resolved.start) + err.suggestion! + text.slice(resolved.end)
     evaluateStore.evaluatedText = newText
     grammarCheckActive.value = true
@@ -200,7 +226,10 @@ export const useGrammarStore = defineStore('grammar', () => {
     for (const { err, start, end } of resolved) {
       text = text.slice(0, start) + err.suggestion! + text.slice(end)
       newFixed.add(err.id)
+      recentFixes.push({ original: err.original!, suggestion: err.suggestion! })
     }
+    if (recentFixes.length > MAX_RECENT_FIXES) recentFixes.splice(0, recentFixes.length - MAX_RECENT_FIXES)
+    persistRecentFixes()
 
     evaluateStore.evaluatedText = text
     grammarCheckActive.value = true
@@ -297,6 +326,10 @@ export const useGrammarStore = defineStore('grammar', () => {
         gptSuggestionErrors.value = cachedPolish.suggestions as CorrectionError[]
       }
     }
+    const cachedFixes = loadRecentFixes(scope)
+    if (cachedFixes && cachedFixes.length > 0 && recentFixes.length === 0) {
+      recentFixes.push(...cachedFixes)
+    }
   }
 
   function pauseForSubmit() {
@@ -325,6 +358,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     gptSuggestionErrors.value = []
     grammarCheckActive.value = true
     lastCheckedText = ''
+    recentFixes.length = 0
     abortController?.abort()
   }
 
@@ -334,6 +368,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     clearGrammarErrors(scope)
     clearPolishSuggestions(scope)
     clearGrammarFixedIds(scope)
+    clearRecentFixes(scope)
   }
 
   function destroy() {
