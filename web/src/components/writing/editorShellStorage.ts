@@ -15,8 +15,10 @@ export const WRITING_STORAGE_KEYS = {
   polishSuggestions: 'peai:writing:polishSuggestions',
   translateResult: 'peai:writing:translateResult',
   polishResult: 'peai:writing:polishResult',
+  templateResult: 'peai:writing:templateResult',
   grammarFixedIds: 'peai:writing:grammarFixedIds',
   appliedSuggestionIds: 'peai:writing:appliedSuggestionIds',
+  materialResult: 'peai:writing:materialResult',
 } as const
 
 function scopedKey(baseKey: string, scope?: string | null): string {
@@ -361,15 +363,15 @@ export interface PolishCache {
   essaySnapshot: string
 }
 
-export function savePolishResult(data: PolishCache): void {
+export function savePolishResult(data: PolishCache, scope?: string | null): void {
   try {
-    sessionStorage.setItem(WRITING_STORAGE_KEYS.polishResult, JSON.stringify(data))
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.polishResult, scope), JSON.stringify(data))
   } catch { /* ignore */ }
 }
 
-export function loadPolishResult(): PolishCache | null {
+export function loadPolishResult(scope?: string | null): PolishCache | null {
   try {
-    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.polishResult)
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.polishResult, scope))
     if (!raw) return null
     const obj = JSON.parse(raw)
     if (obj && Array.isArray(obj.sentences)) return obj as PolishCache
@@ -377,10 +379,40 @@ export function loadPolishResult(): PolishCache | null {
   } catch { return null }
 }
 
-export function clearPolishResult(): void {
-  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.polishResult) } catch { /* ignore */ }
+export function clearPolishResult(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.polishResult, scope)) } catch { /* ignore */ }
 }
 
+
+// ── 模板提炼结果缓存（sessionStorage） ──
+
+export interface WritingTemplateCache {
+  essayType: string | null
+  paragraphs: unknown[]
+  usageTips: string[]
+  essaySnapshot: string
+  taskPromptSnapshot: string
+}
+
+export function saveWritingTemplateResult(data: WritingTemplateCache): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.templateResult, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadWritingTemplateResult(): WritingTemplateCache | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.templateResult)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.paragraphs)) return obj as WritingTemplateCache
+    return null
+  } catch { return null }
+}
+
+export function clearWritingTemplateResult(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.templateResult) } catch { /* ignore */ }
+}
 // ── 语法修正 ID 缓存（sessionStorage） ──
 
 export function saveGrammarFixedIds(ids: string[]): void {
@@ -423,3 +455,26 @@ export function loadAppliedSuggestionIds(): { suggestions: string[]; gptErrors: 
 export function clearAppliedSuggestionIds(): void {
   try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.appliedSuggestionIds) } catch { /* ignore */ }
 }
+
+// ── 写作素材结果缓存（sessionStorage） ──
+
+export function saveWritingMaterialResult(data: unknown): void {
+  try {
+    sessionStorage.setItem(WRITING_STORAGE_KEYS.materialResult, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadWritingMaterialResult(): unknown | null {
+  try {
+    const raw = sessionStorage.getItem(WRITING_STORAGE_KEYS.materialResult)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && Array.isArray(obj.vocabulary)) return obj
+    return null
+  } catch { return null }
+}
+
+export function clearWritingMaterialResult(): void {
+  try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.materialResult) } catch { /* ignore */ }
+}
+

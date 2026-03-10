@@ -11,6 +11,8 @@ import com.personalenglishai.backend.dto.writing.PolishEssayRequest;
 import com.personalenglishai.backend.dto.writing.PolishEssayResponse;
 import com.personalenglishai.backend.dto.writing.PolishRequest;
 import com.personalenglishai.backend.dto.writing.PolishResponse;
+import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
+import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
 import com.personalenglishai.backend.dto.writing.AuditTopicRequest;
 import com.personalenglishai.backend.dto.writing.AuditTopicResponse;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageRequest;
@@ -34,6 +36,10 @@ import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.WritingTranslateService;
+import com.personalenglishai.backend.service.writing.WritingTemplateService;
+import com.personalenglishai.backend.service.writing.WritingMaterialService;
+import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
+import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
@@ -59,6 +65,8 @@ public class WritingController {
     private final WritingChatService writingChatService;
     private final WritingPolishService writingPolishService;
     private final WritingTranslateService writingTranslateService;
+    private final WritingTemplateService writingTemplateService;
+    private final WritingMaterialService writingMaterialService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
     private final AuditTopicService auditTopicService;
@@ -73,6 +81,8 @@ public class WritingController {
                              WritingChatService writingChatService,
                              WritingPolishService writingPolishService,
                              WritingTranslateService writingTranslateService,
+                             WritingTemplateService writingTemplateService,
+                             WritingMaterialService writingMaterialService,
                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
                              AuditTopicService auditTopicService,
@@ -86,6 +96,8 @@ public class WritingController {
         this.writingChatService = writingChatService;
         this.writingPolishService = writingPolishService;
         this.writingTranslateService = writingTranslateService;
+        this.writingTemplateService = writingTemplateService;
+        this.writingMaterialService = writingMaterialService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
         this.auditTopicService = auditTopicService;
@@ -174,6 +186,27 @@ public class WritingController {
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
         PolishEssayResponse response = writingPolishService.polishEssay(request);
+        return ResponseEntity.ok(response);
+    }
+
+
+    /** 模板提炼：从当前作文中抽取可复用句式模板 */
+    @PostMapping("/template")
+    public ResponseEntity<WritingTemplateResponse> extractTemplate(
+            @Valid @RequestBody WritingTemplateRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        WritingTemplateResponse response = writingTemplateService.extract(request);
+        return ResponseEntity.ok(response);
+    }
+
+    /** 素材生成：根据题目生成写作素材包 */
+    @PostMapping("/material")
+    public ResponseEntity<WritingMaterialResponse> generateMaterial(
+            @Valid @RequestBody WritingMaterialRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        WritingMaterialResponse response = writingMaterialService.generate(request);
         return ResponseEntity.ok(response);
     }
 
@@ -513,3 +546,5 @@ public class WritingController {
         return dto;
     }
 }
+
+

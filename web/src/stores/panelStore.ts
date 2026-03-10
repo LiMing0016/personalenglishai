@@ -31,7 +31,7 @@ export const usePanelStore = defineStore('panel', () => {
       grammarCheck: '语法检查',
       rewrite: 'AI 改写',
       structure: '段落结构',
-      improve: '提升',
+      improve: '作文模板',
       explain: '解释',
       translate: '翻译',
       aiNote: 'AI 助手',
@@ -102,3 +102,4 @@ export const usePanelStore = defineStore('panel', () => {
     saveState,
   }
 })
+
