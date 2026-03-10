@@ -654,7 +654,9 @@ export interface EssayPromptItem {
   promptText: string
   examYear: number | null
   imageUrl: string | null
+  imageDescription: string | null
   materialText: string | null
+  task: string | null
   source: string | null
 }
 

@@ -7,7 +7,9 @@ public class EssayPromptResponse {
     private String promptText;
     private Integer examYear;
     private String imageUrl;
+    private String imageDescription;
     private String materialText;
+    private String task;
     private String source;
 
     public Long getId() { return id; }
@@ -28,8 +30,14 @@ public class EssayPromptResponse {
     public String getImageUrl() { return imageUrl; }
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
+    public String getImageDescription() { return imageDescription; }
+    public void setImageDescription(String imageDescription) { this.imageDescription = imageDescription; }
+
     public String getMaterialText() { return materialText; }
     public void setMaterialText(String materialText) { this.materialText = materialText; }
+
+    public String getTask() { return task; }
+    public void setTask(String task) { this.task = task; }
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
