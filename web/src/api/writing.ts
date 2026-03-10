@@ -654,7 +654,12 @@ export interface EssayPromptItem {
   promptText: string
   examYear: number | null
   imageUrl: string | null
+  imageDescription: string | null
   materialText: string | null
+  task: string | null
+  wordCountMin: number | null
+  wordCountMax: number | null
+  maxScore: number | null
   source: string | null
 }
 

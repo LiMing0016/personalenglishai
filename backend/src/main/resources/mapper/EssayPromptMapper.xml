@@ -11,7 +11,12 @@
         <result property="promptText" column="prompt_text"/>
         <result property="examYear" column="exam_year"/>
         <result property="imageUrl" column="image_url"/>
+        <result property="imageDescription" column="image_description"/>
         <result property="materialText" column="material_text"/>
+        <result property="task" column="task"/>
+        <result property="wordCountMin" column="word_count_min"/>
+        <result property="wordCountMax" column="word_count_max"/>
+        <result property="maxScore" column="max_score"/>
         <result property="source" column="source"/>
         <result property="isActive" column="is_active"/>
         <result property="createdAt" column="created_at"/>
@@ -19,14 +24,14 @@
     </resultMap>
 
     <select id="selectActiveByStageId" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, image_description, material_text, task, word_count_min, word_count_max, max_score, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId} AND is_active = 1
         ORDER BY paper DESC
     </select>
 
     <select id="searchActiveByStageId" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, image_description, material_text, task, word_count_min, word_count_max, max_score, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId}
           AND is_active = 1
@@ -64,7 +69,7 @@
     </select>
 
     <select id="selectByPaper" resultMap="BaseResultMap">
-        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, material_text, source, is_active, created_at, updated_at
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, image_description, material_text, task, word_count_min, word_count_max, max_score, source, is_active, created_at, updated_at
         FROM essay_prompt
         WHERE stage_id = #{stageId} AND paper = #{paper}
         LIMIT 1

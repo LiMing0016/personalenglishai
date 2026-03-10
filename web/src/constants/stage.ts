@@ -19,6 +19,19 @@ export const STAGE_LABEL_MAP: Record<string, string> = Object.fromEntries(
   STAGE_OPTIONS.map((s) => [s.value, s.label]),
 )
 
+export const STAGE_ID_MAP: Record<string, number> = {
+  senior: 1,
+  highschool: 1,
+  cet4: 2,
+  cet6: 3,
+  postgrad: 4,
+}
+
+export function getStageId(stage: string | null | undefined): number {
+  if (!stage) return 2
+  return STAGE_ID_MAP[stage] ?? 2
+}
+
 export function getStageLabel(stage: string | null | undefined): string {
   if (!stage) return '未设置'
   return STAGE_LABEL_MAP[stage] ?? stage

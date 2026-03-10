@@ -541,7 +541,12 @@ public class WritingController {
         dto.setPromptText(entity.getPromptText());
         dto.setExamYear(entity.getExamYear());
         dto.setImageUrl(entity.getImageUrl());
+        dto.setImageDescription(entity.getImageDescription());
         dto.setMaterialText(entity.getMaterialText());
+        dto.setTask(entity.getTask());
+        dto.setWordCountMin(entity.getWordCountMin());
+        dto.setWordCountMax(entity.getWordCountMax());
+        dto.setMaxScore(entity.getMaxScore());
         dto.setSource(entity.getSource());
         return dto;
     }
