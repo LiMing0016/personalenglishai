@@ -127,3 +127,25 @@ ON DUPLICATE KEY UPDATE
     task = VALUES(task),
     source = VALUES(source),
     is_active = VALUES(is_active);
+
+-- =============================================================================
+-- 设置字数范围和分值默认值
+-- 英语一/二 task1（小作文）：10分，100-120词
+-- 英语一 task2（大作文）：20分，160-200词
+-- 英语二 task2（大作文）：15分，150-180词
+-- =============================================================================
+
+-- 英语一 + 英语二 小作文（task1）
+UPDATE essay_prompt
+SET word_count_min = 100, word_count_max = 120, max_score = 10
+WHERE stage_id = 4 AND task = 'task1';
+
+-- 英语一 大作文（task2）
+UPDATE essay_prompt
+SET word_count_min = 160, word_count_max = 200, max_score = 20
+WHERE stage_id = 4 AND task = 'task2' AND paper LIKE '%-en1';
+
+-- 英语二 大作文（task2）
+UPDATE essay_prompt
+SET word_count_min = 150, word_count_max = 180, max_score = 15
+WHERE stage_id = 4 AND task = 'task2' AND paper LIKE '%-en2';

@@ -10,6 +10,9 @@ public class EssayPromptResponse {
     private String imageDescription;
     private String materialText;
     private String task;
+    private Integer wordCountMin;
+    private Integer wordCountMax;
+    private Integer maxScore;
     private String source;
 
     public Long getId() { return id; }
@@ -38,6 +41,15 @@ public class EssayPromptResponse {
 
     public String getTask() { return task; }
     public void setTask(String task) { this.task = task; }
+
+    public Integer getWordCountMin() { return wordCountMin; }
+    public void setWordCountMin(Integer wordCountMin) { this.wordCountMin = wordCountMin; }
+
+    public Integer getWordCountMax() { return wordCountMax; }
+    public void setWordCountMax(Integer wordCountMax) { this.wordCountMax = wordCountMax; }
+
+    public Integer getMaxScore() { return maxScore; }
+    public void setMaxScore(Integer maxScore) { this.maxScore = maxScore; }
 
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }

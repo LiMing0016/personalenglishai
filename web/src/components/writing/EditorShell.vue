@@ -246,6 +246,14 @@ const onLeftPaneScroll = () => {
 }
 
 onMounted(async () => {
+  // Snapshot evaluate result from localStorage BEFORE resetAll clears it.
+  // resetAll sets evaluateResult to null, whose watch callback would wipe
+  // localStorage during the subsequent await (Vue flushes watchers between ticks).
+  const preloadedDocId = props.initialDocId?.trim()
+    || sessionStorage.getItem('peai:writing:docId')?.trim()
+    || null
+  const cachedEvalResult = loadEvaluateResult(preloadedDocId)
+
   // 重置旧文档状态，防止残留评价/语法数据
   grammarStore.resetAll()
   panelStore.activePanel = null
@@ -253,9 +261,7 @@ onMounted(async () => {
   const layout = panelStore.initLayout()
 
   // ── Single-channel hydration ──
-  const targetDocId = props.initialDocId?.trim()
-    || sessionStorage.getItem('peai:writing:docId')?.trim()
-    || null
+  const targetDocId = preloadedDocId
 
   if (targetDocId) {
     // Has docId (refresh or navigation): always hydrate from backend
@@ -278,8 +284,8 @@ onMounted(async () => {
 
   aiDocId.value = draftStore.docId ?? ''
 
-  // Restore evaluate result from localStorage (keyed by docId)
-  const savedResult = loadEvaluateResult(draftStore.docId)
+  // Restore evaluate result from pre-loaded cache (survives resetAll + watch flush)
+  const savedResult = cachedEvalResult ?? loadEvaluateResult(draftStore.docId)
   if (savedResult && !evaluateResult.value) {
     evaluateResult.value = savedResult
     grammarStore.setEvaluateResult(savedResult)

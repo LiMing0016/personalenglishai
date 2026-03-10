@@ -280,6 +280,7 @@
   <ExamSetupPage
     v-else-if="phase === 'exam-setup'"
     :initial-topic="resumeTopicForSetup"
+    :study-stage="currentStage ?? ''"
     @confirm="onExamConfirm"
     @back="onExamSetupBack"
     @save-draft="onExamSaveDraft"
@@ -327,7 +328,7 @@ const chosenMode = useSessionStorage<'free' | 'exam'>('peai:writing:chosenMode',
 const initialTaskPrompt = ref<string | undefined>(undefined)
 const initialDocId = useSessionStorage<string | null>('peai:writing:docId', null)
 const initialExistingContent = ref<string | null>(null)
-const examMaxScore = ref<number | null>(null)
+const examMaxScore = useSessionStorage<number | null>('peai:writing:examMaxScore', null)
 const initialSubmitCount = ref(0)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
 
@@ -754,6 +755,7 @@ async function onEditorBack() {
   initialDocId.value = null
   initialExistingContent.value = null
   initialTaskPrompt.value = undefined
+  examMaxScore.value = null
   await navigateToPhase('doc-list')
 }
 

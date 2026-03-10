@@ -340,6 +340,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useSessionStorage, useDebounceFn } from '@vueuse/core'
 import { auditTopic, recognizeTopicImage, startWritingSession, getEssayPrompts } from '@/api/writing'
 import type { EssayPromptItem } from '@/api/writing'
+import { getStageId } from '@/constants/stage'
 
 export interface ExamTopicInfo {
   topic: string
@@ -351,6 +352,7 @@ export interface ExamTopicInfo {
 
 const props = defineProps<{
   initialTopic?: string
+  studyStage?: string
 }>()
 
 const emit = defineEmits<{
@@ -715,7 +717,7 @@ async function loadPrompts(page = 1) {
   promptLoading.value = true
   try {
     const res = await getEssayPrompts({
-      stageId: 2,
+      stageId: getStageId(props.studyStage),
       keyword: promptKeyword.value.trim() || undefined,
       year: promptYear.value ?? undefined,
       page,
