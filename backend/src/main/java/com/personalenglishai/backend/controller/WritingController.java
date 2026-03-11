@@ -19,6 +19,8 @@ import com.personalenglishai.backend.dto.writing.RecognizeTopicImageRequest;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
 import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
+import com.personalenglishai.backend.dto.writing.GrammarSuppressRequest;
+import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
@@ -60,6 +62,8 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/writing")
 public class WritingController {
 
+
+
     private final WritingEvaluateService writingEvaluateService;
     private final WritingEvaluateTaskService writingEvaluateTaskService;
     private final WritingChatService writingChatService;
@@ -74,6 +78,7 @@ public class WritingController {
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final EssayPromptService essayPromptService;
+    private final GrammarSuppressService grammarSuppressService;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -90,6 +95,7 @@ public class WritingController {
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              EssayPromptService essayPromptService,
+                             GrammarSuppressService grammarSuppressService,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
@@ -105,6 +111,7 @@ public class WritingController {
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.essayPromptService = essayPromptService;
+        this.grammarSuppressService = grammarSuppressService;
         this.objectMapper = objectMapper;
     }
 
@@ -118,8 +125,10 @@ public class WritingController {
             @Valid @RequestBody WritingEvaluateRequest request,
             HttpServletRequest httpRequest) {
         normalizeEvaluateRequest(request);
-        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        request.setUserId(userId);
         WritingEvaluateResponse response = writingEvaluateService.evaluate(request);
+        filterEvaluateErrors(response, userId, request.getDocumentId(), request.getEssay());
         return ResponseEntity.ok(response);
     }
 
@@ -136,6 +145,7 @@ public class WritingController {
     @GetMapping("/evaluate/tasks/{requestId}")
     public ResponseEntity<WritingEvaluateTaskResponse> getEvaluateTask(
             @PathVariable String requestId,
+            @RequestParam(required = false) String documentId,
             HttpServletRequest httpRequest) {
         Long userId = (Long) httpRequest.getAttribute("userId");
         if (userId == null) return ResponseEntity.status(401).build();
@@ -143,6 +153,9 @@ public class WritingController {
         WritingEvaluateTaskResponse response = writingEvaluateTaskService.getTask(requestId);
         if (response == null || !userId.equals(response.getUserId())) {
             return ResponseEntity.notFound().build();
+        }
+        if (response.getResult() != null) {
+            filterEvaluateErrors(response.getResult(), userId, documentId, null);
         }
         return ResponseEntity.ok(response);
     }
@@ -227,9 +240,38 @@ public class WritingController {
      */
     @PostMapping("/grammar-check")
     public ResponseEntity<GrammarCheckResponse> grammarCheck(
-            @Valid @RequestBody GrammarCheckRequest request) {
+            @Valid @RequestBody GrammarCheckRequest request,
+            HttpServletRequest httpRequest) {
         var errors = grammarCheckService.check(request.getText());
+        // Filter out suppressed suggestions (dismissed / previously fixed)
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        String docId = request.getDocId();
+        if (userId != null && docId != null && !docId.isBlank()) {
+            errors = grammarSuppressService.filterSuppressed(userId, docId, errors, request.getText());
+        }
         return ResponseEntity.ok(new GrammarCheckResponse(errors));
+    }
+
+    /**
+     * 忽略/应用语法建议（存入 Redis，后续语法检查自动过滤）
+     */
+    @PostMapping("/grammar/suppress")
+    public ResponseEntity<Void> grammarSuppress(
+            @Valid @RequestBody GrammarSuppressRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        if (request.getDocId() == null || request.getDocId().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        grammarSuppressService.suppress(
+                userId, request.getDocId(),
+                request.getOriginal(), request.getSuggestion(),
+                request.getRuleType(), request.getEngine(),
+                request.getContext(), request.getAction());
+        return ResponseEntity.ok().build();
     }
 
     /**
@@ -549,6 +591,18 @@ public class WritingController {
         dto.setMaxScore(entity.getMaxScore());
         dto.setSource(entity.getSource());
         return dto;
+    }
+
+    /**
+     * Filter suppressed grammar errors from an evaluate response (in-place).
+     */
+    private void filterEvaluateErrors(WritingEvaluateResponse response, Long userId,
+                                       String documentId, String essayText) {
+        if (response == null || response.getErrors() == null || response.getErrors().isEmpty()) return;
+        if (userId == null || documentId == null || documentId.isBlank()) return;
+        String text = essayText != null ? essayText : "";
+        response.setErrors(
+                grammarSuppressService.filterSuppressed(userId, documentId, response.getErrors(), text));
     }
 }
 

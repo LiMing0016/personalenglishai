@@ -70,12 +70,19 @@
             <span v-if="err.lang_category" class="gc-lang-cat">{{ langCategoryLabel(err.lang_category) }}</span>
           </div>
           <span v-if="isFixed(err.id)" class="badge-fixed">已修改</span>
-          <button
-            v-else-if="canFix(err)"
-            type="button"
-            class="btn-fix-single"
-            @click.stop="emit('fix-error', err.id)"
-          >替换</button>
+          <template v-else>
+            <button
+              v-if="canFix(err)"
+              type="button"
+              class="btn-fix-single"
+              @click.stop="emit('fix-error', err.id)"
+            >替换</button>
+            <button
+              type="button"
+              class="btn-dismiss"
+              @click.stop="emit('dismiss-error', err.id)"
+            >忽略</button>
+          </template>
         </div>
         <div v-if="err.original && hasValidSuggestion(err)" class="gc-correction">
           <span class="gc-original">{{ err.original }}</span>
@@ -312,6 +319,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'fix-error': [errorId: string]
   'fix-all': []
+  'dismiss-error': [errorId: string]
   'error-click': [errorId: string]
   'apply-suggestion': [payload: { original: string; suggestion: string }]
   'start-polish': []
@@ -706,6 +714,20 @@ function applyGptError(item: SuggestionErrorItem) {
   transition: background 0.15s;
 }
 .btn-fix-single:hover { background: #c7d2fe; }
+
+.btn-dismiss {
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f9fafb;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-dismiss:hover { background: #e5e7eb; }
 
 .gc-correction {
   display: flex;

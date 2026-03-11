@@ -74,6 +74,7 @@
           @start-polish="onStartPolish"
           @grammar-fix-error="grammarStore.fixError"
           @grammar-fix-all="grammarStore.fixAll"
+          @grammar-dismiss-error="grammarStore.dismissError"
           @apply-suggestion="onApplySuggestion"
           @gpt-errors-loaded="grammarStore.setGptErrors"
           @gpt-suggestions-loaded="grammarStore.setGptSuggestions"
@@ -279,7 +280,8 @@ onMounted(async () => {
     panelStore.activePanel = 'score'
   }
 
-  // Restore grammar cache
+  // Restore grammar cache, but do not reuse stale evaluate errors as grammar source.
+  grammarStore.clearEvaluateErrorSource()
   grammarStore.restoreFromCache()
 
   // Fetch min word count for current stage (non-blocking)
@@ -295,6 +297,10 @@ onMounted(async () => {
   await nextTick()
   if (evaluateStore.evaluateResult && evaluateStore.evaluatedText == null) {
     evaluateStore.evaluatedText = draftStore.draftText
+  }
+
+  if (!examFirstWriteLocked.value && draftStore.draftText.trim().length >= 10) {
+    grammarStore.scheduleGrammarCheck()
   }
 
   try {
@@ -330,6 +336,7 @@ watch(() => panelStore.activePanel, (newPanel, oldPanel) => {
 watch(composableEvalResult, (result) => {
   evaluateStore.setResult(result)
   if (result) {
+    grammarStore.useEvaluateErrorsForPanels()
     evaluateStore.evaluatedText = draftStore.draftText
     if (evaluateStore.resultFromSubmit) {
       draftStore.submitCount++
@@ -537,7 +544,7 @@ async function onExitSave() {
   grammarStore.resetAll()
   evaluateStore.resetAll()
   grammarStore.clearAllCaches(scope)
-  evaluateStore.clearAllCaches(scope)
+  // 保存退出：保留评价结果缓存，下次进入同一文档时可恢复
   // 清除本地草稿（后端已保存）
   draftStore.clearAll()
   emit('back')
@@ -551,7 +558,7 @@ function onExitDiscard() {
   grammarStore.resetAll()
   evaluateStore.resetAll()
   grammarStore.clearAllCaches(scope)
-  evaluateStore.clearAllCaches(scope)
+  // 放弃退出：保留评价结果和 recentFixes，只丢弃本次未保存的修改
   // 只清本地草稿，后端保留上次保存的版本
   draftStore.clearAll()
   emit('back')

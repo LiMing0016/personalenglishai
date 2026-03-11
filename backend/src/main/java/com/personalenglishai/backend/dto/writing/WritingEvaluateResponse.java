@@ -227,6 +227,8 @@ public class WritingEvaluateResponse {
         private String langCategory;
         /** 多个修改建议（第一个同 suggestion） */
         private List<String> alternatives;
+        /** 来源引擎：lt | sapling | trinka | textgears | gpt */
+        private String engine;
 
         public ErrorDto() {
         }
@@ -251,6 +253,8 @@ public class WritingEvaluateResponse {
         public void setLangCategory(String langCategory) { this.langCategory = langCategory; }
         public List<String> getAlternatives() { return alternatives; }
         public void setAlternatives(List<String> alternatives) { this.alternatives = alternatives; }
+        public String getEngine() { return engine; }
+        public void setEngine(String engine) { this.engine = engine; }
     }
 
     public static class AnalysisDto {

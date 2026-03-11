@@ -19,6 +19,7 @@ import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
+import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
@@ -72,6 +73,9 @@ class WritingControllerTest {
 
     @MockBean
     private GrammarCheckService grammarCheckService;
+
+    @MockBean
+    private GrammarSuppressService grammarSuppressService;
 
     @MockBean
     private WritingSuggestionsService writingSuggestionsService;
@@ -421,5 +425,3 @@ class WritingControllerTest {
         return req;
     }
 }
-
-

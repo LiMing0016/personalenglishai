@@ -18,6 +18,8 @@ export function useEvaluateSubmission() {
   const evaluateResult = ref<WritingEvaluateResponse | null>(null)
   const evaluateError = ref<string | null>(null)
   const submitting = ref(false)
+  /** documentId for suppress filtering during poll */
+  let currentDocumentId: string | undefined
 
   let pollStartTime = 0
   let consecutiveErrors = 0
@@ -43,7 +45,7 @@ export function useEvaluateSubmission() {
   // Step 2: Poll for task status
   const pollQuery = useQuery({
     queryKey: computed(() => ['evaluateTask', requestId.value]),
-    queryFn: () => getEvaluateTask(requestId.value!),
+    queryFn: () => getEvaluateTask(requestId.value!, currentDocumentId),
     enabled: computed(() => pollEnabled.value && requestId.value != null),
     refetchInterval: computed(() => (pollEnabled.value ? POLL_INTERVAL_MS : false)),
     retry: 2,
@@ -111,6 +113,7 @@ export function useEvaluateSubmission() {
     requestId.value = null
     pollEnabled.value = false
     consecutiveErrors = 0
+    currentDocumentId = payload.documentId ?? undefined
 
     submitMutation.mutate(payload)
   }

@@ -9,11 +9,22 @@ public class GrammarCheckRequest {
     @Size(max = 5000, message = "text must not exceed 5000 characters")
     private String text;
 
+    /** Document ID for scoping grammar suppressions. */
+    private String docId;
+
     public String getText() {
         return text;
     }
 
     public void setText(String text) {
         this.text = text;
+    }
+
+    public String getDocId() {
+        return docId;
+    }
+
+    public void setDocId(String docId) {
+        this.docId = docId;
     }
 }

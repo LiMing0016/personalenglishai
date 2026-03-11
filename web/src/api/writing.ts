@@ -67,6 +67,8 @@ export interface WritingEvaluateResponse {
     reason?: string
     lang_category?: string
     alternatives?: string[]
+    /** Source engine: lt | sapling | trinka | textgears | gpt */
+    engine?: string
   }>
 }
 
@@ -149,10 +151,12 @@ export function submitEvaluateWriting(
 }
 
 export function getEvaluateTask(
-  requestId: string
+  requestId: string,
+  documentId?: string
 ): Promise<WritingEvaluateTaskStatusResponse> {
+  const params = documentId ? { documentId } : undefined
   return http
-    .get<WritingEvaluateTaskStatusResponse>(`/writing/evaluate/tasks/${encodeURIComponent(requestId)}`)
+    .get<WritingEvaluateTaskStatusResponse>(`/writing/evaluate/tasks/${encodeURIComponent(requestId)}`, { params })
     .then((res) => res.data)
 }
 
@@ -442,6 +446,7 @@ export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }>
 
 export interface GrammarCheckRequest {
   text: string
+  docId?: string
 }
 
 export interface GrammarCheckResponse {
@@ -458,6 +463,22 @@ export function grammarCheck(
       signal: options?.signal,
     })
     .then((res) => res.data)
+}
+
+// ── Grammar Suppress (dismiss / fix) ──
+
+export interface GrammarSuppressRequest {
+  docId: string
+  original: string
+  suggestion?: string
+  ruleType?: string
+  engine?: string
+  context?: string
+  action: 'dismiss' | 'fix'
+}
+
+export function grammarSuppress(payload: GrammarSuppressRequest): Promise<void> {
+  return http.post('/writing/grammar/suppress', payload).then(() => {})
 }
 
 // ── AI Suggestions ──

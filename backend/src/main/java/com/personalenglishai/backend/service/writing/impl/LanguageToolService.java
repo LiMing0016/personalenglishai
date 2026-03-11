@@ -113,6 +113,7 @@ public class LanguageToolService {
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId("lt" + idx);
+        dto.setEngine("lt");
         dto.setType(mapType(categoryId, ruleId));
         dto.setCategory("error");                       // LT = objective errors only
         dto.setSeverity(mapSeverity(categoryId));
