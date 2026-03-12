@@ -73,5 +73,14 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateStatus">
+        UPDATE users SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <update id="updateRole">
+        UPDATE users SET role = #{role}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
 </mapper>
+
 

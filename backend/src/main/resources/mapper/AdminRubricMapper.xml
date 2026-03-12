@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminRubricMapper">
+    <resultMap id="RubricVersionResultMap" type="com.personalenglishai.backend.entity.RubricVersion">
+        <id column="id" property="id"/>
+        <result column="rubric_key" property="rubricKey"/>
+        <result column="stage" property="stage"/>
+        <result column="is_active" property="isActive"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <resultMap id="RubricDimensionResultMap" type="com.personalenglishai.backend.entity.RubricDimension">
+        <id column="id" property="id"/>
+        <result column="rubric_version_id" property="rubricVersionId"/>
+        <result column="mode" property="mode"/>
+        <result column="dimension_key" property="dimensionKey"/>
+        <result column="display_name" property="displayName"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+    <resultMap id="RubricLevelResultMap" type="com.personalenglishai.backend.entity.RubricLevel">
+        <id column="id" property="id"/>
+        <result column="rubric_version_id" property="rubricVersionId"/>
+        <result column="mode" property="mode"/>
+        <result column="dimension_key" property="dimensionKey"/>
+        <result column="level" property="level"/>
+        <result column="level_score" property="levelScore"/>
+        <result column="criteria" property="criteria"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="searchVersions" resultType="java.util.LinkedHashMap">
+        SELECT v.id, v.rubric_key AS rubricKey, v.stage, v.is_active AS isActive, v.created_at AS createdAt,
+               GROUP_CONCAT(DISTINCT d.mode ORDER BY d.mode SEPARATOR ',') AS modesCsv
+        FROM rubric_version v
+        LEFT JOIN rubric_dimension d ON d.rubric_version_id = v.id
+        WHERE 1 = 1
+          <if test="stage != null and stage != ''">AND v.stage = #{stage}</if>
+          <if test="active != null">AND v.is_active = <choose><when test="active">1</when><otherwise>0</otherwise></choose></if>
+          <if test="mode != null and mode != ''">AND d.mode = #{mode}</if>
+        GROUP BY v.id, v.rubric_key, v.stage, v.is_active, v.created_at
+        ORDER BY v.created_at DESC, v.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countVersions" resultType="long">
+        SELECT COUNT(DISTINCT v.id)
+        FROM rubric_version v
+        LEFT JOIN rubric_dimension d ON d.rubric_version_id = v.id
+        WHERE 1 = 1
+          <if test="stage != null and stage != ''">AND v.stage = #{stage}</if>
+          <if test="active != null">AND v.is_active = <choose><when test="active">1</when><otherwise>0</otherwise></choose></if>
+          <if test="mode != null and mode != ''">AND d.mode = #{mode}</if>
+    </select>
+
+    <select id="selectVersionById" resultMap="RubricVersionResultMap">
+        SELECT id, rubric_key, stage, is_active, created_at
+        FROM rubric_version
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectDimensionsByVersionId" resultMap="RubricDimensionResultMap">
+        SELECT id, rubric_version_id, mode, dimension_key, display_name, sort_order, created_at
+        FROM rubric_dimension
+        WHERE rubric_version_id = #{rubricVersionId}
+        ORDER BY mode ASC, sort_order ASC, id ASC
+    </select>
+
+    <select id="selectLevelsByVersionId" resultMap="RubricLevelResultMap">
+        SELECT id, rubric_version_id, mode, dimension_key, `level`, level_score, criteria, created_at
+        FROM rubric_level
+        WHERE rubric_version_id = #{rubricVersionId}
+        ORDER BY mode ASC, dimension_key ASC, FIELD(`level`, 'A', 'B', 'C', 'D', 'E')
+    </select>
+
+    <select id="selectModesByVersionId" resultType="string">
+        SELECT DISTINCT mode FROM rubric_dimension WHERE rubric_version_id = #{rubricVersionId} ORDER BY mode ASC
+    </select>
+
+    <insert id="insertVersion" parameterType="com.personalenglishai.backend.entity.RubricVersion" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO rubric_version (rubric_key, stage, is_active) VALUES (#{rubricKey}, #{stage}, #{isActive})
+    </insert>
+
+    <insert id="insertDimension" parameterType="com.personalenglishai.backend.entity.RubricDimension" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO rubric_dimension (rubric_version_id, mode, dimension_key, display_name, sort_order)
+        VALUES (#{rubricVersionId}, #{mode}, #{dimensionKey}, #{displayName}, #{sortOrder})
+    </insert>
+
+    <insert id="insertLevel" parameterType="com.personalenglishai.backend.entity.RubricLevel" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level_score, criteria)
+        VALUES (#{rubricVersionId}, #{mode}, #{dimensionKey}, #{level}, #{levelScore}, #{criteria})
+    </insert>
+
+    <delete id="deleteDimensionsByVersionId">
+        DELETE FROM rubric_dimension WHERE rubric_version_id = #{rubricVersionId}
+    </delete>
+
+    <delete id="deleteLevelsByVersionId">
+        DELETE FROM rubric_level WHERE rubric_version_id = #{rubricVersionId}
+    </delete>
+
+    <update id="updateVersionMeta" parameterType="com.personalenglishai.backend.entity.RubricVersion">
+        UPDATE rubric_version
+        SET rubric_key = #{rubricKey},
+            stage = #{stage}
+        WHERE id = #{id}
+    </update>
+
+    <update id="deactivateByStage">
+        UPDATE rubric_version SET is_active = 0 WHERE stage = #{stage}
+    </update>
+
+    <update id="activateById">
+        UPDATE rubric_version SET is_active = 1 WHERE id = #{id}
+    </update>
+</mapper>

@@ -2,17 +2,21 @@
  * 前端路由与鉴权守卫
  * - 公共路由（meta.public=true）：放行
  * - 业务路由：无 token 或 token 已过期时跳转 /login
- * - 已登录但无学段 → 跳转 /app/stage-setup
- * - 登录成功后支持回跳到原始目标页面（redirect query）
+ * - 管理员路由：先校验管理员身份，失败回退 /app
+ * - 已登录但无学段 → 跳转 /app/stage-setup（管理员路由跳过）
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import type { AxiosError } from 'axios'
 import { clearToken, getToken, setToken, isTokenExpired } from '@/utils/token'
 import { authApi } from '@/api/auth'
 import { userApi } from '@/api/user'
+import { clearAdminMeCache, getAdminMe } from '@/api/admin'
+import { showToast } from '@/utils/toast'
 import { stageCache, clearStageCache } from '@/stores/stageCache'
 
 const BUSINESS_HOME = '/app'
+const ADMIN_HOME = '/admin/users'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -63,8 +67,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ResetPasswordView.vue'),
     meta: { public: true },
   },
-
-  // ── 业务路由（嵌套在 AppLayout 下） ──
   {
     path: '/app',
     component: () => import('@/layouts/AppLayout.vue'),
@@ -79,7 +81,9 @@ const routes: RouteRecordRaw[] = [
         path: 'stage-setup',
         name: 'StageSetup',
         component: () => import('@/pages/app/StageSetupPage.vue'),
-      },      {
+        meta: { skipStageCheck: true },
+      },
+      {
         path: 'writing',
         name: 'WritingDocList',
         component: () => import('@/pages/app/WritingPage.vue'),
@@ -132,8 +136,67 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
-
-  // ── 兼容旧路径 ──
+  {
+    path: '/admin',
+    component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { public: false, requiresAdmin: true, skipStageCheck: true },
+    children: [
+      {
+        path: '',
+        redirect: ADMIN_HOME,
+      },
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: () => import('@/pages/admin/AdminUsersPage.vue'),
+      },
+      {
+        path: 'users/:id',
+        name: 'AdminUserDetail',
+        component: () => import('@/pages/admin/AdminUserDetailPage.vue'),
+      },
+      {
+        path: 'essays',
+        name: 'AdminEssays',
+        component: () => import('@/pages/admin/AdminEssaysPage.vue'),
+      },
+      {
+        path: 'essays/:id',
+        name: 'AdminEssayDetail',
+        component: () => import('@/pages/admin/AdminEssayDetailPage.vue'),
+      },
+      {
+        path: 'prompts',
+        name: 'AdminPrompts',
+        component: () => import('@/pages/admin/AdminPromptsPage.vue'),
+      },
+      {
+        path: 'prompts/new',
+        name: 'AdminPromptCreate',
+        component: () => import('@/pages/admin/AdminPromptDetailPage.vue'),
+      },
+      {
+        path: 'prompts/:id',
+        name: 'AdminPromptDetail',
+        component: () => import('@/pages/admin/AdminPromptDetailPage.vue'),
+      },
+      {
+        path: 'rubrics',
+        name: 'AdminRubrics',
+        component: () => import('@/pages/admin/AdminRubricsPage.vue'),
+      },
+      {
+        path: 'rubrics/:id',
+        name: 'AdminRubricDetail',
+        component: () => import('@/pages/admin/AdminRubricDetailPage.vue'),
+      },
+      {
+        path: 'audit-logs',
+        name: 'AdminAuditLogs',
+        component: () => import('@/pages/admin/AdminAuditLogsPage.vue'),
+      },
+    ],
+  },
   {
     path: '/app/writing/evaluate',
     redirect: () => ({ path: '/app/writing' }),
@@ -158,13 +221,17 @@ function buildLoginRedirectTarget(fullPath: string) {
   return { path: '/login', query: { redirect: fullPath } }
 }
 
+function getStatus(err: unknown) {
+  return (err as AxiosError | undefined)?.response?.status
+}
+
 router.beforeEach(async (to, from, next) => {
   const token = getToken()
   const expired = isTokenExpired(token)
   let hasToken = !!token && !expired
-  const isPublic = Boolean((to.meta as { public?: boolean }).public)
+  const meta = to.meta as { public?: boolean; skipStageCheck?: boolean; requiresAdmin?: boolean }
+  const isPublic = Boolean(meta.public)
 
-  // Access token 过期时尝试用 refresh cookie 静默续签
   if (token && expired) {
     if (DEBUG_ROUTER) {
       console.info('[router] guard: token expired, attempting refresh', { to: to.fullPath })
@@ -176,16 +243,19 @@ router.beforeEach(async (to, from, next) => {
       if (newToken) {
         setToken(newToken)
         hasToken = true
+        clearAdminMeCache()
         if (DEBUG_ROUTER) {
           console.info('[router] guard: refresh succeeded')
         }
       } else {
         clearToken()
         clearStageCache()
+        clearAdminMeCache()
       }
     } catch {
       clearToken()
       clearStageCache()
+      clearAdminMeCache()
       if (DEBUG_ROUTER) {
         console.info('[router] guard: refresh failed, cleared token')
       }
@@ -197,6 +267,7 @@ router.beforeEach(async (to, from, next) => {
       console.info('[router] guard: no valid token, redirect to /login', { to: to.fullPath, from: from.fullPath })
     }
     clearStageCache()
+    clearAdminMeCache()
     next(buildLoginRedirectTarget(to.fullPath))
     return
   }
@@ -209,15 +280,35 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  // ── Stage check for authenticated non-public routes ──
-  if (!isPublic && hasToken && to.path !== '/app/stage-setup') {
-    // Fetch profile once and cache it
+  if (meta.requiresAdmin) {
+    try {
+      await getAdminMe()
+    } catch (err) {
+      const status = getStatus(err)
+      if (status === 401 || status === 403) {
+        if (status === 403) {
+          showToast('当前账号不是管理员，请切换管理员账号登录', 'error')
+        }
+        clearToken()
+        clearStageCache()
+        clearAdminMeCache()
+        next(buildLoginRedirectTarget(to.fullPath))
+        return
+      }
+      if (status === 404) {
+        showToast('管理员接口未部署，请确认后端已更新', 'error')
+      }
+      next(BUSINESS_HOME)
+      return
+    }
+  }
+
+  if (!isPublic && hasToken && !meta.skipStageCheck && to.path !== '/app/stage-setup') {
     if (stageCache.value === null) {
       try {
         const res = await userApi.getMyProfile()
         stageCache.value = res.data?.studyStage || ''
       } catch {
-        // On failure, skip the check to avoid blocking navigation
         stageCache.value = '__error__'
       }
     }

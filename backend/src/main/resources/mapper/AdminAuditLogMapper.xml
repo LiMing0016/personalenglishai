@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminAuditLogMapper">
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.admin.AdminAuditLog" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO admin_audit_log (admin_user_id, action, resource_type, resource_id, target_user_id, before_json, after_json, ip, user_agent)
+        VALUES (#{adminUserId}, #{action}, #{resourceType}, #{resourceId}, #{targetUserId}, #{beforeJson}, #{afterJson}, #{ip}, #{userAgent})
+    </insert>
+
+    <select id="search" resultType="java.util.LinkedHashMap">
+        SELECT l.id,
+               l.admin_user_id AS adminUserId,
+               u.nickname AS adminNickname,
+               l.action,
+               l.resource_type AS resourceType,
+               l.resource_id AS resourceId,
+               l.target_user_id AS targetUserId,
+               l.before_json AS beforeJson,
+               l.after_json AS afterJson,
+               l.ip,
+               l.user_agent AS userAgent,
+               l.created_at AS createdAt
+        FROM admin_audit_log l
+        LEFT JOIN users u ON u.id = l.admin_user_id
+        WHERE 1 = 1
+          <if test="adminUserId != null">AND l.admin_user_id = #{adminUserId}</if>
+          <if test="action != null and action != ''">AND l.action = #{action}</if>
+          <if test="resourceType != null and resourceType != ''">AND l.resource_type = #{resourceType}</if>
+          <if test="targetUserId != null">AND l.target_user_id = #{targetUserId}</if>
+          <if test="from != null and from != ''">AND l.created_at <![CDATA[>=]]> #{from}</if>
+          <if test="to != null and to != ''">AND l.created_at <![CDATA[<=]]> #{to}</if>
+        ORDER BY l.created_at DESC, l.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSearch" resultType="long">
+        SELECT COUNT(*)
+        FROM admin_audit_log l
+        WHERE 1 = 1
+          <if test="adminUserId != null">AND l.admin_user_id = #{adminUserId}</if>
+          <if test="action != null and action != ''">AND l.action = #{action}</if>
+          <if test="resourceType != null and resourceType != ''">AND l.resource_type = #{resourceType}</if>
+          <if test="targetUserId != null">AND l.target_user_id = #{targetUserId}</if>
+          <if test="from != null and from != ''">AND l.created_at <![CDATA[>=]]> #{from}</if>
+          <if test="to != null and to != ''">AND l.created_at <![CDATA[<=]]> #{to}</if>
+    </select>
+</mapper>
