@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminUserQueryMapper">
+    <select id="searchUsers" resultType="java.util.LinkedHashMap">
+        SELECT u.id,
+               u.email,
+               u.phone,
+               u.nickname,
+               u.status,
+               u.register_source AS registerSource,
+               u.role,
+               up.study_stage AS studyStage,
+               u.last_active_at AS lastActiveAt,
+               u.created_at AS createdAt,
+               GROUP_CONCAT(aur.role ORDER BY aur.role SEPARATOR ',') AS adminRolesCsv
+        FROM users u
+        LEFT JOIN user_profile up ON up.user_id = u.id
+        LEFT JOIN admin_user_role aur ON aur.user_id = u.id
+        WHERE 1 = 1
+          <if test="keyword != null and keyword != ''">
+            AND (
+              u.email LIKE CONCAT('%', #{keyword}, '%')
+              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+          <if test="status != null and status != ''">AND u.status = #{status}</if>
+          <if test="registerSource != null and registerSource != ''">AND u.register_source = #{registerSource}</if>
+          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
+          <if test="lastActiveFrom != null and lastActiveFrom != ''">AND u.last_active_at <![CDATA[>=]]> #{lastActiveFrom}</if>
+          <if test="lastActiveTo != null and lastActiveTo != ''">AND u.last_active_at <![CDATA[<=]]> #{lastActiveTo}</if>
+          <if test="adminRole != null and adminRole != ''">AND aur.role = #{adminRole}</if>
+        GROUP BY u.id, u.email, u.phone, u.nickname, u.status, u.register_source, u.role, up.study_stage, u.last_active_at, u.created_at
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countUsers" resultType="long">
+        SELECT COUNT(DISTINCT u.id)
+        FROM users u
+        LEFT JOIN user_profile up ON up.user_id = u.id
+        LEFT JOIN admin_user_role aur ON aur.user_id = u.id
+        WHERE 1 = 1
+          <if test="keyword != null and keyword != ''">
+            AND (
+              u.email LIKE CONCAT('%', #{keyword}, '%')
+              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+          <if test="status != null and status != ''">AND u.status = #{status}</if>
+          <if test="registerSource != null and registerSource != ''">AND u.register_source = #{registerSource}</if>
+          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
+          <if test="lastActiveFrom != null and lastActiveFrom != ''">AND u.last_active_at <![CDATA[>=]]> #{lastActiveFrom}</if>
+          <if test="lastActiveTo != null and lastActiveTo != ''">AND u.last_active_at <![CDATA[<=]]> #{lastActiveTo}</if>
+          <if test="adminRole != null and adminRole != ''">AND aur.role = #{adminRole}</if>
+    </select>
+</mapper>
