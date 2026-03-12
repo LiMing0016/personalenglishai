@@ -100,7 +100,7 @@
 - 编辑器壳：`EditorShell.vue`
 - 左区编辑：`DocEditor.vue`
 - 右侧工具栏/面板：`ToolRail.vue`、`ToolPanel.vue`
-- AI 面板：`ChatPanel.vue`、`RewritePanel.vue`、`ExplainPanel.vue`、`TranslatePanel.vue` 等
+- AI 面板：`ChatPanel.vue`、`RewritePanel.vue`、`ExplainPanel.vue`、`TranslatePanel.vue` 等（TranslatePanel 已接入真实翻译请求）
 - 选区状态：`useWritingSelectionStore.ts`
 
 ## 5. API 封装现状
@@ -123,3 +123,4 @@
 
 - 当前前端没有管理员导航或 `/admin` 页面。
 - 当前权限判断主要是登录态，不是角色态。
+
