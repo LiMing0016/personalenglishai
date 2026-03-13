@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminPromptMapper">
+    <resultMap id="EssayPromptResultMap" type="com.personalenglishai.backend.entity.EssayPrompt">
+        <id property="id" column="id"/>
+        <result property="stageId" column="stage_id"/>
+        <result property="paper" column="paper"/>
+        <result property="title" column="title"/>
+        <result property="promptText" column="prompt_text"/>
+        <result property="examYear" column="exam_year"/>
+        <result property="imageUrl" column="image_url"/>
+        <result property="imageDescription" column="image_description"/>
+        <result property="materialText" column="material_text"/>
+        <result property="task" column="task"/>
+        <result property="wordCountMin" column="word_count_min"/>
+        <result property="wordCountMax" column="word_count_max"/>
+        <result property="maxScore" column="max_score"/>
+        <result property="source" column="source"/>
+        <result property="isActive" column="is_active"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <select id="search" resultType="java.util.LinkedHashMap">
+        SELECT id, stage_id AS stageId, paper, title, exam_year AS examYear, task,
+               word_count_min AS wordCountMin, word_count_max AS wordCountMax,
+               max_score AS maxScore, source, is_active AS isActive, updated_at AS updatedAt
+        FROM essay_prompt
+        WHERE 1 = 1
+          <if test="stageId != null">AND stage_id = #{stageId}</if>
+          <if test="examYear != null">AND exam_year = #{examYear}</if>
+          <if test="task != null and task != ''">AND task = #{task}</if>
+          <if test="active != null">AND is_active = <choose><when test="active">1</when><otherwise>0</otherwise></choose></if>
+          <if test="keyword != null and keyword != ''">
+            AND (
+              paper LIKE CONCAT('%', #{keyword}, '%')
+              OR title LIKE CONCAT('%', #{keyword}, '%')
+              OR prompt_text LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+        ORDER BY updated_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSearch" resultType="long">
+        SELECT COUNT(*)
+        FROM essay_prompt
+        WHERE 1 = 1
+          <if test="stageId != null">AND stage_id = #{stageId}</if>
+          <if test="examYear != null">AND exam_year = #{examYear}</if>
+          <if test="task != null and task != ''">AND task = #{task}</if>
+          <if test="active != null">AND is_active = <choose><when test="active">1</when><otherwise>0</otherwise></choose></if>
+          <if test="keyword != null and keyword != ''">
+            AND (
+              paper LIKE CONCAT('%', #{keyword}, '%')
+              OR title LIKE CONCAT('%', #{keyword}, '%')
+              OR prompt_text LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+    </select>
+
+    <select id="selectById" resultMap="EssayPromptResultMap">
+        SELECT id, stage_id, paper, title, prompt_text, exam_year, image_url, image_description, material_text, task,
+               word_count_min, word_count_max, max_score, source, is_active, created_at, updated_at
+        FROM essay_prompt
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.EssayPrompt" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO essay_prompt (stage_id, paper, title, prompt_text, exam_year, image_url, image_description, material_text, task, word_count_min, word_count_max, max_score, source, is_active)
+        VALUES (#{stageId}, #{paper}, #{title}, #{promptText}, #{examYear}, #{imageUrl}, #{imageDescription}, #{materialText}, #{task}, #{wordCountMin}, #{wordCountMax}, #{maxScore}, #{source}, #{isActive})
+    </insert>
+
+    <update id="update" parameterType="com.personalenglishai.backend.entity.EssayPrompt">
+        UPDATE essay_prompt
+        SET stage_id = #{stageId},
+            paper = #{paper},
+            title = #{title},
+            prompt_text = #{promptText},
+            exam_year = #{examYear},
+            image_url = #{imageUrl},
+            image_description = #{imageDescription},
+            material_text = #{materialText},
+            task = #{task},
+            word_count_min = #{wordCountMin},
+            word_count_max = #{wordCountMax},
+            max_score = #{maxScore},
+            source = #{source},
+            is_active = #{isActive},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateActive">
+        UPDATE essay_prompt SET is_active = #{isActive}, updated_at = NOW() WHERE id = #{id}
+    </update>
+</mapper>

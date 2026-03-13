@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminEssayMapper">
+    <sql id="EssaySearchWhere">
+        WHERE 1 = 1
+          <if test="userId != null">AND e.user_id = #{userId}</if>
+          <if test="keyword != null and keyword != ''">
+            AND (
+              e.task_prompt LIKE CONCAT('%', #{keyword}, '%')
+              OR e.essay_text LIKE CONCAT('%', #{keyword}, '%')
+              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+          <if test="mode != null and mode != ''">AND e.mode = #{mode}</if>
+          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
+          <if test="scoreMin != null">AND e.overall_score <![CDATA[>=]]> #{scoreMin}</if>
+          <if test="scoreMax != null">AND e.overall_score <![CDATA[<=]]> #{scoreMax}</if>
+          <if test="favorited != null">
+            <choose>
+              <when test="favorited">AND ef.id IS NOT NULL</when>
+              <otherwise>AND ef.id IS NULL</otherwise>
+            </choose>
+          </if>
+          <if test="archived != null">
+            <choose>
+              <when test="archived">AND d.status = 2</when>
+              <otherwise>AND (d.status IS NULL OR d.status != 2)</otherwise>
+            </choose>
+          </if>
+          <if test="createdFrom != null and createdFrom != ''">AND e.created_at <![CDATA[>=]]> #{createdFrom}</if>
+          <if test="createdTo != null and createdTo != ''">AND e.created_at <![CDATA[<=]]> #{createdTo}</if>
+    </sql>
+
+    <select id="searchEssays" resultType="java.util.LinkedHashMap">
+        SELECT e.id AS evaluationId,
+               e.user_id AS userId,
+               u.nickname AS userNickname,
+               e.mode,
+               LEFT(COALESCE(e.task_prompt, ''), 120) AS taskPromptPreview,
+               LEFT(e.essay_text, 140) AS essayPreview,
+               e.overall_score AS overallScore,
+               e.gaokao_score AS gaokaoScore,
+               e.band,
+               CASE WHEN ef.id IS NULL THEN FALSE ELSE TRUE END AS favorited,
+               CASE WHEN d.status = 2 THEN TRUE ELSE FALSE END AS archived,
+               e.created_at AS createdAt
+        FROM essay_evaluation e
+        JOIN users u ON u.id = e.user_id
+        LEFT JOIN user_profile up ON up.user_id = e.user_id
+        LEFT JOIN essay_favorite ef ON ef.evaluation_id = e.id AND ef.user_id = e.user_id
+        LEFT JOIN documents d ON d.id = e.document_id
+        <include refid="EssaySearchWhere"/>
+        ORDER BY e.created_at DESC, e.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countEssays" resultType="long">
+        SELECT COUNT(*)
+        FROM essay_evaluation e
+        JOIN users u ON u.id = e.user_id
+        LEFT JOIN user_profile up ON up.user_id = e.user_id
+        LEFT JOIN essay_favorite ef ON ef.evaluation_id = e.id AND ef.user_id = e.user_id
+        LEFT JOIN documents d ON d.id = e.document_id
+        <include refid="EssaySearchWhere"/>
+    </select>
+</mapper>

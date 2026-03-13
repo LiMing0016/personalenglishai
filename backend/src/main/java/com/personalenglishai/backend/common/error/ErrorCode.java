@@ -22,6 +22,9 @@ public enum ErrorCode {
     AUTH_PHONE_NO_PASSWORD("401004", "该账号未设置密码，请使用验证码登录"),
     AUTH_CURRENT_PASSWORD_WRONG("401005", "当前密码错误"),
     AUTH_CAPTCHA_INVALID("400040", "验证码无效或已过期，请重新验证"),
+    ADMIN_FORBIDDEN("403010", "无管理员权限"),
+    ADMIN_ROLE_INVALID("400050", "无效的管理员角色"),
+    ADMIN_ACTIVE_RUBRIC_EDIT_FORBIDDEN("409010", "激活中的 Rubric 不允许直接编辑"),
     ESSAY_TOO_SHORT("400010", "作文太短，至少需要 20 个词"),
     ESSAY_TOO_LONG("400011", "作文太长，最多支持 500 个词"),
     ;
@@ -37,3 +40,4 @@ public enum ErrorCode {
     public String getCode() { return code; }
     public String getMessage() { return message; }
 }
+
