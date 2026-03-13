@@ -324,7 +324,7 @@ import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
 import type { ExamTopicInfo } from '@/pages/app/ExamSetupPage.vue'
 import { stageCache } from '@/stores/stageCache'
 import { getStageLabel } from '@/constants/stage'
-import { startWritingSession, getWritingDocuments, getWritingStats } from '@/api/writing'
+import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats } from '@/api/writing'
 import type { WritingDocumentItem, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
@@ -697,10 +697,24 @@ async function createFreeDoc() {
   try {
     const now = new Date()
     const freeTitle = `自由写作 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    const session = await startWritingSession({ mode: 'free', title: freeTitle })
+    const session = await startWritingSession({
+      mode: 'free',
+      title: freeTitle,
+      studyStage: currentStage.value,
+      sourceType: 'free_input',
+      titleSnapshot: freeTitle,
+      topicTitle: freeTitle,
+    })
     initialDocId.value = session.docId
     initialExistingContent.value = session.existingContent ?? null
     initialSubmitCount.value = session.submitCount ?? 0
+    const sessionMetadata = await getWritingSessionMetadata(session.docId).catch((err) => {
+      console.warn('[WritingPage] load session metadata failed', err)
+      return null
+    })
+    if (sessionMetadata) {
+      console.log('[WritingPage] writing metadata', sessionMetadata)
+    }
   } catch (e) {
     console.warn('[WritingPage] create free doc failed', e)
     initialDocId.value = null
@@ -728,10 +742,28 @@ async function onExamConfirm(info: ExamTopicInfo) {
       mode: 'exam',
       taskPrompt: prompt,
       title: info.topic.slice(0, 100),
+      studyStage: currentStage.value,
+      sourceType: info.sourceType,
+      titleSnapshot: info.topic.slice(0, 100),
+      topicTitle: info.topic,
+      promptText: prompt,
+      genre: info.genre ?? undefined,
+      examType: info.examType,
+      taskType: info.taskType,
+      minWords: info.minWords,
+      recommendedMaxWords: info.recommendedMaxWords,
+      maxScore: info.maxScore,
     })
     initialDocId.value = session.docId
     initialExistingContent.value = session.existingContent ?? null
     initialSubmitCount.value = session.submitCount ?? 0
+    const sessionMetadata = await getWritingSessionMetadata(session.docId).catch((err) => {
+      console.warn('[WritingPage] load session metadata failed', err)
+      return null
+    })
+    if (sessionMetadata) {
+      console.log('[WritingPage] writing metadata', sessionMetadata)
+    }
   } catch (e) {
     console.warn('[WritingPage] create exam doc failed', e)
     initialDocId.value = null
@@ -1540,6 +1572,8 @@ function formatTime(dateStr: string) {
   .doc-section-header { flex-direction: column; align-items: flex-start; }
 }
 </style>
+
+
 
 
 

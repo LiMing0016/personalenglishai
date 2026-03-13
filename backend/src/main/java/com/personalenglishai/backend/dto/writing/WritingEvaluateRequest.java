@@ -23,6 +23,15 @@ public class WritingEvaluateRequest {
     /** Optional exam task prompt/instruction. */
     private String taskPrompt;
 
+
+    private String studyStage;
+    private String topicTitle;
+    private String genre;
+    private String examType;
+    private String taskType;
+    private Integer minWords;
+    private Integer recommendedMaxWords;
+    private Integer maxScore;
     /** Optional document public_id for binding evaluations to a document. */
     private String documentId;
 
@@ -71,6 +80,70 @@ public class WritingEvaluateRequest {
 
     public void setTaskPrompt(String taskPrompt) {
         this.taskPrompt = taskPrompt;
+    }
+
+    public String getStudyStage() {
+        return studyStage;
+    }
+
+    public void setStudyStage(String studyStage) {
+        this.studyStage = studyStage;
+    }
+
+    public String getTopicTitle() {
+        return topicTitle;
+    }
+
+    public void setTopicTitle(String topicTitle) {
+        this.topicTitle = topicTitle;
+    }
+
+    public String getGenre() {
+        return genre;
+    }
+
+    public void setGenre(String genre) {
+        this.genre = genre;
+    }
+
+    public String getExamType() {
+        return examType;
+    }
+
+    public void setExamType(String examType) {
+        this.examType = examType;
+    }
+
+    public String getTaskType() {
+        return taskType;
+    }
+
+    public void setTaskType(String taskType) {
+        this.taskType = taskType;
+    }
+
+    public Integer getMinWords() {
+        return minWords;
+    }
+
+    public void setMinWords(Integer minWords) {
+        this.minWords = minWords;
+    }
+
+    public Integer getRecommendedMaxWords() {
+        return recommendedMaxWords;
+    }
+
+    public void setRecommendedMaxWords(Integer recommendedMaxWords) {
+        this.recommendedMaxWords = recommendedMaxWords;
+    }
+
+    public Integer getMaxScore() {
+        return maxScore;
+    }
+
+    public void setMaxScore(Integer maxScore) {
+        this.maxScore = maxScore;
     }
 
     public String getDocumentId() {

@@ -42,6 +42,8 @@ import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
+import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
+import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
@@ -399,20 +401,42 @@ public class WritingController {
      */
     @PostMapping("/start-session")
     public ResponseEntity<java.util.Map<String, Object>> startSession(
-            @RequestBody java.util.Map<String, String> body,
+            @RequestBody StartWritingSessionRequest body,
             HttpServletRequest httpRequest) {
         Long userId = (Long) httpRequest.getAttribute("userId");
         if (userId == null) return ResponseEntity.status(401).build();
 
         String tenantId = String.valueOf(userId);
-        String mode = body.getOrDefault("mode", "free");
-        String taskPrompt = body.get("taskPrompt");
-        String title = body.getOrDefault("title", "");
-        boolean draft = "true".equals(body.get("draft"));
+        String mode = normalizeMode(body.getMode());
+
+        DocumentService.StartMetadata metadata = new DocumentService.StartMetadata();
+        metadata.setMode(mode);
+        metadata.setStudyStage(trimToNull(body.getStudyStage()));
+        metadata.setTitleSnapshot(trimToNull(body.getTitleSnapshot()));
+        metadata.setTopicTitle(trimToNull(body.getTopicTitle()));
+        metadata.setPromptText(trimToNull(body.getPromptText()));
+        metadata.setGenre(trimToNull(body.getGenre()));
+        metadata.setSourceType(trimToNull(body.getSourceType()));
+        metadata.setExamType(trimToNull(body.getExamType()));
+        metadata.setTaskType(trimToNull(body.getTaskType()));
+        metadata.setMinWords(body.getMinWords());
+        metadata.setRecommendedMaxWords(body.getRecommendedMaxWords());
+        metadata.setMaxScore(body.getMaxScore());
+
+        String taskPrompt = trimToNull(body.getTaskPrompt());
+        String title = trimToNull(body.getTitle());
+        if (title == null) {
+            title = "";
+        }
+        if ("free".equals(mode) && title.isBlank()) {
+            title = "自由写作";
+        }
+
+        boolean draft = Boolean.TRUE.equals(body.getDraft());
 
         // 题目一致时复用同一文档，避免重复创建。
         DocumentService.StartSessionResult result = documentService.findOrCreateForTopic(
-                tenantId, "default", userId, title, taskPrompt, "");
+                tenantId, "default", userId, title, taskPrompt, "", metadata);
 
         // 非草稿模式（用户点击了"开始写作"）→ 激活文档
         if (!draft) {
@@ -431,9 +455,48 @@ public class WritingController {
         resp.put("latestScore", result.latestScore);
         resp.put("submitCount", result.submitCount);
         resp.put("mode", mode);
+        WritingSessionMetadataResponse sessionMetadata = documentService.getSessionMetadataByDocId(
+                String.valueOf(userId), "default", result.docId, userId
+        );
+        if (sessionMetadata != null) {
+            resp.put("writingMetadata", sessionMetadata);
+        }
         return ResponseEntity.ok(resp);
     }
 
+    /**
+     * 查询写作会话元数据（用于确认数据库落库）
+     * GET /api/writing/documents/{docId}/metadata
+     */
+    @GetMapping("/documents/{docId}/metadata")
+    public ResponseEntity<WritingSessionMetadataResponse> getWritingSessionMetadata(
+            @PathVariable String docId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+
+        WritingSessionMetadataResponse response = documentService.getSessionMetadataByDocId(
+                String.valueOf(userId), "default", docId, userId
+        );
+        if (response == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    private String normalizeMode(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return "free";
+        }
+        String normalized = mode.trim().toLowerCase();
+        return "exam".equals(normalized) ? "exam" : "free";
+    }
+
+    private String trimToNull(String raw) {
+        if (raw == null) return null;
+        String value = raw.trim();
+        return value.isBlank() ? null : value;
+    }
     /**
      * 获取用户的写作文档列表（归档视图）
      * GET /api/writing/documents?page=0&size=10
@@ -605,5 +668,13 @@ public class WritingController {
                 grammarSuppressService.filterSuppressed(userId, documentId, response.getErrors(), text));
     }
 }
+
+
+
+
+
+
+
+
 
 

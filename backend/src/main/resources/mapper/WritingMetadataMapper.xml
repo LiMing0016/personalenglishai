@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.WritingMetadataMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_metadata
+            (document_id, user_id, mode, study_stage, title_snapshot, topic_title, prompt_text, genre, source_type, created_at, updated_at)
+        VALUES
+            (#{documentId}, #{userId}, #{mode}, #{studyStage}, #{titleSnapshot}, #{topicTitle}, #{promptText}, #{genre}, #{sourceType}, NOW(), NOW())
+    </insert>
+
+    <update id="updateByDocumentId" parameterType="com.personalenglishai.backend.entity.WritingMetadata">
+        UPDATE writing_metadata
+        SET user_id = #{userId},
+            mode = #{mode},
+            study_stage = #{studyStage},
+            title_snapshot = #{titleSnapshot},
+            topic_title = #{topicTitle},
+            prompt_text = #{promptText},
+            genre = #{genre},
+            source_type = #{sourceType},
+            updated_at = NOW()
+        WHERE document_id = #{documentId}
+    </update>
+    <select id="selectByDocumentId" resultType="com.personalenglishai.backend.entity.WritingMetadata">
+        SELECT id, document_id, user_id, mode, study_stage, title_snapshot, topic_title,
+               prompt_text, genre, source_type, created_at, updated_at
+        FROM writing_metadata
+        WHERE document_id = #{documentId}
+        LIMIT 1
+    </select>
+
+</mapper>
+
+

@@ -6,14 +6,11 @@ import com.personalenglishai.backend.ai.client.OpenAiClient;
 import com.personalenglishai.backend.dto.rubric.RubricActiveResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
-import com.personalenglishai.backend.entity.UserAbilityProfile;
 import com.personalenglishai.backend.entity.EssayEvaluation;
-import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
+import com.personalenglishai.backend.entity.UserAbilityProfile;
 import com.personalenglishai.backend.mapper.UserAbilityProfileMapper;
 import com.personalenglishai.backend.service.rubric.RubricService;
 import com.personalenglishai.backend.service.rubric.RubricTextBuilder;
-import com.personalenglishai.backend.entity.Document;
-import com.personalenglishai.backend.service.document.DocumentService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +31,7 @@ import java.util.UUID;
 public class WritingEvaluateMockService implements WritingEvaluateService {
 
     private static final Logger log = LoggerFactory.getLogger(WritingEvaluateMockService.class);
-    private static final String STAGE = "highschool";
+    private static final String DEFAULT_STAGE = "highschool";
     private static final String DEFAULT_LEVEL = "C";
     private static final String RUBRIC_VERSION = "highschool-v1";
 
@@ -141,8 +138,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
     private final UserAbilityProfileMapper abilityProfileMapper;
-    private final EssayEvaluationMapper essayEvaluationMapper;
-    private final DocumentService documentService;
+    private final WritingEvaluationPersistenceService writingEvaluationPersistenceService;
     private final LanguageToolService languageToolService;
     private final SaplingService saplingService;
     private final TextGearsService textGearsService;
@@ -154,8 +150,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             OpenAiClient openAiClient,
             ObjectMapper objectMapper,
             UserAbilityProfileMapper abilityProfileMapper,
-            EssayEvaluationMapper essayEvaluationMapper,
-            DocumentService documentService,
+            WritingEvaluationPersistenceService writingEvaluationPersistenceService,
             LanguageToolService languageToolService,
             SaplingService saplingService,
             TextGearsService textGearsService,
@@ -166,8 +161,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         this.openAiClient = openAiClient;
         this.objectMapper = objectMapper;
         this.abilityProfileMapper = abilityProfileMapper;
-        this.essayEvaluationMapper = essayEvaluationMapper;
-        this.documentService = documentService;
+        this.writingEvaluationPersistenceService = writingEvaluationPersistenceService;
         this.languageToolService = languageToolService;
         this.saplingService = saplingService;
         this.textGearsService = textGearsService;
@@ -182,10 +176,16 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     public WritingEvaluateResponse evaluate(WritingEvaluateRequest request) {
         String requestId = "eval-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         String mode = rubricService.normalizeMode(request.getMode());
-        RubricActiveResponse rubric = rubricService.getActiveRubric(STAGE, mode);
+        String requestedStage = rubricService.normalizeStage(request.getStudyStage());
+        String effectiveStage = requestedStage;
+        RubricActiveResponse rubric = rubricService.getActiveRubric(effectiveStage, mode);
+        if (rubric == null || rubric.getDimensions() == null || rubric.getDimensions().isEmpty()) {
+            effectiveStage = DEFAULT_STAGE;
+            rubric = rubricService.getActiveRubric(effectiveStage, mode);
+        }
 
         if (rubric == null || rubric.getDimensions() == null || rubric.getDimensions().isEmpty()) {
-            log.warn("Rubric not found. requestId={} stage={} mode={}", requestId, STAGE, mode);
+            log.warn("Rubric not found. requestId={} requestedStage={} effectiveStage={} mode={}", requestId, requestedStage, effectiveStage, mode);
             return buildLegacyFallback(requestId);
         }
 
@@ -193,9 +193,9 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             // Read existing profile BEFORE update so we can compare progress
             UserAbilityProfile existingProfile = readProfileQuietly(request.getUserId());
 
-            String rubricText = rubricTextBuilder.buildRubricText(STAGE, mode);
+            String rubricText = rubricTextBuilder.buildRubricText(effectiveStage, mode);
             if (rubricText.isBlank()) {
-                rubricText = buildFallbackRubricText(rubric, mode);
+                rubricText = buildFallbackRubricText(rubric, effectiveStage, mode);
             }
             String userPrompt = buildUserPrompt(request, rubricText, mode);
             String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, requestId, 0.4, 8192);
@@ -244,7 +244,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
 
             WritingEvaluateResponse response = buildResponse(requestId, enriched, mode, "ai", existingProfile);
             updateAbilityProfile(request.getUserId(), result.scoreByDimension());
-            saveEvaluationQuietly(request, mode, response);
+            saveEvaluationQuietly(request, mode, response, rubric, effectiveStage);
             return response;
         } catch (Exception e) {
             log.warn("Evaluate with OpenAI failed. requestId={} mode={} reason={}", requestId, mode, e.getMessage());
@@ -929,71 +929,34 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
 
     /** 评分后静默保存历史记录，失败不影响主流程 */
     private void saveEvaluationQuietly(WritingEvaluateRequest request, String mode,
-                                       WritingEvaluateResponse response) {
+                                       WritingEvaluateResponse response,
+                                       RubricActiveResponse rubric,
+                                       String effectiveStage) {
         Long userId = request.getUserId();
         if (userId == null) return;
         try {
-            EssayEvaluation record = new EssayEvaluation();
-            record.setUserId(userId);
-            record.setMode(mode);
-            record.setTaskPrompt(request.getTaskPrompt());
-            record.setEssayText(request.getEssay() == null ? "" : request.getEssay());
-            if (response.getGaokaoScore() != null) {
-                record.setGaokaoScore(response.getGaokaoScore().getScore());
-                record.setMaxScore(response.getGaokaoScore().getMaxScore());
-                record.setBand(response.getGaokaoScore().getBand());
-            }
-            if (response.getScore() != null) {
-                record.setOverallScore(response.getScore().getOverall());
-            }
-            // 保存6维分数
-            Map<String, Integer> dims = response.getDimensionScores();
-            if (dims != null) {
-                record.setContentQuality(dims.get("content_quality"));
-                record.setTaskAchievement(dims.get("task_achievement"));
-                record.setStructureScore(dims.get("structure"));
-                record.setVocabularyScore(dims.get("vocabulary"));
-                record.setGrammarScore(dims.get("grammar"));
-                record.setExpressionScore(dims.get("expression"));
-            }
-            // 统计错误数量
-            if (response.getErrors() != null) {
-                int grammarErrors = 0, spellingErrors = 0, vocabErrors = 0;
-                for (var err : response.getErrors()) {
-                    String type = err.getType();
-                    if (type == null) continue;
-                    switch (type) {
-                        case "spelling", "morphology" -> spellingErrors++;
-                        case "word_choice", "collocation", "part_of_speech" -> vocabErrors++;
-                        default -> grammarErrors++;
-                    }
-                }
-                record.setGrammarErrorCount(grammarErrors);
-                record.setSpellingErrorCount(spellingErrors);
-                record.setVocabularyErrorCount(vocabErrors);
-            }
-            // 关联文档
-            Long resolvedDocId = null;
-            if (request.getDocumentId() != null && !request.getDocumentId().isBlank()) {
-                String tenantId = String.valueOf(userId);
-                Document doc = documentService.findByPublicId(tenantId, "default", request.getDocumentId());
-                if (doc != null) {
-                    resolvedDocId = doc.getId();
-                    record.setDocumentId(resolvedDocId);
-                }
-            }
-            record.setResultJson(objectMapper.writeValueAsString(response));
-            // 先插入评估记录，再更新文档统计（避免不一致）
-            essayEvaluationMapper.insert(record);
-            if (resolvedDocId != null && record.getOverallScore() != null) {
-                documentService.updateScoreStats(resolvedDocId, record.getOverallScore());
-            }
-            log.info("essayEvaluation saved. userId={} id={} docId={}", userId, record.getId(), record.getDocumentId());
+            EssayEvaluation record = writingEvaluationPersistenceService.persistSuccessfulEvaluation(
+                    request,
+                    mode,
+                    response,
+                    rubric,
+                    effectiveStage,
+                    openAiClient.getModel()
+            );
+            log.info("essayEvaluation saved. userId={} id={} docId={}",
+                    userId,
+                    record != null ? record.getId() : null,
+                    record != null ? record.getDocumentId() : null);
         } catch (Exception e) {
             log.warn("saveEvaluation failed (non-fatal). userId={} reason={}", userId, e.getMessage());
         }
     }
 
+    private String trimToNull(String raw) {
+        if (raw == null) return null;
+        String value = raw.trim();
+        return value.isBlank() ? null : value;
+    }
     private boolean isBlank(String v) { return v == null || v.trim().isEmpty(); }
     private String safeText(String text) { return text == null ? "" : text.trim(); }
 
@@ -1059,9 +1022,9 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         return response;
     }
 
-    private String buildFallbackRubricText(RubricActiveResponse rubric, String mode) {
+    private String buildFallbackRubricText(RubricActiveResponse rubric, String stage, String mode) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Rubric (stage=").append(STAGE).append(", mode=").append(mode).append("):\n\n");
+        sb.append("Rubric (stage=").append(stage).append(", mode=").append(mode).append("):\n\n");
         for (RubricActiveResponse.DimensionDto d : rubric.getDimensions()) {
             sb.append(d.getDimensionKey()).append(" (").append(d.getDisplayName()).append("):\n");
             for (RubricActiveResponse.LevelDto l : d.getLevels()) {
@@ -1087,3 +1050,10 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             String aiSummary
     ) {}
 }
+
+
+
+
+
+
+

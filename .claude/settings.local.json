@@ -2,7 +2,35 @@
   "permissions": {
     "allow": [
       "Bash(./mvnw compile:*)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(xargs grep:*)",
+      "Bash(gh run:*)",
+      "Bash(gh pr:*)",
+      "Bash(grep:*)",
+      "Bash(npx vite:*)",
+      "Bash(./mvnw test:*)",
+      "Read(//c/Users/Catalina/Downloads/01-02【考研英语作文真题合集】2005-2025 英一英二通用/**)",
+      "Read(//c/Users/Catalina/Downloads/**)",
+      "Bash(pip install:*)",
+      "Bash(where python:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(\"/c/Users/Catalina/AppData/Local/Microsoft/WindowsApps/python3\":*)",
+      "Bash(npm install:*)",
+      "Bash(node:*)",
+      "WebSearch",
+      "WebFetch(domain:developer.trinka.ai)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:docs.trinka.ai)",
+      "WebFetch(domain:api-platform.trinka.ai)",
+      "WebFetch(domain:www.trinka.ai)",
+      "WebFetch(domain:cloud.trinka.ai)",
+      "Bash(mvn compile:*)",
+      "Bash(redis-cli ping:*)",
+      "Bash(docker port:*)",
+      "Bash(docker exec:*)",
+      "Bash(powershell:*)"
     ]
   }
 }

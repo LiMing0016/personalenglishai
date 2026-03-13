@@ -39,6 +39,7 @@ const loading = ref(true)
 const error = ref('')
 
 const nav = [
+  { to: '/admin/dashboard', label: 'Dashboard' },
   { to: '/admin/users', label: '用户', permission: 'admin.users.read' },
   { to: '/admin/essays', label: '作文', permission: 'admin.essays.read' },
   { to: '/admin/prompts', label: '题库', permission: 'admin.prompts.read' },
@@ -48,7 +49,7 @@ const nav = [
 
 const visibleNav = computed(() => {
   const permissions = new Set(me.value?.permissions ?? [])
-  return nav.filter((item) => permissions.has(item.permission))
+  return nav.filter((item) => !item.permission || permissions.has(item.permission))
 })
 
 onMounted(async () => {
@@ -61,3 +62,4 @@ onMounted(async () => {
   }
 })
 </script>
+

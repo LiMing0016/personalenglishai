@@ -4,46 +4,92 @@
 <mapper namespace="com.personalenglishai.backend.mapper.EssayEvaluationMapper">
 
     <resultMap id="BaseResultMap" type="com.personalenglishai.backend.entity.EssayEvaluation">
-        <id     property="id"           column="id"/>
-        <result property="userId"       column="user_id"/>
-        <result property="documentId"  column="document_id"/>
-        <result property="mode"         column="mode"/>
-        <result property="taskPrompt"  column="task_prompt"/>
-        <result property="essayText"    column="essay_text"/>
-        <result property="gaokaoScore"  column="gaokao_score"/>
-        <result property="maxScore"     column="max_score"/>
-        <result property="band"         column="band"/>
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="documentId" column="document_id"/>
+        <result property="mode" column="mode"/>
+        <result property="taskPrompt" column="task_prompt"/>
+        <result property="essayText" column="essay_text"/>
+        <result property="gaokaoScore" column="gaokao_score"/>
+        <result property="maxScore" column="max_score"/>
+        <result property="band" column="band"/>
         <result property="overallScore" column="overall_score"/>
-        <result property="contentQuality"      column="content_quality"/>
-        <result property="taskAchievement"     column="task_achievement"/>
-        <result property="structureScore"      column="structure_score"/>
-        <result property="vocabularyScore"     column="vocabulary_score"/>
-        <result property="grammarScore"        column="grammar_score"/>
-        <result property="expressionScore"     column="expression_score"/>
-        <result property="grammarErrorCount"   column="grammar_error_count"/>
-        <result property="spellingErrorCount"  column="spelling_error_count"/>
+        <result property="studyStage" column="study_stage"/>
+        <result property="rubricKey" column="rubric_key"/>
+        <result property="examPolicyKey" column="exam_policy_key"/>
+        <result property="modelVersion" column="model_version"/>
+        <result property="evaluatedRevision" column="evaluated_revision"/>
+        <result property="examBandLabel" column="exam_band_label"/>
+        <result property="examBandMin" column="exam_band_min"/>
+        <result property="examBandMax" column="exam_band_max"/>
+        <result property="directionRelevance" column="direction_relevance"/>
+        <result property="directionTaskCompletion" column="direction_task_completion"/>
+        <result property="directionCoverage" column="direction_coverage"/>
+        <result property="directionMaxBand" column="direction_max_band"/>
+        <result property="capScore" column="cap_score"/>
+        <result property="deductionTotal" column="deduction_total"/>
+        <result property="penaltyFlagsJson" column="penalty_flags_json"/>
+        <result property="directionReasonsJson" column="direction_reasons_json"/>
+        <result property="adjustmentReasonsJson" column="adjustment_reasons_json"/>
+        <result property="wordCount" column="word_count"/>
+        <result property="sentenceCount" column="sentence_count"/>
+        <result property="paragraphCount" column="paragraph_count"/>
+        <result property="totalErrorCount" column="total_error_count"/>
+        <result property="majorErrorCount" column="major_error_count"/>
+        <result property="minorErrorCount" column="minor_error_count"/>
+        <result property="contentQuality" column="content_quality"/>
+        <result property="taskAchievement" column="task_achievement"/>
+        <result property="structureScore" column="structure_score"/>
+        <result property="vocabularyScore" column="vocabulary_score"/>
+        <result property="grammarScore" column="grammar_score"/>
+        <result property="expressionScore" column="expression_score"/>
+        <result property="grammarErrorCount" column="grammar_error_count"/>
+        <result property="spellingErrorCount" column="spelling_error_count"/>
         <result property="vocabularyErrorCount" column="vocabulary_error_count"/>
-        <result property="resultJson"   column="result_json"/>
-        <result property="createdAt"    column="created_at"/>
+        <result property="lexicalErrorCount" column="lexical_error_count"/>
+        <result property="punctuationErrorCount" column="punctuation_error_count"/>
+        <result property="syntaxErrorCount" column="syntax_error_count"/>
+        <result property="resultJson" column="result_json"/>
+        <result property="createdAt" column="created_at"/>
     </resultMap>
 
     <insert id="insert" parameterType="com.personalenglishai.backend.entity.EssayEvaluation"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO essay_evaluation
             (user_id, document_id, mode, task_prompt, essay_text, gaokao_score, max_score, band, overall_score,
+             study_stage, rubric_key, exam_policy_key, model_version, evaluated_revision,
+             exam_band_label, exam_band_min, exam_band_max,
+             direction_relevance, direction_task_completion, direction_coverage, direction_max_band,
+             cap_score, deduction_total, penalty_flags_json, direction_reasons_json, adjustment_reasons_json,
+             word_count, sentence_count, paragraph_count,
+             total_error_count, major_error_count, minor_error_count,
              content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
-             grammar_error_count, spelling_error_count, vocabulary_error_count, result_json)
+             grammar_error_count, spelling_error_count, vocabulary_error_count, lexical_error_count,
+             punctuation_error_count, syntax_error_count, result_json)
         VALUES
             (#{userId}, #{documentId}, #{mode}, #{taskPrompt}, #{essayText}, #{gaokaoScore}, #{maxScore}, #{band}, #{overallScore},
+             #{studyStage}, #{rubricKey}, #{examPolicyKey}, #{modelVersion}, #{evaluatedRevision},
+             #{examBandLabel}, #{examBandMin}, #{examBandMax},
+             #{directionRelevance}, #{directionTaskCompletion}, #{directionCoverage}, #{directionMaxBand},
+             #{capScore}, #{deductionTotal}, #{penaltyFlagsJson}, #{directionReasonsJson}, #{adjustmentReasonsJson},
+             #{wordCount}, #{sentenceCount}, #{paragraphCount},
+             #{totalErrorCount}, #{majorErrorCount}, #{minorErrorCount},
              #{contentQuality}, #{taskAchievement}, #{structureScore}, #{vocabularyScore}, #{grammarScore}, #{expressionScore},
-             #{grammarErrorCount}, #{spellingErrorCount}, #{vocabularyErrorCount}, #{resultJson})
+             #{grammarErrorCount}, #{spellingErrorCount}, #{vocabularyErrorCount}, #{lexicalErrorCount},
+             #{punctuationErrorCount}, #{syntaxErrorCount}, #{resultJson})
     </insert>
 
-    <!-- 列表查询：不返回大字段 essay_text 和 result_json，保持响应轻量 -->
     <select id="selectByUserId" resultMap="BaseResultMap">
         SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               study_stage, rubric_key, exam_policy_key, model_version, evaluated_revision,
+               exam_band_label, exam_band_min, exam_band_max,
+               direction_relevance, direction_task_completion, direction_coverage, direction_max_band,
+               cap_score, deduction_total, penalty_flags_json, direction_reasons_json, adjustment_reasons_json,
+               word_count, sentence_count, paragraph_count,
+               total_error_count, major_error_count, minor_error_count,
                content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
-               grammar_error_count, spelling_error_count, vocabulary_error_count, created_at,
+               grammar_error_count, spelling_error_count, vocabulary_error_count, lexical_error_count,
+               punctuation_error_count, syntax_error_count, created_at,
                LEFT(essay_text, 100) AS essay_text
         FROM essay_evaluation
         WHERE user_id = #{userId}
@@ -53,8 +99,15 @@
 
     <select id="selectByDocumentId" resultMap="BaseResultMap">
         SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               study_stage, rubric_key, exam_policy_key, model_version, evaluated_revision,
+               exam_band_label, exam_band_min, exam_band_max,
+               direction_relevance, direction_task_completion, direction_coverage, direction_max_band,
+               cap_score, deduction_total, penalty_flags_json, direction_reasons_json, adjustment_reasons_json,
+               word_count, sentence_count, paragraph_count,
+               total_error_count, major_error_count, minor_error_count,
                content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
-               grammar_error_count, spelling_error_count, vocabulary_error_count, created_at,
+               grammar_error_count, spelling_error_count, vocabulary_error_count, lexical_error_count,
+               punctuation_error_count, syntax_error_count, created_at,
                LEFT(essay_text, 100) AS essay_text
         FROM essay_evaluation
         WHERE document_id = #{documentId}
@@ -70,12 +123,17 @@
         SELECT COUNT(*) FROM essay_evaluation WHERE user_id = #{userId}
     </select>
 
-    <!-- 详情查询：返回完整 result_json + essay_text -->
     <select id="selectById" resultMap="BaseResultMap">
         SELECT id, user_id, document_id, mode, task_prompt, gaokao_score, max_score, band, overall_score,
+               study_stage, rubric_key, exam_policy_key, model_version, evaluated_revision,
+               exam_band_label, exam_band_min, exam_band_max,
+               direction_relevance, direction_task_completion, direction_coverage, direction_max_band,
+               cap_score, deduction_total, penalty_flags_json, direction_reasons_json, adjustment_reasons_json,
+               word_count, sentence_count, paragraph_count,
+               total_error_count, major_error_count, minor_error_count,
                content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
-               grammar_error_count, spelling_error_count, vocabulary_error_count, result_json, created_at,
-               essay_text
+               grammar_error_count, spelling_error_count, vocabulary_error_count, lexical_error_count,
+               punctuation_error_count, syntax_error_count, result_json, created_at, essay_text
         FROM essay_evaluation
         WHERE id = #{id}
     </select>
@@ -94,15 +152,15 @@
 
     <select id="selectAggregatedStatsByUserId" resultType="java.util.LinkedHashMap">
         SELECT
-            ROUND(AVG(content_quality), 1)   AS avgContentQuality,
-            ROUND(AVG(task_achievement), 1)  AS avgTaskAchievement,
-            ROUND(AVG(structure_score), 1)   AS avgStructureScore,
-            ROUND(AVG(vocabulary_score), 1)  AS avgVocabularyScore,
-            ROUND(AVG(grammar_score), 1)     AS avgGrammarScore,
-            ROUND(AVG(expression_score), 1)  AS avgExpressionScore,
-            COALESCE(SUM(grammar_error_count), 0)    AS totalGrammarErrors,
-            COALESCE(SUM(spelling_error_count), 0)   AS totalSpellingErrors,
-            COALESCE(SUM(vocabulary_error_count), 0)  AS totalVocabularyErrors
+            ROUND(AVG(content_quality), 1) AS avgContentQuality,
+            ROUND(AVG(task_achievement), 1) AS avgTaskAchievement,
+            ROUND(AVG(structure_score), 1) AS avgStructureScore,
+            ROUND(AVG(vocabulary_score), 1) AS avgVocabularyScore,
+            ROUND(AVG(grammar_score), 1) AS avgGrammarScore,
+            ROUND(AVG(expression_score), 1) AS avgExpressionScore,
+            COALESCE(SUM(grammar_error_count), 0) AS totalGrammarErrors,
+            COALESCE(SUM(spelling_error_count), 0) AS totalSpellingErrors,
+            COALESCE(SUM(vocabulary_error_count), 0) AS totalVocabularyErrors
         FROM essay_evaluation
         WHERE user_id = #{userId} AND overall_score IS NOT NULL
     </select>

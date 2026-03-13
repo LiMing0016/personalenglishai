@@ -16,7 +16,7 @@ import { showToast } from '@/utils/toast'
 import { stageCache, clearStageCache } from '@/stores/stageCache'
 
 const BUSINESS_HOME = '/app'
-const ADMIN_HOME = '/admin/users'
+const ADMIN_HOME = '/admin/dashboard'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -144,6 +144,11 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         redirect: ADMIN_HOME,
+      },
+      {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/modules/admin/dashboard/pages/AdminDashboardPage.vue'),
       },
       {
         path: 'users',
@@ -329,4 +334,5 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
+
 

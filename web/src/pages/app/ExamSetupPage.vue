@@ -291,7 +291,7 @@
             </div>
           </div>
           <div class="confirm-actions">
-            <button class="btn-back" @click="confirmStep = 'idle'">返回修改</button>
+            <button class="btn-back" @click="onCancelConfirm">返回修改</button>
             <button class="gate-btn" @click="onFinalConfirm">确认，开始写作</button>
           </div>
         </div>
@@ -338,7 +338,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useSessionStorage, useDebounceFn } from '@vueuse/core'
-import { auditTopic, recognizeTopicImage, startWritingSession, getEssayPrompts } from '@/api/writing'
+import { auditTopic, recognizeTopicImage, startWritingSession, getWritingSessionMetadata, getEssayPrompts } from '@/api/writing'
 import type { EssayPromptItem } from '@/api/writing'
 import { getStageId } from '@/constants/stage'
 
@@ -348,6 +348,11 @@ export interface ExamTopicInfo {
   wordRange: string | null
   requirements: string | null
   maxScore: number
+  sourceType: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
+  examType: string | null
+  taskType: string | null
+  minWords: number | null
+  recommendedMaxWords: number | null
 }
 
 const props = defineProps<{
@@ -472,7 +477,18 @@ const canStart = computed(() => {
 
 type ConfirmStep = 'idle' | 'parsing' | 'confirming'
 const confirmStep = ref<ConfirmStep>('idle')
-const parsedResult = ref<ExamTopicInfo>({ topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100 })
+const parsedResult = ref<ExamTopicInfo>({
+  topic: '',
+  genre: null,
+  wordRange: null,
+  requirements: null,
+  maxScore: 100,
+  sourceType: 'manual',
+  examType: null,
+  taskType: null,
+  minWords: null,
+  recommendedMaxWords: null,
+})
 const auditMessage = ref<string | null>(null)
 
 function getEffectiveWordRange(): string | null {
@@ -481,24 +497,81 @@ function getEffectiveWordRange(): string | null {
     : wordRange.value
 }
 
+function parseWordRange(value: string | null): { minWords: number | null; recommendedMaxWords: number | null } {
+  if (!value) {
+    return { minWords: null, recommendedMaxWords: null }
+  }
+  const compact = value.trim().replace(/\s+/g, '')
+  const rangeMatch = compact.match(/^(\d+)\s*[-~至]\s*(\d+)$/)
+  if (rangeMatch) {
+    return {
+      minWords: Number(rangeMatch[1]),
+      recommendedMaxWords: Number(rangeMatch[2]),
+    }
+  }
+  const singleMatch = compact.match(/^(\d+)$/)
+  if (singleMatch) {
+    const value = Number(singleMatch[1])
+    return {
+      minWords: value,
+      recommendedMaxWords: value
+    }
+  }
+  return { minWords: null, recommendedMaxWords: null }
+}
+
+
+function extractPromptFallback(text: string, currentWordRange?: string | null, currentRequirements?: string | null) {
+  const source = text.trim()
+  const existingWordRange = currentWordRange?.trim() || null
+  const existingRequirements = currentRequirements?.trim() || null
+
+  let detectedWordRange = existingWordRange
+  if (!detectedWordRange) {
+    const rangeMatch = source.match(/(\d+\s*[-~至]\s*\d+)\s*(words?|词)/i)
+    const singleMatch = source.match(/(?:at least|不少于|至少)\s*(\d+)\s*(words?|词)/i)
+    if (rangeMatch) {
+      detectedWordRange = rangeMatch[1].replace(/\s+/g, '')
+    } else if (singleMatch) {
+      detectedWordRange = singleMatch[1]
+    }
+  }
+
+  let detectedRequirements = existingRequirements
+  if (!detectedRequirements) {
+    const englishReq = source.match(/In your essay, you should:?\s*([\s\S]*)/i)
+    const chineseReq = source.match(/写作要求[:：]?\s*([\s\S]*)/i)
+    if (englishReq?.[1]) {
+      detectedRequirements = englishReq[1].trim()
+    } else if (chineseReq?.[1]) {
+      detectedRequirements = chineseReq[1].trim()
+    }
+  }
+
+  return {
+    wordRange: detectedWordRange,
+    requirements: detectedRequirements,
+  }
+}
+
 async function onStartConfirm() {
   if (!canStart.value) return
 
-  // 历年真题 tab：先提取选中题目文本，再切到手动 tab 避免 canStart 变 false
-  if (activeTab.value === 'past' && selectedPrompt.value) {
-    const promptText = selectedPrompt.value.promptText
-    topic.value = promptText
-    selectedPrompt.value = null
-    activeTab.value = 'manual'
-  }
+  const pendingPrompt = selectedPrompt.value
+  const rawTopic = activeTab.value === 'past' && pendingPrompt
+    ? pendingPrompt.promptText.trim()
+    : topic.value.trim()
 
+  if (!rawTopic) return
+
+  topic.value = rawTopic
   confirmStep.value = 'parsing'
   auditMessage.value = null
 
   try {
     const res = await auditTopic({
-      topic: topic.value.trim(),
-      genre: genre.value ?? undefined,
+      topic: rawTopic,
+      genre: genre.value,
       wordRange: getEffectiveWordRange() ?? undefined,
     })
 
@@ -508,12 +581,25 @@ async function onStartConfirm() {
       return
     }
 
+    const normalizedTopic = res.topic || rawTopic
+    const extractionSource = [rawTopic, normalizedTopic].filter(Boolean).join('\n')
+    const fallback = extractPromptFallback(
+      extractionSource,
+      res.wordRange || getEffectiveWordRange(),
+      res.requirements || null,
+    )
+    const parsedWordRange = parseWordRange(fallback.wordRange)
     parsedResult.value = {
-      topic: res.topic || topic.value.trim(),
-      genre: res.genre || null,
-      wordRange: res.wordRange || null,
-      requirements: res.requirements || null,
+      topic: normalizedTopic,
+      genre: res.genre || genre.value || null,
+      wordRange: fallback.wordRange || null,
+      requirements: fallback.requirements || null,
       maxScore: maxScore.value,
+      sourceType: pendingPrompt ? 'past_prompt' : 'manual',
+      examType: props.studyStage || null,
+      taskType: pendingPrompt?.task || null,
+      minWords: parsedWordRange.minWords,
+      recommendedMaxWords: parsedWordRange.recommendedMaxWords,
     }
 
     if (res.status === 'need_more_info' && res.message) {
@@ -523,15 +609,29 @@ async function onStartConfirm() {
     confirmStep.value = 'confirming'
   } catch (e) {
     // API 失败时兜底：直接使用用户输入
+    const fallback = extractPromptFallback(rawTopic, getEffectiveWordRange(), null)
+    const parsedWordRange = parseWordRange(fallback.wordRange)
     parsedResult.value = {
-      topic: topic.value.trim(),
+      topic: rawTopic,
       genre: genre.value,
-      wordRange: getEffectiveWordRange(),
-      requirements: null,
+      wordRange: fallback.wordRange || null,
+      requirements: fallback.requirements || null,
       maxScore: maxScore.value,
+      sourceType: pendingPrompt ? 'past_prompt' : 'manual',
+      examType: props.studyStage || null,
+      taskType: pendingPrompt?.task || null,
+      minWords: parsedWordRange.minWords,
+      recommendedMaxWords: parsedWordRange.recommendedMaxWords,
     }
     confirmStep.value = 'confirming'
   }
+}
+
+function onCancelConfirm() {
+  if (parsedResult.value.sourceType === 'past_prompt' && selectedPrompt.value) {
+    activeTab.value = 'past'
+  }
+  confirmStep.value = 'idle'
 }
 
 function onFinalConfirm() {
@@ -601,7 +701,7 @@ onMounted(() => {
       confirmStep.value = 'idle'
       parsedResult.value = state.parsedResult
         ? { ...state.parsedResult }
-        : { topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100 }
+        : { topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100, sourceType: 'manual', examType: props.studyStage ?? null, taskType: null, minWords: null, recommendedMaxWords: null }
       auditMessage.value = state.auditMessage ?? null
       promptKeyword.value = state.promptKeyword ?? ''
       promptYear.value = state.promptYear ?? null
@@ -669,13 +769,32 @@ async function saveAndLeave() {
     const t = topic.value.trim()
     console.log('[ExamSetup] saveAndLeave, topic:', t)
     if (t) {
+      const parsedWordRange = parseWordRange(getEffectiveWordRange())
+      const sourceType = activeTab.value === 'past' ? 'past_prompt' : 'manual'
       const res = await startWritingSession({
         mode: 'exam',
         taskPrompt: t,
         title: t.slice(0, 100),
         draft: true,
+        studyStage: props.studyStage ?? undefined,
+        sourceType,
+        titleSnapshot: t.slice(0, 255),
+        topicTitle: topic.value.trim(),
+        promptText: t,
+        genre: genre.value,
+        examType: props.studyStage ?? null,
+        taskType: selectedPrompt.value?.task || null,
+        minWords: parsedWordRange.minWords,
+        recommendedMaxWords: parsedWordRange.recommendedMaxWords,
+        maxScore: maxScore.value,
       })
       console.log('[ExamSetup] startWritingSession result:', JSON.stringify(res))
+      const metadata = await getWritingSessionMetadata(res.docId).catch((err) => {
+        console.warn('[ExamSetup] load session metadata failed', err)
+        return null
+      })
+      console.log('[ExamSetup] writing metadata:', metadata)
+
     }
   } catch (e) {
     console.warn('[ExamSetup] save draft doc failed', e)
@@ -742,11 +861,38 @@ function onPromptSearch() {
   debouncedLoadPrompts()
 }
 
-function useSelectedPrompt() {
+async function useSelectedPrompt() {
   if (!selectedPrompt.value) return
-  topic.value = selectedPrompt.value.promptText
-  activeTab.value = 'manual'
-  selectedPrompt.value = null
+  const prompt = selectedPrompt.value
+  topic.value = prompt.promptText
+  if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
+    const range = `${prompt.wordCountMin}-${prompt.wordCountMax}`
+    if (wordRangeOptions.includes(range)) {
+      wordRange.value = range
+      showCustomWordRange.value = false
+      customWordRange.value = ''
+    } else {
+      wordRange.value = null
+      showCustomWordRange.value = true
+      customWordRange.value = range
+    }
+  } else if (prompt.wordCountMin != null) {
+    const range = String(prompt.wordCountMin)
+    if (wordRangeOptions.includes(range)) {
+      wordRange.value = range
+      showCustomWordRange.value = false
+      customWordRange.value = ''
+    } else {
+      wordRange.value = null
+      showCustomWordRange.value = true
+      customWordRange.value = range
+    }
+  }
+  if (prompt.maxScore != null) {
+    maxScore.value = prompt.maxScore
+    customMaxScore.value = prompt.maxScore
+  }
+  await onStartConfirm()
 }
 
 const debouncedSaveLiveState = useDebounceFn(() => {
@@ -1550,5 +1696,6 @@ watch(activeTab, (tab) => {
   }
 }
 </style>
+
 
 

@@ -5,6 +5,8 @@ import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.entity.Document;
 import com.personalenglishai.backend.entity.DocumentRevision;
 import com.personalenglishai.backend.mapper.DocumentMapper;
+import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
+import com.personalenglishai.backend.mapper.WritingMetadataMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,12 @@ class DocumentServiceTest {
 
     @Mock
     private DocumentMapper documentMapper;
+
+    @Mock
+    private WritingMetadataMapper writingMetadataMapper;
+
+    @Mock
+    private WritingExamMetadataMapper writingExamMetadataMapper;
 
     @InjectMocks
     private DocumentService documentService;
@@ -205,3 +213,4 @@ class DocumentServiceTest {
         return doc;
     }
 }
+
