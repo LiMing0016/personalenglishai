@@ -255,7 +255,7 @@ public class WritingEvaluationPersistenceService {
         metadata.setTopicTitle(trimToNull(request.getTopicTitle()));
         metadata.setPromptText(trimToNull(request.getTaskPrompt()));
         metadata.setGenre(trimToNull(request.getGenre()));
-        metadata.setSourceType("exam".equals(mode) ? "manual" : "free_input");
+        metadata.setSourceType(null);
         metadata.setExamType(trimToNull(request.getExamType()));
         metadata.setTaskType(trimToNull(request.getTaskType()));
         metadata.setMinWords(request.getMinWords());
@@ -562,6 +562,7 @@ public class WritingEvaluationPersistenceService {
     private record ScoreAdjustmentSnapshot(Integer capScore, int deductionTotal,
                                            Map<String, Boolean> flags, List<String> reasons) {}
 }
+
 
 
 

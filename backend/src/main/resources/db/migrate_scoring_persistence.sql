@@ -1,6 +1,51 @@
 -- Migration: scoring-persistence
 -- Extends essay_evaluation and adds dimension/detail summary tables.
 
+CREATE TABLE IF NOT EXISTS writing_metadata (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    document_id BIGINT NOT NULL COMMENT 'documents.id',
+    user_id BIGINT NOT NULL COMMENT 'users.id',
+    mode VARCHAR(10) NOT NULL DEFAULT 'free' COMMENT 'free | exam',
+    study_stage VARCHAR(50) NULL COMMENT 'study stage code, e.g. highschool/postgrad',
+    title_snapshot VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'title snapshot when metadata is created',
+    topic_title VARCHAR(255) NULL COMMENT 'short topic title for display/search',
+    prompt_text TEXT NULL COMMENT 'structured prompt text snapshot',
+    genre VARCHAR(64) NULL COMMENT 'genre, e.g. 议论文/书信/task2',
+    source_type VARCHAR(32) NOT NULL DEFAULT 'manual' COMMENT 'manual | past_prompt | ai_generated | free_input',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_metadata_document (document_id),
+    INDEX idx_writing_metadata_user_mode (user_id, mode),
+    INDEX idx_writing_metadata_stage (study_stage),
+    CONSTRAINT fk_writing_metadata_document
+        FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_metadata_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='shared writing metadata for document context';
+
+CREATE TABLE IF NOT EXISTS writing_exam_metadata (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    metadata_id BIGINT NOT NULL COMMENT 'writing_metadata.id',
+    exam_type VARCHAR(32) NULL COMMENT 'exam type, e.g. gaokao/postgrad/cet4',
+    task_type VARCHAR(32) NULL COMMENT 'task type, e.g. task1/task2/application',
+    min_words INT NULL COMMENT 'minimum required words for exam scoring',
+    recommended_max_words INT NULL COMMENT 'recommended max words before overlength penalty',
+    max_score INT NULL COMMENT 'max raw score for the exam task',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_exam_metadata_metadata (metadata_id),
+    INDEX idx_writing_exam_metadata_exam_type (exam_type),
+    INDEX idx_writing_exam_metadata_task_type (task_type),
+    CONSTRAINT fk_writing_exam_metadata_metadata
+        FOREIGN KEY (metadata_id) REFERENCES writing_metadata(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='exam-only writing metadata';
+
 ALTER TABLE essay_evaluation
     ADD COLUMN study_stage VARCHAR(50) NULL COMMENT 'effective study stage used for scoring' AFTER overall_score,
     ADD COLUMN rubric_key VARCHAR(64) NULL COMMENT 'rubric version key' AFTER study_stage,

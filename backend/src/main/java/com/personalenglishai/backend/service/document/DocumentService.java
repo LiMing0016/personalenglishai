@@ -331,7 +331,8 @@ public class DocumentService {
         }
 
         String mode = normalizeMode(metadata.getMode());
-        String sourceType = normalizeSourceType(metadata.getSourceType(), mode);
+        String rawSourceType = trimToNull(metadata.getSourceType());
+        String sourceType = rawSourceType == null ? null : normalizeSourceType(rawSourceType, mode);
 
         String requestTitleSnapshot = normalizeTextToMax(metadata.getTitleSnapshot(), WRITING_METADATA_TITLE_MAX_LEN);
         String fallbackTitleSnapshot = normalizeTextToMax(doc.getTitle(), WRITING_METADATA_TITLE_MAX_LEN);
@@ -354,7 +355,7 @@ public class DocumentService {
             newMetadata.setTopicTitle(resolvedTopicTitle);
             newMetadata.setPromptText(resolvedPromptText);
             newMetadata.setGenre(resolvedGenre);
-            newMetadata.setSourceType(sourceType);
+            newMetadata.setSourceType(sourceType != null ? sourceType : normalizeSourceType(null, mode));
             writingMetadataMapper.insert(newMetadata);
             target = newMetadata;
         } else {
@@ -599,6 +600,8 @@ public class DocumentService {
         }
     }
 }
+
+
 
 
 
