@@ -10,6 +10,14 @@ export interface WritingEvaluateRequest {
   lang?: string
   taskPrompt?: string
   documentId?: string
+  studyStage?: string
+  topicTitle?: string
+  genre?: string | null
+  examType?: string | null
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
+  maxScore?: number | null
 }
 
 export interface WritingEvaluateResponse {
@@ -128,6 +136,14 @@ export function evaluateWriting(
       lang: payload.lang ?? 'en',
       taskPrompt,
       documentId: payload.documentId ?? undefined,
+      studyStage: payload.studyStage ?? undefined,
+      topicTitle: payload.topicTitle ?? undefined,
+      genre: payload.genre ?? undefined,
+      examType: payload.examType ?? undefined,
+      taskType: payload.taskType ?? undefined,
+      minWords: payload.minWords ?? undefined,
+      recommendedMaxWords: payload.recommendedMaxWords ?? undefined,
+      maxScore: payload.maxScore ?? undefined,
     }, { timeout: 60000 })
     .then((res) => res.data)
 }
@@ -146,6 +162,14 @@ export function submitEvaluateWriting(
       lang: payload.lang ?? 'en',
       taskPrompt,
       documentId: payload.documentId ?? undefined,
+      studyStage: payload.studyStage ?? undefined,
+      topicTitle: payload.topicTitle ?? undefined,
+      genre: payload.genre ?? undefined,
+      examType: payload.examType ?? undefined,
+      taskType: payload.taskType ?? undefined,
+      minWords: payload.minWords ?? undefined,
+      recommendedMaxWords: payload.recommendedMaxWords ?? undefined,
+      maxScore: payload.maxScore ?? undefined,
     }, { timeout: 60000 })
     .then((res) => res.data)
 }
@@ -539,7 +563,7 @@ export function chatWriting(payload: WritingChatRequest): Promise<WritingChatRes
 
 export interface AuditTopicRequest {
   topic: string
-  genre?: string | null
+  genre?: string | null | null
   wordRange?: string | null
   requirements?: string | null
 }
@@ -547,7 +571,7 @@ export interface AuditTopicRequest {
 export interface AuditTopicResponse {
   status: 'complete' | 'need_more_info' | 'invalid'
   topic?: string
-  genre?: string | null
+  genre?: string | null | null
   wordRange?: string | null
   requirements?: string | null
   message?: string
@@ -582,6 +606,38 @@ export interface StartSessionRequest {
   taskPrompt?: string
   title?: string
   draft?: boolean
+  studyStage?: string | null
+  sourceType?: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
+  titleSnapshot?: string
+  topicTitle?: string
+  promptText?: string
+  genre?: string | null
+  examType?: string | null
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
+  maxScore?: number | null
+}
+
+
+export interface WritingSessionMetadataResponse {
+  documentId: string
+  metadataId: number
+  mode: 'free' | 'exam'
+  studyStage?: string | null
+  titleSnapshot: string
+  topicTitle?: string | null
+  promptText?: string | null
+  genre?: string | null | null
+  sourceType: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
+  createdAt: string
+  updatedAt: string
+  examMetadataId?: number | null
+  examType?: string | null
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
+  maxScore?: number | null
 }
 
 export interface StartSessionResponse {
@@ -593,11 +649,18 @@ export interface StartSessionResponse {
   latestScore?: number | null
   submitCount?: number
   mode?: 'free' | 'exam'
+  writingMetadata?: WritingSessionMetadataResponse | null
 }
 
 export function startWritingSession(req: StartSessionRequest): Promise<StartSessionResponse> {
   return http
     .post<StartSessionResponse>('/writing/start-session', req)
+    .then((res) => res.data)
+}
+
+export function getWritingSessionMetadata(docId: string): Promise<WritingSessionMetadataResponse> {
+  return http
+    .get<WritingSessionMetadataResponse>(`/writing/documents/${encodeURIComponent(docId)}/metadata`)
     .then((res) => res.data)
 }
 
@@ -715,5 +778,4 @@ export function getStageConfig(stageCode: string): Promise<StageConfigResponse> 
     .get<StageConfigResponse>(`/writing/stage-config/${encodeURIComponent(stageCode)}`)
     .then((res) => res.data)
 }
-
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.EssayEvaluationDimensionMapper">
+
+    <insert id="insertBatch">
+        INSERT INTO essay_evaluation_dimension
+            (evaluation_id, dimension_key, dimension_label_snapshot, sort_order, score, grade,
+             strength, weakness, suggestion, created_at)
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (#{item.evaluationId}, #{item.dimensionKey}, #{item.dimensionLabelSnapshot}, #{item.sortOrder},
+             #{item.score}, #{item.grade}, #{item.strength}, #{item.weakness}, #{item.suggestion}, NOW())
+        </foreach>
+    </insert>
+
+</mapper>

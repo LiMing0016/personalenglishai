@@ -8,6 +8,8 @@ services:
     image: ${ACR_REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/${ACR_NAMESPACE:-your-namespace}/personal-english-ai-backend:latest
     container_name: personal-english-ai-backend
     restart: always
+    depends_on:
+      - redis
     ports:
       - "8080:8080"
     environment:
@@ -25,6 +27,10 @@ services:
       - DB_NAME=${DB_NAME:-personal_english_ai}
       - DB_USER=${DB_USER:-root}
       - DB_PASSWORD=${DB_PASSWORD:-}
+
+      # Redis 配置（避免容器内误连 127.0.0.1）
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       
       # JWT 配置
       - JWT_SECRET=${JWT_SECRET:-your-secret-key-must-be-at-least-32-bytes-long-for-security}

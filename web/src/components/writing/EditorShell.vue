@@ -152,13 +152,15 @@ import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
-import { getStageConfig } from '@/api/writing'
+import { getStageConfig, getWritingSessionMetadata } from '@/api/writing'
+import type { WritingSessionMetadataResponse } from '@/api/writing'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
 const grammarStore = useGrammarStore()
 const evaluateStore = useEvaluateStore()
 const minWordCount = ref(60)
+const sessionMetadata = ref<WritingSessionMetadataResponse | null>(null)
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
 
@@ -272,6 +274,14 @@ onMounted(async () => {
   }
 
   aiDocId.value = draftStore.docId ?? ''
+
+  if (draftStore.docId) {
+    getWritingSessionMetadata(draftStore.docId)
+      .then((meta) => { sessionMetadata.value = meta })
+      .catch(() => { sessionMetadata.value = null })
+  } else {
+    sessionMetadata.value = null
+  }
 
   // Restore evaluate state from sessionStorage (single source of truth)
   evaluateStore.docScope = draftStore.docId
@@ -460,6 +470,44 @@ function onStartGrammarCheck() {
 }
 
 
+function parseExamPromptMetadata(taskPrompt: string) {
+  const lines = taskPrompt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const findField = (prefix: string) => {
+    const line = lines.find((item) => item.startsWith(prefix))
+    return line ? line.slice(prefix.length).trim() : null
+  }
+
+  const topicTitle = lines.find((line) => !["体裁：", "字数要求：", "写作要求：", "满分分值："].some((prefix) => line.startsWith(prefix))) ?? null
+  const genre = findField("体裁：")
+  const wordRange = findField("字数要求：")?.replace(/词$/u, "") ?? null
+
+  let minWords: number | null = null
+  let recommendedMaxWords: number | null = null
+  if (wordRange) {
+    const compact = wordRange.replace(/\s+/g, "")
+    const rangeMatch = compact.match(/^(\d+)[-~至](\d+)$/)
+    const singleMatch = compact.match(/^(\d+)$/)
+    if (rangeMatch) {
+      minWords = Number(rangeMatch[1])
+      recommendedMaxWords = Number(rangeMatch[2])
+    } else if (singleMatch) {
+      minWords = Number(singleMatch[1])
+      recommendedMaxWords = Number(singleMatch[1])
+    }
+  }
+
+  return {
+    topicTitle,
+    genre,
+    minWords,
+    recommendedMaxWords,
+  }
+}
+
 function onSubmit() {
   // ── Grammar fix gate ──
   // Exempt: exam first write (grammar panel is locked, user can't fix)
@@ -487,6 +535,7 @@ function onSubmit() {
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? draftStore.taskPrompt.trim() || undefined : undefined
+  const parsedExamMetadata = examTaskPrompt ? parseExamPromptMetadata(examTaskPrompt) : null
 
   wrappedEvalSubmit({
     essay: draftStore.draftText.trim(),
@@ -495,6 +544,14 @@ function onSubmit() {
     taskPrompt: examTaskPrompt,
     lang: 'en',
     documentId: draftStore.docId || undefined,
+    studyStage: normalizedMode === 'exam' ? (sessionMetadata.value?.studyStage ?? props.studyStage ?? undefined) : undefined,
+    topicTitle: normalizedMode === 'exam' ? (sessionMetadata.value?.topicTitle ?? parsedExamMetadata?.topicTitle ?? undefined) : undefined,
+    genre: normalizedMode === 'exam' ? (sessionMetadata.value?.genre ?? parsedExamMetadata?.genre ?? undefined) : undefined,
+    examType: normalizedMode === 'exam' ? (sessionMetadata.value?.examType ?? props.studyStage ?? undefined) : undefined,
+    taskType: normalizedMode === 'exam' ? (sessionMetadata.value?.taskType ?? undefined) : undefined,
+    minWords: normalizedMode === 'exam' ? (sessionMetadata.value?.minWords ?? parsedExamMetadata?.minWords ?? undefined) : undefined,
+    recommendedMaxWords: normalizedMode === 'exam' ? (sessionMetadata.value?.recommendedMaxWords ?? parsedExamMetadata?.recommendedMaxWords ?? undefined) : undefined,
+    maxScore: normalizedMode === 'exam' ? (sessionMetadata.value?.maxScore ?? props.examMaxScore ?? undefined) : undefined,
   })
 }
 
@@ -901,9 +958,4 @@ function onAiNoteStop() {
   background: #065f46;
 }
 </style>
-
-
-
-
-
 

@@ -3,13 +3,17 @@ package com.personalenglishai.backend.service.writing.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -46,14 +50,52 @@ public class TrinkaService {
     @Value("${trinka.pipeline:advanced}")
     private String pipeline;
 
+    @Value("${trinka.proxy-enabled:${openai.client.proxy-enabled:${OPENAI_PROXY_ENABLED:false}}}")
+    private boolean proxyEnabled;
+
+    @Value("${trinka.proxy-url:${openai.client.proxy-url:${OPENAI_PROXY_URL:}}}")
+    private String proxyUrl;
+
+    @Value("${trinka.proxy-host:${openai.client.proxy-host:${OPENAI_PROXY_HOST:}}}")
+    private String proxyHost;
+
+    @Value("${trinka.proxy-port:${openai.client.proxy-port:${OPENAI_PROXY_PORT:0}}}")
+    private int proxyPort;
+
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private HttpClient httpClient;
 
     public TrinkaService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
+    }
+
+    @PostConstruct
+    void initHttpClient() {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5));
+        applyProxy(builder);
+        this.httpClient = builder.build();
+    }
+
+    private void applyProxy(HttpClient.Builder builder) {
+        if (builder == null || !proxyEnabled) {
+            return;
+        }
+        try {
+            if (proxyUrl != null && !proxyUrl.isBlank()) {
+                URI uri = URI.create(proxyUrl.trim());
+                if (uri.getHost() != null) {
+                    int port = uri.getPort() > 0 ? uri.getPort() : 80;
+                    builder.proxy(ProxySelector.of(new InetSocketAddress(uri.getHost(), port)));
+                    return;
+                }
+            }
+            if (proxyHost != null && !proxyHost.isBlank() && proxyPort > 0) {
+                builder.proxy(ProxySelector.of(new InetSocketAddress(proxyHost.trim(), proxyPort)));
+            }
+        } catch (Exception e) {
+            log.warn("Trinka proxy config ignored: {}", e.getMessage());
+        }
     }
 
     public List<WritingEvaluateResponse.ErrorDto> check(String text) {
@@ -70,6 +112,9 @@ public class TrinkaService {
             long elapsed = System.currentTimeMillis() - start;
             log.info("Trinka check done. errors={} elapsed={}ms", errors.size(), elapsed);
             return errors;
+        } catch (HttpTimeoutException e) {
+            log.info("Trinka check timed out after {}ms, skipped", timeoutMs);
+            return List.of();
         } catch (Exception e) {
             log.warn("Trinka check failed: {}", e.getMessage());
             return List.of();
@@ -385,3 +430,5 @@ public class TrinkaService {
         return category;
     }
 }
+
+
