@@ -60,8 +60,8 @@ public class TextGearsService {
     @Value("${textgears.proxy-host:${openai.client.proxy-host:${OPENAI_PROXY_HOST:}}}")
     private String proxyHost;
 
-    @Value("${textgears.proxy-port:${openai.client.proxy-port:${OPENAI_PROXY_PORT:0}}}")
-    private int proxyPort;
+    @Value("${textgears.proxy-port:${openai.client.proxy-port:${OPENAI_PROXY_PORT:}}}")
+    private String proxyPortValue;
 
     private final ObjectMapper objectMapper;
     private HttpClient httpClient;
@@ -91,11 +91,24 @@ public class TextGearsService {
                     return;
                 }
             }
+            int proxyPort = resolveProxyPort();
             if (proxyHost != null && !proxyHost.isBlank() && proxyPort > 0) {
                 builder.proxy(ProxySelector.of(new InetSocketAddress(proxyHost.trim(), proxyPort)));
             }
         } catch (Exception e) {
             log.warn("TextGears proxy config ignored: {}", e.getMessage());
+        }
+    }
+
+    private int resolveProxyPort() {
+        if (proxyPortValue == null || proxyPortValue.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(proxyPortValue.trim());
+        } catch (NumberFormatException e) {
+            log.warn("TextGears proxy port ignored: {}", proxyPortValue);
+            return 0;
         }
     }
 
@@ -330,5 +343,4 @@ public class TextGearsService {
         };
     }
 }
-
 

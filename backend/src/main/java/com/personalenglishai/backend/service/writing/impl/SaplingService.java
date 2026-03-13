@@ -54,8 +54,8 @@ public class SaplingService {
     @Value("${sapling.proxy-host:${openai.client.proxy-host:${OPENAI_PROXY_HOST:}}}")
     private String proxyHost;
 
-    @Value("${sapling.proxy-port:${openai.client.proxy-port:${OPENAI_PROXY_PORT:0}}}")
-    private int proxyPort;
+    @Value("${sapling.proxy-port:${openai.client.proxy-port:${OPENAI_PROXY_PORT:}}}")
+    private String proxyPortValue;
 
     private final ObjectMapper objectMapper;
     private HttpClient httpClient;
@@ -85,11 +85,24 @@ public class SaplingService {
                     return;
                 }
             }
+            int proxyPort = resolveProxyPort();
             if (proxyHost != null && !proxyHost.isBlank() && proxyPort > 0) {
                 builder.proxy(ProxySelector.of(new InetSocketAddress(proxyHost.trim(), proxyPort)));
             }
         } catch (Exception e) {
             log.warn("Sapling proxy config ignored: {}", e.getMessage());
+        }
+    }
+
+    private int resolveProxyPort() {
+        if (proxyPortValue == null || proxyPortValue.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(proxyPortValue.trim());
+        } catch (NumberFormatException e) {
+            log.warn("Sapling proxy port ignored: {}", proxyPortValue);
+            return 0;
         }
     }
 
@@ -263,5 +276,4 @@ public class SaplingService {
         return prefix + errorType;
     }
 }
-
 
