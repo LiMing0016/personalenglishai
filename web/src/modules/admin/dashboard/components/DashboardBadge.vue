@@ -1,5 +1,5 @@
 <template>
-  <span class="admin-dashboard-badge" :class="toneClass">{{ label }}</span>
+  <span class="admin-dashboard-badge" :class="badgeClass">{{ label }}</span>
 </template>
 
 <script setup lang="ts">
@@ -12,5 +12,5 @@ const props = withDefaults(defineProps<{
   tone: 'default',
 })
 
-const toneClass = computed(() => `admin-dashboard-badge--${props.tone}`)
+const badgeClass = computed(() => props.tone === 'warn' ? 'admin-dashboard-badge--warn' : 'admin-dashboard-badge--default')
 </script>

@@ -101,6 +101,14 @@ function formatPercent(value: number) {
   return `${(value * 100).toFixed(1)}%`
 }
 
+function clearChart() {
+  chart.dispose()
+}
+
+function handleResize() {
+  chart.resize()
+}
+
 function getChartValues() {
   return props.metrics.chart.map((row) => {
     if (viewMode.value === 'input') return row.inputTokens
@@ -110,8 +118,13 @@ function getChartValues() {
 }
 
 async function renderChart() {
-  if (!hasData.value || !chartEl.value) return
+  if (!hasData.value || !chartEl.value) {
+    clearChart()
+    return
+  }
+
   await nextTick()
+
   chart.mount(chartEl.value)
   chart.setOption({
     color: ['#136f4b'],
@@ -132,25 +145,21 @@ async function renderChart() {
   })
 }
 
-function handleResize() {
-  chart.resize()
-}
-
 watch(() => [props.metrics, props.status, viewMode.value], async () => {
   if (props.status === 'ready') {
     await renderChart()
+    return
   }
+
+  clearChart()
 }, { deep: true, immediate: true })
 
-onMounted(async () => {
-  if (props.status === 'ready') {
-    await renderChart()
-  }
+onMounted(() => {
   window.addEventListener('resize', handleResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  chart.dispose()
+  clearChart()
 })
 </script>

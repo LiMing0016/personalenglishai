@@ -1,5 +1,4 @@
 export type AdminDashboardPreset = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom'
-
 export type AdminDashboardStatus = 'loading' | 'empty' | 'error' | 'ready'
 
 export interface AdminDashboardFilter {
@@ -47,11 +46,11 @@ export interface AdminSubscriptionMetrics {
 }
 
 export interface AdminModelUsageChartPoint {
-  key: string
+  modelKey: string
   label: string
-  totalTokens: number
   inputTokens: number
   outputTokens: number
+  totalTokens: number
 }
 
 export interface AdminModelUsageRow {
@@ -92,8 +91,8 @@ export interface AdminContentMetrics {
 }
 
 export interface AdminAuditMetrics {
-  actionBreakdown: BreakdownItem[]
   dailyActions: DateValuePoint[]
+  actionBreakdown: BreakdownItem[]
 }
 
 export interface AdminDashboardPayload {

@@ -19,7 +19,7 @@
       <header class="admin-topbar">
         <div>
           <div class="admin-title">管理员后台</div>
-          <div class="admin-subtitle">用户治理、作文排查、题库与 Rubric 管理</div>
+          <div class="admin-subtitle">数据看板、用户治理、作文排查、题库与 Rubric 管理</div>
         </div>
         <router-link to="/app" class="admin-back-link">返回主站</router-link>
       </header>

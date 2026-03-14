@@ -1,26 +1,21 @@
 import { onBeforeUnmount, shallowRef } from 'vue'
 import * as echarts from 'echarts/core'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  TooltipComponent,
-  TitleComponent,
-} from 'echarts/components'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { ECBasicOption } from 'echarts/types/dist/shared'
 
-echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, TitleComponent, CanvasRenderer])
+echarts.use([BarChart, LineChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 export function useAdminChart() {
   const instance = shallowRef<echarts.ECharts | null>(null)
 
-  function mount(el: HTMLElement | null) {
-    if (!el) return null
+  function mount(element: HTMLElement | null) {
+    if (!element) return null
     if (instance.value) {
       instance.value.dispose()
     }
-    instance.value = echarts.init(el)
+    instance.value = echarts.init(element)
     return instance.value
   }
 
@@ -33,10 +28,8 @@ export function useAdminChart() {
   }
 
   function dispose() {
-    if (instance.value) {
-      instance.value.dispose()
-      instance.value = null
-    }
+    instance.value?.dispose()
+    instance.value = null
   }
 
   onBeforeUnmount(dispose)

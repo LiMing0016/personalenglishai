@@ -1,298 +1,271 @@
-import type { AdminDashboardFilter, AdminDashboardPayload, BreakdownItem, DateValuePoint } from '../types'
+import type {
+  AdminDashboardFilter,
+  AdminDashboardPayload,
+  AdminDashboardPreset,
+  AdminModelUsageMetrics,
+  AdminSubscriptionMetrics,
+  BreakdownItem,
+  DateValuePoint,
+} from '../types'
 
-const PLAN_LABELS = [
-  { key: 'monthly', label: '月卡' },
-  { key: 'quarterly', label: '季卡' },
-  { key: 'yearly', label: '年卡' },
-  { key: 'other', label: '其他' },
-]
+const BASE_NOW = new Date('2026-03-14T10:00:00+08:00')
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'gpt-4o': { input: 0.000005, output: 0.000015 },
-  'qwen-plus': { input: 0.0000022, output: 0.0000066 },
-  'qwen-vl-plus': { input: 0.000004, output: 0.000012 },
-  'gpt-4.1-mini': { input: 0.0000008, output: 0.0000032 },
+  'gpt-4o': { input: 0.00002, output: 0.00008 },
+  'qwen-plus': { input: 0.000004, output: 0.000012 },
+  'qwen-vl-plus': { input: 0.000006, output: 0.000018 },
 }
 
-const STAGE_LABELS = [
-  { key: 'highschool', label: '高中' },
-  { key: 'cet4', label: '四级' },
-  { key: 'cet6', label: '六级' },
-  { key: 'postgrad', label: '考研' },
-]
-
-function hashSeed(input: string) {
-  let hash = 2166136261
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  return Math.abs(hash >>> 0)
+function pad(value: number) {
+  return String(value).padStart(2, '0')
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
+function formatDate(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10)
+function cloneDate(date: Date) {
+  return new Date(date.getTime())
 }
 
-function parseDate(input?: string) {
-  if (!input) return null
-  const date = new Date(`${input}T00:00:00+08:00`)
-  return Number.isNaN(date.getTime()) ? null : date
+function startOfDay(date: Date) {
+  const next = cloneDate(date)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function addDays(date: Date, days: number) {
+  const next = cloneDate(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function startOfWeek(date: Date) {
+  const next = startOfDay(date)
+  const day = next.getDay() || 7
+  next.setDate(next.getDate() - day + 1)
+  return next
+}
+
+function startOfMonth(date: Date) {
+  const next = startOfDay(date)
+  next.setDate(1)
+  return next
+}
+
+function daysBetween(start: Date, end: Date) {
+  const diff = startOfDay(end).getTime() - startOfDay(start).getTime()
+  return Math.max(0, Math.floor(diff / 86400000)) + 1
+}
+
+function parseDate(value: string | undefined, fallback: Date) {
+  if (!value) return cloneDate(fallback)
+  return startOfDay(new Date(`${value}T00:00:00+08:00`))
 }
 
 function normalizeFilter(filter: AdminDashboardFilter) {
-  const today = new Date('2026-03-14T00:00:00+08:00')
-  let start = new Date(today)
-  let end = new Date(today)
+  const preset: AdminDashboardPreset = filter.preset ?? 'thisMonth'
+  const now = cloneDate(BASE_NOW)
 
-  if (filter.preset === 'yesterday') {
-    start.setDate(start.getDate() - 1)
-    end = new Date(start)
-  } else if (filter.preset === 'thisWeek') {
-    const day = start.getDay() === 0 ? 7 : start.getDay()
-    start.setDate(start.getDate() - day + 1)
-  } else if (filter.preset === 'thisMonth') {
-    start = new Date(today.getFullYear(), today.getMonth(), 1)
-  } else if (filter.preset === 'custom') {
-    start = parseDate(filter.startDate) ?? new Date(today.getFullYear(), today.getMonth(), 1)
-    end = parseDate(filter.endDate) ?? new Date(today)
+  if (preset === 'today') {
+    const start = startOfDay(now)
+    return { preset, start, end: start }
   }
 
-  const invalid = start.getTime() > end.getTime()
-  const days = invalid ? 0 : Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
-  return { start, end, days, invalid, today }
+  if (preset === 'yesterday') {
+    const start = addDays(startOfDay(now), -1)
+    return { preset, start, end: start }
+  }
+
+  if (preset === 'thisWeek') {
+    return { preset, start: startOfWeek(now), end: startOfDay(now) }
+  }
+
+  if (preset === 'custom') {
+    const start = parseDate(filter.startDate, addDays(startOfDay(now), -6))
+    const end = parseDate(filter.endDate, startOfDay(now))
+    return start.getTime() <= end.getTime()
+      ? { preset, start, end }
+      : { preset, start: end, end: start }
+  }
+
+  return { preset: 'thisMonth' as const, start: startOfMonth(now), end: startOfDay(now) }
 }
 
-function buildDateRange(start: Date, days: number) {
-  return Array.from({ length: days }, (_, index) => {
-    const date = new Date(start)
-    date.setDate(start.getDate() + index)
-    return date
-  })
+function hashSeed(input: string) {
+  let hash = 0
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) % 2147483647
+  }
+  return hash
 }
 
-function buildTrend(seedBase: number, dates: Date[], floor: number, spread: number, slope: number) {
-  return dates.map((date, index) => {
-    const seed = hashSeed(`${seedBase}:${toDateKey(date)}:${index}`)
-    const seasonal = Math.round(Math.sin((index + 1) / 2.6) * spread * 0.22)
-    const drift = Math.round(index * slope)
-    const noise = seed % spread
+function seeded(seed: number, offset = 0) {
+  const value = Math.sin(seed + offset * 97.13) * 10000
+  return value - Math.floor(value)
+}
+
+function buildTrend(start: Date, end: Date, seedKey: string, min: number, max: number): DateValuePoint[] {
+  const length = daysBetween(start, end)
+  return Array.from({ length }, (_, index) => {
+    const current = addDays(start, index)
+    const seed = hashSeed(`${seedKey}:${formatDate(current)}`)
+    const ratio = seeded(seed, index)
+    const wave = Math.sin((index / Math.max(length, 1)) * Math.PI)
+    const value = Math.round(min + (max - min) * (0.45 * ratio + 0.55 * Math.max(wave, 0.15)))
     return {
-      date: toDateKey(date),
-      value: Math.max(0, floor + drift + seasonal + noise),
+      date: formatDate(current),
+      value,
     }
   })
 }
 
-function toBreakdown(items: Array<{ key: string; label: string; value: number }>): BreakdownItem[] {
-  const total = items.reduce((sum, item) => sum + item.value, 0)
+function buildBreakdown(items: Array<{ key: string; label: string; value: number }>): BreakdownItem[] {
+  const total = items.reduce((sum, item) => sum + item.value, 0) || 1
   return items.map((item) => ({
     ...item,
-    ratio: total > 0 ? Number((item.value / total).toFixed(4)) : 0,
+    ratio: Number((item.value / total).toFixed(4)),
   }))
 }
 
-function roundCurrency(value: number) {
-  return Number(value.toFixed(2))
+function sumTrend(points: DateValuePoint[]) {
+  return points.reduce((sum, item) => sum + item.value, 0)
 }
 
-function buildSubscription(filter: AdminDashboardFilter) {
-  const normalized = normalizeFilter(filter)
-  if (normalized.invalid) {
-    return {
-      dailyNew: 0,
-      yesterdayNew: 0,
-      monthlyNew: 0,
-      totalSubscribedUsers: 0,
-      activeSubscribers: 0,
-      trend: [] as DateValuePoint[],
-      planBreakdown: [] as BreakdownItem[],
-    }
-  }
-
-  const monthlyStart = new Date(normalized.today.getFullYear(), normalized.today.getMonth(), 1)
-  const monthlyDates = buildDateRange(monthlyStart, normalized.today.getDate())
-  const monthlyTrend = buildTrend(hashSeed(`subscription:month:${JSON.stringify(filter)}`), monthlyDates, 9, 7, 0.4)
-  const filteredDates = buildDateRange(normalized.start, normalized.days)
-  const trend = buildTrend(hashSeed(`subscription:${JSON.stringify(filter)}`), filteredDates, 4, 6, normalized.days > 10 ? 0.35 : 0)
-  const dailyNew = trend[trend.length - 1]?.value ?? 0
-  const yesterdayNew = monthlyTrend[monthlyTrend.length - 2]?.value ?? Math.max(0, dailyNew - 2)
-  const monthlyNew = monthlyTrend.reduce((sum, item) => sum + item.value, 0)
-  const totalSubscribedUsers = 4820 + hashSeed(`subscribers:${JSON.stringify(filter)}`) % 420
-  const activeSubscribers = clamp(Math.round(totalSubscribedUsers * 0.62), 1, totalSubscribedUsers)
-  const weights = PLAN_LABELS.map((plan, index) => ({
-    ...plan,
-    value: 20 + (hashSeed(`${plan.key}:${JSON.stringify(filter)}`) % (40 - index * 4)),
-  }))
+function buildSubscription(start: Date, end: Date): AdminSubscriptionMetrics {
+  const trend = buildTrend(start, end, 'subscription', 6, 36)
+  const monthlyStart = startOfMonth(end)
+  const monthlyTrend = buildTrend(monthlyStart, end, 'subscription-month', 6, 36)
+  const yesterday = buildTrend(addDays(end, -1), addDays(end, -1), 'subscription-yesterday', 5, 18)[0]?.value ?? 0
+  const totalSubscribedUsers = 4280 + hashSeed(`${formatDate(start)}:${formatDate(end)}:sub-total`) % 720
+  const activeSubscribers = Math.round(totalSubscribedUsers * 0.62)
 
   return {
-    dailyNew,
-    yesterdayNew,
-    monthlyNew,
+    dailyNew: trend[trend.length - 1]?.value ?? 0,
+    yesterdayNew: yesterday,
+    monthlyNew: sumTrend(monthlyTrend),
     totalSubscribedUsers,
     activeSubscribers,
     trend,
-    planBreakdown: toBreakdown(weights),
+    planBreakdown: buildBreakdown([
+      { key: 'monthly', label: '月卡', value: 520 + hashSeed('plan-monthly') % 120 },
+      { key: 'quarterly', label: '季卡', value: 260 + hashSeed('plan-quarterly') % 80 },
+      { key: 'yearly', label: '年卡', value: 180 + hashSeed('plan-yearly') % 60 },
+      { key: 'other', label: '其他', value: 70 + hashSeed('plan-other') % 20 },
+    ]),
   }
 }
 
-function buildModelUsage(filter: AdminDashboardFilter) {
-  const normalized = normalizeFilter(filter)
-  const factor = normalized.invalid ? 0 : Math.max(1, normalized.days)
-  const rawModels = [
-    { key: 'gpt-4o', label: 'GPT-4o', requests: 210 + factor * 4 },
-    { key: 'qwen-plus', label: 'Qwen Plus', requests: 320 + factor * 6 },
-    { key: 'qwen-vl-plus', label: 'Qwen VL Plus', requests: 64 + factor * 2 },
-    { key: 'gpt-4.1-mini', label: 'GPT-4.1 mini', requests: 430 + factor * 9 },
-  ].map((item, index) => {
-    const seed = hashSeed(`${item.key}:${JSON.stringify(filter)}`)
-    const inputTokens = item.requests * (680 + (seed % 220) + index * 40)
-    const outputTokens = item.requests * (190 + (seed % 90) + index * 18)
+function buildModelUsage(start: Date, end: Date): AdminModelUsageMetrics {
+  const rangeDays = daysBetween(start, end)
+  const models = [
+    { modelKey: 'gpt-4o', modelName: 'gpt-4o', baseRequests: 120 },
+    { modelKey: 'qwen-plus', modelName: 'qwen-plus', baseRequests: 240 },
+    { modelKey: 'qwen-vl-plus', modelName: 'qwen-vl-plus', baseRequests: 64 },
+  ]
+
+  const table = models.map((model, index) => {
+    const requestCount = model.baseRequests + rangeDays * (index + 5) + (hashSeed(`${model.modelKey}:req:${rangeDays}`) % 40)
+    const inputTokens = requestCount * (420 + index * 80)
+    const outputTokens = requestCount * (210 + index * 45)
     const totalTokens = inputTokens + outputTokens
-    const pricing = MODEL_PRICING[item.key]
-    const estimatedCost = roundCurrency(inputTokens * pricing.input + outputTokens * pricing.output)
+    const price = MODEL_PRICING[model.modelKey]
+    const estimatedCost = Number(((inputTokens * price.input) + (outputTokens * price.output)).toFixed(2))
     return {
-      modelKey: item.key,
-      modelName: item.label,
-      requestCount: item.requests,
+      modelKey: model.modelKey,
+      modelName: model.modelName,
+      requestCount,
       inputTokens,
       outputTokens,
       totalTokens,
+      ratio: 0,
       estimatedCost,
     }
   })
 
-  const totalTokens = rawModels.reduce((sum, row) => sum + row.totalTokens, 0)
-  const totalInputTokens = rawModels.reduce((sum, row) => sum + row.inputTokens, 0)
-  const totalOutputTokens = rawModels.reduce((sum, row) => sum + row.outputTokens, 0)
-  const estimatedCost = roundCurrency(rawModels.reduce((sum, row) => sum + row.estimatedCost, 0))
+  const totalTokens = table.reduce((sum, row) => sum + row.totalTokens, 0) || 1
+  const normalized = table.map((row) => ({
+    ...row,
+    ratio: Number((row.totalTokens / totalTokens).toFixed(4)),
+  }))
 
   return {
-    totalInputTokens,
-    totalOutputTokens,
-    totalTokens,
-    estimatedCost,
-    chart: rawModels.map((row) => ({
-      key: row.modelKey,
+    totalInputTokens: normalized.reduce((sum, row) => sum + row.inputTokens, 0),
+    totalOutputTokens: normalized.reduce((sum, row) => sum + row.outputTokens, 0),
+    totalTokens: normalized.reduce((sum, row) => sum + row.totalTokens, 0),
+    estimatedCost: Number(normalized.reduce((sum, row) => sum + row.estimatedCost, 0).toFixed(2)),
+    chart: normalized.map((row) => ({
+      modelKey: row.modelKey,
       label: row.modelName,
-      totalTokens: row.totalTokens,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      totalTokens: row.totalTokens,
     })),
-    table: rawModels.map((row) => ({
-      ...row,
-      ratio: totalTokens > 0 ? Number((row.totalTokens / totalTokens).toFixed(4)) : 0,
-    })),
+    table: normalized,
   }
 }
 
-function buildUsers(filter: AdminDashboardFilter) {
+export function getDashboardMock(filter: AdminDashboardFilter): AdminDashboardPayload {
   const normalized = normalizeFilter(filter)
-  if (normalized.invalid) {
-    return { trend: [], stageBreakdown: [] }
-  }
-  const dates = buildDateRange(normalized.start, normalized.days)
-  return {
-    trend: buildTrend(hashSeed(`users:${JSON.stringify(filter)}`), dates, 12, 10, normalized.days > 14 ? 0.25 : 0),
-    stageBreakdown: toBreakdown(STAGE_LABELS.map((stage, index) => ({
-      ...stage,
-      value: 120 + index * 40 + (hashSeed(`${stage.key}:users:${JSON.stringify(filter)}`) % 70),
-    }))),
-  }
-}
-
-function buildWriting(filter: AdminDashboardFilter) {
-  const normalized = normalizeFilter(filter)
-  if (normalized.invalid) {
-    return { submissionTrend: [], scoreBreakdown: [] }
-  }
-  const dates = buildDateRange(normalized.start, normalized.days)
-  return {
-    submissionTrend: buildTrend(hashSeed(`writing:${JSON.stringify(filter)}`), dates, 18, 14, normalized.days > 10 ? 0.3 : 0),
-    scoreBreakdown: toBreakdown([
-      { key: '90+', label: '90分以上', value: 52 },
-      { key: '80-89', label: '80-89分', value: 86 },
-      { key: '70-79', label: '70-79分', value: 134 },
-      { key: 'below70', label: '70分以下', value: 73 },
-    ].map((item) => ({ ...item, value: item.value + (hashSeed(`${item.key}:writing:${JSON.stringify(filter)}`) % 24) }))),
-  }
-}
-
-function buildContent(filter: AdminDashboardFilter) {
-  const seed = hashSeed(`content:${JSON.stringify(filter)}`)
-  return {
-    totalPrompts: 1260 + (seed % 60),
-    activePrompts: 1110 + (seed % 42),
-    totalRubrics: 38 + (seed % 5),
-    activeRubrics: 12 + (seed % 3),
-  }
-}
-
-function buildAudit(filter: AdminDashboardFilter) {
-  const normalized = normalizeFilter(filter)
-  if (normalized.invalid) {
-    return { actionBreakdown: [], dailyActions: [] }
-  }
-  const dates = buildDateRange(normalized.start, normalized.days)
-  return {
-    dailyActions: buildTrend(hashSeed(`audit:${JSON.stringify(filter)}`), dates, 6, 9, 0.18),
-    actionBreakdown: toBreakdown([
-      { key: 'user', label: '用户治理', value: 62 },
-      { key: 'prompt', label: '题库变更', value: 28 },
-      { key: 'rubric', label: 'Rubric 操作', value: 16 },
-      { key: 'essay', label: '作文查看', value: 94 },
-    ].map((item) => ({ ...item, value: item.value + (hashSeed(`${item.key}:audit:${JSON.stringify(filter)}`) % 18) }))),
-  }
-}
-
-function buildSummary(payload: Omit<AdminDashboardPayload, 'summary' | 'meta'>) {
-  const latestUsers = payload.users.trend[payload.users.trend.length - 1]?.value ?? 0
-  const latestWriting = payload.writing.submissionTrend[payload.writing.submissionTrend.length - 1]?.value ?? 0
-  const averageScoreSource = payload.writing.scoreBreakdown.reduce((sum, item) => {
-    if (item.key === '90+') return sum + item.value * 92
-    if (item.key === '80-89') return sum + item.value * 84
-    if (item.key === '70-79') return sum + item.value * 75
-    return sum + item.value * 66
-  }, 0)
-  const scoreCount = payload.writing.scoreBreakdown.reduce((sum, item) => sum + item.value, 0)
-  return {
-    totalUsers: payload.users.stageBreakdown.reduce((sum, item) => sum + item.value, 4200),
-    dailyNewUsers: latestUsers,
-    activeUsers: Math.round((payload.users.stageBreakdown.reduce((sum, item) => sum + item.value, 0) || 1) * 0.58),
-    writingSubmissions: latestWriting,
-    averageScore: scoreCount > 0 ? Number((averageScoreSource / scoreCount).toFixed(1)) : 0,
-    pendingTasks: payload.audit.actionBreakdown.find((item) => item.key === 'essay')?.value ?? 0,
-  }
-}
-
-export async function getDashboardMock(filter: AdminDashboardFilter): Promise<AdminDashboardPayload> {
-  const subscription = buildSubscription(filter)
-  const modelUsage = buildModelUsage(filter)
-  const users = buildUsers(filter)
-  const writing = buildWriting(filter)
-  const content = buildContent(filter)
-  const audit = buildAudit(filter)
-  const payloadWithoutSummary = {
-    subscription,
-    modelUsage,
-    users,
-    writing,
-    content,
-    audit,
-  }
+  const usersTrend = buildTrend(normalized.start, normalized.end, 'users', 10, 48)
+  const writingTrend = buildTrend(normalized.start, normalized.end, 'writing', 16, 70)
+  const subscription = buildSubscription(normalized.start, normalized.end)
+  const modelUsage = buildModelUsage(normalized.start, normalized.end)
 
   return {
     meta: {
       dataSource: 'mock',
-      generatedAt: '2026-03-14T09:30:00+08:00',
-      filters: filter,
+      generatedAt: BASE_NOW.toISOString(),
+      filters: {
+        preset: normalized.preset,
+        startDate: formatDate(normalized.start),
+        endDate: formatDate(normalized.end),
+        timezone: filter.timezone ?? 'Asia/Shanghai',
+      },
     },
-    summary: buildSummary(payloadWithoutSummary),
-    ...payloadWithoutSummary,
+    summary: {
+      totalUsers: 18320 + hashSeed('summary-total-users') % 900,
+      dailyNewUsers: usersTrend[usersTrend.length - 1]?.value ?? 0,
+      activeUsers: 2160 + hashSeed('summary-active-users') % 260,
+      writingSubmissions: sumTrend(writingTrend),
+      averageScore: Number((77 + seeded(hashSeed('summary-score')) * 9).toFixed(1)),
+      pendingTasks: 18 + hashSeed('summary-pending') % 16,
+    },
+    subscription,
+    modelUsage,
+    users: {
+      trend: usersTrend,
+      stageBreakdown: buildBreakdown([
+        { key: 'primary', label: '小学', value: 420 },
+        { key: 'junior', label: '初中', value: 860 },
+        { key: 'senior', label: '高中', value: 1180 },
+        { key: 'college', label: '大学', value: 560 },
+      ]),
+    },
+    writing: {
+      submissionTrend: writingTrend,
+      scoreBreakdown: buildBreakdown([
+        { key: '90+', label: '90分以上', value: 180 },
+        { key: '80-89', label: '80-89分', value: 420 },
+        { key: '70-79', label: '70-79分', value: 360 },
+        { key: 'under-70', label: '70分以下', value: 160 },
+      ]),
+    },
+    content: {
+      totalPrompts: 860,
+      activePrompts: 712,
+      totalRubrics: 84,
+      activeRubrics: 21,
+    },
+    audit: {
+      dailyActions: buildTrend(normalized.start, normalized.end, 'audit', 12, 56),
+      actionBreakdown: buildBreakdown([
+        { key: 'update', label: '更新', value: 320 },
+        { key: 'create', label: '创建', value: 180 },
+        { key: 'publish', label: '发布', value: 74 },
+        { key: 'disable', label: '停用', value: 48 },
+      ]),
+    },
   }
 }
 

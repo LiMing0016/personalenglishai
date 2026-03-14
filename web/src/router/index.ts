@@ -278,10 +278,17 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (isPublic && (to.path === '/login' || to.path === '/login-form' || to.path === '/register') && hasToken) {
-    if (DEBUG_ROUTER) {
-      console.info('[router] guard: has token on auth page, redirect to', BUSINESS_HOME, { to: to.fullPath })
+    let home = BUSINESS_HOME
+    try {
+      await getAdminMe()
+      home = ADMIN_HOME
+    } catch {
+      home = BUSINESS_HOME
     }
-    next(BUSINESS_HOME)
+    if (DEBUG_ROUTER) {
+      console.info('[router] guard: has token on auth page, redirect to', home, { to: to.fullPath })
+    }
+    next(home)
     return
   }
 
@@ -334,5 +341,6 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
+
 
 

@@ -7,10 +7,29 @@
         <div>
           <div class="admin-card-title">Dashboard</div>
           <div class="admin-subtle">当前为前端演示数据。后端就位后将按模块逐步替换为真实接口。</div>
+          <div class="admin-dashboard-page__meta">{{ filterSummary }}</div>
         </div>
         <DashboardBadge :label="payload?.meta.dataSource === 'mock' ? '示例数据' : '实时数据'" tone="warn" />
       </div>
+      <div v-if="hiddenModules.length" class="admin-dashboard-page__notice">当前账号仅显示有权限的模块：{{ hiddenModules.join('、') }}</div>
     </div>
+
+    <div class="admin-card admin-dashboard-page__quicklinks">
+      <div class="admin-dashboard-page__quicklinks-head">
+        <div class="admin-card-title">快捷入口</div>
+        <div class="admin-subtle">先看数据，再进入具体治理页面。</div>
+      </div>
+      <div class="admin-inline-list">
+        <router-link
+          v-for="item in quickLinks"
+          :key="item.to"
+          :to="item.to"
+          class="admin-badge admin-dashboard-page__quicklink"
+        >{{ item.label }}</router-link>
+      </div>
+    </div>
+
+    <div v-if="!hasAnyModuleAccess" class="admin-card admin-empty">当前账号暂无用户、作文、内容或审计模块权限，请联系超级管理员分配角色。</div>
 
     <div class="admin-grid-three admin-dashboard-summary-grid">
       <DashboardKpiCard label="累计用户" :value="formatNumber(payload?.summary.totalUsers ?? 0)" />
@@ -158,7 +177,9 @@ const emptyModelUsage: AdminModelUsageMetrics = {
 const permissions = computed(() => new Set(me.value?.permissions ?? []))
 const canViewUsers = computed(() => permissions.value.has('admin.users.read'))
 const canViewWriting = computed(() => permissions.value.has('admin.essays.read'))
-const canViewContent = computed(() => permissions.value.has('admin.prompts.read') || permissions.value.has('admin.rubrics.read'))
+const canViewPrompts = computed(() => permissions.value.has('admin.prompts.read'))
+const canViewRubrics = computed(() => permissions.value.has('admin.rubrics.read'))
+const canViewContent = computed(() => canViewPrompts.value || canViewRubrics.value)
 const canViewAudit = computed(() => permissions.value.has('admin.audit.read'))
 
 const usersStatus = computed<AdminDashboardStatus>(() => sectionStatus(canViewUsers.value, payload.value?.users.trend.length ?? 0))
@@ -167,6 +188,29 @@ const writingStatus = computed<AdminDashboardStatus>(() => sectionStatus(canView
 const modelUsageStatus = computed<AdminDashboardStatus>(() => sectionStatus(true, payload.value?.modelUsage.chart.length ?? 0))
 const contentStatus = computed<AdminDashboardStatus>(() => sectionStatus(canViewContent.value, payload.value ? 1 : 0))
 const auditStatus = computed<AdminDashboardStatus>(() => sectionStatus(canViewAudit.value, payload.value?.audit.dailyActions.length ?? 0))
+const hasAnyModuleAccess = computed(() => canViewUsers.value || canViewWriting.value || canViewContent.value || canViewAudit.value)
+const hiddenModules = computed(() => {
+  const items: string[] = []
+  if (!canViewUsers.value) items.push('用户增长')
+  if (!canViewWriting.value) items.push('写作质量')
+  if (!canViewContent.value) items.push('内容治理')
+  if (!canViewAudit.value) items.push('审计活动')
+  return items
+})
+const quickLinks = computed(() => {
+  const links = [{ to: '/admin/dashboard', label: 'Dashboard' }]
+  if (canViewUsers.value) links.push({ to: '/admin/users', label: '用户列表' })
+  if (canViewWriting.value) links.push({ to: '/admin/essays', label: '作文排查' })
+  if (canViewContent.value) links.push({ to: '/admin/prompts', label: '题库管理' })
+  if (canViewContent.value) links.push({ to: '/admin/rubrics', label: 'Rubric 管理' })
+  if (canViewAudit.value) links.push({ to: '/admin/audit-logs', label: '审计日志' })
+  return links
+})
+const filterSummary = computed(() => {
+  const meta = payload.value?.meta.filters
+  if (!meta?.startDate || !meta?.endDate) return '统计区间：加载中'
+  return `统计区间：${meta.startDate} 至 ${meta.endDate}（${meta.timezone ?? 'Asia/Shanghai'}）`
+})
 
 function sectionStatus(visible: boolean, size: number): AdminDashboardStatus {
   if (pageStatus.value === 'loading') return 'loading'
@@ -203,4 +247,3 @@ watch(filters, load, { deep: true })
 
 onMounted(load)
 </script>
-

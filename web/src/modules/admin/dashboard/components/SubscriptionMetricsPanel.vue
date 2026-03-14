@@ -29,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DashboardBadge from './DashboardBadge.vue'
 import DashboardKpiCard from './DashboardKpiCard.vue'
 import DashboardSection from './DashboardSection.vue'
@@ -52,9 +52,24 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat('zh-CN').format(value)
 }
 
+function clearCharts() {
+  trendChart.dispose()
+  breakdownChart.dispose()
+}
+
+function handleResize() {
+  trendChart.resize()
+  breakdownChart.resize()
+}
+
 async function renderCharts() {
-  if (!hasData.value || !trendEl.value || !breakdownEl.value) return
+  if (!hasData.value || !trendEl.value || !breakdownEl.value) {
+    clearCharts()
+    return
+  }
+
   await nextTick()
+
   trendChart.mount(trendEl.value)
   trendChart.setOption({
     color: ['#136f4b'],
@@ -92,12 +107,18 @@ async function renderCharts() {
 watch(() => [props.metrics, props.status], async () => {
   if (props.status === 'ready') {
     await renderCharts()
+    return
   }
+
+  clearCharts()
 }, { deep: true, immediate: true })
 
-onMounted(async () => {
-  if (props.status === 'ready') {
-    await renderCharts()
-  }
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  clearCharts()
 })
 </script>
