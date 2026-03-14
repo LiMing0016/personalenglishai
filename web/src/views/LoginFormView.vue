@@ -116,6 +116,7 @@ import SliderCaptcha from '@/components/auth/SliderCaptcha.vue'
 import Input from '@/components/Input.vue'
 import Button from '@/components/Button.vue'
 import { authApi } from '@/api/auth'
+import { clearAdminMeCache, getAdminMe } from '@/api/admin'
 import { setToken } from '@/utils/token'
 import { isValidEmail, isValidPassword, isValidPhone, isValidSmsCode } from '@/utils/validation'
 
@@ -123,6 +124,7 @@ const router = useRouter()
 const route = useRoute()
 
 const BUSINESS_HOME = '/app'
+const ADMIN_HOME = '/admin/dashboard'
 const tabs = [
   { label: '邮箱', value: 'email' },
   { label: '手机', value: 'phone' },
@@ -220,9 +222,21 @@ function getTokenFromResponse(res: { data?: { token?: string }; token?: string; 
   return res.data?.token ?? res.token ?? res.accessToken ?? null
 }
 
-function getSafeRedirect(): string {
+function getSafeRedirect(): string | null {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-  return redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : BUSINESS_HOME
+  return redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : null
+}
+
+async function resolvePostLoginTarget(): Promise<string> {
+  const redirect = getSafeRedirect()
+  if (redirect) return redirect
+
+  try {
+    await getAdminMe(true)
+    return ADMIN_HOME
+  } catch {
+    return BUSINESS_HOME
+  }
 }
 
 // ── send SMS code ──
@@ -294,7 +308,8 @@ async function doEmailLogin() {
     const token = getTokenFromResponse(res)
     if (!token) { errorText.value = res.message ?? '登录失败，请重试'; return }
     setToken(token)
-    await router.replace(getSafeRedirect())
+    clearAdminMeCache()
+    await router.replace(await resolvePostLoginTarget())
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     errorText.value = err.response?.data?.message ?? '登录失败，请重试'
@@ -314,7 +329,8 @@ async function doPhoneLogin() {
     const token = getTokenFromResponse(res)
     if (!token) { errorText.value = res.message ?? '登录失败，请重试'; return }
     setToken(token)
-    await router.replace(getSafeRedirect())
+    clearAdminMeCache()
+    await router.replace(await resolvePostLoginTarget())
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     errorText.value = err.response?.data?.message ?? '登录失败，请重试'
@@ -346,3 +362,5 @@ async function doPhoneLogin() {
   text-decoration: underline;
 }
 </style>
+
+

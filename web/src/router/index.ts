@@ -16,7 +16,7 @@ import { showToast } from '@/utils/toast'
 import { stageCache, clearStageCache } from '@/stores/stageCache'
 
 const BUSINESS_HOME = '/app'
-const ADMIN_HOME = '/admin/users'
+const ADMIN_HOME = '/admin/dashboard'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -146,6 +146,11 @@ const routes: RouteRecordRaw[] = [
         redirect: ADMIN_HOME,
       },
       {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('@/modules/admin/dashboard/pages/AdminDashboardPage.vue'),
+      },
+      {
         path: 'users',
         name: 'AdminUsers',
         component: () => import('@/pages/admin/AdminUsersPage.vue'),
@@ -273,10 +278,17 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (isPublic && (to.path === '/login' || to.path === '/login-form' || to.path === '/register') && hasToken) {
-    if (DEBUG_ROUTER) {
-      console.info('[router] guard: has token on auth page, redirect to', BUSINESS_HOME, { to: to.fullPath })
+    let home = BUSINESS_HOME
+    try {
+      await getAdminMe()
+      home = ADMIN_HOME
+    } catch {
+      home = BUSINESS_HOME
     }
-    next(BUSINESS_HOME)
+    if (DEBUG_ROUTER) {
+      console.info('[router] guard: has token on auth page, redirect to', home, { to: to.fullPath })
+    }
+    next(home)
     return
   }
 
@@ -329,4 +341,6 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
+
+
 
