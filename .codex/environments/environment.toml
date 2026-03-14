@@ -6,9 +6,17 @@ name = "personalenglishai"
 script = ""
 
 [[actions]]
-name = "查看当前分支和工作树"
+name = "sync-main"
 icon = "run"
 command = '''
-git branch --show-current
- git worktree list --porcelain
+git fetch origin
+git switch main
+git pull --ff-only origin main
 '''
+platform = "win32"
+
+[[actions]]
+name = "port-occupatied"
+icon = "run"
+command = "cmd /c \"for /f \"\"tokens=5\"\" %a in ('netstat -ano ^| findstr :18080') do taskkill /F /PID %a\""
+platform = "win32"

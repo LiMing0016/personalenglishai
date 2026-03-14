@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.DocumentScoreSummaryMapper">
+
+    <resultMap id="BaseResultMap" type="com.personalenglishai.backend.entity.DocumentScoreSummary">
+        <id property="documentId" column="document_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="firstEvaluationId" column="first_evaluation_id"/>
+        <result property="latestEvaluationId" column="latest_evaluation_id"/>
+        <result property="bestEvaluationId" column="best_evaluation_id"/>
+        <result property="firstOverallScore" column="first_overall_score"/>
+        <result property="latestOverallScore" column="latest_overall_score"/>
+        <result property="bestOverallScore" column="best_overall_score"/>
+        <result property="latestBandLabel" column="latest_band_label"/>
+        <result property="latestWordCount" column="latest_word_count"/>
+        <result property="latestTotalErrorCount" column="latest_total_error_count"/>
+        <result property="latestMajorErrorCount" column="latest_major_error_count"/>
+        <result property="latestMinorErrorCount" column="latest_minor_error_count"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.DocumentScoreSummary">
+        INSERT INTO document_score_summary
+            (document_id, user_id, first_evaluation_id, latest_evaluation_id, best_evaluation_id,
+             first_overall_score, latest_overall_score, best_overall_score, latest_band_label,
+             latest_word_count, latest_total_error_count, latest_major_error_count, latest_minor_error_count,
+             created_at, updated_at)
+        VALUES
+            (#{documentId}, #{userId}, #{firstEvaluationId}, #{latestEvaluationId}, #{bestEvaluationId},
+             #{firstOverallScore}, #{latestOverallScore}, #{bestOverallScore}, #{latestBandLabel},
+             #{latestWordCount}, #{latestTotalErrorCount}, #{latestMajorErrorCount}, #{latestMinorErrorCount},
+             NOW(), NOW())
+    </insert>
+
+    <update id="updateByDocumentId" parameterType="com.personalenglishai.backend.entity.DocumentScoreSummary">
+        UPDATE document_score_summary
+        SET user_id = #{userId},
+            first_evaluation_id = #{firstEvaluationId},
+            latest_evaluation_id = #{latestEvaluationId},
+            best_evaluation_id = #{bestEvaluationId},
+            first_overall_score = #{firstOverallScore},
+            latest_overall_score = #{latestOverallScore},
+            best_overall_score = #{bestOverallScore},
+            latest_band_label = #{latestBandLabel},
+            latest_word_count = #{latestWordCount},
+            latest_total_error_count = #{latestTotalErrorCount},
+            latest_major_error_count = #{latestMajorErrorCount},
+            latest_minor_error_count = #{latestMinorErrorCount},
+            updated_at = NOW()
+        WHERE document_id = #{documentId}
+    </update>
+
+    <select id="selectByDocumentId" resultMap="BaseResultMap">
+        SELECT document_id, user_id, first_evaluation_id, latest_evaluation_id, best_evaluation_id,
+               first_overall_score, latest_overall_score, best_overall_score, latest_band_label,
+               latest_word_count, latest_total_error_count, latest_major_error_count, latest_minor_error_count,
+               created_at, updated_at
+        FROM document_score_summary
+        WHERE document_id = #{documentId}
+    </select>
+
+</mapper>

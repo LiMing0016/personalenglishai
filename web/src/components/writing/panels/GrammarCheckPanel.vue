@@ -66,8 +66,7 @@
       >
         <div class="gc-item-header">
           <div class="gc-item-tags">
-            <span class="gc-type">{{ errorTypeLabel(err.type) }} · {{ err.severity === 'major' ? '严重' : '轻微' }}</span>
-            <span v-if="err.lang_category" class="gc-lang-cat">{{ langCategoryLabel(err.lang_category) }}</span>
+            <span class="gc-type">{{ displayLabel(err) }}</span>
           </div>
           <span v-if="isFixed(err.id)" class="badge-fixed">已修改</span>
           <template v-else>
@@ -335,6 +334,11 @@ function errorTypeLabel(type: string): string {
 
 function langCategoryLabel(cat: string): string {
   return LANG_CATEGORY_LABELS[cat] ?? cat
+}
+
+function displayLabel(err: ErrorItem): string {
+  if (err.lang_category) return langCategoryLabel(err.lang_category)
+  return errorTypeLabel(err.type)
 }
 
 function hasValidSuggestion(err: { original?: string; suggestion?: string }): boolean {
@@ -646,24 +650,34 @@ function applyGptError(item: SuggestionErrorItem) {
 }
 
 .gc-item {
-  padding: 10px;
-  border-radius: 10px;
-  background: #fefce8;
-  border: 1px solid #fde68a;
+  padding: 12px 12px 11px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffef7 0%, #fffdf2 100%);
+  border: 1px solid #f3df9a;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, transform 0.15s;
 }
-.gc-item:hover { background: #fef9c3; }
-.gc-item--active { box-shadow: 0 0 0 2px #fbbf24; }
-.gc-item--fixed { opacity: 0.5; }
+.gc-item:hover {
+  background: linear-gradient(180deg, #fffdf0 0%, #fff9e8 100%);
+  border-color: #ecc86a;
+  box-shadow: 0 8px 18px rgba(120, 53, 15, 0.08);
+  transform: translateY(-1px);
+}
+.gc-item--active {
+  border-color: #d4a72c;
+  box-shadow: 0 0 0 2px rgba(212, 167, 44, 0.18);
+}
+.gc-item--fixed {
+  opacity: 0.68;
+}
 .gc-item--fixed .gc-original { text-decoration: line-through; }
 
 .gc-item-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 .gc-item-tags {
@@ -674,73 +688,78 @@ function applyGptError(item: SuggestionErrorItem) {
   flex-wrap: wrap;
 }
 
-.gc-lang-cat {
-  display: inline-block;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 500;
-  border-radius: 4px;
-  background: #fef3c7;
-  color: #92400e;
-  white-space: nowrap;
-}
-
 .gc-type {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff3cd;
+  border: 1px solid #f1d48a;
   font-size: 12px;
-  color: #6b7280;
+  font-weight: 600;
+  color: #8a5a10;
+  letter-spacing: 0.01em;
 }
 
 .badge-fixed {
   display: inline-block;
-  padding: 1px 8px;
+  padding: 3px 9px;
   font-size: 11px;
   font-weight: 600;
-  border-radius: 20px;
+  border-radius: 999px;
   background: #d1fae5;
   color: #065f46;
   white-space: nowrap;
 }
 
 .btn-fix-single {
-  padding: 2px 10px;
+  padding: 4px 10px;
   font-size: 11px;
-  font-weight: 500;
-  border: 1px solid #6366f1;
-  border-radius: 6px;
-  background: #eef2ff;
-  color: #4338ca;
+  font-weight: 600;
+  border: 1px solid #0f766e;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #0f766e;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.btn-fix-single:hover { background: #c7d2fe; }
+.btn-fix-single:hover {
+  background: #d1fae5;
+  border-color: #047857;
+}
 
 .btn-dismiss {
-  padding: 2px 10px;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #f9fafb;
+  border-radius: 999px;
+  background: #fff;
   color: #6b7280;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-.btn-dismiss:hover { background: #e5e7eb; }
+.btn-dismiss:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  color: #374151;
+}
 
 .gc-correction {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .gc-original {
-  background: #fee2e2;
-  color: #991b1b;
-  border-radius: 4px;
-  padding: 1px 5px;
+  background: #fde2e2;
+  color: #9f1d1d;
+  border-radius: 8px;
+  padding: 3px 8px;
   font-family: monospace;
   text-decoration: line-through;
   font-size: 12px;
@@ -749,10 +768,10 @@ function applyGptError(item: SuggestionErrorItem) {
 .gc-arrow { color: #6b7280; }
 
 .gc-suggestion {
-  background: #d1fae5;
+  background: #d8f5e8;
   color: #065f46;
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: 8px;
+  padding: 3px 8px;
   font-family: monospace;
   font-size: 12px;
 }
@@ -794,12 +813,11 @@ function applyGptError(item: SuggestionErrorItem) {
 }
 
 .gc-reason {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: 12px;
-  color: #78350f;
-  line-height: 1.4;
+  color: #7c4a13;
+  line-height: 1.5;
 }
-
 .gc-done {
   padding: 14px;
   border-radius: 12px;

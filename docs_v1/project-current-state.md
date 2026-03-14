@@ -55,7 +55,7 @@
 | 滑动验证码 | 已实现 | 获取验证码 + 验证坐标 + 登录携带 captchaToken |
 | 用户中心 | 已实现 | 资料读取、昵称/学段修改、密码修改、能力画像、统计 |
 | 写作评测 | 已实现 | 同步评测、异步任务、任务查询、历史、详情、收藏 |
-| 写作 AI 交互 | 已实现 | chat 改写、selectedText、分级润色 |
+| 写作 AI 交互 | 已实现 | chat 改写、selectedText、分级润色、翻译（含个性化参数） |
 | 文档管理 | 已实现 | 创建文档、追加 revision、读取、删除 |
 | Rubric | 已实现（只读） | 可按 stage/mode 获取 active rubric |
 | 管理员端 | 未实现 | 无管理员 API、无管理员 UI、无管理审计 |
@@ -115,3 +115,4 @@
 - 前端结构：`frontend-current-state.md`
 - 数据模型：`database-current-state.md`
 - 本地运行与配置：`local-dev-runbook.md`
+

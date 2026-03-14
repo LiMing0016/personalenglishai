@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.WritingExamMetadataMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_exam_metadata
+            (metadata_id, exam_type, task_type, min_words, recommended_max_words, max_score, created_at, updated_at)
+        VALUES
+            (#{metadataId}, #{examType}, #{taskType}, #{minWords}, #{recommendedMaxWords}, #{maxScore}, NOW(), NOW())
+    </insert>
+
+    <update id="updateByMetadataId" parameterType="com.personalenglishai.backend.entity.WritingExamMetadata">
+        UPDATE writing_exam_metadata
+        SET exam_type = #{examType},
+            task_type = #{taskType},
+            min_words = #{minWords},
+            recommended_max_words = #{recommendedMaxWords},
+            max_score = #{maxScore},
+            updated_at = NOW()
+        WHERE metadata_id = #{metadataId}
+    </update>
+    <select id="selectByMetadataId" resultType="com.personalenglishai.backend.entity.WritingExamMetadata">
+        SELECT id, metadata_id, exam_type, task_type, min_words, recommended_max_words, max_score, created_at, updated_at
+        FROM writing_exam_metadata
+        WHERE metadata_id = #{metadataId}
+        LIMIT 1
+    </select>
+
+</mapper>
+

@@ -235,3 +235,33 @@ INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, `level`, level
 (@rv_id,'exam','task_achievement','E',20,
  'COMPLETELY OFF-TOPIC or fails entirely: the essay topic is entirely different from the required task (e.g., task requires writing about New Year celebrations but the essay discusses environmental protection or another unrelated subject). Any essay that does not engage with the required topic at all MUST receive E. Format absent. Word count irrelevant.')
 ON DUPLICATE KEY UPDATE level_score=VALUES(level_score), criteria=VALUES(criteria);
+
+-- -------------------------------------------------------
+-- postgrad rubric v1
+-- 第一阶段先复用 highschool-v1 的维度与等级，避免考研评分链路 fallback。
+-- 后续再按考研规则单独细化。
+-- -------------------------------------------------------
+INSERT INTO rubric_version (rubric_key, stage, is_active)
+SELECT 'postgrad-v1', 'postgrad', 1
+WHERE NOT EXISTS (
+  SELECT 1 FROM rubric_version
+  WHERE rubric_key = 'postgrad-v1' AND stage = 'postgrad' AND is_active = 1
+);
+
+SET @postgrad_rv_id = (
+  SELECT id FROM rubric_version
+  WHERE rubric_key = 'postgrad-v1' AND stage = 'postgrad' AND is_active = 1
+  ORDER BY id DESC LIMIT 1
+);
+
+INSERT INTO rubric_dimension (rubric_version_id, mode, dimension_key, display_name, sort_order)
+SELECT @postgrad_rv_id, d.mode, d.dimension_key, d.display_name, d.sort_order
+FROM rubric_dimension d
+WHERE d.rubric_version_id = @rv_id
+ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), sort_order = VALUES(sort_order);
+
+INSERT INTO rubric_level (rubric_version_id, mode, dimension_key, level, level_score, criteria)
+SELECT @postgrad_rv_id, l.mode, l.dimension_key, l.level, l.level_score, l.criteria
+FROM rubric_level l
+WHERE l.rubric_version_id = @rv_id
+ON DUPLICATE KEY UPDATE level_score = VALUES(level_score), criteria = VALUES(criteria);

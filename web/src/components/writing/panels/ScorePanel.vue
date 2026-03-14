@@ -7,14 +7,13 @@
         <div class="score-line">
           <span class="score-value">{{ displayScore }}</span>
           <span class="score-max">/ {{ displayMaxScore }}</span>
-          <span v-if="gaokaoband && !(props.examMaxScore && props.examMaxScore !== 100)" class="score-band">{{ gaokaoband }}</span>
+
           <span
             v-if="improvement"
             :class="['improvement-badge', improvement.delta >= 0 ? 'improved' : 'declined']"
           >{{ improvement.delta >= 0 ? '\u2191' : '\u2193' }}{{ Math.abs(improvement.delta) }}</span>
         </div>
-        <span v-if="evaluateResult.gaokao_score && !(props.examMaxScore && props.examMaxScore !== 100)" class="score-hint">高考预估得分</span>
-        <span v-else class="score-hint">综合评分</span>
+        <span class="score-hint">综合评分（100 分制）</span>
         <p v-if="improvement" class="improvement-message">{{ improvement.message }}</p>
         <p v-if="gptErrorCount > 0" class="error-count-hint">
           检测到 <strong>{{ gptErrorCount }}</strong> 个语法/表达问题
@@ -205,26 +204,14 @@ const dimensionOrder = computed(() =>
 const isFallback = computed(() => props.evaluateResult?.source === 'fallback')
 
 const displayScore = computed(() => {
-  const overall = props.evaluateResult?.score?.overall ?? 0
-  // 考试模式：examMaxScore 优先，按满分换算
-  if (props.examMaxScore && props.examMaxScore !== 100) {
-    return Math.round(overall * props.examMaxScore / 100)
-  }
-  const gs = props.evaluateResult?.gaokao_score
-  if (typeof gs?.score === 'number') return gs.score
-  return overall
+  return props.evaluateResult?.score?.overall ?? 0
 })
 
 const displayMaxScore = computed(() => {
-  // 考试模式：examMaxScore 优先
-  if (props.examMaxScore && props.examMaxScore !== 100) return props.examMaxScore
-  const gs = props.evaluateResult?.gaokao_score
-  if (typeof gs?.max_score === 'number') return gs.max_score
-  return props.examMaxScore ?? 100
+  return 100
 })
 
 const gptErrorCount = computed(() => props.evaluateResult?.error_count ?? props.evaluateResult?.errors?.length ?? 0)
-const gaokaoband = computed(() => props.evaluateResult?.gaokao_score?.band ?? null)
 const improvement = computed(() => props.evaluateResult?.improvement ?? null)
 
 // ── 等级计算 ──
