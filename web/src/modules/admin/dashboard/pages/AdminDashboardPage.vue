@@ -177,7 +177,9 @@ const emptyModelUsage: AdminModelUsageMetrics = {
 const permissions = computed(() => new Set(me.value?.permissions ?? []))
 const canViewUsers = computed(() => permissions.value.has('admin.users.read'))
 const canViewWriting = computed(() => permissions.value.has('admin.essays.read'))
-const canViewContent = computed(() => permissions.value.has('admin.prompts.read') || permissions.value.has('admin.rubrics.read'))
+const canViewPrompts = computed(() => permissions.value.has('admin.prompts.read'))
+const canViewRubrics = computed(() => permissions.value.has('admin.rubrics.read'))
+const canViewContent = computed(() => canViewPrompts.value || canViewRubrics.value)
 const canViewAudit = computed(() => permissions.value.has('admin.audit.read'))
 
 const usersStatus = computed<AdminDashboardStatus>(() => sectionStatus(canViewUsers.value, payload.value?.users.trend.length ?? 0))
