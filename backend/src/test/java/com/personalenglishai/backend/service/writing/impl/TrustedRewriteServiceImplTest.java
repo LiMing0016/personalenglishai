@@ -40,13 +40,14 @@ class TrustedRewriteServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         service = new TrustedRewriteServiceImpl(redisTemplate, objectMapper, grammarCheckService);
     }
 
     @Test
     @DisplayName("advanced 替换且 Lite 无硬错误时应登记 trusted rewrite")
     void shouldTrustAdvancedRewriteWhenLiteHasNoHardErrors() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
         RewriteApplyRequest request = new RewriteApplyRequest();
         request.setDocId("doc-1");
         request.setEssay("The old sentence. Another sentence.");
@@ -89,6 +90,8 @@ class TrustedRewriteServiceImplTest {
     @Test
     @DisplayName("trusted rewrite 只应 suppress Trinka suggestion，不 suppress 硬错误")
     void shouldSuppressOnlyTrustedTrinkaSuggestions() throws Exception {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
         TrustedRewriteSegmentDto record = new TrustedRewriteSegmentDto();
         record.setDocId("doc-1");
         record.setSentenceText("The polished sentence.");
