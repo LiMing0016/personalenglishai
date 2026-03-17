@@ -127,6 +127,70 @@ GPT 检测完成 → 显示"改进建议 Suggestions"
 }
 ```
 
+### Trinka Lite / Power 模式
+
+- `grammar-check` 现在支持 `trinkaMode`：
+  - `lite` -> Trinka `pipeline=basic`
+  - `power` -> Trinka `pipeline=advanced`
+- 前端默认使用 `lite`
+- `evaluate` 评分链路的错误统计默认与 Lite 口径对齐
+
+```json
+// Request
+{
+  "text": "She have a apple.",
+  "docId": "doc-1",
+  "trinkaMode": "lite"
+}
+```
+
+### Trinka 顶层分类与建议收口
+
+Trinka 原始返回会保留到 `raw_engine_meta`，包括：
+
+- `type`
+- `error_category`
+- `lang_category`
+- `critical_error`
+- `pipeline`
+- `top_category_id`
+- `top_category_name`
+
+系统不会直接按 Trinka 英文顶层类展示给用户，但会用它来做二次分类：
+
+- `Correctness` -> `error`
+- `Clarity / Fluency / Style / Style Guide Compliance / Inclusivity` -> `suggestion`
+
+因此：
+
+- 真正基础错误继续进入“问题”
+- 表达优化、风格增强类命中进入“建议与改进”
+- 顶部“问题数”只统计 `error`
+
+### trusted rewrite 与 Trinka 重复建议抑制
+
+为避免 `advanced / perfect` 高档润色后的句子又被 Trinka 重复挑刺，系统增加了 `trustedRewriteSegments`。
+
+边界：
+
+- 只对白名单档位生效：`advanced / perfect`
+- `basic / steady` 不进入 trusted
+- 只抑制 `engine=trinka` 的重复建议类命中
+- 不抑制 Trinka 的硬错误
+- 不影响 LanguageTool / Sapling / TextGears 等其他引擎
+
+trusted rewrite 进入条件：
+
+1. 用户在 `RewritePanel` 点击替换
+2. 后端用 `Lite/basic` 对替换后的句子做一次基础检错
+3. 只有当该句没有硬错误时，才登记为 trusted
+
+右侧语法面板与编辑器高亮会共同遵守这套规则：
+
+- trusted 句子中的 Trinka 建议类命中默认隐藏
+- trusted 句子中的 Trinka 硬错误继续显示
+- 面板会给出“已隐藏重复建议”的轻提示，并允许用户清空 trusted 状态
+
 ### POST /api/writing/suggestions
 
 GPT 专用隐形错误检测，不做通用对话。

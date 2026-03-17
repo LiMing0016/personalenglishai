@@ -43,6 +43,11 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     saveDraftNow(draftText.value ?? '', getScope())
   }
 
+  function flushAll() {
+    saveDraftNow(draftText.value ?? '', getScope())
+    saveAiNoteDraftNow(aiNote.value ?? '', getScope())
+  }
+
   const debouncedSaveAiNote = useDebounceFn((v: string) => {
     saveAiNoteDraftNow(v ?? '', getScope())
   }, 400)
@@ -162,10 +167,12 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
       // Local draft takes precedence (user may have typed since last backend save)
       const scope = id.trim() || null
       const localDraft = loadDraftNow(scope)
-      if (localDraft && localDraft.trim()) {
+      if (localDraft != null) {
         draftText.value = localDraft
       } else if (doc.content) {
         draftText.value = doc.content
+      } else {
+        draftText.value = ''
       }
 
       // Restore AI note
@@ -223,6 +230,7 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     init,
     hydrateByDocId,
     flushDraft,
+    flushAll,
     clearCurrentDraftContent,
     clearAll,
     resetConversation,

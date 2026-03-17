@@ -1,0 +1,316 @@
+{
+  "profiles": [
+    {
+      "key": "default.exam.default.polish.v1",
+      "stage": "default",
+      "mode": "exam",
+      "taskType": "default",
+      "bandRankMap": {
+        "Band 5": 1,
+        "Band 4": 2,
+        "Band 3": 3,
+        "Band 2": 4,
+        "Band 1": 5
+      },
+      "bandScoreFloor": {
+        "Band 5": 85,
+        "Band 4": 70,
+        "Band 3": 55,
+        "Band 2": 40,
+        "Band 1": 0
+      },
+      "routeRules": {
+        "aligned": {
+          "defaultRoute": "rubric_polish"
+        },
+        "partial": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        },
+        "off_topic": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        }
+      },
+      "forceRewrite": {
+        "rewriteUnderWordRatio": 0.75,
+        "missingTaskActions": true,
+        "severeFormatMismatch": true,
+        "missingCoreMaterialCoverage": true
+      },
+      "tierProfiles": {
+        "basic": {
+          "targetBandRankBySource": {
+            "5": 3,
+            "4": 3,
+            "3": 3,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "low",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "steady": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "medium",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "advanced": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "perfect": {
+          "targetBandRankBySource": {
+            "5": 1,
+            "4": 1,
+            "3": 1,
+            "2": 1,
+            "1": 1
+          },
+          "rewriteStrength": "very_high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        }
+      },
+      "safetyGuard": {
+        "mustNotRegress": [
+          "relevance",
+          "task_completion",
+          "coverage",
+          "word_count_band",
+          "final_score"
+        ]
+      }
+    },
+    {
+      "key": "postgrad.exam.task1.polish.v1",
+      "stage": "postgrad",
+      "mode": "exam",
+      "taskType": "task1",
+      "bandRankMap": {
+        "Band 5": 1,
+        "Band 4": 2,
+        "Band 3": 3,
+        "Band 2": 4,
+        "Band 1": 5
+      },
+      "bandScoreFloor": {
+        "Band 5": 85,
+        "Band 4": 70,
+        "Band 3": 55,
+        "Band 2": 40,
+        "Band 1": 0
+      },
+      "routeRules": {
+        "aligned": {
+          "defaultRoute": "rubric_polish"
+        },
+        "partial": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        },
+        "off_topic": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        }
+      },
+      "forceRewrite": {
+        "rewriteUnderWordRatio": 0.75,
+        "missingTaskActions": true,
+        "severeFormatMismatch": true,
+        "missingCoreMaterialCoverage": true
+      },
+      "tierProfiles": {
+        "basic": {
+          "targetBandRankBySource": {
+            "5": 3,
+            "4": 3,
+            "3": 3,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "low",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "steady": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "medium",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "advanced": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "perfect": {
+          "targetBandRankBySource": {
+            "5": 1,
+            "4": 1,
+            "3": 1,
+            "2": 1,
+            "1": 1
+          },
+          "rewriteStrength": "very_high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        }
+      },
+      "safetyGuard": {
+        "mustNotRegress": [
+          "relevance",
+          "task_completion",
+          "coverage",
+          "word_count_band",
+          "final_score"
+        ]
+      }
+    },
+    {
+      "key": "postgrad.exam.task2.polish.v1",
+      "stage": "postgrad",
+      "mode": "exam",
+      "taskType": "task2",
+      "bandRankMap": {
+        "Band 5": 1,
+        "Band 4": 2,
+        "Band 3": 3,
+        "Band 2": 4,
+        "Band 1": 5
+      },
+      "bandScoreFloor": {
+        "Band 5": 85,
+        "Band 4": 70,
+        "Band 3": 55,
+        "Band 2": 40,
+        "Band 1": 0
+      },
+      "routeRules": {
+        "aligned": {
+          "defaultRoute": "rubric_polish"
+        },
+        "partial": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        },
+        "off_topic": {
+          "keepFrameworkIf": {
+            "structureMinLevel": "B",
+            "grammarMinLevel": "C",
+            "expressionMinLevel": "C"
+          },
+          "routeIfKeepFramework": "topic_correction_then_polish",
+          "routeIfNotKeepFramework": "corrected_rewrite"
+        }
+      },
+      "forceRewrite": {
+        "rewriteUnderWordRatio": 0.75,
+        "missingTaskActions": true,
+        "severeFormatMismatch": true,
+        "missingCoreMaterialCoverage": true
+      },
+      "tierProfiles": {
+        "basic": {
+          "targetBandRankBySource": {
+            "5": 3,
+            "4": 3,
+            "3": 3,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "low",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "steady": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "medium",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "advanced": {
+          "targetBandRankBySource": {
+            "5": 2,
+            "4": 2,
+            "3": 2,
+            "2": 2,
+            "1": 1
+          },
+          "rewriteStrength": "high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        },
+        "perfect": {
+          "targetBandRankBySource": {
+            "5": 1,
+            "4": 1,
+            "3": 1,
+            "2": 1,
+            "1": 1
+          },
+          "rewriteStrength": "very_high",
+          "coreDimensions": ["task_achievement", "content_quality", "structure"]
+        }
+      },
+      "safetyGuard": {
+        "mustNotRegress": [
+          "relevance",
+          "task_completion",
+          "coverage",
+          "word_count_band",
+          "final_score"
+        ]
+      }
+    }
+  ]
+}

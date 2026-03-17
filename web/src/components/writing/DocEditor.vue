@@ -850,6 +850,18 @@ function clear() {
 }
 
 /* 选中/聚焦的错误 */
+.doc-content-wrapper mark.err-category-suggestion {
+  background: rgba(16, 185, 129, 0.14);
+  border-bottom: 2px solid #10b981;
+}
+.doc-content-wrapper mark.err-category-suggestion.err-major {
+  border-bottom-style: wavy;
+  border-bottom-width: 3px;
+}
+.doc-content-wrapper mark.err-category-suggestion.err-minor {
+  border-bottom-style: solid;
+}
+
 .doc-content-wrapper mark.err-active {
   background: rgba(251, 191, 36, 0.3) !important;
   box-shadow: 0 0 0 2px #fbbf24;

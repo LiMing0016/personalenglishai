@@ -1,25 +1,35 @@
 import { ref, computed, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDebounceFn } from '@vueuse/core'
-import { grammarCheck as grammarCheckApi, grammarSuppress } from '@/api/writing'
-import type { WritingEvaluateResponse, SuggestionErrorItem, SuggestionItem } from '@/api/writing'
+import { clearTrustedRewrite as clearTrustedRewriteApi, grammarCheck as grammarCheckApi, grammarSuppress } from '@/api/writing'
+import type {
+  GrammarCheckMode,
+  SuggestionErrorItem,
+  SuggestionItem,
+  TrustedRewriteSegment,
+  WritingEvaluateResponse,
+} from '@/api/writing'
 import { findClosestMatch, hasValidSuggestion, resolveErrorSpan, shouldUseWordBoundary } from '@/components/writing/errorSpanResolver'
 import {
+  clearTrustedRewriteSegments as clearTrustedRewriteSegmentsCache,
   saveGrammarErrors,
   loadGrammarErrors,
   clearGrammarErrors,
+  loadTrustedRewriteSegments,
   savePolishSuggestions,
   loadPolishSuggestions,
   clearPolishSuggestions,
   saveGrammarFixedIds,
   loadGrammarFixedIds,
   clearGrammarFixedIds,
+  saveTrustedRewriteSegments,
 } from '@/components/writing/editorShellStorage'
 import { showToast } from '@/utils/toast'
 import { useWritingDraftStore } from './writingDraftStore'
 import { useEvaluateStore } from './evaluateStore'
 
 type CorrectionError = WritingEvaluateResponse['errors'][number]
+type TrustedRange = { start: number; end: number; record: TrustedRewriteSegment }
 
 /** Context window chars before/after error span for suppress context hash. */
 const CONTEXT_WINDOW = 30
@@ -34,6 +44,8 @@ export const useGrammarStore = defineStore('grammar', () => {
   const grammarChecking = ref(false)
   const grammarCheckError = ref<string | null>(null)
   const preferEvaluateErrors = ref(false)
+  const trinkaMode = ref<GrammarCheckMode>('lite')
+  const trustedRewriteSegments = ref<TrustedRewriteSegment[]>([])
 
   /** Errors the user explicitly dismissed (local UI hide, backend Redis handles persistence). */
   const dismissedLocally = ref<Set<string>>(new Set())
@@ -41,6 +53,9 @@ export const useGrammarStore = defineStore('grammar', () => {
   const recentFixedLocally = ref<Set<string>>(new Set())
 
   function getScope() { return draftStore.docId?.trim() || null }
+  function persistTrustedRewrites() {
+    saveTrustedRewriteSegments(trustedRewriteSegments.value, getScope())
+  }
 
   /** Combined set of locally hidden error IDs (for panel display). */
   const locallyHiddenIds = computed(() => {
@@ -51,6 +66,70 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   function persistLocalIds() {
     saveGrammarFixedIds([...locallyHiddenIds.value], getScope())
+  }
+
+  function normalizeSnippet(text: string): string {
+    return (text ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().replace(/\s+/g, ' ').toLowerCase()
+  }
+
+  function extractLeftContext(text: string, start: number): string {
+    return text.slice(Math.max(0, start - CONTEXT_WINDOW), Math.max(0, start))
+  }
+
+  function extractRightContext(text: string, end: number): string {
+    return text.slice(Math.min(end, text.length), Math.min(text.length, end + CONTEXT_WINDOW))
+  }
+
+  function findTrustedRange(text: string, record: TrustedRewriteSegment): TrustedRange | null {
+    const needle = record?.sentence_text ?? ''
+    if (!text || !needle) return null
+    const matches: number[] = []
+    let from = 0
+    while (from <= text.length - needle.length) {
+      const idx = text.indexOf(needle, from)
+      if (idx < 0) break
+      matches.push(idx)
+      from = idx + 1
+    }
+    if (matches.length === 0) return null
+    const targetLeft = normalizeSnippet(record.left_context ?? '')
+    const targetRight = normalizeSnippet(record.right_context ?? '')
+    let best = matches[0]
+    let bestScore = Number.NEGATIVE_INFINITY
+    for (const idx of matches) {
+      let score = 0
+      const left = normalizeSnippet(extractLeftContext(text, idx))
+      const right = normalizeSnippet(extractRightContext(text, idx + needle.length))
+      if (targetLeft && left.endsWith(targetLeft)) score += 2
+      if (targetRight && right.startsWith(targetRight)) score += 2
+      if (score > bestScore) {
+        bestScore = score
+        best = idx
+      }
+    }
+    return { start: best, end: best + needle.length, record }
+  }
+
+  const activeTrustedRanges = computed<TrustedRange[]>(() => {
+    const text = draftStore.draftText
+    if (!text || trustedRewriteSegments.value.length === 0) return []
+    return trustedRewriteSegments.value
+      .map((record) => findTrustedRange(text, record))
+      .filter((item): item is TrustedRange => item != null)
+      .sort((a, b) => a.start - b.start)
+  })
+
+  function shouldSuppressTrustedSuggestion(error: CorrectionError | undefined): boolean {
+    if (!error?.span) return false
+    if (!error.engine || error.engine.toLowerCase() !== 'trinka') return false
+    if ((error.category ?? 'error').toLowerCase() !== 'suggestion') return false
+    return activeTrustedRanges.value.some((range) =>
+      error.span!.start >= range.start && error.span!.end <= range.end,
+    )
+  }
+
+  function filterTrustedSuggestions(errors: CorrectionError[]): CorrectionError[] {
+    return errors.filter((error) => !shouldSuppressTrustedSuggestion(error))
   }
 
   const gptErrors = ref<CorrectionError[]>([])
@@ -68,13 +147,53 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   // ── Computed ──
   const grammarPanelErrors = computed(() => {
+    const hidden = locallyHiddenIds.value
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
-      return grammarErrors.value
+      return grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
     }
     if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
-      return evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion')
+      return evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
     }
-    return grammarErrors.value
+    return grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
+  })
+
+  const grammarPanelSuggestions = computed(() => {
+    const hidden = locallyHiddenIds.value
+    let base: CorrectionError[] = []
+    if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
+      base = grammarErrors.value.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    } else if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+      base = evaluateStore.evaluateResult.errors.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    } else {
+      base = grammarErrors.value.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    }
+
+    const merged = [...base]
+    const seen = new Set(merged.map((e) => e.id))
+    for (const item of gptSuggestionErrors.value) {
+      if (hidden.has(item.id) || seen.has(item.id)) continue
+      merged.push(item)
+      seen.add(item.id)
+    }
+    return filterTrustedSuggestions(merged)
+  })
+
+  const hiddenTrustedSuggestionCount = computed(() => {
+    const hidden = locallyHiddenIds.value
+    let base: CorrectionError[] = []
+    if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
+      base = grammarErrors.value.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    } else if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
+      base = evaluateStore.evaluateResult.errors.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    } else {
+      base = grammarErrors.value.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
+    }
+    let total = 0
+    for (const item of [...base, ...gptSuggestionErrors.value]) {
+      if (hidden.has(item.id)) continue
+      if (shouldSuppressTrustedSuggestion(item)) total++
+    }
+    return total
   })
 
   const grammarPanelFixedIds = computed(() => locallyHiddenIds.value)
@@ -85,7 +204,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
       base = grammarErrors.value.filter((e) => !hidden.has(e.id))
     } else if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
-      base = evaluateStore.evaluateResult.errors
+      base = evaluateStore.evaluateResult.errors.filter((e) => !hidden.has(e.id))
     } else if (grammarErrors.value.length > 0) {
       base = grammarErrors.value.filter((e) => !hidden.has(e.id))
     }
@@ -95,6 +214,9 @@ export const useGrammarStore = defineStore('grammar', () => {
       all = [...(base ?? []), ...extras]
     } else {
       all = base
+    }
+    if (all) {
+      all = filterTrustedSuggestions(all)
     }
     // Re-resolve spans against current editor text to fix any offset drift
     if (!all || all.length === 0) return all
@@ -124,19 +246,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   })
 
   const rewritePanelSuggestions = computed(() => {
-    const fromEvaluate = preferEvaluateErrors.value
-      ? (evaluateStore.evaluateResult?.errors ?? []).filter((e) => e.category === 'suggestion')
-      : []
-    if (gptSuggestionErrors.value.length === 0) return fromEvaluate
-
-    const merged = [...fromEvaluate]
-    const seen = new Set(merged.map((e) => e.id))
-    for (const s of gptSuggestionErrors.value) {
-      if (seen.has(s.id)) continue
-      merged.push(s)
-      seen.add(s.id)
-    }
-    return merged
+    return grammarPanelSuggestions.value
   })
 
   // ── Grammar Check Scheduling ──
@@ -164,7 +274,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarCheckError.value = null
     try {
       const docId = draftStore.docId ?? undefined
-      const res = await grammarCheckApi({ text, docId }, { signal: abortController.signal })
+      const res = await grammarCheckApi({ text, docId, trinkaMode: trinkaMode.value }, { signal: abortController.signal })
       // Suppressed errors are already filtered by backend (Redis-based suppress)
       grammarErrors.value = res.errors ?? []
       dismissedLocally.value = new Set()
@@ -187,6 +297,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   // ── Fix Actions ──
   function fixError(errorId: string) {
     const err = grammarPanelErrors.value.find((e) => e.id === errorId)
+      ?? grammarPanelSuggestions.value.find((e) => e.id === errorId)
     if (!err || !err.original || !hasValidSuggestion(err)) return
     if (locallyHiddenIds.value.has(errorId)) return
 
@@ -255,6 +366,7 @@ export const useGrammarStore = defineStore('grammar', () => {
 
   function inlineFixError(errorId: string) {
     const panelErr = grammarPanelErrors.value.find((e) => e.id === errorId)
+      ?? grammarPanelSuggestions.value.find((e) => e.id === errorId)
     if (panelErr) {
       fixError(errorId)
       return
@@ -274,6 +386,7 @@ export const useGrammarStore = defineStore('grammar', () => {
   function dismissError(errorId: string) {
     // Find the error to get its content for backend suppress
     const err = grammarPanelErrors.value.find((e) => e.id === errorId)
+      ?? grammarPanelSuggestions.value.find((e) => e.id === errorId)
       ?? gptErrors.value.find((e) => e.id === errorId)
       ?? gptSuggestionErrors.value.find((e) => e.id === errorId)
 
@@ -365,6 +478,10 @@ export const useGrammarStore = defineStore('grammar', () => {
         gptSuggestionErrors.value = cachedPolish.suggestions as CorrectionError[]
       }
     }
+    const cachedTrusted = loadTrustedRewriteSegments(scope)
+    if (cachedTrusted && trustedRewriteSegments.value.length === 0) {
+      trustedRewriteSegments.value = cachedTrusted
+    }
   }
 
   function pauseForSubmit() {
@@ -395,9 +512,11 @@ export const useGrammarStore = defineStore('grammar', () => {
     recentFixedLocally.value = new Set()
     gptErrors.value = []
     gptSuggestionErrors.value = []
+    trinkaMode.value = 'lite'
     grammarCheckActive.value = true
     lastCheckedText = ''
     abortController?.abort()
+    trustedRewriteSegments.value = []
   }
 
   /** Clear all sessionStorage caches — call on explicit discard/exit, not on refresh */
@@ -406,6 +525,7 @@ export const useGrammarStore = defineStore('grammar', () => {
     clearGrammarErrors(scope)
     clearPolishSuggestions(scope)
     clearGrammarFixedIds(scope)
+    clearTrustedRewriteSegmentsCache(scope)
   }
 
   /**
@@ -419,8 +539,51 @@ export const useGrammarStore = defineStore('grammar', () => {
     return text.slice(windowStart, windowEnd).trim()
   }
 
+  function setTrinkaMode(mode: GrammarCheckMode) {
+    if (trinkaMode.value === mode) return
+    trinkaMode.value = mode
+    abortController?.abort()
+    if (!grammarCheckActive.value || draftStore.draftText.trim().length < 10) return
+    void runGrammarCheck()
+  }
+
   function destroy() {
     abortController?.abort()
+  }
+
+  function registerTrustedRewrite(segment: TrustedRewriteSegment | null | undefined) {
+    if (!segment) return
+    const fingerprint = [
+      segment.normalized_text_hash,
+      normalizeSnippet(segment.left_context ?? ''),
+      normalizeSnippet(segment.right_context ?? ''),
+      segment.tier,
+    ].join('|')
+    const next = trustedRewriteSegments.value.filter((item) => {
+      const existingFingerprint = [
+        item.normalized_text_hash,
+        normalizeSnippet(item.left_context ?? ''),
+        normalizeSnippet(item.right_context ?? ''),
+        item.tier,
+      ].join('|')
+      return existingFingerprint !== fingerprint
+    })
+    next.push(segment)
+    trustedRewriteSegments.value = next
+    persistTrustedRewrites()
+  }
+
+  async function clearTrustedRewrites() {
+    const scope = getScope()
+    trustedRewriteSegments.value = []
+    clearTrustedRewriteSegmentsCache(scope)
+    if (scope) {
+      try {
+        await clearTrustedRewriteApi(scope)
+      } catch {
+        showToast('恢复 Trinka 检查失败，请稍后重试', 'error')
+      }
+    }
   }
 
   function useEvaluateErrorsForPanels() {
@@ -437,15 +600,19 @@ export const useGrammarStore = defineStore('grammar', () => {
     grammarCheckActive,
     grammarChecking,
     grammarCheckError,
+    trinkaMode,
     dismissedLocally,
     recentFixedLocally,
     gptErrors,
     gptSuggestionErrors,
     // Computed
     grammarPanelErrors,
+    grammarPanelSuggestions,
     grammarPanelFixedIds,
     displayEditorErrors,
     rewritePanelSuggestions,
+    hiddenTrustedSuggestionCount,
+    trustedRewriteSegments,
     unfixedFixableCount,
     hasUncheckedChanges,
     // Actions
@@ -454,8 +621,11 @@ export const useGrammarStore = defineStore('grammar', () => {
     fixAll,
     inlineFixError,
     dismissError,
+    setTrinkaMode,
     setGptErrors,
     setGptSuggestions,
+    registerTrustedRewrite,
+    clearTrustedRewrites,
     restoreFromCache,
     pauseForSubmit,
     resetAll,
@@ -465,3 +635,5 @@ export const useGrammarStore = defineStore('grammar', () => {
     destroy,
   }
 })
+
+

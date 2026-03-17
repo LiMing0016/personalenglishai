@@ -347,6 +347,8 @@ export interface ExamTopicInfo {
   genre: string | null
   wordRange: string | null
   requirements: string | null
+  imageDescription: string | null
+  materialText: string | null
   maxScore: number
   sourceType: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
   examType: string | null
@@ -482,6 +484,8 @@ const parsedResult = ref<ExamTopicInfo>({
   genre: null,
   wordRange: null,
   requirements: null,
+  imageDescription: null,
+  materialText: null,
   maxScore: 100,
   sourceType: 'manual',
   examType: null,
@@ -554,12 +558,76 @@ function extractPromptFallback(text: string, currentWordRange?: string | null, c
   }
 }
 
+function buildExamTaskPrompt(info: {
+  topic: string
+  imageDescription?: string | null
+  materialText?: string | null
+  genre?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+  maxScore?: number | null
+}) {
+  const lines: string[] = []
+  const topic = info.topic?.trim()
+  const imageDescription = info.imageDescription?.trim()
+  const materialText = info.materialText?.trim()
+  const genre = info.genre?.trim()
+  const wordRange = info.wordRange?.trim()
+  const requirements = info.requirements?.trim()
+
+  if (topic) {
+    lines.push('题目要求（润色后必须继续严格对齐）：')
+    lines.push(topic)
+  }
+  if (imageDescription) {
+    if (imageDescription === topic) {
+      // topic 已经来自图画描述，避免重复
+    } else {
+    lines.push('图画信息：')
+    lines.push(imageDescription)
+    }
+  }
+  if (materialText) {
+    if (materialText === topic) {
+      // topic 已经来自材料正文，避免重复
+    } else {
+    lines.push('材料信息：')
+    lines.push(materialText)
+    }
+  }
+  if (genre) lines.push(`体裁：${genre}`)
+  if (wordRange) lines.push(`字数要求：${wordRange}词`)
+  if (requirements) lines.push(`写作要求：${requirements}`)
+  if (info.maxScore && info.maxScore !== 100) lines.push(`满分分值：${info.maxScore}分`)
+
+  return lines.join('\n')
+}
+
+function resolvePromptTopicSource(prompt: EssayPromptItem): string {
+  const materialText = prompt.materialText?.trim()
+  if (materialText) return materialText
+  const imageDescription = prompt.imageDescription?.trim()
+  if (imageDescription) return imageDescription
+  return prompt.promptText.trim()
+}
+
+function resolvePromptRequirements(prompt: EssayPromptItem): string | null {
+  const fallback = extractPromptFallback(prompt.promptText, null, null)
+  return fallback.requirements || prompt.promptText.trim() || null
+}
+
 async function onStartConfirm() {
   if (!canStart.value) return
 
   const pendingPrompt = selectedPrompt.value
+  const preferredTopic = activeTab.value === 'past' && pendingPrompt
+    ? resolvePromptTopicSource(pendingPrompt)
+    : null
+  const preferredRequirements = activeTab.value === 'past' && pendingPrompt
+    ? resolvePromptRequirements(pendingPrompt)
+    : null
   const rawTopic = activeTab.value === 'past' && pendingPrompt
-    ? pendingPrompt.promptText.trim()
+    ? preferredTopic
     : topic.value.trim()
 
   if (!rawTopic) return
@@ -573,6 +641,7 @@ async function onStartConfirm() {
       topic: rawTopic,
       genre: genre.value,
       wordRange: getEffectiveWordRange() ?? undefined,
+      requirements: preferredRequirements ?? undefined,
     })
 
     if (res.status === 'invalid') {
@@ -590,10 +659,12 @@ async function onStartConfirm() {
     )
     const parsedWordRange = parseWordRange(fallback.wordRange)
     parsedResult.value = {
-      topic: normalizedTopic,
+      topic: preferredTopic || normalizedTopic,
       genre: res.genre || genre.value || null,
       wordRange: fallback.wordRange || null,
-      requirements: fallback.requirements || null,
+      requirements: preferredRequirements || fallback.requirements || null,
+      imageDescription: pendingPrompt?.imageDescription?.trim() || null,
+      materialText: pendingPrompt?.materialText?.trim() || null,
       maxScore: maxScore.value,
       sourceType: pendingPrompt ? 'past_prompt' : 'manual',
       examType: props.studyStage || null,
@@ -612,10 +683,12 @@ async function onStartConfirm() {
     const fallback = extractPromptFallback(rawTopic, getEffectiveWordRange(), null)
     const parsedWordRange = parseWordRange(fallback.wordRange)
     parsedResult.value = {
-      topic: rawTopic,
+      topic: preferredTopic || rawTopic,
       genre: genre.value,
       wordRange: fallback.wordRange || null,
-      requirements: fallback.requirements || null,
+      requirements: preferredRequirements || fallback.requirements || null,
+      imageDescription: pendingPrompt?.imageDescription?.trim() || null,
+      materialText: pendingPrompt?.materialText?.trim() || null,
       maxScore: maxScore.value,
       sourceType: pendingPrompt ? 'past_prompt' : 'manual',
       examType: props.studyStage || null,
@@ -701,7 +774,7 @@ onMounted(() => {
       confirmStep.value = 'idle'
       parsedResult.value = state.parsedResult
         ? { ...state.parsedResult }
-        : { topic: '', genre: null, wordRange: null, requirements: null, maxScore: 100, sourceType: 'manual', examType: props.studyStage ?? null, taskType: null, minWords: null, recommendedMaxWords: null }
+        : { topic: '', genre: null, wordRange: null, requirements: null, imageDescription: null, materialText: null, maxScore: 100, sourceType: 'manual', examType: props.studyStage ?? null, taskType: null, minWords: null, recommendedMaxWords: null }
       auditMessage.value = state.auditMessage ?? null
       promptKeyword.value = state.promptKeyword ?? ''
       promptYear.value = state.promptYear ?? null
@@ -771,16 +844,24 @@ async function saveAndLeave() {
     if (t) {
       const parsedWordRange = parseWordRange(getEffectiveWordRange())
       const sourceType = activeTab.value === 'past' ? 'past_prompt' : 'manual'
+      const taskPrompt = buildExamTaskPrompt({
+        topic: t,
+        imageDescription: selectedPrompt.value?.imageDescription,
+        materialText: selectedPrompt.value?.materialText,
+        genre: genre.value,
+        wordRange: getEffectiveWordRange(),
+        maxScore: maxScore.value,
+      })
       const res = await startWritingSession({
         mode: 'exam',
-        taskPrompt: t,
+        taskPrompt,
         title: t.slice(0, 100),
         draft: true,
         studyStage: props.studyStage ?? undefined,
         sourceType,
         titleSnapshot: t.slice(0, 255),
         topicTitle: topic.value.trim(),
-        promptText: t,
+        promptText: taskPrompt,
         genre: genre.value,
         examType: props.studyStage ?? null,
         taskType: selectedPrompt.value?.task || null,
@@ -864,7 +945,7 @@ function onPromptSearch() {
 async function useSelectedPrompt() {
   if (!selectedPrompt.value) return
   const prompt = selectedPrompt.value
-  topic.value = prompt.promptText
+  topic.value = resolvePromptTopicSource(prompt)
   if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
     const range = `${prompt.wordCountMin}-${prompt.wordCountMax}`
     if (wordRangeOptions.includes(range)) {

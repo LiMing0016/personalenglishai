@@ -7,7 +7,11 @@
 ## 目录约定
 
 - `postgrad-exam-policy.md`
-  - 第一阶段考研考试评分细则草案
+  - 考研考试评分执行规则（Policy）
+- `rubric-postgrad-v1.md`
+  - 考研考试评分标准本体（Rubric）
+- `polish-rubric-alignment.md`
+  - 润色与评分共用 Rubric 的执行方案
 - 后续建议按学段或场景继续拆分
   - `highschool-exam-policy.md`
   - `middle-school-exam-policy.md`
@@ -35,12 +39,22 @@
 - `docs/scoring-rules/*`
   - 说明“下一步准备按什么规则做”
 
+其中：
+
+- `Rubric`
+  - 定义“6 维怎么判 A-E”
+- `Policy`
+  - 定义“怎么封顶、扣分、算最终分”
+- `Polish Alignment`
+  - 定义“润色如何复用同一套 Rubric，而不是走另一套画像或风格逻辑”
+
 ## 当前阶段重点
 
 当前优先沉淀：
 
 - `postgrad` 学段
 - `exam` 模式
+- `Rubric + Policy` 双文档结构
 - “方向门槛 + 质量细化 + 硬约束”评分协议
 
 暂不在一期强判定中纳入：

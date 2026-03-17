@@ -61,6 +61,9 @@ export interface WritingEvaluateResponse {
   }
   summary: string
   error_count?: number
+  display_error_count?: number
+  raw_error_count?: number
+  suggestion_count?: number
   errors: Array<{
     id: string
     type:
@@ -77,6 +80,16 @@ export interface WritingEvaluateResponse {
     alternatives?: string[]
     /** Source engine: lt | sapling | trinka | textgears | gpt */
     engine?: string
+    raw_engine_meta?: {
+      type?: number
+      top_category_id?: number
+      top_category_name?: string
+      comment?: string
+      pipeline?: string
+      error_category?: string
+      lang_category?: string
+      critical_error?: boolean
+    }
   }>
 }
 
@@ -276,6 +289,17 @@ export interface WritingChatResponse {
 
 export type PolishTier = 'basic' | 'steady' | 'advanced' | 'perfect'
 
+export interface TrustedRewriteSegment {
+  doc_id: string
+  sentence_text: string
+  normalized_text_hash: string
+  left_context: string
+  right_context: string
+  tier: 'advanced' | 'perfect'
+  source: string
+  updated_at: number
+}
+
 export interface PolishRequest {
   original: string
   context?: string
@@ -305,6 +329,13 @@ export function polishSuggestion(req: PolishRequest): Promise<PolishResponse> {
 export interface PolishEssayRequest {
   text: string
   tier: PolishTier
+  studyStage?: string | null
+  writingMode?: 'free' | 'exam'
+  topicContent?: string
+  taskPrompt?: string
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
 }
 
 export interface SentencePolish {
@@ -318,7 +349,49 @@ export interface PolishEssaySummary {
   improvements: string[]
 }
 
+export type PolishTopicAlignmentStatus = 'aligned' | 'partial' | 'off_topic'
+export type PolishRewriteMode =
+  | 'rubric_polish'
+  | 'topic_correction_then_polish'
+  | 'corrected_rewrite'
+  | 'fallback_polish'
+
+export interface PolishDirectionSnapshot {
+  relevance?: string | null
+  taskCompletion?: string | null
+  coverage?: string | null
+  maxBand?: string | null
+}
+
 export interface PolishEssayResponse {
+  rubricKey?: string
+  policyKey?: string | null
+  polishRubricKey?: string | null
+  route?: PolishRewriteMode | null
+  processingModeLabel?: string | null
+  topicAlignmentStatus?: PolishTopicAlignmentStatus | null
+  rewriteMode?: PolishRewriteMode | null
+  baselineBand?: string | null
+  baselineScore?: number | null
+  baselineGrades?: Partial<Record<DimensionKey, GradeLetter>>
+  finalBand?: string | null
+  finalScore?: number | null
+  finalGrades?: Partial<Record<DimensionKey, GradeLetter>>
+  sourceBandRank?: number | null
+  targetBandRank?: number | null
+  accepted?: boolean | null
+  guardTriggered?: boolean | null
+  fallbackToOriginal?: boolean | null
+  targetMet?: boolean | null
+  attemptCount?: number | null
+  targetTier?: PolishTier | null
+  targetGap?: string | null
+  bestEffort?: boolean | null
+  baselineDirection?: PolishDirectionSnapshot | null
+  finalDirection?: PolishDirectionSnapshot | null
+  bindingReason?: string | null
+  unmetCoreDimensions?: string[]
+  polishedEssay?: string | null
   summary?: PolishEssaySummary
   sentences: SentencePolish[]
 }
@@ -327,6 +400,90 @@ export function polishEssay(req: PolishEssayRequest): Promise<PolishEssayRespons
   return http
     .post<PolishEssayResponse>('/writing/polish-essay', req, { timeout: 120000 })
     .then((res) => res.data)
+}
+
+// ── Model Essay (范文) ──
+
+export interface WritingModelEssayRequest {
+  essay: string
+  studyStage?: string | null
+  writingMode?: 'free' | 'exam'
+  taskType?: string | null
+  topicContent?: string | null
+  taskPrompt?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
+}
+
+export interface ModelEssayCard {
+  label: string
+  essay: string
+  summary?: string | null
+  highScoreReasons: string[]
+  improvementGuidance: string[]
+}
+
+export interface WritingModelEssayResponse {
+  rubricKey?: string | null
+  mode?: 'free' | 'exam'
+  stage?: string | null
+  topicContent?: string | null
+  taskPrompt?: string | null
+  excellentEssay: ModelEssayCard
+  perfectEssay: ModelEssayCard
+}
+
+export function generateModelEssay(req: WritingModelEssayRequest): Promise<WritingModelEssayResponse> {
+  return http
+    .post<WritingModelEssayResponse>('/writing/model-essay', req, { timeout: 120000 })
+    .then((res) => ({
+      rubricKey: res.data.rubricKey ?? null,
+      mode: res.data.mode === 'exam' ? 'exam' : 'free',
+      stage: res.data.stage ?? null,
+      topicContent: res.data.topicContent ?? null,
+      taskPrompt: res.data.taskPrompt ?? null,
+      excellentEssay: {
+        label: res.data.excellentEssay?.label ?? '优秀作文',
+        essay: res.data.excellentEssay?.essay ?? '',
+        summary: res.data.excellentEssay?.summary ?? null,
+        highScoreReasons: res.data.excellentEssay?.highScoreReasons ?? [],
+        improvementGuidance: res.data.excellentEssay?.improvementGuidance ?? [],
+      },
+      perfectEssay: {
+        label: res.data.perfectEssay?.label ?? '满分作文',
+        essay: res.data.perfectEssay?.essay ?? '',
+        summary: res.data.perfectEssay?.summary ?? null,
+        highScoreReasons: res.data.perfectEssay?.highScoreReasons ?? [],
+        improvementGuidance: res.data.perfectEssay?.improvementGuidance ?? [],
+      },
+    }))
+}
+
+export interface RewriteApplyRequest {
+  docId: string
+  essay: string
+  start: number
+  end: number
+  original: string
+  replacement: string
+  tier: PolishTier
+}
+
+export interface RewriteApplyResponse {
+  trusted: boolean
+  hard_error_count: number
+  message?: string
+  record?: TrustedRewriteSegment | null
+}
+
+export function rewriteApply(req: RewriteApplyRequest): Promise<RewriteApplyResponse> {
+  return http
+    .post<RewriteApplyResponse>('/writing/rewrite/apply', req, { timeout: 25000 })
+    .then((res) => res.data)
+}
+
+export function clearTrustedRewrite(docId: string): Promise<void> {
+  return http.post('/writing/rewrite/trusted/clear', { docId }).then(() => {})
 }
 
 
@@ -468,9 +625,12 @@ export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }>
 
 // ── Grammar Check (LanguageTool + Sapling) ──
 
+export type GrammarCheckMode = 'lite' | 'power'
+
 export interface GrammarCheckRequest {
   text: string
   docId?: string
+  trinkaMode?: GrammarCheckMode
 }
 
 export interface GrammarCheckResponse {
@@ -778,4 +938,8 @@ export function getStageConfig(stageCode: string): Promise<StageConfigResponse> 
     .get<StageConfigResponse>(`/writing/stage-config/${encodeURIComponent(stageCode)}`)
     .then((res) => res.data)
 }
+
+
+
+
 

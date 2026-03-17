@@ -18,14 +18,17 @@ import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
+import com.personalenglishai.backend.service.writing.WritingModelEssayService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
+import com.personalenglishai.backend.service.writing.TrustedRewriteService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
 import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
+import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -40,6 +43,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,6 +83,9 @@ class WritingControllerTest {
     private GrammarSuppressService grammarSuppressService;
 
     @MockBean
+    private TrustedRewriteService trustedRewriteService;
+
+    @MockBean
     private WritingSuggestionsService writingSuggestionsService;
 
     @MockBean
@@ -100,6 +108,9 @@ class WritingControllerTest {
 
     @MockBean
     private WritingMaterialService writingMaterialService;
+
+    @MockBean
+    private WritingModelEssayService writingModelEssayService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -243,6 +254,35 @@ class WritingControllerTest {
         void getTask_noAuth() throws Exception {
             mockMvc.perform(get("/api/writing/evaluate/tasks/eval-task-any"))
                     .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/grammar-check")
+    class GrammarCheck {
+
+        @Test
+        @DisplayName("透传 trinkaMode 到语法检查服务")
+        void grammarCheck_passesTrinkaMode() throws Exception {
+            when(grammarCheckService.check(any(), any())).thenReturn(List.of());
+            when(grammarSuppressService.filterSuppressed(any(), any(), any(), any()))
+                    .thenAnswer(invocation -> invocation.getArgument(2));
+            when(trustedRewriteService.filterTrustedTrinkaSuggestions(any(), any(), any(), any()))
+                    .thenAnswer(invocation -> invocation.getArgument(3));
+
+            mockMvc.perform(post("/api/writing/grammar-check")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{" +
+                                    "\"text\":\"This is a valid paragraph for grammar check with enough words.\"," +
+                                    "\"docId\":\"doc-1\"," +
+                                    "\"trinkaMode\":\"power\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().json("{\"errors\":[]}"));
+
+            verify(grammarCheckService).check(
+                    eq("This is a valid paragraph for grammar check with enough words."),
+                    eq("power"));
         }
     }
 
@@ -414,6 +454,59 @@ class WritingControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .requestAttr("userId", 1L)
                             .content("{\"taskPrompt\":\"\"}"))
+                    .andExpect(status().is4xxClientError());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/model-essay")
+    class ModelEssay {
+
+        @Test
+        @DisplayName("returns two learning cards")
+        void modelEssay_success() throws Exception {
+            WritingModelEssayResponse mockResponse = new WritingModelEssayResponse();
+            WritingModelEssayResponse.ModelEssayCard excellent = new WritingModelEssayResponse.ModelEssayCard();
+            excellent.setLabel("优秀作文");
+            excellent.setEssay("This is an excellent essay.");
+            excellent.setHighScoreReasons(List.of("结构：层次清楚"));
+            excellent.setImprovementGuidance(List.of("任务完成：补强评论"));
+            mockResponse.setExcellentEssay(excellent);
+
+            WritingModelEssayResponse.ModelEssayCard perfect = new WritingModelEssayResponse.ModelEssayCard();
+            perfect.setLabel("满分作文");
+            perfect.setEssay("This is a perfect essay.");
+            perfect.setHighScoreReasons(List.of("内容质量：分析充分"));
+            perfect.setImprovementGuidance(List.of("内容质量：补足细节"));
+            mockResponse.setPerfectEssay(perfect);
+            when(writingModelEssayService.generate(any())).thenReturn(mockResponse);
+
+            mockMvc.perform(post("/api/writing/model-essay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("""
+                                    {
+                                      "essay": "This is a student essay with enough words for model essay generation.",
+                                      "studyStage": "postgrad",
+                                      "writingMode": "exam",
+                                      "taskType": "task2",
+                                      "topicContent": "图表显示某市公园数量增长。",
+                                      "taskPrompt": "describe and comment on the chart"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.excellentEssay.label").value("优秀作文"))
+                    .andExpect(jsonPath("$.perfectEssay.label").value("满分作文"))
+                    .andExpect(jsonPath("$.excellentEssay.highScoreReasons[0]").value("结构：层次清楚"));
+        }
+
+        @Test
+        @DisplayName("rejects blank essay")
+        void modelEssay_blankEssay() throws Exception {
+            mockMvc.perform(post("/api/writing/model-essay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("{\"essay\":\"\"}"))
                     .andExpect(status().is4xxClientError());
         }
     }

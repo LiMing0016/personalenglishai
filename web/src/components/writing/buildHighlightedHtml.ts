@@ -12,6 +12,7 @@
 export interface ErrorSpan {
   id: string
   type: string
+  category?: 'error' | 'suggestion'
   severity: 'minor' | 'major'
   span: { start: number; end: number }
   original?: string
@@ -296,7 +297,8 @@ export function buildHighlightedHtml(
         return (TYPE_PRIORITY[cur.type] ?? 99) < (TYPE_PRIORITY[best.type] ?? 99) ? cur : best
       })
       const ids = covering.map((e) => e.id).join(',')
-      html = `<mark class="err-${primary.type} err-${primary.severity}" data-error-ids="${ids}">${segText}</mark>`
+      const categoryClass = primary.category === 'suggestion' ? 'err-category-suggestion' : 'err-category-error'
+      html = `<mark class="err-${primary.type} err-${primary.severity} ${categoryClass}" data-error-ids="${ids}">${segText}</mark>`
     }
 
     parts.push(inHl ? `<span class="sentence-hl" style="${SENTENCE_HIGHLIGHT_INLINE_STYLE}">${html}</span>` : html)

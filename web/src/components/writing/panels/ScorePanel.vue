@@ -211,7 +211,12 @@ const displayMaxScore = computed(() => {
   return 100
 })
 
-const gptErrorCount = computed(() => props.evaluateResult?.error_count ?? props.evaluateResult?.errors?.length ?? 0)
+const gptErrorCount = computed(() =>
+  props.evaluateResult?.display_error_count
+  ?? props.evaluateResult?.error_count
+  ?? props.evaluateResult?.errors?.length
+  ?? 0,
+)
 const improvement = computed(() => props.evaluateResult?.improvement ?? null)
 
 // ── 等级计算 ──

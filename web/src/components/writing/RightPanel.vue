@@ -38,9 +38,12 @@
       <GrammarCheckPanel
         v-else-if="panel === 'grammarCheck'"
         :errors="grammarErrors ?? []"
+        :review-suggestions="grammarSuggestions ?? []"
         :checking="grammarChecking ?? false"
         :error="grammarCheckError ?? null"
         :fixed-error-ids="grammarFixedErrorIds ?? new Set()"
+        :trinka-mode="grammarTrinkaMode ?? 'lite'"
+        :hidden-trusted-suggestion-count="hiddenTrustedSuggestionCount ?? 0"
         :active-error-id="activeErrorId"
         :essay-text="essay"
         :locked="examFirstWriteLocked"
@@ -49,19 +52,37 @@
         @dismiss-error="$emit('grammar-dismiss-error', $event)"
         @error-click="$emit('error-click', $event)"
         @apply-suggestion="$emit('apply-suggestion', $event)"
+        @change-trinka-mode="$emit('grammar-trinka-mode-change', $event)"
+        @clear-trusted-rewrites="$emit('clear-trusted-rewrites')"
         @start-polish="$emit('start-polish')"
         @gpt-errors-loaded="$emit('gpt-errors-loaded', $event)"
         @gpt-suggestions-loaded="$emit('gpt-suggestions-loaded', $event)"
       />
-      <StructurePanel
+      <ModelEssayPanel
         v-else-if="panel === 'structure'"
-        :essay="essay"
-        @paragraph-click="$emit('paragraph-click', $event)"
+        :full-essay="essay"
+        :doc-id="docId"
+        :topic-content="topicContent"
+        :task-prompt="taskPrompt"
+        :study-stage="studyStage"
+        :writing-mode="writingMode"
+        :task-type="taskType"
+        :min-words="minWords"
+        :recommended-max-words="recommendedMaxWords"
+        @replace-sentence="$emit('replace-sentence', $event)"
       />
       <RewritePanel
         v-else-if="panel === 'rewrite'"
+        :doc-id="docId"
         :full-essay="essay"
         :locked="examFirstWriteLocked"
+        :topic-content="topicContent"
+        :task-prompt="taskPrompt"
+        :study-stage="studyStage"
+        :writing-mode="writingMode"
+        :task-type="taskType"
+        :min-words="minWords"
+        :recommended-max-words="recommendedMaxWords"
         @replace-sentence="$emit('replace-sentence', $event)"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
@@ -88,7 +109,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
-import type { WritingEvaluateResponse } from '@/api/writing'
+import type { GrammarCheckMode, WritingEvaluateResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
 // Static: high-frequency panels loaded on first visit
@@ -97,7 +118,7 @@ import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
 // Lazy: low-frequency panels loaded on demand
 const ScorePanel = defineAsyncComponent(() => import('./panels/ScorePanel.vue'))
 const RewritePanel = defineAsyncComponent(() => import('./panels/RewritePanel.vue'))
-const StructurePanel = defineAsyncComponent(() => import('./panels/StructurePanel.vue'))
+const ModelEssayPanel = defineAsyncComponent(() => import('./panels/ModelEssayPanel.vue'))
 const PolishPanel = defineAsyncComponent(() => import('./panels/PolishPanel.vue'))
 const ExplainPanel = defineAsyncComponent(() => import('./panels/ExplainPanel.vue'))
 const TranslatePanel = defineAsyncComponent(() => import('./panels/TranslatePanel.vue'))
@@ -107,6 +128,7 @@ const props = defineProps<{
   title: string
   width: number
   essay: string
+  docId?: string | null
   selectionState: { text: string; start: number; end: number } | null
   selectionDismissed: boolean
   selectedTextPinned: string
@@ -115,6 +137,7 @@ const props = defineProps<{
   conversationId: string
   aiGenerating: boolean
   writingMode: 'free' | 'exam'
+  topicContent?: string
   taskPrompt: string
   aiNote: string
   evaluateResult: WritingEvaluateResponse | null
@@ -122,20 +145,26 @@ const props = defineProps<{
   submitting?: boolean
   evaluateError?: string | null
   grammarErrors?: WritingEvaluateResponse['errors']
+  grammarSuggestions?: WritingEvaluateResponse['errors']
   grammarChecking?: boolean
   grammarCheckError?: string | null
   grammarFixedErrorIds?: Set<string>
+  grammarTrinkaMode?: GrammarCheckMode
+  hiddenTrustedSuggestionCount?: number
   rewriteSuggestions?: WritingEvaluateResponse['errors']
   examMaxScore?: number | null
   examFirstWriteLocked?: boolean
   studyStage?: string | null
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
 }>()
 
 defineEmits<{
   close: []
   'error-click': [errorId: string]
   'apply-polish': [payload: { errorId: string; polished: string }]
-  'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string }]
+  'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string; tier: import('@/api/writing').PolishTier }]
   'sentence-focus': [range: { start: number; end: number } | null]
   'start-polish': []
   'grammar-fix-error': [errorId: string]
@@ -144,6 +173,8 @@ defineEmits<{
   'apply-suggestion': [payload: { original: string; suggestion: string }]
   'gpt-errors-loaded': [errors: import('@/api/writing').SuggestionErrorItem[]]
   'gpt-suggestions-loaded': [suggestions: import('@/api/writing').SuggestionItem[]]
+  'grammar-trinka-mode-change': [mode: GrammarCheckMode]
+  'clear-trusted-rewrites': []
   retry: []
   'paragraph-click': [offset: number]
   'start-grammar-check': []
@@ -160,7 +191,7 @@ defineEmits<{
 const scorePanelTitle = computed(() => {
   if (props.panel === 'score') return '评价与建议'
   if (props.panel === 'grammarCheck') return '语法检查'
-  if (props.panel === 'structure') return '段落结构'
+  if (props.panel === 'structure') return '范文'
   if (props.panel === 'rewrite') return '润色'
   if (props.panel === 'improve') return '写作模版'
   if (props.panel === 'explain') return '写作素材'
@@ -229,3 +260,8 @@ defineExpose<{
   box-sizing: border-box;
 }
 </style>
+
+
+
+
+

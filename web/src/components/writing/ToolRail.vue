@@ -38,11 +38,14 @@
           <circle cx="26" cy="3" r="0.8" class="ic-primary"/>
           <circle cx="28" cy="7" r="1" class="ic-light"/>
         </svg>
-        <!-- Structure: 三段结构 -->
+        <!-- Structure: 范文 -->
         <svg v-else-if="item.mode === 'structure'" width="22" height="22" viewBox="0 0 32 32" fill="none">
-          <rect x="2" y="2" width="28" height="7" rx="2" class="ic-primary" opacity="0.85"/>
-          <rect x="2" y="12.5" width="28" height="7" rx="2" class="ic-light" opacity="0.7"/>
-          <rect x="2" y="23" width="18" height="7" rx="2" class="ic-accent" opacity="0.5"/>
+          <rect x="3" y="3" width="18" height="22" rx="2.8" class="ic-stroke" stroke-width="1.6" fill="white"/>
+          <rect x="11" y="8" width="18" height="22" rx="2.8" class="ic-primary" opacity="0.16"/>
+          <line x1="7" y1="9" x2="17" y2="9" class="ic-primary-stroke" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="7" y1="14" x2="17" y2="14" class="ic-primary-stroke" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="15" y1="14" x2="25" y2="14" class="ic-light-stroke" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="15" y1="19" x2="25" y2="19" class="ic-light-stroke" stroke-width="1.8" stroke-linecap="round"/>
         </svg>
         <!-- 模版: 拼图块 -->
         <svg v-else-if="item.mode === 'improve'" width="22" height="22" viewBox="0 0 32 32" fill="none">
@@ -117,7 +120,7 @@ const items: { mode: PanelMode; label: string; title: string }[] = [
   { mode: 'score', label: '评价', title: '作文评价' },
   { mode: 'grammarCheck', label: '语法', title: '实时语法检查' },
   { mode: 'rewrite', label: '润色', title: '分级润色' },
-  { mode: 'structure', label: '结构', title: '段落结构' },
+  { mode: 'structure', label: '范文', title: '范文' },
   { mode: 'improve', label: '模版', title: '写作模版' },
   { mode: 'explain', label: '素材', title: '写作素材' },
   { mode: 'translate', label: '翻译', title: '翻译' },

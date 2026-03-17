@@ -60,13 +60,18 @@ public class WritingEvaluationPersistenceService {
         Document doc = resolveDocument(request.getUserId(), request.getDocumentId());
         TextStats textStats = buildTextStats(request.getEssay());
         ErrorStats errorStats = buildErrorStats(response.getErrors());
+        WritingEvaluateResponse.ExamPolicyDto examPolicy = response.getExamPolicy();
         BandRange examBand = "exam".equals(mode)
                 ? resolveBandRange(response.getScore() != null ? response.getScore().getOverall() : null)
                 : null;
-        DirectionAssessmentSnapshot direction = "exam".equals(mode)
+        DirectionAssessmentSnapshot direction = examPolicy != null
+                ? toDirectionSnapshot(examPolicy.getDirectionAssessment())
+                : "exam".equals(mode)
                 ? buildDirectionAssessment(request, response, textStats)
                 : null;
-        ScoreAdjustmentSnapshot adjustment = "exam".equals(mode)
+        ScoreAdjustmentSnapshot adjustment = examPolicy != null
+                ? toScoreAdjustmentSnapshot(examPolicy)
+                : "exam".equals(mode)
                 ? buildScoreAdjustment(request, textStats, errorStats, direction, examBand)
                 : null;
 
@@ -86,7 +91,7 @@ public class WritingEvaluationPersistenceService {
         }
         record.setStudyStage(trimToNull(effectiveStage));
         record.setRubricKey(rubric != null ? trimToNull(rubric.getRubricKey()) : null);
-        record.setExamPolicyKey("exam".equals(mode) ? buildExamPolicyKey(effectiveStage) : null);
+        record.setExamPolicyKey(examPolicy != null ? trimToNull(examPolicy.getPolicyKey()) : "exam".equals(mode) ? buildExamPolicyKey(effectiveStage) : null);
         record.setModelVersion(trimToNull(modelVersion));
         record.setEvaluatedRevision(doc != null ? doc.getLatestRevision() : null);
         if (examBand != null) {
@@ -299,8 +304,10 @@ public class WritingEvaluationPersistenceService {
             if (error == null) {
                 continue;
             }
-            total++;
-            if ("major".equalsIgnoreCase(error.getSeverity())) {
+            if ("suggestion".equalsIgnoreCase(error.getCategory())) {
+                continue;
+            }
+            total++;            if ("major".equalsIgnoreCase(error.getSeverity())) {
                 major++;
             } else {
                 minor++;
@@ -315,6 +322,30 @@ public class WritingEvaluationPersistenceService {
             }
         }
         return new ErrorStats(total, major, minor, grammar, lexical, spelling, punctuation, syntax);
+    }
+    private DirectionAssessmentSnapshot toDirectionSnapshot(WritingEvaluateResponse.DirectionAssessmentDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        return new DirectionAssessmentSnapshot(
+                dto.getRelevance(),
+                dto.getTaskCompletion(),
+                dto.getCoverage(),
+                dto.getMaxBand(),
+                dto.getReasons() == null ? List.of() : dto.getReasons()
+        );
+    }
+
+    private ScoreAdjustmentSnapshot toScoreAdjustmentSnapshot(WritingEvaluateResponse.ExamPolicyDto dto) {
+        if (dto == null) {
+            return null;
+        }
+        return new ScoreAdjustmentSnapshot(
+                dto.getCapScore(),
+                dto.getDeductionTotal() == null ? 0 : dto.getDeductionTotal(),
+                dto.getFlags() == null ? Map.of() : dto.getFlags(),
+                dto.getReasons() == null ? List.of() : dto.getReasons()
+        );
     }
 
     private DirectionAssessmentSnapshot buildDirectionAssessment(
@@ -562,7 +593,4 @@ public class WritingEvaluationPersistenceService {
     private record ScoreAdjustmentSnapshot(Integer capScore, int deductionTotal,
                                            Map<String, Boolean> flags, List<String> reasons) {}
 }
-
-
-
 

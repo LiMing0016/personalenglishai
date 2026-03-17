@@ -1,215 +1,253 @@
-# Postgrad Exam 评分细则草案
+# Postgrad Exam Policy
+> key: `postgrad-exam-policy-v1`
+> stage: `postgrad`
+> mode: `exam`
 
-## 目标
+## 一、Policy 目标
 
-为 `postgrad` 学段的 `exam` 模式定义一套可执行评分协议，用于后端评分逻辑、Prompt 约束和前端结果解释。
+本 Policy 用于 `postgrad-exam-v1` 的执行层控制，不替代 Rubric，而是负责：
 
-第一阶段先共用一套 `postgrad` 规则，不拆英语一/英语二。
+- 方向门槛
+- 跑题封顶
+- 任务未完成封顶
+- 字数处罚
+- 最终总分计算顺序
 
-## 一、评分总原则
+Rubric 负责定义“什么叫 A/B/C/D/E”，
+Policy 负责定义“哪些考试规则会限制最终得分”。
 
-评分顺序固定如下：
+---
 
-1. 先判方向
-2. 再看质量
-3. 最后执行硬约束
+## 二、总分计算顺序
 
-对应系统语义：
+最终得分必须按以下顺序生成：
 
-- `方向门槛层`
-  - 判断切题度、任务完成度、要点覆盖度
-  - 产出允许进入的最高档位 `max_band`
-- `质量细化层`
-  - 在 `max_band` 允许范围内，根据语言和结构质量确定具体分数
-- `硬约束层`
-  - 对严重跑题、严重字数不足、重大语法错误累计等情况做封顶或扣分
+1. 按 Rubric 对 6 个维度评分
+2. 根据维度权重计算 `raw_score`
+3. 判定方向门槛（切题度、任务完成度、覆盖度）
+4. 应用跑题 / 未完成任务的封顶规则
+5. 应用字数规则
+6. 得到 `final_score`
+7. 将 `final_score` 映射到 Band 档位
 
-禁止出现的评分结果：
+### 公式示意
 
-- 切题度低，但因为语言漂亮进入高档
-- 任务未完成，但因为局部表达亮眼拿到高总分
+```text
+dimension_scores
+→ weighted raw_score
+→ topic/task cap
+→ word_count adjustment
+→ final_score
+```
 
-## 二、满分与档位
-
-第一阶段统一按 `100` 分制输出总分，并映射五档：
-
-| 档位 | 中文 | 分数区间 |
-|------|------|----------|
-| Band 5 | 优秀 | 85-100 |
-| Band 4 | 良好 | 70-84 |
-| Band 3 | 中等 | 55-69 |
-| Band 2 | 较差 | 40-54 |
-| Band 1 | 差 | 0-39 |
-
-说明：
-
-- 该区间用于系统内部评分和前端展示
-- 后续如果需要对接考研英语一/英语二原始分值，可在结果层再做换算
+---
 
 ## 三、方向门槛层
 
-### 3.1 判定目标
+方向门槛层先判断作文是否“有资格进入高档”。
 
-方向门槛层先判断作文是否“值得进入高档”。
+它不负责给出最终精确分数，但负责限制最高分。
 
-它不决定最终精确分数，但决定 `max_band`。
-
-### 3.2 关键输入
+### 3.1 方向判定字段
 
 - `relevance`
   - `fully_on_topic`
   - `mostly_on_topic`
   - `partially_off_topic`
   - `seriously_off_topic`
+
 - `task_completion`
   - `fully_completed`
   - `mostly_completed`
   - `partially_completed`
   - `seriously_incomplete`
+
 - `coverage`
   - `all_key_points`
   - `most_key_points`
   - `partial_key_points`
   - `few_key_points`
 
-### 3.3 最高档位规则
+### 3.2 最高档位限制
 
-建议按以下规则收敛为 `max_band`：
+| 条件 | 最高档位 | 最高分 |
+|------|----------|--------|
+| `fully_on_topic` + `fully_completed` + `all_key_points` | Band 5 | 100 |
+| `mostly_on_topic` + `mostly_completed` + `most_key_points` | Band 4 | 84 |
+| 基本切题，但覆盖不完整或完成度一般 | Band 3 | 69 |
+| 明显偏题或任务完成较差 | Band 2 | 54 |
+| 严重跑题或几乎未完成任务 | Band 1 | 39 |
 
-| 条件 | 最高档位 |
+说明：
+
+- 方向门槛优先于语言质量
+- 语言维度不能突破封顶上限
+- 即使语言非常成熟，只要严重偏题，最终也不得高分
+
+---
+
+## 四、跑题与任务未完成规则
+
+### 4.1 跑题封顶
+
+| relevance | 处理 |
+|-----------|------|
+| `fully_on_topic` | 不封顶 |
+| `mostly_on_topic` | 不额外封顶 |
+| `partially_off_topic` | `final_score <= 54` |
+| `seriously_off_topic` | `final_score <= 39` |
+
+### 4.2 任务未完成封顶
+
+| task_completion | 处理 |
+|-----------------|------|
+| `fully_completed` | 不封顶 |
+| `mostly_completed` | 不额外封顶 |
+| `partially_completed` | `final_score <= 69` |
+| `seriously_incomplete` | `final_score <= 54` |
+
+### 4.3 特别说明
+
+#### `task1`
+
+以下情况通常至少判为 `partially_completed`：
+
+- 关键动作缺失
+- 语气与对象明显不匹配
+- 格式严重不完整
+- 只写了一个要求，漏掉另一个主要要求
+
+#### `task2`
+
+以下情况通常至少判为 `partially_completed`：
+
+- 未完成“描述 + 解读 + 评论”三步
+- 只描述，不解释
+- 只评论，不描述材料
+- 材料使用极弱，评论脱离题目
+
+---
+
+## 五、字数规则
+
+字数处罚不作为独立维度，而作为后处理规则参与最终分计算。
+
+### 5.1 计算方式
+
+```text
+ratio = actual_words / min_required_words
+effective_ratio = ratio + buffer_zone
+```
+
+### 5.2 推荐配置
+
+```yaml
+word_count_policy:
+  enabled: true
+
+  tiers:
+    - name: "达标"
+      ratio_min: 1.00
+      deduction: 0
+      cap_score: null
+
+    - name: "轻微不足"
+      ratio_min: 0.85
+      deduction: 3
+      cap_score: 84
+
+    - name: "中度不足"
+      ratio_min: 0.70
+      deduction: 5
+      cap_score: 69
+
+    - name: "严重不足"
+      ratio_min: 0.50
+      deduction: 0
+      cap_score: 54
+
+    - name: "极严重"
+      ratio_min: 0.00
+      deduction: 0
+      cap_score: 39
+
+  buffer_zone: 0.02
+```
+
+### 5.3 解释
+
+| 区间 | 处理逻辑 |
 |------|----------|
-| `fully_on_topic` + `fully_completed` + `all_key_points` | Band 5 |
-| `mostly_on_topic` + `mostly_completed` + `most_key_points` | Band 4 |
-| 基本切题，但覆盖不完整或完成度一般 | Band 3 |
-| 明显偏题或任务完成较差 | Band 2 |
-| 严重跑题或几乎未完成任务 | Band 1 |
+| `>= 1.00` | 不处罚 |
+| `0.85 - 0.99` | 轻度扣分，且最高不超过 Band 4 |
+| `0.70 - 0.84` | Band 3 封顶并轻扣 |
+| `0.50 - 0.69` | Band 2 封顶 |
+| `< 0.50` | Band 1 封顶 |
 
-### 3.4 实现约束
+说明：
 
-- 方向门槛层是考试评分的首要约束
-- 质量层不得突破 `max_band`
-- 若方向层判定为 `Band 2` 上限，则后续即使语言质量很好，最终也只能落在 `40-54`
+- 字数不足会同时影响 `task_achievement` 的判档倾向
+- Policy 再从最终分层面做封顶 / 扣分
+- 这样既体现考试规则，也避免简单平均掩盖任务不足
 
-## 四、质量细化层
+---
 
-### 4.1 作用
+## 六、封顶与扣分执行规则
 
-质量细化层只负责决定“在允许档位里跑到哪一段”，不负责越档。
+为避免“双重惩罚过重”，统一采用以下顺序：
 
-### 4.2 使用维度
+1. 计算 `raw_score`
+2. 汇总所有封顶上限，取最严格的那个：
+   - `topic_cap`
+   - `task_completion_cap`
+   - `word_count_cap`
+3. 对 `raw_score` 先做封顶
+4. 再应用当前 tier 的 `deduction`
+5. 得到 `final_score`
 
-沿用当前 6 维：
+### 公式
 
-- `content_quality`
-- `task_achievement`
-- `structure`
-- `vocabulary`
-- `grammar`
-- `expression`
+```text
+cap_score = min(topic_cap, task_completion_cap, word_count_cap)
+capped_score = min(raw_score, cap_score)   # 若 cap_score 存在
+final_score = capped_score - deduction
+```
 
-### 4.3 质量判断重点
+### 保护规则
 
-- `content_quality`
-  - 论点是否明确，论述是否充实
-- `task_achievement`
-  - 是否完成题目要求的写作任务
-- `structure`
-  - 段落是否完整，逻辑是否顺畅
-- `vocabulary`
-  - 词汇是否准确、丰富
-- `grammar`
-  - 语法是否稳定，重大错误是否频繁
-- `expression`
-  - 表达是否自然，句式是否有变化
+- `final_score` 不得低于 `0`
+- 若已触发 `Band 1` 封顶，不再追加重罚
+- 若多个规则同时命中，只叠加小额扣分，不叠加多个大额重罚
 
-### 4.4 档内分数分配建议
+---
 
-可按三段落位处理：
+## 七、Band 映射
 
-- 档内高位
-  - 维度整体稳定，仅有轻微缺点
-- 档内中位
-  - 有明显不足，但整体仍符合该档标准
-- 档内低位
-  - 勉强符合该档，存在多个拖后腿维度
+最终分数按以下区间映射：
 
-示例：
+| Band | 区间 |
+|------|------|
+| Band 5 | 85-100 |
+| Band 4 | 70-84 |
+| Band 3 | 55-69 |
+| Band 2 | 40-54 |
+| Band 1 | 0-39 |
 
-- `Band 4`
-  - 高位：`81-84`
-  - 中位：`76-80`
-  - 低位：`70-75`
+---
 
-该分配由后端基于维度分计算，不要求前端展示细节。
+## 八、结构化输出建议
 
-## 五、硬约束层
-
-第一阶段只实现可稳定落地的硬约束。
-
-### 5.1 跑题封顶
-
-- `seriously_off_topic`
-  - 总分封顶 `39`
-  - 即不能超过 `Band 1`
-- `partially_off_topic`
-  - 总分封顶 `54`
-  - 即不能超过 `Band 2`
-
-### 5.2 字数不足处罚
-
-先使用字数达成率判断，再决定扣分或降档。
-
-建议字段：
-
-- `word_count_ratio`
-  - `>= 1.0`
-  - `0.85 - 0.99`
-  - `0.70 - 0.84`
-  - `< 0.70`
-
-建议处罚：
-
-| 字数达成率 | 处理建议 |
-|------------|----------|
-| `>= 1.0` | 不处罚 |
-| `0.85 - 0.99` | 扣 3 分 |
-| `0.70 - 0.84` | 扣 8 分，并且最高不超过 Band 3 |
-| `< 0.70` | 最高不超过 Band 2，必要时进一步扣分 |
-
-### 5.3 任务未完成封顶
-
-- `partially_completed`
-  - 总分最高不超过 `69`
-- `seriously_incomplete`
-  - 总分最高不超过 `54`
-
-### 5.4 重大语法错误累计处罚
-
-重大语法错误指影响理解或严重破坏句子结构的错误，例如：
-
-- 句子缺少谓语
-- 主谓严重不一致
-- 时态混乱导致语义不清
-- 长句结构断裂，难以理解
-
-建议处罚：
-
-| 严重度 | 处理建议 |
-|--------|----------|
-| 轻度 | 不额外处罚，仅体现在 `grammar` 维度 |
-| 中度 | 额外扣 3-5 分 |
-| 重度 | 额外扣 8-12 分，必要时降一档 |
-
-## 六、后端结构化输出建议
-
-为让前端能解释评分过程，建议响应中新增：
+推荐在后端内部或响应中保留以下字段，便于解释分数来源：
 
 ```json
 {
   "requested_stage": "postgrad",
   "effective_stage": "postgrad",
   "rubric_key": "postgrad-exam-v1",
-  "fallback_used": false,
+  "policy_key": "postgrad-exam-policy-v1",
+  "task_type": "task2",
+  "raw_score": 78,
+  "final_score": 69,
   "exam_band": {
     "label": "Band 3",
     "min": 55,
@@ -218,56 +256,54 @@
   "direction_assessment": {
     "relevance": "mostly_on_topic",
     "task_completion": "partially_completed",
-    "max_band": "Band 3",
-    "reasons": [
-      "内容基本切题",
-      "任务覆盖不完整，限制最高档位"
-    ]
+    "coverage": "most_key_points"
   },
   "score_adjustment": {
-    "cap": 69,
-    "deductions": 8,
+    "topic_cap": null,
+    "task_completion_cap": 69,
+    "word_count_cap": 84,
+    "deduction": 3,
     "reasons": [
-      "字数不足触发扣分",
-      "重大语法错误较多"
+      "字数轻微不足，最高不超过 Band 4",
+      "字数轻微不足，扣 3 分"
     ]
   }
 }
 ```
 
-## 七、前端展示建议
+---
 
-前端先不大改 UI，只增加解释区即可：
+## 九、Prompt 使用规则
 
-- `当前第三档：内容基本切题，但任务覆盖不完整`
-- `因任务完成度不足，最高档位被限制`
-- `因字数不足触发扣分`
+模型与后端都必须遵守：
 
-继续保留：
+- 先看任务，再看语言
+- 偏题不能高分
+- 未完成任务不能高分
+- 字数不足不能进入不合理高档
+- 加权用于汇总，不用于覆盖考试规则
+- Policy 优先级高于普通平均分
+- `task1` 不按议论文标准打分
+- `task2` 不按功能写作标准打分
 
-- `overall / 100`
-- 当前 6 维评分区
+---
 
-## 八、一期范围与非目标
+## 十、首版范围
 
-一期目标：
+首版支持：
 
-- 支持 `studyStage=postgrad`
-- 支持 `exam` 模式的方向门槛评分
-- 支持跑题、字数不足、任务未完成、重大语法错误四类硬约束
+- `studyStage = postgrad`
+- `mode = exam`
+- `taskType = task1 / task2`
+- 跑题封顶
+- 任务未完成封顶
+- 字数处罚
+- 最终总分计算与 Band 映射
 
-一期不做：
+首版不做：
 
-- 模板痕迹强判定
-- 抄袭/雷同判定
-- 英语一 / 英语二拆分
-- 前端按学段改造成不同维度列表
-
-## 九、后续拆分建议
-
-当 `postgrad` 规则跑稳后，再继续补：
-
-- `highschool-exam-policy.md`
-- `middle-school-exam-policy.md`
-- `free-mode-weight-policy.md`
-- `cet4-exam-policy.md`
+- 英语一 / 英语二分化
+- 图画作文 / 图表作文进一步分拆
+- 模板痕迹专项惩罚
+- 抄袭检测
+- 原始卷面分映射

@@ -44,6 +44,7 @@
           :title="panelStore.panelTitle"
           :width="panelStore.dockWidth"
           :essay="draftStore.draftText"
+          :doc-id="draftStore.docId"
           :selection-state="selectionState"
           :selection-dismissed="selectionDismissed"
           :selected-text-pinned="selectedTextPinned"
@@ -53,17 +54,23 @@
           :ai-generating="aiGenerating"
           :writing-mode="draftStore.writingMode"
           :study-stage="props.studyStage"
-          :task-prompt="draftStore.taskPrompt"
+          :topic-content="effectiveExamTopicContent"
+          :task-prompt="effectiveExamTaskPrompt"
           :ai-note="draftStore.aiNote"
           :evaluate-result="evaluateStore.evaluateResult"
           :active-error-id="activeErrorId"
           :submitting="evaluateStore.submitting"
           :evaluate-error="evaluateStore.evaluateError"
           :exam-max-score="props.examMaxScore"
+          :task-type="sessionMetadata?.taskType ?? null"
+          :min-words="effectiveExamMinWords"
+          :recommended-max-words="effectiveExamRecommendedMaxWords"
           :grammar-errors="grammarStore.grammarPanelErrors"
+          :grammar-suggestions="grammarStore.grammarPanelSuggestions"
           :grammar-checking="grammarStore.grammarChecking"
           :grammar-check-error="grammarStore.grammarCheckError"
           :grammar-fixed-error-ids="grammarStore.grammarPanelFixedIds"
+          :grammar-trinka-mode="grammarStore.trinkaMode"
           :rewrite-suggestions="grammarStore.rewritePanelSuggestions"
           :exam-first-write-locked="examFirstWriteLocked"
           @close="panelStore.activePanel = null"
@@ -75,6 +82,8 @@
           @grammar-fix-error="grammarStore.fixError"
           @grammar-fix-all="grammarStore.fixAll"
           @grammar-dismiss-error="grammarStore.dismissError"
+          @grammar-trinka-mode-change="grammarStore.setTrinkaMode"
+          @clear-trusted-rewrites="grammarStore.clearTrustedRewrites"
           @apply-suggestion="onApplySuggestion"
           @gpt-errors-loaded="grammarStore.setGptErrors"
           @gpt-suggestions-loaded="grammarStore.setGptSuggestions"
@@ -152,8 +161,8 @@ import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
-import { getStageConfig, getWritingSessionMetadata } from '@/api/writing'
-import type { WritingSessionMetadataResponse } from '@/api/writing'
+import { getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
+import type { PolishTier, WritingSessionMetadataResponse } from '@/api/writing'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
@@ -193,9 +202,40 @@ const sentenceHighlightRange = ref<{ start: number; end: number } | null>(null)
 const examFirstWriteLocked = computed(() =>
   draftStore.writingMode === 'exam' && draftStore.submitCount === 0,
 )
+const effectiveExamTaskPrompt = computed(() => {
+  const draftPrompt = draftStore.taskPrompt?.trim()
+  if (draftPrompt) return draftPrompt
+  const metadataPrompt = sessionMetadata.value?.promptText?.trim()
+  if (metadataPrompt) return metadataPrompt
+  const initialPrompt = props.initialTaskPrompt?.trim()
+  return initialPrompt || ''
+})
+const effectiveExamTopicContent = computed(() => {
+  const metadataTopicContent = effectiveExamPromptMetadata.value?.topicContent?.trim()
+  if (metadataTopicContent) return metadataTopicContent
+  const metadataTopic = sessionMetadata.value?.topicTitle?.trim()
+  if (metadataTopic) return metadataTopic
+  const parsed = effectiveExamTaskPrompt.value ? parseExamPromptMetadata(effectiveExamTaskPrompt.value) : null
+  return parsed?.topicContent?.trim() || parsed?.topicTitle?.trim() || ''
+})
+const effectiveExamPromptMetadata = computed(() => {
+  const prompt = effectiveExamTaskPrompt.value
+  if (!prompt) return null
+  return parseExamPromptMetadata(prompt)
+})
+const effectiveExamMinWords = computed(() =>
+  sessionMetadata.value?.minWords ?? effectiveExamPromptMetadata.value?.minWords ?? null,
+)
+const effectiveExamRecommendedMaxWords = computed(() =>
+  sessionMetadata.value?.recommendedMaxWords ?? effectiveExamPromptMetadata.value?.recommendedMaxWords ?? null,
+)
 
 const selectionStore = createWritingSelectionStore()
 provide(writingSelectionStoreKey, selectionStore)
+
+function normalizeEvaluateSnapshot(text?: string | null) {
+  return (text ?? '').replace(/\s+/g, ' ').trim()
+}
 
 function onSelectionChange(payload: { text: string; start: number; end: number } | null) {
   selectionState.value = payload
@@ -277,7 +317,12 @@ onMounted(async () => {
 
   if (draftStore.docId) {
     getWritingSessionMetadata(draftStore.docId)
-      .then((meta) => { sessionMetadata.value = meta })
+      .then((meta) => {
+        sessionMetadata.value = meta
+        if (!draftStore.taskPrompt.trim() && meta.promptText?.trim()) {
+          draftStore.taskPrompt = meta.promptText.trim()
+        }
+      })
       .catch(() => { sessionMetadata.value = null })
   } else {
     sessionMetadata.value = null
@@ -305,8 +350,8 @@ onMounted(async () => {
   // Wait for TipTap to initialize and normalize text, then re-sync evaluatedText
   // to prevent the draftText watch from clearing the restored evaluate result.
   await nextTick()
-  if (evaluateStore.evaluateResult && evaluateStore.evaluatedText == null) {
-    evaluateStore.evaluatedText = draftStore.draftText
+  if (evaluateStore.evaluateResult) {
+    evaluateStore.evaluatedText = normalizeEvaluateSnapshot(draftStore.draftText)
   }
 
   if (!examFirstWriteLocked.value && draftStore.draftText.trim().length >= 10) {
@@ -326,8 +371,14 @@ onMounted(async () => {
 useEventListener(leftPaneRef, 'scroll', onLeftPaneScroll)
 useEventListener(leftPaneRef, 'mouseup', syncSelectionStoreFromLeftMouseup)
 useEventListener(window, 'resize', () => panelStore.recalcDockWidth())
-// Flush debounced draft on refresh/close to avoid losing last 500ms of typing
-useEventListener(window, 'beforeunload', () => draftStore.flushDraft())
+// Flush debounced draft on refresh/close to avoid losing the last buffered edits
+useEventListener(window, 'beforeunload', () => draftStore.flushAll())
+useEventListener(window, 'pagehide', () => draftStore.flushAll())
+useEventListener(document, 'visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    draftStore.flushAll()
+  }
+})
 
 onBeforeUnmount(() => {
   evalCancel()
@@ -347,7 +398,7 @@ watch(composableEvalResult, (result) => {
   evaluateStore.setResult(result)
   if (result) {
     grammarStore.useEvaluateErrorsForPanels()
-    evaluateStore.evaluatedText = draftStore.draftText
+    evaluateStore.evaluatedText = normalizeEvaluateSnapshot(draftStore.draftText)
     if (evaluateStore.resultFromSubmit) {
       draftStore.submitCount++
       panelStore.activePanel = 'score'
@@ -374,7 +425,11 @@ watch(composableSubmitting, (val) => {
 
 watch(() => draftStore.draftText, (newText) => {
   if (draftStore.isHydrating) return
-  if (evaluateStore.evaluateResult && evaluateStore.evaluatedText !== null && newText !== evaluateStore.evaluatedText) {
+  if (
+    evaluateStore.evaluateResult
+    && evaluateStore.evaluatedText !== null
+    && normalizeEvaluateSnapshot(newText) !== normalizeEvaluateSnapshot(evaluateStore.evaluatedText)
+  ) {
     composableClearResult()
     evaluateStore.clearResult()
   }
@@ -408,11 +463,11 @@ function onApplyPolish(payload: { errorId: string; polished: string }) {
   }
 
   draftStore.draftText = text.slice(0, resolved.start) + payload.polished + text.slice(resolved.end)
-  evaluateStore.evaluatedText = draftStore.draftText
+  evaluateStore.evaluatedText = normalizeEvaluateSnapshot(draftStore.draftText)
   showToast('已替换', 'success')
 }
 
-function onReplaceSentence(payload: { start: number; end: number; original: string; replacement: string }) {
+async function onReplaceSentence(payload: { start: number; end: number; original: string; replacement: string; tier: PolishTier }) {
   const text = draftStore.draftText
   let start = Math.max(0, Math.min(payload.start, text.length))
   let end = Math.max(0, Math.min(payload.end, text.length))
@@ -429,9 +484,30 @@ function onReplaceSentence(payload: { start: number; end: number; original: stri
     end = fallback + payload.original.length
   }
 
+  let trustedRecordApplied = false
+  if ((payload.tier === 'advanced' || payload.tier === 'perfect') && draftStore.docId) {
+    try {
+      const rewrite = await rewriteApply({
+        docId: draftStore.docId,
+        essay: text,
+        start,
+        end,
+        original: payload.original,
+        replacement: payload.replacement,
+        tier: payload.tier,
+      })
+      if (rewrite.trusted && rewrite.record) {
+        grammarStore.registerTrustedRewrite(rewrite.record)
+        trustedRecordApplied = true
+      }
+    } catch {
+      // Fallback to plain replace; trust state can be rebuilt on next successful apply.
+    }
+  }
+
   draftStore.draftText = text.slice(0, start) + payload.replacement + text.slice(end)
-  evaluateStore.evaluatedText = draftStore.draftText
-  showToast('已替换', 'success')
+  evaluateStore.evaluatedText = normalizeEvaluateSnapshot(draftStore.draftText)
+  showToast(trustedRecordApplied ? '已替换，并登记为进阶润色句' : '已替换', 'success')
 }
 
 function onApplySuggestion(payload: { original: string; suggestion: string }) {
@@ -476,12 +552,28 @@ function parseExamPromptMetadata(taskPrompt: string) {
     .map((line) => line.trim())
     .filter(Boolean)
 
+  const metadataPrefixes = [
+    "题目要求（润色后必须继续严格对齐）：",
+    "图画信息：",
+    "材料信息：",
+    "体裁：",
+    "字数要求：",
+    "写作要求：",
+    "满分分值：",
+  ]
+
   const findField = (prefix: string) => {
     const line = lines.find((item) => item.startsWith(prefix))
     return line ? line.slice(prefix.length).trim() : null
   }
 
-  const topicTitle = lines.find((line) => !["体裁：", "字数要求：", "写作要求：", "满分分值："].some((prefix) => line.startsWith(prefix))) ?? null
+  const topicLabelIndex = lines.findIndex((line) => line === "题目要求（润色后必须继续严格对齐）：")
+  const explicitTopic =
+    topicLabelIndex >= 0 && topicLabelIndex + 1 < lines.length ? lines[topicLabelIndex + 1] : null
+  const topicTitle = explicitTopic
+    || (lines.find((line) => !metadataPrefixes.some((prefix) => line.startsWith(prefix))) ?? null)
+  const imageDescription = findField("图画信息：")
+  const materialText = findField("材料信息：")
   const genre = findField("体裁：")
   const wordRange = findField("字数要求：")?.replace(/词$/u, "") ?? null
 
@@ -502,6 +594,9 @@ function parseExamPromptMetadata(taskPrompt: string) {
 
   return {
     topicTitle,
+    topicContent: imageDescription || materialText || topicTitle,
+    imageDescription,
+    materialText,
     genre,
     minWords,
     recommendedMaxWords,
@@ -534,7 +629,7 @@ function onSubmit() {
 
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
-    normalizedMode === 'exam' ? draftStore.taskPrompt.trim() || undefined : undefined
+    normalizedMode === 'exam' ? effectiveExamTaskPrompt.value || undefined : undefined
   const parsedExamMetadata = examTaskPrompt ? parseExamPromptMetadata(examTaskPrompt) : null
 
   wrappedEvalSubmit({
@@ -600,6 +695,7 @@ async function onExitSave() {
   composableClearResult()
   grammarStore.resetAll()
   evaluateStore.resetAll()
+  void grammarStore.clearTrustedRewrites()
   grammarStore.clearAllCaches(scope)
   // 保存退出：保留评价结果缓存，下次进入同一文档时可恢复
   // 清除本地草稿（后端已保存）
@@ -614,6 +710,7 @@ function onExitDiscard() {
   composableClearResult()
   grammarStore.resetAll()
   evaluateStore.resetAll()
+  void grammarStore.clearTrustedRewrites()
   grammarStore.clearAllCaches(scope)
   // 放弃退出：保留评价结果和 recentFixes，只丢弃本次未保存的修改
   // 只清本地草稿，后端保留上次保存的版本
@@ -632,6 +729,7 @@ function doExit(clearDraft: boolean) {
     composableClearResult()
     grammarStore.resetAll()
     evaluateStore.resetAll()
+    void grammarStore.clearTrustedRewrites()
     grammarStore.clearAllCaches(scope)
     evaluateStore.clearAllCaches(scope)
     draftStore.clearAll()
@@ -657,6 +755,7 @@ function onClear() {
   activeErrorId.value = null
   draftStore.clearCurrentDraftContent()
   grammarStore.resetAll()
+  void grammarStore.clearTrustedRewrites()
   grammarStore.clearAllCaches(scope)
 }
 function onReplaceSelectionWith(resultText: string) {
@@ -698,7 +797,7 @@ async function onAiNoteSend() {
   const hasDraftText = Boolean(draftStore.draftText.trim())
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
-    normalizedMode === 'exam' ? draftStore.taskPrompt.trim() || undefined : undefined
+    normalizedMode === 'exam' ? effectiveExamTaskPrompt.value || undefined : undefined
   const contextScope = hasSelectedText ? 'selection' : 'auto'
   const actionOrigin = 'chat_input'
   const recentMessages = getRecentAiMessages(8)
@@ -958,4 +1057,6 @@ function onAiNoteStop() {
   background: #065f46;
 }
 </style>
+
+
 
