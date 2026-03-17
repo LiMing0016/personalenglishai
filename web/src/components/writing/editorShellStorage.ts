@@ -1,4 +1,4 @@
-import type { WritingEvaluateResponse } from '@/api/writing'
+import type { TrustedRewriteSegment, WritingEvaluateResponse } from '@/api/writing'
 
 export const WRITING_STORAGE_KEYS = {
   layout: 'peai:writing:layout',
@@ -16,11 +16,13 @@ export const WRITING_STORAGE_KEYS = {
   translateResult: 'peai:writing:translateResult',
   polishResult: 'peai:writing:polishResult',
   templateResult: 'peai:writing:templateResult',
+  modelEssayResult: 'peai:writing:modelEssayResult',
   grammarFixedIds: 'peai:writing:grammarFixedIds',
   appliedSuggestionIds: 'peai:writing:appliedSuggestionIds',
   materialResult: 'peai:writing:materialResult',
   evaluatedText: 'peai:writing:evaluatedText',
   grammarReChecked: 'peai:writing:grammarReChecked',
+  trustedRewriteSegments: 'peai:writing:trustedRewriteSegments',
 } as const
 
 function scopedKey(baseKey: string, scope?: string | null): string {
@@ -195,7 +197,9 @@ export function loadDraftNow(scope?: string | null): string | null {
     const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.draft, scope))
     console.log('[draft] load raw', raw)
     if (!raw) return null
-    const obj = JSON.parse(raw)
+    const trimmed = raw.trim()
+    if (!trimmed.startsWith('{')) return raw
+    const obj = JSON.parse(trimmed)
     return typeof obj?.text === 'string' ? obj.text : null
   } catch (e) {
     console.error('[draft] load failed', e)
@@ -267,7 +271,9 @@ export function loadAiNoteDraftNow(scope?: string | null): string | null {
     const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.aiNoteDraft, scope))
     console.log('[aiNoteDraft] load', raw)
     if (!raw) return null
-    const obj = JSON.parse(raw)
+    const trimmed = raw.trim()
+    if (!trimmed.startsWith('{')) return raw
+    const obj = JSON.parse(trimmed)
     return typeof obj?.text === 'string' ? obj.text : null
   } catch (e) {
     console.error('[aiNoteDraft] load failed', e)
@@ -360,6 +366,34 @@ export function clearTranslateResult(scope?: string | null): void {
 export interface PolishCache {
   tier: string
   summary: unknown | null
+  processingModeLabel?: string | null
+  rubricKey?: string | null
+  policyKey?: string | null
+  polishRubricKey?: string | null
+  route?: string | null
+  topicAlignmentStatus?: string | null
+  rewriteMode?: string | null
+  baselineBand?: string | null
+  baselineScore?: number | null
+  baselineGrades?: unknown | null
+  finalBand?: string | null
+  finalScore?: number | null
+  finalGrades?: unknown | null
+  sourceBandRank?: number | null
+  targetBandRank?: number | null
+  accepted?: boolean | null
+  guardTriggered?: boolean | null
+  fallbackToOriginal?: boolean | null
+  targetMet?: boolean | null
+  attemptCount?: number | null
+  targetTier?: string | null
+  targetGap?: string | null
+  bestEffort?: boolean | null
+  baselineDirection?: unknown | null
+  finalDirection?: unknown | null
+  bindingReason?: string | null
+  unmetCoreDimensions?: string[] | null
+  polishedEssay?: string | null
   sentences: unknown[]
   replacedIndices: number[]
   essaySnapshot: string
@@ -415,6 +449,44 @@ export function loadWritingTemplateResult(): WritingTemplateCache | null {
 export function clearWritingTemplateResult(): void {
   try { sessionStorage.removeItem(WRITING_STORAGE_KEYS.templateResult) } catch { /* ignore */ }
 }
+
+// ── 范文缓存（sessionStorage，按 docId 分桶） ──
+
+export interface ModelEssayCache {
+  rubricKey?: string | null
+  mode?: 'free' | 'exam'
+  stage?: string | null
+  topicContent?: string | null
+  taskPrompt?: string | null
+  excellentEssay: unknown
+  perfectEssay: unknown
+  essaySnapshot: string
+  topicContentSnapshot: string
+  taskPromptSnapshot: string
+  studyStageSnapshot: string
+  writingModeSnapshot: string
+  taskTypeSnapshot: string
+}
+
+export function saveModelEssayResult(data: ModelEssayCache, scope?: string | null): void {
+  try {
+    sessionStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.modelEssayResult, scope), JSON.stringify(data))
+  } catch { /* ignore */ }
+}
+
+export function loadModelEssayResult(scope?: string | null): ModelEssayCache | null {
+  try {
+    const raw = sessionStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.modelEssayResult, scope))
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    if (obj && obj.excellentEssay && obj.perfectEssay) return obj as ModelEssayCache
+    return null
+  } catch { return null }
+}
+
+export function clearModelEssayResult(scope?: string | null): void {
+  try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.modelEssayResult, scope)) } catch { /* ignore */ }
+}
 // ── 语法修正 ID 缓存（sessionStorage，按 docId 分桶） ──
 
 export function saveGrammarFixedIds(ids: string[], scope?: string | null): void {
@@ -434,6 +506,32 @@ export function loadGrammarFixedIds(scope?: string | null): string[] | null {
 
 export function clearGrammarFixedIds(scope?: string | null): void {
   try { sessionStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.grammarFixedIds, scope)) } catch { /* ignore */ }
+}
+
+// ── Trusted rewrite records（localStorage，按 docId 分桶） ──
+
+export function saveTrustedRewriteSegments(records: TrustedRewriteSegment[], scope?: string | null): void {
+  try {
+    localStorage.setItem(
+      scopedKey(WRITING_STORAGE_KEYS.trustedRewriteSegments, scope),
+      JSON.stringify(records ?? []),
+    )
+  } catch { /* ignore */ }
+}
+
+export function loadTrustedRewriteSegments(scope?: string | null): TrustedRewriteSegment[] | null {
+  try {
+    const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.trustedRewriteSegments, scope))
+    if (!raw) return null
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? (arr as TrustedRewriteSegment[]) : null
+  } catch {
+    return null
+  }
+}
+
+export function clearTrustedRewriteSegments(scope?: string | null): void {
+  try { localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.trustedRewriteSegments, scope)) } catch { /* ignore */ }
 }
 
 // ── 已应用建议 ID 缓存（sessionStorage，按 docId 分桶） ──

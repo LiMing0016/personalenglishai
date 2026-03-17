@@ -19,7 +19,7 @@ public class AuditTopicService {
 
     private static final String SYSTEM_PROMPT = """
             你是考试写作助手。分析用户输入的英语作文题目，提取并补全以下信息：
-            1. topic：题目/情境描述（整理为简洁的一句话概括）
+            1. topic：题目正文。尽量保留用户原始题目文本，不要概括成“根据所给图表写一篇作文”这种过于泛化的摘要；若原文包含英文题目要求，优先保留原英文正文
             2. genre：体裁（书信、议论文、说明文、演讲稿、看图作文、通知、日记，或 null）
             3. wordRange：字数范围（如 "80-120"，或 null）
             4. requirements：写作要求/要点（如 "1) describe the picture briefly 2) interpret the meaning 3) give your comments"，从原文提取，没有则 null）
@@ -32,6 +32,7 @@ public class AuditTopicService {
             规则：
             - 如果用户已选择体裁或字数（genre/wordRange 不为空），直接采用，不要覆盖
             - 如果用户未选择，尝试从题目文本中推断
+            - topic 必须尽量贴近原题，不要重写成简短标题，不要丢失图表/图片/材料等关键信息
             - requirements 是题目中的具体写作要点（如需要描述图片、阐释含义、给出评论等），原样提取，不要编造
             - 推断不出的字段输出 null，不要编造
             - 用中文回复 message，语气友好简洁
@@ -85,7 +86,7 @@ public class AuditTopicService {
             JsonNode node = objectMapper.readTree(cleaned);
 
             String status = node.path("status").asText("complete");
-            String topic = node.path("topic").asText(request.getTopic());
+            String topic = normalizeTopic(node.path("topic").asText(request.getTopic()), request.getTopic());
             String genre = nullIfEmpty(node.path("genre").asText(null));
             String wordRange = nullIfEmpty(node.path("wordRange").asText(null));
             String requirements = nullIfEmpty(node.path("requirements").asText(null));
@@ -139,6 +140,44 @@ public class AuditTopicService {
     private String nullIfEmpty(String s) {
         if (s == null || s.isBlank() || "null".equalsIgnoreCase(s)) return null;
         return s.trim();
+    }
+
+    private String normalizeTopic(String candidate, String original) {
+        String normalizedOriginal = nullIfEmpty(original);
+        String normalizedCandidate = nullIfEmpty(candidate);
+        if (normalizedOriginal == null) {
+            return normalizedCandidate;
+        }
+        if (normalizedCandidate == null) {
+            return normalizedOriginal;
+        }
+
+        String compactOriginal = normalizedOriginal.replaceAll("\\s+", " ").trim();
+        String compactCandidate = normalizedCandidate.replaceAll("\\s+", " ").trim();
+        if (compactCandidate.equalsIgnoreCase(compactOriginal)) {
+            return normalizedOriginal;
+        }
+        if (compactOriginal.toLowerCase().contains(compactCandidate.toLowerCase())) {
+            return normalizedOriginal;
+        }
+        if (isOverlyGenericTopic(compactCandidate)) {
+            return normalizedOriginal;
+        }
+        return normalizedCandidate;
+    }
+
+    private boolean isOverlyGenericTopic(String topic) {
+        String normalized = topic == null ? "" : topic.trim().toLowerCase();
+        if (normalized.isEmpty()) {
+            return true;
+        }
+        return normalized.equals("根据所给图表写一篇作文")
+                || normalized.equals("根据所给图片写一篇作文")
+                || normalized.equals("根据所给材料写一篇作文")
+                || normalized.equals("write an essay based on the chart below")
+                || normalized.equals("write an essay based on the picture below")
+                || normalized.equals("write an essay based on the following drawing")
+                || normalized.equals("write an essay based on the material below");
     }
 
     // ── 图片识别 ──

@@ -7,4 +7,8 @@ import java.util.List;
 public interface GrammarCheckService {
 
     List<WritingEvaluateResponse.ErrorDto> check(String text);
+
+    default List<WritingEvaluateResponse.ErrorDto> check(String text, String trinkaMode) {
+        return check(text);
+    }
 }

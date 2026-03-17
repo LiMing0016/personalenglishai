@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GrammarCheckServiceImpl implements GrammarCheckService {
 
     private static final Logger log = LoggerFactory.getLogger(GrammarCheckServiceImpl.class);
+    private static final String GRAMMAR_CHECK_TRINKA_PIPELINE = "basic";
 
     private final LanguageToolService languageToolService;
     private final SaplingService saplingService;
@@ -53,15 +54,19 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
 
     @Override
     public List<WritingEvaluateResponse.ErrorDto> check(String text) {
+        return check(text, "lite");
+    }
+
+    @Override
+    public List<WritingEvaluateResponse.ErrorDto> check(String text, String trinkaMode) {
         if (text == null || text.isBlank()) {
             return List.of();
         }
-        // 统一换行符：Windows \r\n → \n，防止 LT/Sapling span 偏移
         text = text.replace("\r\n", "\n").replace("\r", "\n");
 
+        String trinkaPipeline = resolveTrinkaPipeline(trinkaMode);
         long start = System.currentTimeMillis();
 
-        // Run LT, Sapling, TextGears and Trinka in parallel
         final String normalizedText = text;
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> ltFuture =
                 CompletableFuture.supplyAsync(() -> languageToolService.check(normalizedText));
@@ -70,7 +75,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> textGearsFuture =
                 CompletableFuture.supplyAsync(() -> checkTextGearsWithCache(normalizedText));
         CompletableFuture<List<WritingEvaluateResponse.ErrorDto>> trinkaFuture =
-                CompletableFuture.supplyAsync(() -> checkTrinkaWithCache(normalizedText));
+                CompletableFuture.supplyAsync(() -> checkTrinkaWithCache(normalizedText, trinkaPipeline));
 
         List<WritingEvaluateResponse.ErrorDto> ltErrors;
         List<WritingEvaluateResponse.ErrorDto> saplingErrors;
@@ -80,7 +85,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             ltErrors = ltFuture.join();
             saplingErrors = saplingFuture.join();
             textGearsErrors = textGearsFuture.join();
-            trinkaErrors = trinkaFuture.join();
+            trinkaErrors = applyTrinkaTopCategoryClassification(trinkaFuture.join());
         } catch (Exception e) {
             log.warn("Grammar check parallel execution failed: {}", e.getMessage());
             ltErrors = languageToolService.check(normalizedText);
@@ -89,12 +94,10 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             trinkaErrors = List.of();
         }
 
-        // Merge: LT as primary, others as secondary (dedup by original text overlap)
         List<WritingEvaluateResponse.ErrorDto> merged = mergeErrors(ltErrors, saplingErrors);
         merged = mergeErrors(merged, textGearsErrors);
         merged = mergeErrors(merged, trinkaErrors);
 
-        // Sort by span.start and assign sequential IDs
         merged.sort(Comparator.comparingInt(e -> e.getSpan() != null ? e.getSpan().getStart() : 0));
         int id = 1;
         for (var e : merged) {
@@ -132,13 +135,11 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             }
 
             String trimmed = para.trim();
-            // trimmed 在全文中的起始位置
             int leadingWs = para.indexOf(trimmed.charAt(0));
             int trimmedBase = offset + Math.max(0, leadingWs);
 
             List<WritingEvaluateResponse.ErrorDto> cached = saplingCache.get(trimmed);
             if (cached != null) {
-                // 缓存命中：span 相对于 trimmed，加 trimmedBase 转全文
                 for (var e : cached) {
                     WritingEvaluateResponse.ErrorDto copy = copyError(e);
                     copy.setSpan(new WritingEvaluateResponse.SpanDto(
@@ -147,13 +148,10 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
                     allErrors.add(copy);
                 }
             } else {
-                // 缓存未命中：用 trimmed 调 API，span 直接基于 trimmed（0-based）
                 List<WritingEvaluateResponse.ErrorDto> fresh = saplingService.check(trimmed);
                 List<WritingEvaluateResponse.ErrorDto> cacheEntry = new ArrayList<>();
                 for (var e : fresh) {
-                    // 缓存保存 trimmed 相对 span（原样）
                     cacheEntry.add(copyError(e));
-                    // allErrors 保存全文 span
                     WritingEvaluateResponse.ErrorDto global = copyError(e);
                     global.setSpan(new WritingEvaluateResponse.SpanDto(
                             e.getSpan().getStart() + trimmedBase,
@@ -170,15 +168,75 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         return allErrors;
     }
 
+    private List<WritingEvaluateResponse.ErrorDto> applyTrinkaTopCategoryClassification(
+            List<WritingEvaluateResponse.ErrorDto> trinkaErrors) {
+        if (trinkaErrors == null || trinkaErrors.isEmpty()) {
+            return trinkaErrors;
+        }
+        for (WritingEvaluateResponse.ErrorDto error : trinkaErrors) {
+            classifyTrinkaError(error);
+        }
+        return trinkaErrors;
+    }
+
+    private void classifyTrinkaError(WritingEvaluateResponse.ErrorDto error) {
+        if (error == null || !"trinka".equalsIgnoreCase(error.getEngine())) {
+            return;
+        }
+        WritingEvaluateResponse.RawEngineMetaDto raw = error.getRawEngineMeta();
+        if (raw == null) {
+            return;
+        }
+        String topCategory = normalizeTopCategoryName(raw.getTopCategoryName());
+        if (topCategory == null) {
+            return;
+        }
+        if (isSuggestionTopCategory(topCategory)) {
+            error.setCategory("suggestion");
+            error.setSeverity("minor");
+            return;
+        }
+        if ("Correctness".equals(topCategory)) {
+            error.setCategory("error");
+            if (error.getSeverity() == null || error.getSeverity().isBlank()) {
+                error.setSeverity(Boolean.TRUE.equals(raw.getCriticalError()) ? "major" : "minor");
+            }
+        }
+    }
+
+    private boolean isSuggestionTopCategory(String topCategory) {
+        return "Clarity".equals(topCategory)
+                || "Fluency".equals(topCategory)
+                || "Style".equals(topCategory)
+                || "Style Guide Compliance".equals(topCategory)
+                || "Inclusivity".equals(topCategory);
+    }
+
+    private String normalizeTopCategoryName(String topCategory) {
+        if (topCategory == null || topCategory.isBlank()) {
+            return null;
+        }
+        return switch (topCategory.trim().toLowerCase(Locale.ROOT)) {
+            case "correctness" -> "Correctness";
+            case "clarity" -> "Clarity";
+            case "fluency" -> "Fluency";
+            case "style" -> "Style";
+            case "style guide compliance" -> "Style Guide Compliance";
+            case "inclusivity" -> "Inclusivity";
+            default -> null;
+        };
+    }
     private WritingEvaluateResponse.ErrorDto copyError(WritingEvaluateResponse.ErrorDto src) {
         WritingEvaluateResponse.ErrorDto copy = new WritingEvaluateResponse.ErrorDto();
         copy.setType(src.getType());
         copy.setCategory(src.getCategory());
         copy.setSeverity(src.getSeverity());
+        copy.setEngine(src.getEngine());
         copy.setOriginal(src.getOriginal());
         copy.setSuggestion(src.getSuggestion());
         copy.setReason(src.getReason());
         copy.setLangCategory(src.getLangCategory());
+        copy.setRawEngineMeta(src.getRawEngineMeta());
         copy.setAlternatives(src.getAlternatives());
         copy.setSpan(new WritingEvaluateResponse.SpanDto(
                 src.getSpan().getStart(), src.getSpan().getEnd()));
@@ -203,10 +261,8 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             if (orig == null || orig.isBlank()) continue;
             String key = orig.toLowerCase(Locale.ROOT).trim();
 
-            // Exact match dedup
             if (existingOriginals.contains(key)) continue;
 
-            // Substring overlap dedup
             boolean overlap = false;
             for (String existing : existingOriginals) {
                 if (key.contains(existing) || existing.contains(key)) {
@@ -216,7 +272,6 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             }
             if (overlap) continue;
 
-            // Span overlap dedup: skip if Sapling error overlaps with an existing LT error
             if (e.getSpan() != null) {
                 boolean spanOverlap = merged.stream().anyMatch(existing ->
                         existing.getSpan() != null &&
@@ -232,9 +287,10 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
         return merged;
     }
 
-    /**
-     * TextGears 段落级缓存检查，同 Sapling 缓存策略。
-     */
+    private String resolveTrinkaPipeline(String trinkaMode) {
+        return "power".equalsIgnoreCase(trinkaMode) ? "advanced" : GRAMMAR_CHECK_TRINKA_PIPELINE;
+    }
+
     private List<WritingEvaluateResponse.ErrorDto> checkTextGearsWithCache(String text) {
         String[] paragraphs = text.split("(?<=\\n)");
         List<WritingEvaluateResponse.ErrorDto> allErrors = new ArrayList<>();
@@ -284,7 +340,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
      * Trinka 段落级缓存检查，同 Sapling/TextGears 缓存策略。
      * Trinka /check/paragraph 接口对长文本返回 500，必须按段落拆分。
      */
-    private List<WritingEvaluateResponse.ErrorDto> checkTrinkaWithCache(String text) {
+    private List<WritingEvaluateResponse.ErrorDto> checkTrinkaWithCache(String text, String pipelineOverride) {
         String[] paragraphs = text.split("(?<=\\n)");
         List<WritingEvaluateResponse.ErrorDto> allErrors = new ArrayList<>();
         int offset = 0;
@@ -298,8 +354,9 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
             String trimmed = para.trim();
             int leadingWs = para.indexOf(trimmed.charAt(0));
             int trimmedBase = offset + Math.max(0, leadingWs);
+            String cacheKey = buildTrinkaCacheKey(trimmed, pipelineOverride);
 
-            List<WritingEvaluateResponse.ErrorDto> cached = trinkaCache.get(trimmed);
+            List<WritingEvaluateResponse.ErrorDto> cached = trinkaCache.get(cacheKey);
             if (cached != null) {
                 for (var e : cached) {
                     WritingEvaluateResponse.ErrorDto copy = copyError(e);
@@ -309,7 +366,7 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
                     allErrors.add(copy);
                 }
             } else {
-                List<WritingEvaluateResponse.ErrorDto> fresh = trinkaService.check(trimmed);
+                List<WritingEvaluateResponse.ErrorDto> fresh = trinkaService.check(trimmed, pipelineOverride);
                 List<WritingEvaluateResponse.ErrorDto> cacheEntry = new ArrayList<>();
                 for (var e : fresh) {
                     cacheEntry.add(copyError(e));
@@ -322,10 +379,21 @@ public class GrammarCheckServiceImpl implements GrammarCheckService {
                 if (trinkaCache.size() > MAX_CACHE_SIZE) {
                     trinkaCache.clear();
                 }
-                trinkaCache.put(trimmed, cacheEntry);
+                trinkaCache.put(cacheKey, cacheEntry);
             }
             offset += para.length();
         }
         return allErrors;
     }
+
+    private String buildTrinkaCacheKey(String text, String pipelineOverride) {
+        String pipelineKey = (pipelineOverride == null || pipelineOverride.isBlank())
+                ? "default"
+                : pipelineOverride.trim();
+        return pipelineKey + "::" + text;
+    }
 }
+
+
+
+

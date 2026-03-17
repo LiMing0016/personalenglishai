@@ -14,9 +14,14 @@ dist/
 # Maven local repository cache
 backend/.m2/
 backend/.m2home/
+.m2repo/
 
 # Unrelated tools
 apps/
+
+# Local temp/debug artifacts
+.tmp-*/
+.tmp-*.log
 
 # Claude Code local settings
 .claude/settings.local.json

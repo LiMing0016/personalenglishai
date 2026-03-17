@@ -19,10 +19,18 @@
         <span class="gc-summary-title">语法检查</span>
         <span v-if="checking" class="gc-summary-status gc-summary-status--checking">检查中</span>
         <span v-else-if="!hasContent" class="gc-summary-status gc-summary-status--idle">等待输入</span>
-        <span v-else-if="errors.length === 0 && !error" class="gc-summary-status gc-summary-status--clean">全部正确</span>
-        <span v-else-if="errors.length > 0" class="gc-summary-score">
+        <span v-else-if="errors.length === 0 && reviewSuggestions.length === 0 && !error" class="gc-summary-status gc-summary-status--clean">全部正确</span>
+        <span v-else-if="errors.length > 0 || reviewSuggestions.length > 0" class="gc-summary-score">
           {{ errors.length }} <span class="gc-summary-unit">个问题</span>
         </span>
+      </div>
+
+      <p v-if="!checking && reviewSuggestions.length > 0" class="gc-summary-subline">
+        另有 {{ reviewSuggestions.length }} 条建议与改进，不计入问题数
+      </p>
+      <div v-if="!checking && hiddenTrustedSuggestionCount > 0" class="gc-trusted-hint">
+        <span>已隐藏 {{ hiddenTrustedSuggestionCount }} 条进阶润色后的 Trinka 重复建议</span>
+        <button type="button" class="gc-trusted-reset" @click="emit('clear-trusted-rewrites')">恢复检查</button>
       </div>
 
       <!-- 进度条 -->
@@ -48,6 +56,27 @@
           class="btn-fix-all"
           @click="emit('fix-all')"
         >一键全部订正</button>
+      </div>
+
+      <div v-if="hasContent" class="gc-mode-switch">
+        <button
+          type="button"
+          class="gc-mode-card"
+          :class="{ 'gc-mode-card--active': trinkaMode === 'lite' }"
+          @click="emit('change-trinka-mode', 'lite')"
+        >
+          <span class="gc-mode-card-title">Lite Mode</span>
+          <span class="gc-mode-card-desc">仅基础语法与拼写检查</span>
+        </button>
+        <button
+          type="button"
+          class="gc-mode-card"
+          :class="{ 'gc-mode-card--active': trinkaMode === 'power' }"
+          @click="emit('change-trinka-mode', 'power')"
+        >
+          <span class="gc-mode-card-title">Power Mode</span>
+          <span class="gc-mode-card-desc">包含表达优化与语言增强</span>
+        </button>
       </div>
     </div>
 
@@ -109,6 +138,55 @@
         <p v-if="err.reason" class="gc-reason">{{ err.reason }}</p>
       </li>
     </ul>
+
+    <div v-if="reviewSuggestions.length > 0" class="gc-suggestion-block">
+      <div class="gc-suggestion-header">
+        <span class="gc-suggestion-title">建议与改进</span>
+        <span class="gc-suggestion-hint">不计入错误，主要用于表达优化和措辞改进</span>
+      </div>
+      <ul class="gc-list gc-list--suggestion">
+        <li
+          v-for="item in reviewSuggestions"
+          :key="item.id"
+          class="gc-item gc-item--suggestion"
+          :class="{
+            'gc-item--active': item.id === activeErrorId,
+            'gc-item--fixed': isFixed(item.id),
+          }"
+          :data-error-id="item.id"
+          @click="emit('error-click', item.id)"
+        >
+          <div class="gc-item-header">
+            <div class="gc-item-tags">
+              <span class="gc-type gc-type--suggestion">{{ displayLabel(item) }}</span>
+            </div>
+            <span v-if="isFixed(item.id)" class="badge-fixed">已修改</span>
+            <template v-else>
+              <button
+                v-if="canFix(item)"
+                type="button"
+                class="btn-fix-single btn-fix-single--suggestion"
+                @click.stop="emit('fix-error', item.id)"
+              >替换</button>
+              <button
+                type="button"
+                class="btn-dismiss"
+                @click.stop="emit('dismiss-error', item.id)"
+              >忽略</button>
+            </template>
+          </div>
+          <div v-if="item.original && hasValidSuggestion(item)" class="gc-correction">
+            <span class="gc-original gc-original--suggestion">{{ item.original }}</span>
+            <span class="gc-arrow">&rarr;</span>
+            <span class="gc-suggestion">{{ item.suggestion }}</span>
+          </div>
+          <div v-else-if="item.original" class="gc-correction">
+            <span class="gc-original gc-original--suggestion">{{ item.original }}</span>
+          </div>
+          <p v-if="item.reason" class="gc-reason gc-reason--suggestion">{{ item.reason }}</p>
+        </li>
+      </ul>
+    </div>
 
     <!-- 全部修正完成 -->
     <div v-if="allFixed && !checking && errors.length > 0" class="gc-done">
@@ -241,7 +319,12 @@
 
 <script setup lang="ts">
 import { computed, watch, nextTick, ref, onMounted } from 'vue'
-import type { WritingEvaluateResponse, SuggestionItem, SuggestionErrorItem } from '@/api/writing'
+import type {
+  GrammarCheckMode,
+  WritingEvaluateResponse,
+  SuggestionItem,
+  SuggestionErrorItem,
+} from '@/api/writing'
 import { useWritingSuggestions } from '@/composables/useWritingSuggestions'
 import { savePolishSuggestions, saveAppliedSuggestionIds, loadAppliedSuggestionIds } from '../editorShellStorage'
 import { useWritingDraftStore } from '@/stores/writingDraftStore'
@@ -307,12 +390,15 @@ const LANG_CATEGORY_LABELS: Record<string, string> = {
 
 const props = defineProps<{
   errors: ErrorItem[]
+  reviewSuggestions: ErrorItem[]
   checking: boolean
   error: string | null
   fixedErrorIds: Set<string>
   activeErrorId?: string | null
   essayText?: string
   locked?: boolean
+  trinkaMode?: GrammarCheckMode
+  hiddenTrustedSuggestionCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -321,12 +407,16 @@ const emit = defineEmits<{
   'dismiss-error': [errorId: string]
   'error-click': [errorId: string]
   'apply-suggestion': [payload: { original: string; suggestion: string }]
+  'change-trinka-mode': [mode: GrammarCheckMode]
+  'clear-trusted-rewrites': []
   'start-polish': []
   'gpt-errors-loaded': [errors: SuggestionErrorItem[]]
   'gpt-suggestions-loaded': [suggestions: SuggestionItem[]]
 }>()
 
 const hasContent = computed(() => (props.essayText ?? '').trim().length > 0)
+const trinkaMode = computed<GrammarCheckMode>(() => props.trinkaMode ?? 'lite')
+const hiddenTrustedSuggestionCount = computed(() => props.hiddenTrustedSuggestionCount ?? 0)
 
 function errorTypeLabel(type: string): string {
   return ERROR_TYPE_LABELS[type] ?? type
@@ -639,6 +729,47 @@ function applyGptError(item: SuggestionErrorItem) {
 }
 .btn-fix-all:hover { background: #d1fae5; }
 
+.gc-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.gc-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.btn-fix-all:hover { background: #d1fae5; }
+.gc-mode-card:hover {
+  border-color: #a7f3d0;
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.08);
+  transform: translateY(-1px);
+}
+.gc-mode-card--active {
+  border-color: #0f766e;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ecfdf5 100%);
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+}
+.gc-mode-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+}
+.gc-mode-card-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
 /* ── 错误卡片 ── */
 .gc-list {
   list-style: none;
@@ -674,6 +805,16 @@ function applyGptError(item: SuggestionErrorItem) {
   opacity: 0.68;
 }
 .gc-item--fixed .gc-original { text-decoration: line-through; }
+
+.gc-item--suggestion {
+  background: linear-gradient(180deg, #f6fffb 0%, #effcf5 100%);
+  border-color: #b7e4c7;
+}
+.gc-item--suggestion:hover {
+  background: linear-gradient(180deg, #f0fff7 0%, #e6f9ee 100%);
+  border-color: #6ee7b7;
+  box-shadow: 0 8px 18px rgba(6, 95, 70, 0.08);
+}
 
 .gc-item-header {
   display: flex;
@@ -1164,3 +1305,16 @@ function applyGptError(item: SuggestionErrorItem) {
   color: #dc2626;
 }
 </style>
+
+
+
+
+
+
+
+
+
+
+
+
+

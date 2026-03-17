@@ -12,6 +12,9 @@ public class GrammarCheckRequest {
     /** Document ID for scoping grammar suppressions. */
     private String docId;
 
+    /** Trinka editing mode: lite -> basic, power -> advanced. */
+    private String trinkaMode;
+
     public String getText() {
         return text;
     }
@@ -26,5 +29,13 @@ public class GrammarCheckRequest {
 
     public void setDocId(String docId) {
         this.docId = docId;
+    }
+
+    public String getTrinkaMode() {
+        return trinkaMode;
+    }
+
+    public void setTrinkaMode(String trinkaMode) {
+        this.trinkaMode = trinkaMode;
     }
 }

@@ -12,4 +12,10 @@ public interface WritingEvaluateService {
      * 对作文进行评分与错误检测
      */
     WritingEvaluateResponse evaluate(WritingEvaluateRequest request);
+
+    /**
+     * 供润色闭环等内部链路调用，必须复用同一套评分逻辑，
+     * 但不应写入历史记录或更新用户画像。
+     */
+    WritingEvaluateResponse evaluateForPolish(WritingEvaluateRequest request);
 }

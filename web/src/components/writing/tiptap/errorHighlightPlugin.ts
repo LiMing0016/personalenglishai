@@ -18,7 +18,8 @@ export interface ErrorHighlightState {
 }
 
 function errorCssClasses(error: ErrorSpan, isActive: boolean): string {
-  const classes = [`err-${error.type}`, `err-${error.severity}`]
+  const categoryClass = error.category === 'suggestion' ? 'err-category-suggestion' : 'err-category-error'
+  const classes = [`err-${error.type}`, `err-${error.severity}`, categoryClass]
   if (isActive) classes.push('err-active')
   return classes.join(' ')
 }

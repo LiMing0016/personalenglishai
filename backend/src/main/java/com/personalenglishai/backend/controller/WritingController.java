@@ -20,7 +20,10 @@ import com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
 import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
 import com.personalenglishai.backend.dto.writing.GrammarSuppressRequest;
+import com.personalenglishai.backend.dto.writing.RewriteApplyRequest;
+import com.personalenglishai.backend.dto.writing.RewriteApplyResponse;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
+import com.personalenglishai.backend.dto.writing.TrustedRewriteClearRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
@@ -33,6 +36,7 @@ import com.personalenglishai.backend.dto.writing.SuggestionsRequest;
 import com.personalenglishai.backend.dto.writing.SuggestionsResponse;
 import com.personalenglishai.backend.service.writing.AuditTopicService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
+import com.personalenglishai.backend.service.writing.TrustedRewriteService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
@@ -40,8 +44,11 @@ import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
+import com.personalenglishai.backend.service.writing.WritingModelEssayService;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
+import com.personalenglishai.backend.dto.writing.WritingModelEssayRequest;
+import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
@@ -73,6 +80,7 @@ public class WritingController {
     private final WritingTranslateService writingTranslateService;
     private final WritingTemplateService writingTemplateService;
     private final WritingMaterialService writingMaterialService;
+    private final WritingModelEssayService writingModelEssayService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
     private final AuditTopicService auditTopicService;
@@ -81,6 +89,7 @@ public class WritingController {
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final EssayPromptService essayPromptService;
     private final GrammarSuppressService grammarSuppressService;
+    private final TrustedRewriteService trustedRewriteService;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -90,6 +99,7 @@ public class WritingController {
                              WritingTranslateService writingTranslateService,
                              WritingTemplateService writingTemplateService,
                              WritingMaterialService writingMaterialService,
+                             WritingModelEssayService writingModelEssayService,
                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
                              AuditTopicService auditTopicService,
@@ -98,6 +108,7 @@ public class WritingController {
                              EssayFavoriteMapper essayFavoriteMapper,
                              EssayPromptService essayPromptService,
                              GrammarSuppressService grammarSuppressService,
+                             TrustedRewriteService trustedRewriteService,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
@@ -106,6 +117,7 @@ public class WritingController {
         this.writingTranslateService = writingTranslateService;
         this.writingTemplateService = writingTemplateService;
         this.writingMaterialService = writingMaterialService;
+        this.writingModelEssayService = writingModelEssayService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
         this.auditTopicService = auditTopicService;
@@ -114,6 +126,7 @@ public class WritingController {
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.essayPromptService = essayPromptService;
         this.grammarSuppressService = grammarSuppressService;
+        this.trustedRewriteService = trustedRewriteService;
         this.objectMapper = objectMapper;
     }
 
@@ -193,7 +206,7 @@ public class WritingController {
     }
 
     /**
-     * 全文逐句润色：一次 GPT 调用润色所有句子
+     * 全文自动润色：生成整篇候选稿，并在同一 rubric 下做一次安全复评
      */
     @PostMapping("/polish-essay")
     public ResponseEntity<PolishEssayResponse> polishEssay(
@@ -225,6 +238,16 @@ public class WritingController {
         return ResponseEntity.ok(response);
     }
 
+    /** 范文：按题目/主题和 rubric 生成优秀作文与满分作文 */
+    @PostMapping("/model-essay")
+    public ResponseEntity<WritingModelEssayResponse> generateModelEssay(
+            @Valid @RequestBody WritingModelEssayRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        WritingModelEssayResponse response = writingModelEssayService.generate(request);
+        return ResponseEntity.ok(response);
+    }
+
     /**
      * 翻译：全文翻译 (mode=full) 或逐句精讲 (mode=detailed)
      */
@@ -244,14 +267,38 @@ public class WritingController {
     public ResponseEntity<GrammarCheckResponse> grammarCheck(
             @Valid @RequestBody GrammarCheckRequest request,
             HttpServletRequest httpRequest) {
-        var errors = grammarCheckService.check(request.getText());
+        var errors = grammarCheckService.check(request.getText(), request.getTrinkaMode());
         // Filter out suppressed suggestions (dismissed / previously fixed)
         Long userId = (Long) httpRequest.getAttribute("userId");
         String docId = request.getDocId();
         if (userId != null && docId != null && !docId.isBlank()) {
             errors = grammarSuppressService.filterSuppressed(userId, docId, errors, request.getText());
+            errors = trustedRewriteService.filterTrustedTrinkaSuggestions(userId, docId, request.getText(), errors);
         }
         return ResponseEntity.ok(new GrammarCheckResponse(errors));
+    }
+
+    @PostMapping("/rewrite/apply")
+    public ResponseEntity<RewriteApplyResponse> applyRewrite(
+            @Valid @RequestBody RewriteApplyRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(trustedRewriteService.applyTrustedRewrite(userId, request));
+    }
+
+    @PostMapping("/rewrite/trusted/clear")
+    public ResponseEntity<Void> clearTrustedRewrite(
+            @Valid @RequestBody TrustedRewriteClearRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        trustedRewriteService.clearTrustedRewrites(userId, request.getDocId());
+        return ResponseEntity.ok().build();
     }
 
     /**
@@ -663,11 +710,18 @@ public class WritingController {
                                        String documentId, String essayText) {
         if (response == null || response.getErrors() == null || response.getErrors().isEmpty()) return;
         if (userId == null || documentId == null || documentId.isBlank()) return;
+        Integer rawCount = response.getRawErrorCount();
         String text = essayText != null ? essayText : "";
-        response.setErrors(
-                grammarSuppressService.filterSuppressed(userId, documentId, response.getErrors(), text));
+        var filtered = grammarSuppressService.filterSuppressed(userId, documentId, response.getErrors(), text);
+        filtered = trustedRewriteService.filterTrustedTrinkaSuggestions(userId, documentId, text, filtered);
+        response.setErrors(filtered);
+        if (rawCount != null) {
+            response.setRawErrorCount(rawCount);
+            response.setDisplayErrorCount(response.getErrorCount());
+        }
     }
 }
+
 
 
 

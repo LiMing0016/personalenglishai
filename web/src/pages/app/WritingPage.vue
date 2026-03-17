@@ -329,6 +329,39 @@ import type { WritingDocumentItem, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 
+function buildExamTaskPrompt(info: ExamTopicInfo) {
+  const lines: string[] = []
+  const topic = info.topic?.trim()
+  const imageDescription = info.imageDescription?.trim()
+  const materialText = info.materialText?.trim()
+  const genre = info.genre?.trim()
+  const wordRange = info.wordRange?.trim()
+  const requirements = info.requirements?.trim()
+
+  if (topic) {
+    lines.push('题目要求（润色后必须继续严格对齐）：')
+    lines.push(topic)
+  }
+  if (imageDescription) {
+    if (imageDescription !== topic) {
+      lines.push('图画信息：')
+      lines.push(imageDescription)
+    }
+  }
+  if (materialText) {
+    if (materialText !== topic) {
+      lines.push('材料信息：')
+      lines.push(materialText)
+    }
+  }
+  if (genre) lines.push(`体裁：${genre}`)
+  if (wordRange) lines.push(`字数要求：${wordRange}词`)
+  if (requirements) lines.push(`写作要求：${requirements}`)
+  if (info.maxScore && info.maxScore !== 100) lines.push(`满分分值：${info.maxScore}分`)
+
+  return lines.join('\n')
+}
+
 type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
 
@@ -728,11 +761,7 @@ async function createFreeDoc() {
 async function onExamConfirm(info: ExamTopicInfo) {
   resumeTopicForSetup.value = undefined
   chosenMode.value = 'exam'
-  let prompt = info.topic
-  if (info.genre) prompt += `\n体裁：${info.genre}`
-  if (info.wordRange) prompt += `\n字数要求：${info.wordRange}词`
-  if (info.requirements) prompt += `\n写作要求：${info.requirements}`
-  if (info.maxScore && info.maxScore !== 100) prompt += `\n满分分值：${info.maxScore}分`
+  const prompt = buildExamTaskPrompt(info)
   examMaxScore.value = info.maxScore ?? 100
   initialTaskPrompt.value = prompt
   initialExistingContent.value = null

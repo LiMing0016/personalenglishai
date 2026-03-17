@@ -13,9 +13,9 @@ import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +31,7 @@ import java.util.Map;
 public class TrinkaService {
 
     private static final Logger log = LoggerFactory.getLogger(TrinkaService.class);
+    private static final int MAX_SPAN_LENGTH = 80;
 
     @Value("${trinka.enabled:false}")
     private boolean enabled;
@@ -112,37 +113,50 @@ public class TrinkaService {
     }
 
     public List<WritingEvaluateResponse.ErrorDto> check(String text) {
+        return check(text, null);
+    }
+
+    public List<WritingEvaluateResponse.ErrorDto> check(String text, String pipelineOverride) {
         if (!enabled || apiKey == null || apiKey.isBlank()) {
             return List.of();
         }
         if (text == null || text.isBlank()) {
             return List.of();
         }
+        String effectivePipeline = resolvePipeline(pipelineOverride);
         try {
             long start = System.currentTimeMillis();
-            String responseBody = callApi(text);
-            List<WritingEvaluateResponse.ErrorDto> errors = parseResponse(responseBody, text);
+            log.info("Trinka check start. pipeline={} textLength={}", effectivePipeline, text.length());
+            String responseBody = callApi(text, effectivePipeline);
+            ParseResult parseResult = parseResponse(responseBody, text, effectivePipeline);
             long elapsed = System.currentTimeMillis() - start;
-            log.info("Trinka check done. errors={} elapsed={}ms", errors.size(), elapsed);
-            return errors;
+            log.info("Trinka check done. pipeline={} rawResultCount={} errors={} elapsed={}ms",
+                    effectivePipeline, parseResult.rawResultCount(), parseResult.errors().size(), elapsed);
+            return parseResult.errors();
         } catch (HttpTimeoutException e) {
-            log.info("Trinka check timed out after {}ms, skipped", timeoutMs);
+            log.info("Trinka check timed out after {}ms, pipeline={} skipped", timeoutMs, effectivePipeline);
             return List.of();
         } catch (Exception e) {
-            log.warn("Trinka check failed: {}", e.getMessage());
+            log.warn("Trinka check failed. pipeline={} reason={}", effectivePipeline, e.getMessage());
             return List.of();
         }
     }
 
-    // ════════════════════════════════════════════════════════════════
-    //  HTTP call
-    // ════════════════════════════════════════════════════════════════
+    private String resolvePipeline(String pipelineOverride) {
+        if (pipelineOverride != null && !pipelineOverride.isBlank()) {
+            return pipelineOverride.trim();
+        }
+        if (pipeline != null && !pipeline.isBlank()) {
+            return pipeline.trim();
+        }
+        return "advanced";
+    }
 
-    private String callApi(String text) throws Exception {
+    private String callApi(String text, String pipelineValue) throws Exception {
         String requestBody = objectMapper.writeValueAsString(Map.of(
                 "paragraph", text,
                 "language", language,
-                "pipeline", pipeline,
+                "pipeline", pipelineValue,
                 "is_sensitive_data", false
         ));
 
@@ -157,113 +171,131 @@ public class TrinkaService {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            log.warn("Trinka API returned status {}. body={}", response.statusCode(),
+            log.warn("Trinka API returned status {}. pipeline={} body={}", response.statusCode(), pipelineValue,
                     response.body() == null ? "" : response.body().substring(0, Math.min(200, response.body().length())));
             return null;
         }
         return response.body();
     }
 
-    // ════════════════════════════════════════════════════════════════
-    //  Response parsing
-    // ════════════════════════════════════════════════════════════════
-
-    private List<WritingEvaluateResponse.ErrorDto> parseResponse(String body, String text) {
-        if (body == null || body.isBlank()) return List.of();
+    private ParseResult parseResponse(String body, String text, String pipelineValue) {
+        if (body == null || body.isBlank()) {
+            return new ParseResult(List.of(), 0);
+        }
         try {
             JsonNode root = objectMapper.readTree(body);
 
             if (!root.path("status").asBoolean(false)) {
                 String msg = root.path("message").asText("");
-                log.warn("Trinka API error: {}", msg);
-                return List.of();
+                log.warn("Trinka API error. pipeline={} message={}", pipelineValue, msg);
+                return new ParseResult(List.of(), 0);
             }
 
             JsonNode responseArr = root.path("response");
-            if (!responseArr.isArray()) return List.of();
+            if (!responseArr.isArray()) {
+                return new ParseResult(List.of(), 0);
+            }
 
             List<WritingEvaluateResponse.ErrorDto> errors = new ArrayList<>();
             int idx = 1;
+            int rawResultCount = 0;
 
             for (JsonNode sentenceNode : responseArr) {
-                // sentence start_index is the offset within the full paragraph
                 int sentenceStart = sentenceNode.path("start_index").asInt(0);
-
                 JsonNode results = sentenceNode.path("sentence_result");
-                if (!results.isArray()) continue;
+                if (!results.isArray()) {
+                    continue;
+                }
 
                 for (JsonNode result : results) {
-                    WritingEvaluateResponse.ErrorDto dto = toErrorDto(result, text, sentenceStart, idx++);
+                    rawResultCount++;
+                    WritingEvaluateResponse.ErrorDto dto = toErrorDto(result, text, sentenceStart, idx++, pipelineValue);
                     if (dto != null) {
                         errors.add(dto);
                     }
                 }
             }
-            return errors;
+            return new ParseResult(errors, rawResultCount);
         } catch (Exception e) {
-            log.warn("Trinka response parse failed: {}", e.getMessage());
-            return List.of();
+            log.warn("Trinka response parse failed. pipeline={} reason={}", pipelineValue, e.getMessage());
+            return new ParseResult(List.of(), 0);
         }
     }
 
-    private static final int MAX_SPAN_LENGTH = 80;
-
-    private WritingEvaluateResponse.ErrorDto toErrorDto(JsonNode result, String text, int sentenceStart, int idx) {
+    private WritingEvaluateResponse.ErrorDto toErrorDto(JsonNode result, String text, int sentenceStart, int idx, String pipelineValue) {
         int localStart = result.path("start_index").asInt(0);
         int localEnd = result.path("end_index").asInt(0);
         int start = sentenceStart + localStart;
         int end = sentenceStart + localEnd;
 
-        if (start < 0 || end <= start || end > text.length()) return null;
-        if ((end - start) > MAX_SPAN_LENGTH) return null;
-
         String coveredText = result.path("covered_text").asText("");
-        if (coveredText.isBlank()) return null;
-
-        // Get first suggestion from output array
         JsonNode outputArr = result.path("output");
-        if (!outputArr.isArray() || outputArr.isEmpty()) return null;
+        JsonNode firstSuggestion = outputArr.isArray() && !outputArr.isEmpty() ? outputArr.get(0) : null;
+        String revisedText = firstSuggestion == null ? "" : firstSuggestion.path("revised_text").asText("");
+        String comment = firstSuggestion == null ? "" : firstSuggestion.path("comment").asText("");
+        int type = firstSuggestion == null ? -1 : firstSuggestion.path("type").asInt(1);
+        String errorCategory = firstSuggestion == null ? "" : firstSuggestion.path("error_category").asText("");
+        boolean ctaPresent = firstSuggestion != null && firstSuggestion.path("cta_present").asBoolean(true);
 
-        JsonNode firstSuggestion = outputArr.get(0);
-        String revisedText = firstSuggestion.path("revised_text").asText("");
-        String comment = firstSuggestion.path("comment").asText("");
-        int type = firstSuggestion.path("type").asInt(1);
-        String errorCategory = firstSuggestion.path("error_category").asText("");
-        boolean ctaPresent = firstSuggestion.path("cta_present").asBoolean(true);
-
-        // Skip non-actionable suggestions
-        if (!ctaPresent) return null;
-
-        // Skip enhancements (type=4) and style (type=5), keep grammar(1), spelling(2), advisor(3)
-        if (type == 4 || type == 5) return null;
-
-        // Skip if suggestion is same as original
-        if (revisedText.equals(coveredText)) return null;
-
-        // Check critical_error from category_details_v2
         JsonNode categoryDetails = result.path("category_details_v2");
         boolean critical = categoryDetails.path("critical_error").asBoolean(false);
+        String langCategory = categoryDetails.path("lang_category").asText("");
+        Integer topCategoryId = resolveTopCategoryId(categoryDetails);
+        String topCategoryName = resolveTopCategoryName(categoryDetails, topCategoryId);
+
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Trinka result. pipeline={} covered={} revised={} comment={} errorCategory={} langCategory={} topCategoryId={} topCategoryName={} type={} critical={} ctaPresent={}",
+                    pipelineValue,
+                    previewForLog(coveredText),
+                    previewForLog(revisedText),
+                    previewForLog(comment),
+                    errorCategory,
+                    langCategory,
+                    topCategoryId,
+                    topCategoryName,
+                    type,
+                    critical,
+                    ctaPresent
+            );
+        }
+
+        if (start < 0 || end <= start || end > text.length()) return null;
+        if ((end - start) > MAX_SPAN_LENGTH) return null;
+        if (coveredText.isBlank()) return null;
+        if (firstSuggestion == null) return null;
+        if (!ctaPresent) return null;
+        if (type == 4 || type == 5) return null;
+        if (revisedText.equals(coveredText)) return null;
 
         WritingEvaluateResponse.ErrorDto dto = new WritingEvaluateResponse.ErrorDto();
         dto.setId("tk" + idx);
         dto.setEngine("trinka");
         dto.setType(mapType(type, errorCategory));
-        dto.setCategory("error");
+        dto.setCategory(type == 3 ? "suggestion" : "error");
         dto.setSeverity(critical ? "major" : mapSeverity(type));
         dto.setSpan(new WritingEvaluateResponse.SpanDto(start, end));
         dto.setOriginal(coveredText);
         dto.setSuggestion(revisedText);
         dto.setReason(buildReason(comment, errorCategory));
 
-        // lang_category from category_details_v2, mapped to Chinese
-        String langCategory = categoryDetails.path("lang_category").asText("");
         if (!langCategory.isBlank()) {
             dto.setLangCategory(mapLangCategoryToChinese(langCategory));
         } else if (!errorCategory.isBlank()) {
             dto.setLangCategory(mapLangCategoryToChinese(errorCategory));
         }
 
-        // Collect all alternatives from output array
+        WritingEvaluateResponse.RawEngineMetaDto rawEngineMeta = new WritingEvaluateResponse.RawEngineMetaDto();
+        rawEngineMeta.setType(type);
+        rawEngineMeta.setTopCategoryId(topCategoryId);
+        rawEngineMeta.setTopCategoryName(topCategoryName);
+        rawEngineMeta.setErrorCategory(errorCategory);
+        rawEngineMeta.setLangCategory(langCategory);
+        rawEngineMeta.setComment(comment);
+        rawEngineMeta.setCriticalError(critical);
+        rawEngineMeta.setPipeline(pipelineValue);
+        dto.setRawEngineMeta(rawEngineMeta);
+
         List<String> alternatives = new ArrayList<>();
         for (JsonNode out : outputArr) {
             String alt = out.path("revised_text").asText("");
@@ -278,9 +310,118 @@ public class TrinkaService {
         return dto;
     }
 
-    // ════════════════════════════════════════════════════════════════
-    //  Mapping helpers
-    // ════════════════════════════════════════════════════════════════
+    private Integer resolveTopCategoryId(JsonNode categoryDetails) {
+        if (categoryDetails == null || categoryDetails.isMissingNode()) {
+            return null;
+        }
+        Integer direct = readIntegerField(categoryDetails,
+                "top_category_id", "category_id", "topCategoryId", "categoryId", "category");
+        if (direct != null) {
+            return direct;
+        }
+        String name = readTextField(categoryDetails,
+                "top_category_name", "category_name", "topCategoryName", "categoryName", "top_category", "category");
+        return mapTopCategoryNameToId(name);
+    }
+
+    private String resolveTopCategoryName(JsonNode categoryDetails, Integer topCategoryId) {
+        if (categoryDetails != null && !categoryDetails.isMissingNode()) {
+            String direct = readTextField(categoryDetails,
+                    "top_category_name", "category_name", "topCategoryName", "categoryName", "top_category", "category");
+            String normalized = normalizeTopCategoryName(direct);
+            if (normalized != null) {
+                return normalized;
+            }
+        }
+        return mapTopCategoryIdToName(topCategoryId);
+    }
+
+    private Integer readIntegerField(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isMissingNode() || value.isNull()) {
+                continue;
+            }
+            if (value.canConvertToInt()) {
+                return value.asInt();
+            }
+            if (value.isTextual()) {
+                String text = value.asText("").trim();
+                if (text.matches("\\d+")) {
+                    return Integer.parseInt(text);
+                }
+            }
+        }
+        return null;
+    }
+
+    private String readTextField(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isMissingNode() || value.isNull()) {
+                continue;
+            }
+            String text = value.asText("").trim();
+            if (!text.isBlank() && !text.matches("\\d+")) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private Integer mapTopCategoryNameToId(String categoryName) {
+        String normalized = normalizeTopCategoryName(categoryName);
+        if (normalized == null) {
+            return null;
+        }
+        return switch (normalized) {
+            case "Correctness" -> 1;
+            case "Clarity" -> 2;
+            case "Fluency" -> 3;
+            case "Style" -> 4;
+            case "Style Guide Compliance" -> 5;
+            case "Inclusivity" -> 6;
+            default -> null;
+        };
+    }
+
+    private String mapTopCategoryIdToName(Integer categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        return switch (categoryId) {
+            case 1 -> "Correctness";
+            case 2 -> "Clarity";
+            case 3 -> "Fluency";
+            case 4 -> "Style";
+            case 5 -> "Style Guide Compliance";
+            case 6 -> "Inclusivity";
+            default -> null;
+        };
+    }
+
+    private String normalizeTopCategoryName(String categoryName) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return null;
+        }
+        String normalized = categoryName.trim().toLowerCase();
+        return switch (normalized) {
+            case "correctness" -> "Correctness";
+            case "clarity" -> "Clarity";
+            case "fluency" -> "Fluency";
+            case "style" -> "Style";
+            case "style guide compliance" -> "Style Guide Compliance";
+            case "inclusivity" -> "Inclusivity";
+            default -> null;
+        };
+    }
+    private String previewForLog(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String compact = value.replaceAll("\\s+", " ").trim();
+        return compact.length() <= 120 ? compact : compact.substring(0, 117) + "...";
+    }
 
     private String mapType(int type, String errorCategory) {
         String cat = errorCategory.toLowerCase();
@@ -295,16 +436,16 @@ public class TrinkaService {
         if (cat.contains("spell")) return "spelling";
 
         return switch (type) {
-            case 1 -> "syntax";       // grammar
+            case 1 -> "syntax";
             case 2 -> "spelling";
-            case 3 -> "word_choice";  // advisor
+            case 3 -> "word_choice";
             default -> "syntax";
         };
     }
 
     private String mapSeverity(int type) {
         return switch (type) {
-            case 1, 2 -> "major";   // grammar, spelling
+            case 1, 2 -> "major";
             default -> "minor";
         };
     }
@@ -319,14 +460,10 @@ public class TrinkaService {
         return "语法错误";
     }
 
-    /**
-     * Trinka lang_category → 中文映射（完整覆盖 Appendix 2 所有分类）
-     */
     private static final Map<String, String> LANG_CATEGORY_CN;
     static {
         Map<String, String> m = new java.util.LinkedHashMap<>();
 
-        // ══ Correctness → Grammar ══
         m.put("Articles", "冠词");
         m.put("Conjunctions", "连词");
         m.put("Prepositions", "介词");
@@ -352,18 +489,15 @@ public class TrinkaService {
         m.put("Pronoun Reference", "代词指代");
         m.put("Modifiers", "修饰语");
 
-        // ══ Correctness → Spelling ══
         m.put("Spellings", "拼写");
         m.put("Spelling", "拼写");
         m.put("Spellings & Typos", "拼写/错字");
 
-        // ══ Correctness → Punctuation ══
         m.put("Punctuation", "标点");
         m.put("Comma Usage", "逗号用法");
         m.put("Hyphenation", "连字符");
         m.put("Apostrophe", "撇号");
 
-        // ══ Correctness → Syntax & Vocabulary ══
         m.put("Syntax", "句法");
         m.put("Other Errors", "其他错误");
         m.put("Accurate Phrasing", "精确措辞");
@@ -374,7 +508,6 @@ public class TrinkaService {
         m.put("Word Order", "语序");
         m.put("Sentence Structure", "句子结构");
 
-        // ══ Clarity ══
         m.put("Clarity", "清晰度");
         m.put("Word Choice", "用词");
         m.put("Word choice", "用词");
@@ -386,7 +519,6 @@ public class TrinkaService {
         m.put("Idioms", "习语");
         m.put("Ambiguity", "歧义");
 
-        // ══ Fluency ══
         m.put("Fluency", "流畅度");
         m.put("Redundancy", "冗余");
         m.put("Noun Stacks", "名词堆砌");
@@ -397,7 +529,6 @@ public class TrinkaService {
         m.put("Wordiness", "累赘");
         m.put("Conciseness", "简洁性");
 
-        // ══ Style ══
         m.put("Style", "风格");
         m.put("Capitalization & Spacing", "大小写/间距");
         m.put("Number Style", "数字格式");
@@ -411,18 +542,15 @@ public class TrinkaService {
         m.put("Tone", "语气");
         m.put("Collocation", "搭配");
 
-        // ══ Style Guide Compliance ══
         m.put("Style Guide Compliance", "风格规范");
         m.put("APA", "APA规范");
         m.put("AMA", "AMA规范");
         m.put("IEEE", "IEEE规范");
         m.put("AGU", "AGU规范");
 
-        // ══ Inclusivity ══
         m.put("Inclusivity", "包容性");
         m.put("Nationality Bias", "国籍偏见");
 
-        // ══ Top-level / fallback ══
         m.put("Correctness", "正确性");
         m.put("Grammar", "语法");
         m.put("Other", "其他");
@@ -434,13 +562,14 @@ public class TrinkaService {
         if (category == null || category.isBlank()) return "语法";
         String cn = LANG_CATEGORY_CN.get(category);
         if (cn != null) return cn;
-        // Case-insensitive fallback
         for (var entry : LANG_CATEGORY_CN.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(category)) return entry.getValue();
         }
-        // Log unmapped category for future addition
         log.debug("Trinka unmapped lang_category: {}", category);
         return category;
     }
+
+    private record ParseResult(List<WritingEvaluateResponse.ErrorDto> errors, int rawResultCount) {}
 }
+
 
