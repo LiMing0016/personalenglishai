@@ -1,8 +1,17 @@
 package com.personalenglishai.backend.ai.client;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.personalenglishai.backend.ai.assistant.AssistantOpenAiClient;
+import com.personalenglishai.backend.ai.assistant.AssistantOpenAiResponse;
+import com.personalenglishai.backend.ai.assistant.AssistantOpenAiException;
+import com.personalenglishai.backend.ai.assistant.AssistantResponseRequest;
+import com.personalenglishai.backend.ai.assistant.AssistantToolCall;
+import com.personalenglishai.backend.ai.assistant.AssistantToolDefinition;
+import com.personalenglishai.backend.ai.assistant.AssistantToolOutput;
 import com.personalenglishai.backend.ai.config.OpenAiClientConfig;
 import io.netty.channel.ChannelOption;
 import org.slf4j.Logger;
@@ -36,10 +45,10 @@ import javax.net.ssl.SSLException;
  * NOTE: cleaned corrupted comment (encoding issue).
  */
 @Component
-public class OpenAiClient {
+public class OpenAiClient implements AssistantOpenAiClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
-    private static final String DEFAULT_MODEL = "gpt-4o-mini";
+    private static final String DEFAULT_MODEL = "gpt-4o";
     private static final String ENDPOINT_MODE_CHAT_COMPLETIONS = "chat_completions";
     private static final String ENDPOINT_MODE_RESPONSES = "responses";
     private static final String PROMPT_VERSION = "v1";
@@ -318,6 +327,136 @@ public class OpenAiClient {
         }
     }
 
+    @Override
+    public AssistantOpenAiResponse createResponse(AssistantResponseRequest request) {
+        String targetModel = isBlank(request.model()) ? model : request.model().trim();
+        Retry retrySpec = Retry.backoff(config.getMaxRetries(), Duration.ofMillis(config.getInitialBackoffMs()))
+                .maxBackoff(Duration.ofMillis(config.getMaxBackoffMs()))
+                .filter(this::shouldRetry);
+
+        ObjectNode payload = buildAssistantResponsesPayload(targetModel, request);
+        int payloadBytes = logFinalPayload(
+                null,
+                ENDPOINT_MODE_RESPONSES,
+                targetModel,
+                payload,
+                estimateAssistantInputChars(request),
+                0
+        );
+
+        JsonNode responseNode;
+        try {
+            responseNode = webClient.post()
+                    .uri("/v1/responses")
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .timeout(Duration.ofMillis(config.getResponseTimeoutMs()))
+                    .retryWhen(retrySpec)
+                    .timeout(Duration.ofMillis(effectiveOverallTimeoutMs))
+                    .block();
+        } catch (WebClientResponseException e) {
+            String responseBody = sanitizeError(extractResponseBody(e));
+            String errorCode = extractOpenAiErrorCode(e);
+            String errorParam = extractOpenAiErrorParam(e);
+            log.error("OpenAI assistant response failed model={} httpStatus={} errorCode={} errorParam={} payloadBytes={} responseBody={}",
+                    targetModel,
+                    e.getStatusCode().value(),
+                    errorCode,
+                    errorParam,
+                    payloadBytes,
+                    responseBody);
+            throw new AssistantOpenAiException(
+                    e.getStatusCode().value(),
+                    errorCode,
+                    errorParam,
+                    responseBody,
+                    e
+            );
+        }
+
+        String responseId = responseNode == null ? null : responseNode.path("id").asText(null);
+        String outputText = extractResponsesText(responseNode);
+        List<AssistantToolCall> toolCalls = extractAssistantToolCalls(responseNode);
+
+        if (toolCalls.isEmpty() && isBlank(outputText)) {
+            throw new RuntimeException("Empty assistant response from OpenAI responses API");
+        }
+        log.info("OpenAI assistant response parsed model={} payloadBytes={} responseId={} toolCalls={} outputLength={}",
+                targetModel,
+                payloadBytes,
+                responseId,
+                toolCalls.size(),
+                outputText == null ? 0 : outputText.length());
+        return new AssistantOpenAiResponse(responseId, outputText, toolCalls);
+    }
+
+    public OpenAiResponsesTextResult createTextResponse(OpenAiResponsesTextRequest request) {
+        String targetModel = isBlank(request.model()) ? model : request.model().trim();
+        Retry retrySpec = Retry.backoff(config.getMaxRetries(), Duration.ofMillis(config.getInitialBackoffMs()))
+                .maxBackoff(Duration.ofMillis(config.getMaxBackoffMs()))
+                .filter(this::shouldRetry);
+
+        ObjectNode payload = buildTextResponsesPayload(request);
+        int payloadBytes = logFinalPayload(
+                null,
+                ENDPOINT_MODE_RESPONSES,
+                targetModel,
+                payload,
+                estimateTextResponseInputChars(request),
+                extractDraftChars(request.input())
+        );
+
+        JsonNode responseNode;
+        try {
+            responseNode = webClient.post()
+                    .uri("/v1/responses")
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .timeout(Duration.ofMillis(config.getResponseTimeoutMs()))
+                    .retryWhen(retrySpec)
+                    .timeout(Duration.ofMillis(effectiveOverallTimeoutMs))
+                    .block();
+        } catch (WebClientResponseException e) {
+            String responseBody = sanitizeError(extractResponseBody(e));
+            String errorCode = extractOpenAiErrorCode(e);
+            String errorParam = extractOpenAiErrorParam(e);
+            log.error("OpenAI text response failed model={} httpStatus={} errorCode={} errorParam={} payloadBytes={} responseBody={}",
+                    targetModel,
+                    e.getStatusCode().value(),
+                    errorCode,
+                    errorParam,
+                    payloadBytes,
+                    responseBody);
+            throw new OpenAiResponsesException(
+                    e.getStatusCode().value(),
+                    errorCode,
+                    errorParam,
+                    responseBody,
+                    e
+            );
+        }
+
+        String responseId = responseNode == null ? null : responseNode.path("id").asText(null);
+        String outputText = extractResponsesText(responseNode);
+        if (isBlank(outputText)) {
+            throw new RuntimeException("Empty text response from OpenAI responses API");
+        }
+        JsonNode usage = responseNode.path("usage");
+        Integer inputTokens = usage.path("input_tokens").isInt() ? usage.path("input_tokens").asInt() : null;
+        Integer cachedTokens = usage.path("input_tokens_details").path("cached_tokens").isInt()
+                ? usage.path("input_tokens_details").path("cached_tokens").asInt() : null;
+        log.info("OpenAI text response parsed model={} payloadBytes={} responseId={} inputTokens={} cachedTokens={} outputLength={}",
+                targetModel,
+                payloadBytes,
+                responseId,
+                inputTokens,
+                cachedTokens,
+                outputText.length());
+        return new OpenAiResponsesTextResult(responseId, outputText, inputTokens, cachedTokens, payloadBytes);
+    }
+
     private static boolean isDevOrLocalProfile(String profile) {
         if (profile == null || profile.isBlank()) {
             return false;
@@ -403,6 +542,205 @@ public class OpenAiClient {
             throw new RuntimeException("Empty content in OpenAI responses API response");
         }
         return new OpenAiCallResult(content, payloadBytes, true);
+    }
+
+    private ObjectNode buildTextResponsesPayload(OpenAiResponsesTextRequest request) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        String targetModel = isBlank(request.model()) ? model : request.model().trim();
+        payload.put("model", targetModel);
+        payload.put("store", request.store());
+        if (!isBlank(request.instructions())) {
+            payload.put("instructions", request.instructions());
+        }
+        payload.set("input", objectMapper.getNodeFactory().textNode(request.input() == null ? "" : request.input()));
+        if (!isBlank(request.previousResponseId())) {
+            payload.put("previous_response_id", request.previousResponseId());
+        }
+        if (!isBlank(request.promptCacheKey())) {
+            payload.put("prompt_cache_key", request.promptCacheKey());
+        }
+        if (!isBlank(request.promptCacheRetention())) {
+            payload.put("prompt_cache_retention", request.promptCacheRetention());
+        }
+        if (request.maxOutputTokens() != null) {
+            payload.put("max_output_tokens", request.maxOutputTokens());
+        }
+        ObjectNode text = payload.putObject("text");
+        text.putObject("format").put("type", "text");
+        return payload;
+    }
+
+    private ObjectNode buildAssistantResponsesPayload(String model, AssistantResponseRequest request) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        payload.put("store", request.store());
+        payload.put("tool_choice", request.tools() == null || request.tools().isEmpty() ? "none" : "auto");
+        payload.put("parallel_tool_calls", true);
+        if (!isBlank(request.instructions())) {
+            payload.put("instructions", request.instructions());
+        }
+        if (!isBlank(request.previousResponseId())) {
+            payload.put("previous_response_id", request.previousResponseId());
+        }
+        payload.set("input", buildAssistantInput(request));
+        payload.set("tools", buildAssistantTools(request.tools()));
+        payload.set("text", buildAssistantTextConfig());
+        return payload;
+    }
+
+    private JsonNode buildAssistantInput(AssistantResponseRequest request) {
+        List<AssistantToolOutput> toolOutputs = request.toolOutputs() == null ? List.of() : request.toolOutputs();
+        if (toolOutputs.isEmpty()) {
+            return isBlank(request.inputText())
+                    ? objectMapper.createArrayNode()
+                    : objectMapper.getNodeFactory().textNode(request.inputText());
+        }
+
+        ArrayNode input = objectMapper.createArrayNode();
+        if (!isBlank(request.inputText())) {
+            input.add(new ResponseInputItem(
+                    "user",
+                    List.of(new ResponseContentItem("input_text", request.inputText()))
+            ).toJson(objectMapper));
+        }
+        for (AssistantToolOutput toolOutput : toolOutputs) {
+            ObjectNode item = objectMapper.createObjectNode();
+            item.put("type", "function_call_output");
+            item.put("call_id", toolOutput.callId());
+            item.put("output", toolOutput.outputJson());
+            input.add(item);
+        }
+        return input;
+    }
+
+    private ArrayNode buildAssistantTools(List<AssistantToolDefinition> tools) {
+        ArrayNode toolNodes = objectMapper.createArrayNode();
+        if (tools == null) {
+            return toolNodes;
+        }
+        for (AssistantToolDefinition tool : tools) {
+            if (tool == null || isBlank(tool.name())) {
+                continue;
+            }
+            ObjectNode toolNode = objectMapper.createObjectNode();
+            toolNode.put("type", "function");
+            toolNode.put("name", tool.name());
+            if (!isBlank(tool.description())) {
+                toolNode.put("description", tool.description());
+            }
+            toolNode.put("strict", true);
+            try {
+                JsonNode parameters = isBlank(tool.parametersJson())
+                        ? objectMapper.createObjectNode()
+                        : objectMapper.readTree(tool.parametersJson());
+                toolNode.set("parameters", parameters);
+            } catch (Exception e) {
+                throw new IllegalArgumentException("invalid assistant tool schema: " + tool.name(), e);
+            }
+            toolNodes.add(toolNode);
+        }
+        return toolNodes;
+    }
+
+    private ObjectNode buildAssistantTextConfig() {
+        ObjectNode text = objectMapper.createObjectNode();
+        ObjectNode format = text.putObject("format");
+        format.put("type", "json_schema");
+        format.put("name", "writing_assistant_response");
+        format.put("strict", true);
+        format.set("schema", buildAssistantResponseSchema());
+        return text;
+    }
+
+    private ObjectNode buildAssistantResponseSchema() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("message").put("type", "string");
+
+        ObjectNode summary = properties.putObject("summary");
+        summary.put("type", "array");
+        summary.putObject("items").put("type", "string");
+
+        ObjectNode actions = properties.putObject("actions");
+        actions.put("type", "array");
+        ObjectNode actionItem = actions.putObject("items");
+        actionItem.put("type", "object");
+        ObjectNode actionProperties = actionItem.putObject("properties");
+        actionProperties.putObject("type").put("type", "string");
+        actionProperties.putObject("label").put("type", "string");
+        ArrayNode textTypes = actionProperties.putObject("text").putArray("type");
+        textTypes.add("string");
+        textTypes.add("null");
+        ArrayNode panelTypes = actionProperties.putObject("panel").putArray("type");
+        panelTypes.add("string");
+        panelTypes.add("null");
+        ArrayNode actionRequired = actionItem.putArray("required");
+        actionRequired.add("type");
+        actionRequired.add("label");
+        actionRequired.add("text");
+        actionRequired.add("panel");
+        actionItem.put("additionalProperties", false);
+
+        ArrayNode required = schema.putArray("required");
+        required.add("message");
+        required.add("summary");
+        required.add("actions");
+        schema.put("additionalProperties", false);
+        return schema;
+    }
+
+    private List<AssistantToolCall> extractAssistantToolCalls(JsonNode responseNode) {
+        if (responseNode == null || !responseNode.path("output").isArray()) {
+            return List.of();
+        }
+        List<AssistantToolCall> toolCalls = new java.util.ArrayList<>();
+        for (JsonNode item : responseNode.path("output")) {
+            if (!"function_call".equals(item.path("type").asText(""))) {
+                continue;
+            }
+            String callId = item.path("call_id").asText(null);
+            String name = item.path("name").asText(null);
+            String arguments = item.path("arguments").asText(null);
+            if (isBlank(callId) || isBlank(name)) {
+                continue;
+            }
+            toolCalls.add(new AssistantToolCall(callId, name, arguments == null ? "{}" : arguments));
+        }
+        return toolCalls;
+    }
+
+    private int estimateAssistantInputChars(AssistantResponseRequest request) {
+        int total = 0;
+        if (!isBlank(request.instructions())) {
+            total += request.instructions().length();
+        }
+        if (!isBlank(request.inputText())) {
+            total += request.inputText().length();
+        }
+        if (request.toolOutputs() != null) {
+            for (AssistantToolOutput toolOutput : request.toolOutputs()) {
+                if (!isBlank(toolOutput.outputJson())) {
+                    total += toolOutput.outputJson().length();
+                }
+            }
+        }
+        return total;
+    }
+
+    private int estimateTextResponseInputChars(OpenAiResponsesTextRequest request) {
+        if (request == null) {
+            return 0;
+        }
+        int total = 0;
+        if (!isBlank(request.instructions())) {
+            total += request.instructions().length();
+        }
+        if (!isBlank(request.input())) {
+            total += request.input().length();
+        }
+        return total;
     }
 
     private String extractResponsesText(JsonNode responseNode) {
@@ -520,6 +858,20 @@ public class OpenAiClient {
             JsonNode node = objectMapper.readTree(body);
             String code = node.path("error").path("code").asText("");
             return code == null ? "" : code.trim().toLowerCase();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private String extractOpenAiErrorParam(Throwable t) {
+        String body = extractResponseBody(t);
+        if (isBlank(body)) {
+            return "";
+        }
+        try {
+            JsonNode node = objectMapper.readTree(body);
+            String param = node.path("error").path("param").asText("");
+            return param == null ? "" : param.trim().toLowerCase();
         } catch (Exception ignored) {
             return "";
         }
@@ -1064,6 +1416,18 @@ public class OpenAiClient {
         @JsonProperty("content")
         public List<ResponseContentItem> getContent() { return content; }
         public void setContent(List<ResponseContentItem> content) { this.content = content; }
+
+        public JsonNode toJson(ObjectMapper objectMapper) {
+            ObjectNode node = objectMapper.createObjectNode();
+            node.put("role", role);
+            ArrayNode contentNode = node.putArray("content");
+            if (content != null) {
+                for (ResponseContentItem item : content) {
+                    contentNode.add(item.toJson(objectMapper));
+                }
+            }
+            return node;
+        }
     }
 
     private static class ResponseContentItem {
@@ -1082,6 +1446,13 @@ public class OpenAiClient {
         @JsonProperty("text")
         public String getText() { return text; }
         public void setText(String text) { this.text = text; }
+
+        public JsonNode toJson(ObjectMapper objectMapper) {
+            ObjectNode node = objectMapper.createObjectNode();
+            node.put("type", type);
+            node.put("text", text);
+            return node;
+        }
     }
 }
 

@@ -3,6 +3,7 @@ package com.personalenglishai.backend.dto.writing;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +39,24 @@ public class WritingEvaluateResponse {
     private Integer rawErrorCount;
     @JsonProperty("suggestion_count")
     private Integer suggestionCount;
+    @JsonProperty("input_tokens")
+    private Integer inputTokens;
+    @JsonProperty("cached_tokens")
+    private Integer cachedTokens;
+    @JsonProperty("payload_bytes")
+    private Integer payloadBytes;
+    @JsonProperty("prompt_cache_key")
+    private String promptCacheKey;
+    @JsonProperty("cache_mode")
+    private String cacheMode;
+    @JsonProperty("cache_hit_rate")
+    private BigDecimal cacheHitRate;
+    @JsonProperty("instructions_hash")
+    private String instructionsHash;
+    @JsonProperty("cached_prefix_hash")
+    private String cachedPrefixHash;
+    @JsonProperty("essay_hash")
+    private String essayHash;
     public WritingEvaluateResponse() {
     }
 
@@ -153,6 +172,24 @@ public class WritingEvaluateResponse {
     public void setRawErrorCount(Integer rawErrorCount) { this.rawErrorCount = rawErrorCount; }
     public Integer getSuggestionCount() { return suggestionCount; }
     public void setSuggestionCount(Integer suggestionCount) { this.suggestionCount = suggestionCount; }
+    public Integer getInputTokens() { return inputTokens; }
+    public void setInputTokens(Integer inputTokens) { this.inputTokens = inputTokens; }
+    public Integer getCachedTokens() { return cachedTokens; }
+    public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
+    public Integer getPayloadBytes() { return payloadBytes; }
+    public void setPayloadBytes(Integer payloadBytes) { this.payloadBytes = payloadBytes; }
+    public String getPromptCacheKey() { return promptCacheKey; }
+    public void setPromptCacheKey(String promptCacheKey) { this.promptCacheKey = promptCacheKey; }
+    public String getCacheMode() { return cacheMode; }
+    public void setCacheMode(String cacheMode) { this.cacheMode = cacheMode; }
+    public BigDecimal getCacheHitRate() { return cacheHitRate; }
+    public void setCacheHitRate(BigDecimal cacheHitRate) { this.cacheHitRate = cacheHitRate; }
+    public String getInstructionsHash() { return instructionsHash; }
+    public void setInstructionsHash(String instructionsHash) { this.instructionsHash = instructionsHash; }
+    public String getCachedPrefixHash() { return cachedPrefixHash; }
+    public void setCachedPrefixHash(String cachedPrefixHash) { this.cachedPrefixHash = cachedPrefixHash; }
+    public String getEssayHash() { return essayHash; }
+    public void setEssayHash(String essayHash) { this.essayHash = essayHash; }
 
     public GaokaoScoreDto getGaokaoScore() { return gaokaoScore; }
     public void setGaokaoScore(GaokaoScoreDto gaokaoScore) { this.gaokaoScore = gaokaoScore; }

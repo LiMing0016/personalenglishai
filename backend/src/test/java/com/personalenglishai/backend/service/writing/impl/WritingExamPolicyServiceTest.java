@@ -12,7 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("WritingExamPolicyService — postgrad exam policy")
 class WritingExamPolicyServiceTest {
 
-    private final WritingExamPolicyService service = new WritingExamPolicyService();
+    private final WritingExamPolicyService service =
+            new WritingExamPolicyService(new ScoreExamPolicyRegistry(List.of(new PostgradExamScoreExamPolicy())));
 
     @Test
     @DisplayName("task1 字数轻微不足时应封顶到 Band 4 并扣 3 分")
