@@ -1,6 +1,8 @@
 package com.personalenglishai.backend.ai.handler.impl;
 
-import com.personalenglishai.backend.ai.client.OpenAiClient;
+import com.personalenglishai.backend.ai.assistant.AssistantEventListener;
+import com.personalenglishai.backend.ai.assistant.AssistantRunResult;
+import com.personalenglishai.backend.ai.assistant.AssistantRuntimeService;
 import com.personalenglishai.backend.ai.context.AIContext;
 import com.personalenglishai.backend.ai.context.RequestContext;
 import com.personalenglishai.backend.ai.dto.AICommandRequest;
@@ -28,21 +30,21 @@ public class ChatHandler implements IntentHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ChatHandler.class);
 
-    private final OpenAiClient openAiClient;
     private final PromptAssembler promptAssembler;
     private final ConversationContextProcessor conversationContextProcessor;
     private final UserAbilityProfileService userAbilityProfileService;
+    private final AssistantRuntimeService assistantRuntimeService;
     private final boolean promptDebugEnabled;
 
-    public ChatHandler(OpenAiClient openAiClient,
-                       PromptAssembler promptAssembler,
+    public ChatHandler(PromptAssembler promptAssembler,
                        ConversationContextProcessor conversationContextProcessor,
                        UserAbilityProfileService userAbilityProfileService,
+                       AssistantRuntimeService assistantRuntimeService,
                        @Value("${ai.prompt.debug:false}") boolean promptDebugEnabled) {
-        this.openAiClient = openAiClient;
         this.promptAssembler = promptAssembler;
         this.conversationContextProcessor = conversationContextProcessor;
         this.userAbilityProfileService = userAbilityProfileService;
+        this.assistantRuntimeService = assistantRuntimeService;
         this.promptDebugEnabled = promptDebugEnabled;
 
         log.info("[AI_TRACE] ai.prompt.debug = {} sourceKey=ai.prompt.debug component=ChatHandler", promptDebugEnabled);
@@ -50,6 +52,20 @@ public class ChatHandler implements IntentHandler {
 
     @Override
     public AICommandResponse handle(AICommandRequest req, RequestContext ctx, AIContext aiContext) {
+        return executeChat(req, ctx, aiContext, event -> { });
+    }
+
+    public AICommandResponse stream(AICommandRequest req,
+                                    RequestContext ctx,
+                                    AIContext aiContext,
+                                    AssistantEventListener listener) {
+        return executeChat(req, ctx, aiContext, listener);
+    }
+
+    private AICommandResponse executeChat(AICommandRequest req,
+                                          RequestContext ctx,
+                                          AIContext aiContext,
+                                          AssistantEventListener listener) {
         String traceId = ctx.getRequestId();
         long start = System.currentTimeMillis();
         String docId = req != null && req.getContextRefs() != null ? req.getContextRefs().getDocId() : null;
@@ -76,16 +92,17 @@ public class ChatHandler implements IntentHandler {
         logBeforeOpenAi(traceId, req.getIntent(), promptInput, "main");
 
         try {
-            String output = openAiClient.callWithTraceId(
-                    promptInput.systemPrompt(),
-                    promptInput.userPrompt(),
-                    traceId,
-                    ctx.getXDebugFail()
+            AssistantRunResult result = assistantRuntimeService.runChat(
+                    promptInput,
+                    req,
+                    ctx,
+                    aiContext,
+                    listener
             );
             log.info("ChatPrompt result traceId={} success=true latencyMs={}",
                     traceId, System.currentTimeMillis() - start);
-            appendConversationMemory(conversationId, traceId, req, output);
-            return success(output);
+            appendConversationMemory(conversationId, traceId, req, result.message());
+            return success(result);
         } catch (Exception e) {
             log.error("ChatPrompt result traceId={} success=false latencyMs={} error={}",
                     traceId, System.currentTimeMillis() - start, safeError(e));
@@ -152,17 +169,22 @@ public class ChatHandler implements IntentHandler {
         return t.getMessage().replace("\n", " ").replace("\r", " ");
     }
 
-    private AICommandResponse success(String chatJson) {
+    private AICommandResponse success(AssistantRunResult assistantResult) {
         AICommandResponse response = new AICommandResponse();
         response.setStatus("success");
+        response.setResponseId(assistantResult.responseId());
+        response.setMessage(assistantResult.message());
+        response.setActions(assistantResult.actions());
+        response.setToolRuns(assistantResult.toolRuns());
 
         AiResult result = new AiResult();
         result.setFormat("json");
-        result.setApply(chatJson);
+        result.setApply(assistantResult.message());
+        result.setExplain(assistantResult.summary());
         response.setResult(result);
 
         FinalResult legacy = new FinalResult();
-        legacy.setContent(chatJson);
+        legacy.setContent(assistantResult.message());
         response.setFinalResult(legacy);
         return response;
     }
@@ -170,6 +192,7 @@ public class ChatHandler implements IntentHandler {
     private AICommandResponse fail(String message) {
         AICommandResponse response = new AICommandResponse();
         response.setStatus("failed");
+        response.setMessage(message);
 
         AiResult result = new AiResult();
         result.setApply("");

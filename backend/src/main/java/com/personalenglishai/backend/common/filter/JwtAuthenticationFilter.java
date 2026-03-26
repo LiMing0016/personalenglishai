@@ -87,7 +87,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         // dev/local self-test: allow AI command without JWT (mock-tenant)
-        if (path.equals("/api/ai/command") && isDevOrLocal()) {
+        if ((path.equals("/api/ai/command")
+                || path.equals("/api/ai/command/stream")
+                || path.equals("/api/english-assistant/chat")
+                || path.equals("/api/english-assistant/chat/stream")) && isDevOrLocal()) {
             return true;
         }
 

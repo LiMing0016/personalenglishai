@@ -19,6 +19,19 @@
       >
         <div class="bubble" v-html="renderMarkdown(m.text)"></div>
       </div>
+      <div v-if="showAssistantStatus" class="assistant-status-card">
+        <div class="assistant-status-line">{{ assistantStatusLabel }}</div>
+        <div v-if="assistantToolRuns.length" class="assistant-tool-list">
+          <div
+            v-for="(toolRun, idx) in assistantToolRuns"
+            :key="`${toolRun.tool}-${idx}`"
+            class="assistant-tool-item"
+          >
+            <span class="assistant-tool-name">{{ toolRun.tool }}</span>
+            <span class="assistant-tool-summary">{{ toolRun.summary }}</span>
+          </div>
+        </div>
+      </div>
     </section>
 
     <footer class="composer">
@@ -141,7 +154,7 @@
           <button
             type="button"
             class="mode-plus-btn"
-            title="写作模式"
+            title="Skills"
             @click.stop="toggleModeMenu"
           >
             +
@@ -150,18 +163,9 @@
             <button
               type="button"
               class="mode-menu-item"
-              :class="{ active: writingMode === 'free' }"
-              @click="selectWritingMode('free')"
+              @click="runSkill('polish')"
             >
-              自由写作
-            </button>
-            <button
-              type="button"
-              class="mode-menu-item"
-              :class="{ active: writingMode === 'exam' }"
-              @click="selectWritingMode('exam')"
-            >
-              考试写作
+              润色 skill
             </button>
           </div>
         </div>
@@ -195,7 +199,7 @@
           :disabled="!canReplaceSelection"
           @click="onReplaceSelection"
         >
-          Replace Selection
+          {{ replaceSelectionLabel }}
         </button>
       </div>
     </footer>
@@ -205,6 +209,7 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
+import type { AiAssistantToolRun, EnglishAssistantUiAction } from '@/api/ai'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
 
@@ -223,9 +228,20 @@ const props = withDefaults(
     selectedTextPinned?: string
     selectionDismissed?: boolean
     selectedSpanPinned?: { start: number; end: number } | null
-    lastChatResult?: { displayText: string; replaceText?: string } | null
+    lastChatResult?: {
+      displayText: string
+      replaceText?: string
+      actionLabel?: string
+      actions: EnglishAssistantUiAction[]
+      toolRuns: AiAssistantToolRun[]
+      responseId?: string
+      status?: string
+    } | null
+    streamingAssistantText?: string
     conversationId?: string
     isGenerating?: boolean
+    assistantStatus?: string
+    assistantToolRuns?: AiAssistantToolRun[]
     writingMode?: WritingMode
     taskPrompt?: string
   }>(),
@@ -248,6 +264,7 @@ const emit = defineEmits<{
   cleared: []
   'update:writingMode': [value: WritingMode]
   'update:taskPrompt': [value: string]
+  'run-skill': [skill: 'polish']
 }>()
 
 const messageListRef = ref<HTMLElement | null>(null)
@@ -264,12 +281,33 @@ const selectionStore = inject(writingSelectionStoreKey, null)
 const selectedText = computed(() => selectionStore?.selectedText.value ?? '')
 const writingMode = computed<WritingMode>(() => (props.writingMode === 'exam' ? 'exam' : 'free'))
 const isExamMode = computed(() => writingMode.value === 'exam')
+const assistantToolRuns = computed(() => props.assistantToolRuns ?? [])
+const showAssistantStatus = computed(() => props.isGenerating || assistantToolRuns.value.length > 0)
+const assistantStatusLabel = computed(() => {
+  switch (props.assistantStatus) {
+    case 'thinking':
+      return 'AI 正在思考'
+    case 'tool_running':
+      return 'AI 正在调用写作工具'
+    case 'tool_completed':
+      return '工具已完成，正在整理回复'
+    case 'completed':
+      return '本轮回复已完成'
+    case 'failed':
+      return '本轮回复失败'
+    case 'streaming':
+      return '正在回复'
+    default:
+      return props.isGenerating ? '正在生成回复' : ''
+  }
+})
 
 const canSend = computed(() => props.modelValue.trim().length > 0)
 
 const canReplaceSelection = computed(
   () => props.lastChatResult?.replaceText && props.selectedSpanPinned != null
 )
+const replaceSelectionLabel = computed(() => props.lastChatResult?.actionLabel || '应用结果')
 
 function escapeHtml(text: string): string {
   return text
@@ -348,11 +386,49 @@ function restoreMessages(conversationId?: string) {
 }
 
 watch(
-  () => props.lastChatResult?.displayText ?? '',
-  (val) => {
-    if (!val || val === lastAssistantPayload.value) return
+  () => props.lastChatResult,
+  (result) => {
+    const val = result?.displayText?.trim() ?? ''
+    if (!val) return
     lastAssistantPayload.value = val
-    messages.value.push({ role: 'assistant', text: val, at: Date.now() })
+    if (streamingMessageAt.value !== null) {
+      const existing = messages.value.find((m) => m.at === streamingMessageAt.value)
+      if (existing) {
+        existing.text = val
+      } else {
+        messages.value.push({ role: 'assistant', text: val, at: Date.now() })
+      }
+      streamingMessageAt.value = null
+    } else {
+      messages.value.push({ role: 'assistant', text: val, at: Date.now() })
+    }
+    scrollToBottom()
+  }
+)
+
+const streamingMessageAt = ref<number | null>(null)
+
+watch(
+  () => props.streamingAssistantText ?? '',
+  (val) => {
+    const text = val.trim()
+    if (!text) {
+      return
+    }
+    if (streamingMessageAt.value === null) {
+      const at = Date.now()
+      streamingMessageAt.value = at
+      messages.value.push({ role: 'assistant', text, at })
+    } else {
+      const existing = messages.value.find((m) => m.at === streamingMessageAt.value)
+      if (existing) {
+        existing.text = text
+      } else {
+        const at = Date.now()
+        streamingMessageAt.value = at
+        messages.value.push({ role: 'assistant', text, at })
+      }
+    }
     scrollToBottom()
   }
 )
@@ -493,12 +569,14 @@ function toggleModeMenu() {
   modeMenuOpen.value = !modeMenuOpen.value
 }
 
-function selectWritingMode(nextMode: WritingMode) {
-  emit('update:writingMode', nextMode)
-  if (nextMode === 'exam') {
-    taskPromptExpanded.value = true
-  }
+function runSkill(skill: 'polish') {
   modeMenuOpen.value = false
+  messages.value.push({
+    role: 'assistant',
+    text: '已启动 **润色 skill**，请在右侧润色面板查看并继续操作。',
+    at: Date.now(),
+  })
+  emit('run-skill', skill)
 }
 
 function toggleTaskPrompt() {
@@ -542,6 +620,7 @@ function onClear() {
   removeMessagesFromStorage(props.conversationId)
   messages.value = [{ role: 'assistant', text: CHAT_CLEARED_HINT, at: Date.now() }]
   lastAssistantPayload.value = ''
+  streamingMessageAt.value = null
   emit('update:modelValue', '')
   emit('cleared')
 }
@@ -699,6 +778,44 @@ watch(
   width: 100%;
   max-width: 100%;
   align-self: stretch;
+}
+.assistant-status-card {
+  margin-top: 2px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #eef6ff;
+  color: #1f2937;
+}
+.assistant-status-line {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+.assistant-tool-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.assistant-tool-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(59, 130, 246, 0.16);
+}
+.assistant-tool-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.assistant-tool-summary {
+  font-size: 12px;
+  color: #475569;
 }
 .bubble-row.user .bubble {
   background: #047857;

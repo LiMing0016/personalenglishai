@@ -8,8 +8,11 @@
       :selection-dismissed="selectionDismissed"
       :selected-span-pinned="selectedSpanPinned"
       :last-chat-result="lastChatResult"
+      :streaming-assistant-text="streamingAssistantText"
       :conversation-id="conversationId"
       :is-generating="aiGenerating"
+      :assistant-status="assistantStatus"
+      :assistant-tool-runs="assistantToolRuns"
       :writing-mode="writingMode"
       :task-prompt="taskPrompt"
       @update:model-value="$emit('update:aiNote', $event)"
@@ -20,6 +23,7 @@
       @dismiss-selection="$emit('dismiss-selection')"
       @replace-selection-with="$emit('replace-selection-with', $event)"
       @cleared="$emit('ai-chat-cleared')"
+      @run-skill="$emit('run-skill', $event)"
       @close="$emit('close')"
     />
     <ToolPanel v-else :title="scorePanelTitle" @close="$emit('close')">
@@ -109,6 +113,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
+import type { AiAssistantToolRun, EnglishAssistantUiAction } from '@/api/ai'
 import type { GrammarCheckMode, WritingEvaluateResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
@@ -133,9 +138,20 @@ const props = defineProps<{
   selectionDismissed: boolean
   selectedTextPinned: string
   selectedSpanPinned: { start: number; end: number } | null
-  lastChatResult: { displayText: string; replaceText?: string } | null
+  lastChatResult: {
+    displayText: string
+    replaceText?: string
+    actionLabel?: string
+    actions: EnglishAssistantUiAction[]
+    toolRuns: AiAssistantToolRun[]
+    responseId?: string
+    status?: string
+  } | null
+  streamingAssistantText?: string
   conversationId: string
   aiGenerating: boolean
+  assistantStatus?: string
+  assistantToolRuns?: AiAssistantToolRun[]
   writingMode: 'free' | 'exam'
   topicContent?: string
   taskPrompt: string
@@ -186,6 +202,7 @@ defineEmits<{
   'ai-chat-cleared': []
   'update:writingMode': [value: 'free' | 'exam']
   'update:taskPrompt': [value: string]
+  'run-skill': [skill: 'polish']
 }>()
 
 const scorePanelTitle = computed(() => {

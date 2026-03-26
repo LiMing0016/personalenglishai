@@ -50,8 +50,11 @@
           :selected-text-pinned="selectedTextPinned"
           :selected-span-pinned="selectedSpanPinned"
           :last-chat-result="lastChatResult"
+          :streaming-assistant-text="streamingAssistantText"
           :conversation-id="draftStore.aiConversationId"
           :ai-generating="aiGenerating"
+          :assistant-status="assistantStatus"
+          :assistant-tool-runs="assistantToolRuns"
           :writing-mode="draftStore.writingMode"
           :study-stage="props.studyStage"
           :topic-content="effectiveExamTopicContent"
@@ -98,6 +101,7 @@
           @ai-note-send="onAiNoteSend"
           @ai-note-stop="onAiNoteStop"
           @ai-chat-cleared="onAiChatCleared"
+          @run-skill="onAiSkillRun"
         />
       </div>
     </div>
@@ -150,8 +154,7 @@ import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
 import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
-import { aiCommand } from '@/api/ai'
-import { createDocument } from '@/api/document'
+import { streamEnglishAssistantChat } from '@/api/ai'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
 import { resolveErrorSpan, findClosestMatch, shouldUseWordBoundary } from './errorSpanResolver'
@@ -163,6 +166,13 @@ import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
 import { getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
 import type { PolishTier, WritingSessionMetadataResponse } from '@/api/writing'
+import type {
+  AiAssistantToolRun,
+  EnglishAssistantChatResult,
+  EnglishAssistantStreamEvent,
+  EnglishAssistantTaskType,
+  EnglishAssistantUiAction,
+} from '@/api/ai'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
@@ -171,12 +181,19 @@ const evaluateStore = useEvaluateStore()
 const minWordCount = ref(60)
 const sessionMetadata = ref<WritingSessionMetadataResponse | null>(null)
 
-type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
+type LastChatResult = {
+  displayText: string
+  replaceText?: string
+  actionLabel?: string
+  actions: EnglishAssistantUiAction[]
+  toolRuns: AiAssistantToolRun[]
+  responseId?: string
+  status?: string
+}
 
 const leftPaneRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<{
   focusAiComposer: () => boolean
-  getAiRecentMessages?: (max?: number) => RecentMessageDto[]
   isIncludeDraft?: () => boolean
 } | null>(null)
 const selectionState = ref<{ text: string; start: number; end: number } | null>(null)
@@ -184,10 +201,12 @@ const selectionDismissed = ref(false)
 const selectedTextPinned = ref('')
 const selectedSpanPinned = ref<{ start: number; end: number } | null>(null)
 const lastDismissedPinned = ref('')
-const lastChatResult = ref<{ displayText: string; replaceText?: string } | null>(null)
-const aiDocId = ref('')
+const lastChatResult = ref<LastChatResult | null>(null)
 const cursorPlacement = ref<{ at: number } | null>(null)
 const aiGenerating = ref(false)
+const streamingAssistantText = ref('')
+const assistantStatus = ref('idle')
+const assistantToolRuns = ref<AiAssistantToolRun[]>([])
 let aiAbortController: AbortController | null = null
 const {
   submit: evalSubmit,
@@ -312,8 +331,6 @@ onMounted(async () => {
       draftStore.draftText = props.initialExistingContent
     }
   }
-
-  aiDocId.value = draftStore.docId ?? ''
 
   if (draftStore.docId) {
     getWritingSessionMetadata(draftStore.docId)
@@ -545,6 +562,12 @@ function onStartGrammarCheck() {
   panelStore.activePanel = 'grammarCheck'
 }
 
+function onAiSkillRun(skill: 'polish') {
+  if (skill === 'polish') {
+    onStartPolish()
+  }
+}
+
 
 function parseExamPromptMetadata(taskPrompt: string) {
   const lines = taskPrompt
@@ -745,7 +768,9 @@ function onClear() {
   selectedSpanPinned.value = null
   lastDismissedPinned.value = ''
   lastChatResult.value = null
-  aiDocId.value = ''
+  streamingAssistantText.value = ''
+  assistantStatus.value = 'idle'
+  assistantToolRuns.value = []
   cursorPlacement.value = null
 
   evalCancel()
@@ -773,16 +798,53 @@ function onReplaceSelectionWith(resultText: string) {
   draftStore.draftText = s.slice(0, start) + resultText + s.slice(end)
   cursorPlacement.value = { at: start + resultText.length }
   lastChatResult.value = null
+  assistantStatus.value = 'idle'
+  assistantToolRuns.value = []
+  streamingAssistantText.value = ''
   showToast('已替换选中内容', 'success')
 }
 
-function getRecentAiMessages(max = 8): RecentMessageDto[] {
-  return rightPanelRef.value?.getAiRecentMessages?.(max) ?? []
+function resolvePreferredAction(input: string): EnglishAssistantTaskType {
+  const text = input.trim().toLowerCase()
+  if (!text) return 'ask'
+  if (/(translate|翻译)/.test(text)) return 'translate'
+  if (/(rewrite|改写)/.test(text)) return 'rewrite'
+  if (/(polish|润色)/.test(text)) return 'polish'
+  if (/(evaluate|评分|批改|打分)/.test(text)) return 'evaluate'
+  if (/(generate|范文|素材|例子)/.test(text)) return 'generate'
+  if (/(explain|解释|说明|为什么)/.test(text)) return 'explain'
+  return 'ask'
+}
+
+function resolveReplaceSelectionAction(result: EnglishAssistantChatResult) {
+  return result.actions.find((action) => action.type === 'apply_rewrite')
+}
+
+function syncAssistantStatus(event: EnglishAssistantStreamEvent) {
+  switch (event.type) {
+    case 'meta':
+      assistantStatus.value = 'thinking'
+      break
+    case 'delta':
+      assistantStatus.value = 'streaming'
+      break
+    case 'done':
+      assistantStatus.value = 'completed'
+      break
+    case 'error':
+      assistantStatus.value = 'failed'
+      break
+    default:
+      break
+  }
 }
 
 function onAiChatCleared() {
   draftStore.resetConversation()
   lastChatResult.value = null
+  streamingAssistantText.value = ''
+  assistantStatus.value = 'idle'
+  assistantToolRuns.value = []
   aiAbortController?.abort()
   aiAbortController = null
   aiGenerating.value = false
@@ -792,84 +854,71 @@ async function onAiNoteSend() {
   if (aiGenerating.value) return
   const instruction = draftStore.aiNote.trim()
   const selectedText = selectionStore.selectedText.value.trim()
-  const hasSelectedText = Boolean(selectedText)
   const wantsDraft = rightPanelRef.value?.isIncludeDraft?.() ?? false
-  const hasDraftText = Boolean(draftStore.draftText.trim())
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? effectiveExamTaskPrompt.value || undefined : undefined
-  const contextScope = hasSelectedText ? 'selection' : 'auto'
-  const actionOrigin = 'chat_input'
-  const recentMessages = getRecentAiMessages(8)
-  console.log('[AI SEND]', {
-    docId: aiDocId.value,
-    instruction,
-    hasSelectedText,
-    hasDraftText,
-    wantsDraft,
-    writingMode: normalizedMode,
-    hasTaskPrompt: Boolean(examTaskPrompt),
-    contextScope,
-    actionOrigin,
-    recentMessagesCount: recentMessages.length,
-    conversationId: draftStore.aiConversationId,
-  })
   if (!instruction) {
     showToast('请输入需求', 'info')
     return
   }
   aiAbortController = new AbortController()
   aiGenerating.value = true
+  assistantStatus.value = 'thinking'
+  assistantToolRuns.value = []
+  streamingAssistantText.value = ''
   try {
-    if (!aiDocId.value && draftStore.docId) {
-      aiDocId.value = draftStore.docId
-    }
-    if (!aiDocId.value) {
-      const created = await createDocument({
-        title: 'Untitled',
-        content: draftStore.draftText,
-      })
-      aiDocId.value = created.docId
-    }
-
-    const res = await aiCommand({
-      apiVersion: 1,
-      intent: 'chat',
-      mode: 'md',
-      instruction,
-      constraints: {
-        contextScope,
-        actionOrigin,
-        includeDraft: wantsDraft ? true : undefined,
-        mode: normalizedMode,
-        taskPrompt: examTaskPrompt,
-        conversationId: draftStore.aiConversationId,
-        selectedText: selectedText || undefined,
-        draftText: wantsDraft ? (draftStore.draftText || undefined) : undefined,
-        recentMessages: recentMessages.length ? recentMessages : undefined,
-      },
-      contextRefs: {
-        docId: aiDocId.value,
-      },
+    const res = await streamEnglishAssistantChat({
+      conversationId: draftStore.aiConversationId,
+      message: instruction,
+      useDraftContext: wantsDraft,
+      studyStage: sessionMetadata.value?.studyStage ?? props.studyStage ?? undefined,
+      writingMode: normalizedMode,
+      assignmentText: wantsDraft ? examTaskPrompt : undefined,
+      selectedText: selectedText || undefined,
+      draftText: wantsDraft ? (draftStore.draftText || undefined) : undefined,
+      preferredAction: resolvePreferredAction(instruction),
     }, {
       signal: aiAbortController.signal,
+      onEvent: (event) => {
+        syncAssistantStatus(event)
+        if (event.type === 'delta') {
+          streamingAssistantText.value += event.text
+        }
+        if (event.type === 'done' && event.response) {
+          streamingAssistantText.value = event.response.message || streamingAssistantText.value
+        }
+      },
     })
 
-    if (res.apply !== '') {
+    const replaceAction = resolveReplaceSelectionAction(res)
+    if (res.message !== '') {
       lastChatResult.value = {
-        displayText: res.apply,
-        replaceText: res.replaceSelectionText,
+        displayText: res.message,
+        replaceText: replaceAction?.payloadText,
+        actionLabel: replaceAction?.label,
+        actions: res.actions,
+        toolRuns: [],
+        responseId: res.responseId,
+        status: 'completed',
       }
     } else {
       lastChatResult.value = null
     }
-    showToast('已发送', 'success')
+    streamingAssistantText.value = ''
+    assistantStatus.value = 'completed'
+    assistantToolRuns.value = []
   } catch (e) {
     const canceled = Boolean((e as { canceled?: boolean } | null)?.canceled)
     if (canceled) {
+      assistantStatus.value = 'idle'
+      assistantToolRuns.value = []
+      streamingAssistantText.value = ''
       showToast('已停止生成', 'info')
       return
     }
+    assistantStatus.value = 'failed'
+    streamingAssistantText.value = ''
     showToast(e instanceof Error ? e.message : '发送失败', 'error')
   } finally {
     aiAbortController = null
