@@ -12,6 +12,8 @@
   - 考研考试评分标准本体（Rubric）
 - `polish-rubric-alignment.md`
   - 润色与评分共用 Rubric 的执行方案
+- `score-context-cache.md`
+  - 正式评分链路的 `docId` 上下文、Redis 运行时状态与 Prompt Caching 策略
 - 后续建议按学段或场景继续拆分
   - `highschool-exam-policy.md`
   - `middle-school-exam-policy.md`
