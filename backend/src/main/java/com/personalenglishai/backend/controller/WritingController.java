@@ -49,9 +49,12 @@ import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayRequest;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
+import com.personalenglishai.backend.dto.writing.GenerateExamPromptRequest;
+import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
+import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
@@ -81,6 +84,7 @@ public class WritingController {
     private final WritingTemplateService writingTemplateService;
     private final WritingMaterialService writingMaterialService;
     private final WritingModelEssayService writingModelEssayService;
+    private final WritingExamPromptService writingExamPromptService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
     private final AuditTopicService auditTopicService;
@@ -100,6 +104,7 @@ public class WritingController {
                              WritingTemplateService writingTemplateService,
                              WritingMaterialService writingMaterialService,
                              WritingModelEssayService writingModelEssayService,
+                             WritingExamPromptService writingExamPromptService,
                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
                              AuditTopicService auditTopicService,
@@ -118,6 +123,7 @@ public class WritingController {
         this.writingTemplateService = writingTemplateService;
         this.writingMaterialService = writingMaterialService;
         this.writingModelEssayService = writingModelEssayService;
+        this.writingExamPromptService = writingExamPromptService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
         this.auditTopicService = auditTopicService;
@@ -248,6 +254,15 @@ public class WritingController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/generate-exam-prompt")
+    public ResponseEntity<GenerateExamPromptResponse> generateExamPrompt(
+            @Valid @RequestBody GenerateExamPromptRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        GenerateExamPromptResponse response = writingExamPromptService.generate(request);
+        return ResponseEntity.ok(response);
+    }
+
     /**
      * 翻译：全文翻译 (mode=full) 或逐句精讲 (mode=detailed)
      */
@@ -329,7 +344,7 @@ public class WritingController {
     @PostMapping("/suggestions")
     public ResponseEntity<SuggestionsResponse> suggestions(
             @Valid @RequestBody SuggestionsRequest request) {
-        SuggestionsResponse response = writingSuggestionsService.analyze(request.getText());
+        SuggestionsResponse response = writingSuggestionsService.analyze(request.getText(), request.getAiProvider());
         return ResponseEntity.ok(response);
     }
 
@@ -462,6 +477,8 @@ public class WritingController {
         metadata.setTitleSnapshot(trimToNull(body.getTitleSnapshot()));
         metadata.setTopicTitle(trimToNull(body.getTopicTitle()));
         metadata.setPromptText(trimToNull(body.getPromptText()));
+        metadata.setPromptSheetId(body.getPromptSheetId());
+        metadata.setAttachmentImageUrl(trimToNull(body.getAttachmentImageUrl()));
         metadata.setGenre(trimToNull(body.getGenre()));
         metadata.setSourceType(trimToNull(body.getSourceType()));
         metadata.setExamType(trimToNull(body.getExamType()));

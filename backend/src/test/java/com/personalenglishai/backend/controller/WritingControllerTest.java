@@ -19,6 +19,7 @@ import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.service.writing.WritingModelEssayService;
+import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
@@ -28,22 +29,26 @@ import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
 import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
+import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.lang.reflect.Constructor;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -111,6 +116,9 @@ class WritingControllerTest {
 
     @MockBean
     private WritingModelEssayService writingModelEssayService;
+
+    @MockBean
+    private WritingExamPromptService writingExamPromptService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -336,6 +344,100 @@ class WritingControllerTest {
                             .requestAttr("userId", 1L))
                     .andExpect(status().isOk())
                     .andExpect(content().json("{\"items\":[],\"total\":0}"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/generate-exam-prompt")
+    class GenerateExamPrompt {
+
+        @Test
+        @DisplayName("returns structured AI exam prompt preview")
+        void generateExamPrompt_success() throws Exception {
+            GenerateExamPromptResponse response = new GenerateExamPromptResponse();
+            response.setPromptType("chart");
+            response.setTopic("人工智能学习工具使用变化");
+            response.setPromptText("Write an essay based on the table below.");
+            response.setRequirements("describe the changes and give your comments");
+            response.setSourceType("ai_generated");
+            response.setTaskType("task1");
+            response.setPromptSheetId(501L);
+            response.setPaper("ai-20260410-abc12345");
+            GenerateExamPromptResponse.ChartSpec chartSpec = new GenerateExamPromptResponse.ChartSpec();
+            chartSpec.setTitle("AI Study Tool Usage");
+            chartSpec.setColumns(List.of("Year", "Usage Rate"));
+            chartSpec.setRows(List.of(List.of("2021", "18%"), List.of("2024", "63%")));
+            response.setChartSpec(chartSpec);
+            when(writingExamPromptService.generate(any())).thenReturn(response);
+
+            mockMvc.perform(post("/api/writing/generate-exam-prompt")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("""
+                                    {
+                                      "originalInput":"请给我出一道图表题，内容是 2021-2024 年大学生使用 AI 学习工具的比例变化。",
+                                      "studyStage":"postgrad",
+                                      "topic":"人工智能学习工具使用变化",
+                                      "promptType":"chart",
+                                      "requirements":"突出近四年变化趋势",
+                                      "wordRange":"160-200",
+                                      "maxScore":20
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.promptType").value("chart"))
+                    .andExpect(jsonPath("$.sourceType").value("ai_generated"))
+                    .andExpect(jsonPath("$.taskType").value("task1"))
+                    .andExpect(jsonPath("$.promptSheetId").value(501))
+                    .andExpect(jsonPath("$.paper").value("ai-20260410-abc12345"))
+                    .andExpect(jsonPath("$.chartSpec.columns[0]").value("Year"))
+                    .andExpect(jsonPath("$.chartSpec.rows[1][1]").value("63%"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/start-session")
+    class StartSession {
+
+        @Test
+        @DisplayName("passes generated attachment image url into writing session metadata")
+        void startSession_passesAttachmentImageUrl() throws Exception {
+            Constructor<DocumentService.StartSessionResult> constructor = DocumentService.StartSessionResult.class
+                    .getDeclaredConstructor(String.class, int.class, boolean.class, String.class, Integer.class, Integer.class, Integer.class);
+            constructor.setAccessible(true);
+            DocumentService.StartSessionResult result = constructor.newInstance("doc-1", 1, true, null, null, null, 0);
+
+            when(documentService.findOrCreateForTopic(any(), any(), any(), any(), any(), any(), any())).thenReturn(result);
+            when(documentService.findByPublicId(any(), any(), any())).thenReturn(null);
+            when(documentService.getSessionMetadataByDocId(any(), any(), any(), any())).thenReturn(null);
+
+            mockMvc.perform(post("/api/writing/start-session")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("""
+                                    {
+                                      "mode":"exam",
+                                      "taskPrompt":"Write an essay based on the line chart below.",
+                                      "title":"折线图作文",
+                                      "promptText":"Write an essay based on the line chart below.",
+                                      "sourceType":"ai_generated",
+                                      "promptSheetId":501,
+                                      "attachmentImageUrl":"https://example.com/generated-line-chart.png"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.docId").value("doc-1"));
+
+            ArgumentCaptor<DocumentService.StartMetadata> metadataCaptor = ArgumentCaptor.forClass(DocumentService.StartMetadata.class);
+            verify(documentService, times(1)).findOrCreateForTopic(any(), any(), any(), any(), any(), any(), metadataCaptor.capture());
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "https://example.com/generated-line-chart.png",
+                    metadataCaptor.getValue().getAttachmentImageUrl()
+            );
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    501L,
+                    metadataCaptor.getValue().getPromptSheetId()
+            );
         }
     }
 

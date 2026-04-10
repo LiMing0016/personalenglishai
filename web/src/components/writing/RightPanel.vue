@@ -11,8 +11,10 @@
       :conversation-id="conversationId"
       :is-generating="aiGenerating"
       :writing-mode="writingMode"
+      :ai-provider="aiProvider"
       :task-prompt="taskPrompt"
       @update:model-value="$emit('update:aiNote', $event)"
+      @update:ai-provider="$emit('update:ai-provider', $event)"
       @update:writing-mode="$emit('update:writingMode', $event)"
       @update:task-prompt="$emit('update:taskPrompt', $event)"
       @send="$emit('ai-note-send')"
@@ -103,13 +105,24 @@
         v-else-if="panel === 'translate'"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
+      <TaskPromptPanel
+        v-else-if="panel === 'taskPrompt'"
+        :writing-mode="writingMode"
+        :task-prompt="taskPrompt"
+        :attachment-image-url="attachmentImageUrl"
+        :task-type="taskType"
+        :min-words="minWords"
+        :recommended-max-words="recommendedMaxWords"
+        :max-score="examMaxScore"
+        :study-stage="studyStage"
+      />
     </ToolPanel>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
-import type { GrammarCheckMode, WritingEvaluateResponse } from '@/api/writing'
+import type { GrammarCheckMode, WritingAiProvider, WritingEvaluateResponse } from '@/api/writing'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
 // Static: high-frequency panels loaded on first visit
@@ -122,6 +135,7 @@ const ModelEssayPanel = defineAsyncComponent(() => import('./panels/ModelEssayPa
 const PolishPanel = defineAsyncComponent(() => import('./panels/PolishPanel.vue'))
 const ExplainPanel = defineAsyncComponent(() => import('./panels/ExplainPanel.vue'))
 const TranslatePanel = defineAsyncComponent(() => import('./panels/TranslatePanel.vue'))
+const TaskPromptPanel = defineAsyncComponent(() => import('./panels/TaskPromptPanel.vue'))
 
 const props = defineProps<{
   panel: PanelMode
@@ -137,8 +151,10 @@ const props = defineProps<{
   conversationId: string
   aiGenerating: boolean
   writingMode: 'free' | 'exam'
+  aiProvider: WritingAiProvider
   topicContent?: string
   taskPrompt: string
+  attachmentImageUrl?: string | null
   aiNote: string
   evaluateResult: WritingEvaluateResponse | null
   activeErrorId?: string | null
@@ -181,6 +197,7 @@ defineEmits<{
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
   'update:aiNote': [value: string]
+  'update:ai-provider': [value: WritingAiProvider]
   'ai-note-send': []
   'ai-note-stop': []
   'ai-chat-cleared': []
@@ -196,6 +213,7 @@ const scorePanelTitle = computed(() => {
   if (props.panel === 'improve') return '写作模版'
   if (props.panel === 'explain') return '写作素材'
   if (props.panel === 'translate') return '翻译'
+  if (props.panel === 'taskPrompt') return '题单'
   return props.title
 })
 

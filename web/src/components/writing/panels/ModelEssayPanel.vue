@@ -95,6 +95,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { generateModelEssay, type ModelEssayCard, type WritingModelEssayResponse } from '@/api/writing'
 import type { PolishTier } from '@/api/writing'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { showToast } from '@/utils/toast'
 import {
   loadModelEssayResult,
@@ -122,6 +123,8 @@ const props = withDefaults(defineProps<{
   minWords: null,
   recommendedMaxWords: null,
 })
+
+const draftStore = useWritingDraftStore()
 
 const emit = defineEmits<{
   'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string; tier: PolishTier }]
@@ -250,6 +253,7 @@ async function generate() {
   try {
     const response = await generateModelEssay({
       essay: props.fullEssay,
+      aiProvider: draftStore.aiProvider,
       studyStage: props.studyStage,
       writingMode: props.writingMode,
       taskType: props.taskType,

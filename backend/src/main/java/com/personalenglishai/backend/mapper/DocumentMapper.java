@@ -50,6 +50,8 @@ public interface DocumentMapper {
             @Param("tenantId") String tenantId,
             @Param("workspaceId") String workspaceId);
 
+    int updatePromptSheetId(@Param("id") Long documentId, @Param("promptSheetId") Long promptSheetId);
+
     int updateScoreStats(@Param("id") Long documentId, @Param("score") Integer score);
 
     List<Document> listByOwnerUserId(

@@ -17,6 +17,7 @@ public class WritingModelEssayRequest {
     private String taskPrompt;
     private Integer minWords;
     private Integer recommendedMaxWords;
+    private String aiProvider;
 
     @JsonIgnore
     private Long userId;
@@ -83,6 +84,14 @@ public class WritingModelEssayRequest {
 
     public void setRecommendedMaxWords(Integer recommendedMaxWords) {
         this.recommendedMaxWords = recommendedMaxWords;
+    }
+
+    public String getAiProvider() {
+        return aiProvider;
+    }
+
+    public void setAiProvider(String aiProvider) {
+        this.aiProvider = aiProvider;
     }
 
     public Long getUserId() {

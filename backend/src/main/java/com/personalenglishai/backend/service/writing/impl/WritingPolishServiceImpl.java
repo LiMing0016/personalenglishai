@@ -98,7 +98,12 @@ public class WritingPolishServiceImpl implements WritingPolishService {
         if (request.getReason() != null && !request.getReason().isBlank()) {
             userPrompt.append("\n改进原因: ").append(request.getReason());
         }
-        String rawResponse = openAiClient.callWithTraceId(systemPrompt, userPrompt.toString(), traceId);
+        String rawResponse = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt.toString(),
+                traceId
+        );
         return parseSingleResponse(rawResponse, traceId);
     }
 
@@ -128,7 +133,14 @@ public class WritingPolishServiceImpl implements WritingPolishService {
         log.info("[POLISH-ESSAY] traceId={} userId={} tier={} stage={} mode={} rubricKey={} polishRubricKey={} route={} sourceBandRank={} targetBandRank={}",
                 traceId, request.getUserId(), tier, stage, mode, rubricKey, polishProfile.getKey(), route, sourceBandRank, targetBandRank);
 
-        String raw = openAiClient.callWithTraceId(systemPrompt, userPrompt, traceId, 0.5, 4096);
+        String raw = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt,
+                traceId,
+                0.5,
+                4096
+        );
         ParsedEssayCandidate parsed = parseEssayCandidate(raw, traceId);
         String candidateEssay = sanitizeCandidateEssay(parsed.polishedEssay(), request.getText());
         WritingEvaluateResponse candidate = evaluateEssayForPolish(request, candidateEssay, stage, mode);
@@ -431,6 +443,7 @@ public class WritingPolishServiceImpl implements WritingPolishService {
                 essayText,
                 stage,
                 mode,
+                request.getAiProvider(),
                 request.getTopicContent(),
                 request.getTaskPrompt(),
                 request.getTaskType(),
@@ -444,6 +457,7 @@ public class WritingPolishServiceImpl implements WritingPolishService {
     private WritingEvaluateResponse evaluateEssayForPolish(String essayText,
                                                            String stage,
                                                            String mode,
+                                                           String aiProvider,
                                                            String topicContent,
                                                            String taskPrompt,
                                                            String taskType,
@@ -459,6 +473,7 @@ public class WritingPolishServiceImpl implements WritingPolishService {
         evalRequest.setStudyStage(stage);
         evalRequest.setTopicTitle(firstNonBlank(topicContent, null));
         evalRequest.setTaskType(taskType);
+        evalRequest.setAiProvider(aiProvider);
         evalRequest.setMinWords(minWords);
         evalRequest.setRecommendedMaxWords(recommendedMaxWords);
         evalRequest.setMaxScore(maxScore);

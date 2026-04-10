@@ -83,6 +83,7 @@ const modeLabels: Record<PanelMode, string> = {
   explain: '解释',
   translate: '翻译',
   aiNote: 'AI 助手',
+  taskPrompt: '题单',
 }
 
 const modeLabel = computed(() => modeLabels[props.mode])

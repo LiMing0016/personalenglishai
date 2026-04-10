@@ -16,7 +16,7 @@ export const MAX_PANEL_WIDTH = 1280
 export const MIN_LEFT_WIDTH = 360
 
 const VALID_PANELS: PanelMode[] = [
-  'score', 'rewrite', 'grammarCheck', 'structure', 'improve', 'explain', 'translate', 'aiNote',
+  'score', 'rewrite', 'grammarCheck', 'structure', 'improve', 'explain', 'translate', 'aiNote', 'taskPrompt',
 ]
 
 export const usePanelStore = defineStore('panel', () => {
@@ -35,6 +35,7 @@ export const usePanelStore = defineStore('panel', () => {
       explain: '解释',
       translate: '翻译',
       aiNote: 'AI 助手',
+      taskPrompt: '题单',
     }
     return activePanel.value != null ? t[activePanel.value] : ''
   })

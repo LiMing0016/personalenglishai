@@ -1,13 +1,8 @@
 <template>
   <div class="tool-panel">
-    <header class="tool-panel-header">
-      <span class="tool-panel-title">{{ title }}</span>
-      <div class="tool-panel-actions">
-        <button type="button" class="btn-close" title="关闭" aria-label="关闭" @click="$emit('close')">
-          ×
-        </button>
-      </div>
-    </header>
+    <button type="button" class="btn-close tool-panel-close" title="关闭" aria-label="关闭" @click="$emit('close')">
+      ×
+    </button>
     <div class="tool-panel-body">
       <slot />
     </div>
@@ -26,6 +21,7 @@ defineEmits<{
 
 <style scoped>
 .tool-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -33,23 +29,11 @@ defineEmits<{
   background: #fff;
   overflow: hidden;
 }
-.tool-panel-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px var(--assistant-safe-padding-right, 16px) 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-.tool-panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-.tool-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.tool-panel-close {
+  position: absolute;
+  top: 12px;
+  right: var(--assistant-safe-padding-right, 16px);
+  z-index: 2;
 }
 .btn-close {
   width: 28px;
@@ -71,5 +55,6 @@ defineEmits<{
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding-top: 12px;
 }
 </style>

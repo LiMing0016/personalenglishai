@@ -7,6 +7,7 @@ import com.personalenglishai.backend.entity.DocumentRevision;
 import com.personalenglishai.backend.mapper.DocumentMapper;
 import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
+import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -38,6 +40,9 @@ class DocumentServiceTest {
 
     @Mock
     private WritingExamMetadataMapper writingExamMetadataMapper;
+
+    @Mock
+    private WritingPromptSheetService writingPromptSheetService;
 
     @InjectMocks
     private DocumentService documentService;
@@ -72,6 +77,59 @@ class DocumentServiceTest {
         assertThat(insertedRev.getRevision()).isEqualTo(1);
         assertThat(insertedRev.getContent()).isEqualTo("");
         assertThat(insertedRev.getCreatedBy()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("createDocumentWithPrompt binds prompt sheet id onto document")
+    void createDocumentWithPrompt_bindsPromptSheetId() {
+        doAnswer(invocation -> {
+            Document doc = invocation.getArgument(0);
+            doc.setId(11L);
+            return 1;
+        }).when(documentMapper).insertDocument(any(Document.class));
+
+        DocumentService.StartMetadata metadata = new DocumentService.StartMetadata();
+        metadata.setMode("exam");
+        metadata.setPromptSheetId(88L);
+        metadata.setPromptText("Write an essay based on the chart below.");
+
+        documentService.createDocumentWithPrompt("tenant-1", "default", 1L, "折线图作文", "Write an essay based on the chart below.", "", metadata);
+
+        ArgumentCaptor<Document> docCaptor = ArgumentCaptor.forClass(Document.class);
+        verify(documentMapper).insertDocument(docCaptor.capture());
+        assertThat(docCaptor.getValue().getPromptSheetId()).isEqualTo(88L);
+    }
+
+    @Test
+    @DisplayName("findOrCreateForTopic updates prompt sheet id when reusing existing document")
+    void findOrCreateForTopic_updatesPromptSheetIdForExistingDocument() {
+        Document existing = buildDoc(20L, 1L, 1);
+        existing.setPublicId("doc_existing");
+        when(documentMapper.findByOwnerAndPromptHash(eq(1L), anyString(), eq("tenant-1"), eq("default"))).thenReturn(existing);
+        when(writingMetadataMapper.selectByDocumentId(20L)).thenReturn(null);
+
+        DocumentRevision rev = new DocumentRevision();
+        rev.setContent("existing");
+        when(documentMapper.findRevisionByDocumentIdAndRevision(20L, 1)).thenReturn(rev);
+
+        DocumentService.StartMetadata metadata = new DocumentService.StartMetadata();
+        metadata.setMode("exam");
+        metadata.setPromptSheetId(99L);
+        metadata.setPromptText("same prompt");
+
+        DocumentService.StartSessionResult result = documentService.findOrCreateForTopic(
+                "tenant-1",
+                "default",
+                1L,
+                "题目",
+                "hash",
+                "",
+                metadata
+        );
+
+        assertThat(result.docId).isEqualTo("doc_existing");
+        verify(documentMapper).updatePromptSheetId(20L, 99L);
+        verify(writingPromptSheetService).bindDocument(99L, 20L);
     }
 
     @Test

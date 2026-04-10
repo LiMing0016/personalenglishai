@@ -65,6 +65,7 @@ openai:
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     connect-timeout-ms: ${OPENAI_CONNECT_TIMEOUT_MS:5000}
     response-timeout-ms: ${OPENAI_RESPONSE_TIMEOUT_MS:30000}
+    max-in-memory-size: ${OPENAI_MAX_IN_MEMORY_SIZE:16777216}
     overall-timeout-ms: ${OPENAI_OVERALL_TIMEOUT_MS:35000}
     max-retries: ${OPENAI_MAX_RETRIES:2}
     initial-backoff-ms: ${OPENAI_INITIAL_BACKOFF_MS:200}
@@ -89,6 +90,24 @@ writing:
     thread-pool-size: ${WRITING_EVALUATE_THREAD_POOL_SIZE:4}
 
 ai:
+  provider:
+    active: ${AI_PROVIDER_ACTIVE:openai}
+    providers:
+      openai:
+        api-key: ${AI_PROVIDER_OPENAI_API_KEY:${OPENAI_API_KEY:}}
+        base-url: ${AI_PROVIDER_OPENAI_BASE_URL:${OPENAI_BASE_URL:https://api.openai.com}}
+        model: ${AI_PROVIDER_OPENAI_MODEL:${AI_MODEL:gpt-4o}}
+        image-model: ${AI_PROVIDER_OPENAI_IMAGE_MODEL:gpt-image-1.5}
+      kimi:
+        api-key: ${AI_PROVIDER_KIMI_API_KEY:}
+        base-url: ${AI_PROVIDER_KIMI_BASE_URL:https://api.moonshot.cn/v1}
+        model: ${AI_PROVIDER_KIMI_MODEL:kimi-k2.5}
+        image-model: ${AI_PROVIDER_KIMI_IMAGE_MODEL:}
+      qwen:
+        api-key: ${AI_PROVIDER_QWEN_API_KEY:${QWEN_API_KEY:}}
+        base-url: ${AI_PROVIDER_QWEN_BASE_URL:${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}}
+        model: ${AI_PROVIDER_QWEN_MODEL:${QWEN_MODEL:qwen-plus}}
+        image-model: ${AI_PROVIDER_QWEN_IMAGE_MODEL:}
   prompt:
     debug: ${AI_PROMPT_DEBUG:false}
     log-raw-enabled: ${AI_PROMPT_LOG_RAW_ENABLED:false}

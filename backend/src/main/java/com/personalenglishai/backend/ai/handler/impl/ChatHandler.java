@@ -76,7 +76,8 @@ public class ChatHandler implements IntentHandler {
         logBeforeOpenAi(traceId, req.getIntent(), promptInput, "main");
 
         try {
-            String output = openAiClient.callWithTraceId(
+            String output = openAiClient.callWithProvider(
+                    req.getAiProvider(),
                     promptInput.systemPrompt(),
                     promptInput.userPrompt(),
                     traceId,

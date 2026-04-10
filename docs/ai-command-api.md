@@ -3,6 +3,16 @@
 前端只传**结构化意图 + 上下文引用**（docId = 文档 public_id），不传最终 prompt。  
 上下文内容从 **Document Service** 按 docId（及可选 revision）读取，traceId 串联可观测。
 
+## aiProvider 契约
+
+- `aiProvider`（可选）：当前会话希望命中的模型提供方
+- 固定值：
+  - `openai`
+  - `kimi`
+  - `qwen`
+- 若请求未显式提供 `aiProvider`，后端回退到系统级 `AI_PROVIDER_ACTIVE`
+- 写作页顶部模型选择器会按 `docId` 恢复上次选择，并将该值透传到 `/api/ai/command`
+
 ## contextRefs 契约
 
 - **docId**（必填）：文档对外 ID（public_id），由 `POST /api/docs` 返回的 `docId`
@@ -19,6 +29,7 @@
 2. `POST /api/ai/command`，Header `Authorization: Bearer <token>`，Body：
    - `intent`: `"rewrite"`
    - `contextRefs.docId`: 上一步的 `docId`
+   - `aiProvider`: `"openai" | "kimi" | "qwen"`（可选）
 3. 预期：`status=succeeded`，`finalResult.content` 含 `[ORCH:rewrite]` 及 `draftContent=...`；日志有 `buildContext traceId=... docId=... found=true`。
 
 ## 鉴权说明

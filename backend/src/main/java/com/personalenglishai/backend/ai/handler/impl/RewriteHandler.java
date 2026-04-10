@@ -75,7 +75,7 @@ public class RewriteHandler implements IntentHandler {
             String userPrompt = "instruction:\n" + instruction + "\n\n" +
                     "original_text:\n" + draftContent;
 
-            String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, traceId, ctx.getXDebugFail());
+            String raw = openAiClient.callWithProvider(req.getAiProvider(), SYSTEM_PROMPT, userPrompt, traceId, ctx.getXDebugFail());
             AiResult parsed = parser.parseStrict(raw);
 
             AICommandResponse response = new AICommandResponse();

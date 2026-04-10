@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.ai.client;
 
 public record OpenAiResponsesTextRequest(
+        String provider,
         String model,
         String instructions,
         String input,

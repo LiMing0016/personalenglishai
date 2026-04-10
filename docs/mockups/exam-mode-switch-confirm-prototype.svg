@@ -1,0 +1,40 @@
+<svg width="1440" height="960" viewBox="0 0 1440 960" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="960" fill="#F4F7FB"/>
+
+  <rect x="0" y="0" width="1440" height="960" fill="#0F172A" fill-opacity="0.18"/>
+
+  <rect x="48" y="96" width="1344" height="768" rx="30" fill="#FFFDF9"/>
+  <rect x="48" y="96" width="1344" height="768" rx="30" stroke="#E6EDF5" stroke-width="2"/>
+
+  <text x="86" y="168" fill="#0F172A" font-size="28" font-family="Inter, Arial, sans-serif" font-weight="800">写作题目整理</text>
+
+  <rect x="1072" y="124" width="238" height="62" rx="31" fill="#F8FBFF" stroke="#DDE7F1" stroke-width="2"/>
+  <rect x="1187" y="128" width="119" height="54" rx="27" fill="#DDF8E9"/>
+  <text x="1116" y="163" fill="#334155" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">自由模式</text>
+  <text x="1227" y="163" fill="#05825F" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="800">考试模式</text>
+
+  <rect x="832" y="248" width="470" height="556" rx="28" fill="#FFFDF9" stroke="#E8EEF5" stroke-width="2"/>
+  <text x="1049" y="328" text-anchor="middle" fill="#334155" font-size="28" font-family="Inter, Arial, sans-serif" font-weight="800">Task 1</text>
+  <text x="914" y="412" fill="#8A6B2E" font-size="30" font-family="Inter, Arial, sans-serif" font-weight="900" letter-spacing="4">DIRECTIONS:</text>
+  <text x="914" y="488" fill="#0F172A" font-size="25" font-family="Georgia, 'Times New Roman', serif">
+    <tspan x="914" dy="0">Write an essay about the ethnic diversity</tspan>
+    <tspan x="914" dy="56">and cultural heritage of Guizhou.</tspan>
+    <tspan x="914" dy="56">In your essay, describe key traditions</tspan>
+    <tspan x="914" dy="56">and discuss their broader significance.</tspan>
+  </text>
+
+  <rect x="112" y="278" width="580" height="70" rx="35" fill="#FFF8E9" stroke="#F2D59C" stroke-width="2"/>
+  <text x="150" y="323" fill="#9A6B14" font-size="22" font-family="Inter, Arial, sans-serif" font-weight="700">左侧内容有更新，右侧题单待刷新。</text>
+
+  <rect x="264" y="292" width="912" height="376" rx="32" fill="#FFFFFF"/>
+  <rect x="264" y="292" width="912" height="376" rx="32" stroke="#E6EDF5" stroke-width="2"/>
+  <text x="336" y="430" fill="#0F172A" font-size="42" font-family="Inter, Arial, sans-serif" font-weight="900">切换模式将更改评分标准</text>
+
+  <rect x="336" y="540" width="188" height="66" rx="33" fill="#FFFFFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="430" y="582" text-anchor="middle" fill="#334155" font-size="24" font-family="Inter, Arial, sans-serif" font-weight="800">取消</text>
+
+  <rect x="548" y="540" width="240" height="66" rx="33" fill="#0F8A63"/>
+  <text x="668" y="582" text-anchor="middle" fill="#FFFFFF" font-size="24" font-family="Inter, Arial, sans-serif" font-weight="800">继续</text>
+
+  <text x="1106" y="338" fill="#94A3B8" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="600">预览示意</text>
+</svg>

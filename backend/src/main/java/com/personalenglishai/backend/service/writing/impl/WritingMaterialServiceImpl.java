@@ -19,8 +19,6 @@ import java.util.UUID;
 public class WritingMaterialServiceImpl implements WritingMaterialService {
 
     private static final Logger log = LoggerFactory.getLogger(WritingMaterialServiceImpl.class);
-    private static final String MATERIAL_MODEL = "gpt-4o-mini";
-
     private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
 
@@ -43,8 +41,14 @@ public class WritingMaterialServiceImpl implements WritingMaterialService {
                 request.getTaskPrompt() == null ? 0 : request.getTaskPrompt().length());
 
         long start = System.currentTimeMillis();
-        String raw = openAiClient.callWithTraceId(systemPrompt, userPrompt, traceId,
-                MATERIAL_MODEL, 0.5, 4096);
+        String raw = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt,
+                traceId,
+                0.5,
+                4096
+        );
         long elapsed = System.currentTimeMillis() - start;
 
         WritingMaterialResponse response = parseResponse(raw, traceId);

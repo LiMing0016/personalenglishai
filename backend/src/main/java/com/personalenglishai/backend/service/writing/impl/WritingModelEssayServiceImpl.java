@@ -21,8 +21,6 @@ import java.util.UUID;
 public class WritingModelEssayServiceImpl implements WritingModelEssayService {
 
     private static final Logger log = LoggerFactory.getLogger(WritingModelEssayServiceImpl.class);
-    private static final String MODEL = "gpt-4o-mini";
-
     private final OpenAiClient openAiClient;
     private final RubricService rubricService;
     private final RubricTextBuilder rubricTextBuilder;
@@ -63,7 +61,14 @@ public class WritingModelEssayServiceImpl implements WritingModelEssayService {
         String userPrompt = buildUserPrompt(stage, mode, rubricKey, rubricText, resolvedTopicContent, normalizedTaskPrompt, request);
 
         long start = System.currentTimeMillis();
-        String raw = openAiClient.callWithTraceId(systemPrompt, userPrompt, traceId, MODEL, 0.5, 4096);
+        String raw = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt,
+                traceId,
+                0.5,
+                4096
+        );
         long elapsed = System.currentTimeMillis() - start;
 
         WritingModelEssayResponse response = parseResponse(raw, traceId);

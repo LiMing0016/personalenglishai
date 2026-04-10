@@ -9,11 +9,13 @@ public class WritingSessionMetadataResponse {
 
     private String documentId;
     private Long metadataId;
+    private Long promptSheetId;
     private String mode;
     private String studyStage;
     private String titleSnapshot;
     private String topicTitle;
     private String promptText;
+    private String attachmentImageUrl;
     private String genre;
     private String sourceType;
     private LocalDateTime createdAt;
@@ -40,6 +42,14 @@ public class WritingSessionMetadataResponse {
 
     public void setMetadataId(Long metadataId) {
         this.metadataId = metadataId;
+    }
+
+    public Long getPromptSheetId() {
+        return promptSheetId;
+    }
+
+    public void setPromptSheetId(Long promptSheetId) {
+        this.promptSheetId = promptSheetId;
     }
 
     public String getMode() {
@@ -80,6 +90,14 @@ public class WritingSessionMetadataResponse {
 
     public void setPromptText(String promptText) {
         this.promptText = promptText;
+    }
+
+    public String getAttachmentImageUrl() {
+        return attachmentImageUrl;
+    }
+
+    public void setAttachmentImageUrl(String attachmentImageUrl) {
+        this.attachmentImageUrl = attachmentImageUrl;
     }
 
     public String getGenre() {

@@ -18,6 +18,9 @@ public class AuditTopicRequest {
     /** 写作要求/要点，可为空 */
     private String requirements;
 
+    /** 当前学段，可为空 */
+    private String studyStage;
+
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
 
@@ -29,4 +32,7 @@ public class AuditTopicRequest {
 
     public String getRequirements() { return requirements; }
     public void setRequirements(String requirements) { this.requirements = requirements; }
+
+    public String getStudyStage() { return studyStage; }
+    public void setStudyStage(String studyStage) { this.studyStage = studyStage; }
 }

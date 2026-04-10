@@ -13,6 +13,8 @@ public class TranslateRequest {
     @NotBlank
     private String mode; // "full" | "detailed"
 
+    private String aiProvider;
+
     @JsonIgnore
     private Long userId;
 
@@ -21,6 +23,9 @@ public class TranslateRequest {
 
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+
+    public String getAiProvider() { return aiProvider; }
+    public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }

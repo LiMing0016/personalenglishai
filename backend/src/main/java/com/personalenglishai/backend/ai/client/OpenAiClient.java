@@ -12,6 +12,7 @@ import com.personalenglishai.backend.ai.assistant.AssistantResponseRequest;
 import com.personalenglishai.backend.ai.assistant.AssistantToolCall;
 import com.personalenglishai.backend.ai.assistant.AssistantToolDefinition;
 import com.personalenglishai.backend.ai.assistant.AssistantToolOutput;
+import com.personalenglishai.backend.ai.config.AiProviderSelection;
 import com.personalenglishai.backend.ai.config.OpenAiClientConfig;
 import io.netty.channel.ChannelOption;
 import org.slf4j.Logger;
@@ -19,9 +20,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
@@ -33,9 +37,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.net.ssl.SSLException;
@@ -55,6 +62,7 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private static final Random RANDOM = new Random();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private final AiProviderSelection providerSelection;
     private final WebClient webClient;
     private final String apiKey;
     private final OpenAiClientConfig config;
@@ -68,12 +76,15 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private final String baseUrl;
     private final String activeProfile;
     private final String model;
+    private final String activeProvider;
     private final String endpointMode;
     private final String fallbackModel;
     private final boolean aiPromptDebugEnabled;
     private final boolean promptRawLogEnabled;
     private final int promptRawLogMaxChars;
     private final long effectiveOverallTimeoutMs;
+    private final ReactorClientHttpConnector clientConnector;
+    private final ConcurrentMap<String, WebClient> providerWebClients = new ConcurrentHashMap<>();
 
     // Per-call overrides (thread-local would be safer but this is simpler for single-threaded use)
     private volatile Double overrideTemperature;
@@ -81,22 +92,19 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private volatile String overrideModel;
 
     public OpenAiClient(
-            @Value("${OPENAI_API_KEY:}") String apiKey,
+            AiProviderSelection providerSelection,
             @Value("${spring.profiles.active:}") String activeProfile,
-            @Value("${AI_MODEL:" + DEFAULT_MODEL + "}") String model,
             @Value("${AI_ENDPOINT_MODE:" + ENDPOINT_MODE_CHAT_COMPLETIONS + "}") String endpointMode,
             @Value("${AI_FALLBACK_MODEL:" + DEFAULT_MODEL + "}") String fallbackModel,
             @Value("${AI_PROMPT_DEBUG:false}") boolean aiPromptDebugEnabled,
             @Value("${ai.prompt.log-raw-enabled:false}") boolean promptRawLogEnabled,
             @Value("${ai.prompt.log-raw-max-chars:12000}") int promptRawLogMaxChars,
             OpenAiClientConfig config) {
-        this.apiKey = apiKey;
+        this.providerSelection = providerSelection;
         this.config = config;
         this.activeProfile = activeProfile == null ? "" : activeProfile.toLowerCase();
         this.isDevOrLocal = isDevOrLocalProfile(activeProfile);
-        this.model = isBlank(model) ? DEFAULT_MODEL : model.trim();
         this.endpointMode = normalizeEndpointMode(endpointMode);
-        this.fallbackModel = isBlank(fallbackModel) ? DEFAULT_MODEL : fallbackModel.trim();
         this.aiPromptDebugEnabled = aiPromptDebugEnabled;
         this.promptRawLogEnabled = promptRawLogEnabled;
         this.promptRawLogMaxChars = Math.max(2000, promptRawLogMaxChars);
@@ -107,10 +115,16 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 config.getCircuitBreakerRecoveryMs()
         );
 
-        String baseUrl = config.getBaseUrl() != null && !config.getBaseUrl().isBlank()
-                ? config.getBaseUrl()
-                : "https://api.openai.com";
-        this.baseUrl = baseUrl;
+        AiProviderSelection.SelectedProvider activeSelection = providerSelection.resolve(null);
+        this.activeProvider = activeSelection.provider();
+        this.apiKey = activeSelection.apiKey();
+        this.baseUrl = normalizeProviderBaseUrl(firstNonBlank(
+                activeSelection.baseUrl(),
+                config.getBaseUrl(),
+                "https://api.openai.com"
+        ));
+        this.model = isBlank(activeSelection.model()) ? DEFAULT_MODEL : activeSelection.model().trim();
+        this.fallbackModel = isBlank(fallbackModel) ? this.model : fallbackModel.trim();
 
         // NOTE: cleaned corrupted comment (encoding issue).
         boolean useProxy = false;
@@ -177,49 +191,81 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 config.getMaxRetries(),
                 config.getMaxBackoffMs());
 
-        this.webClient = WebClient.builder()
-                .baseUrl(baseUrl)
-                .clientConnector(new ReactorClientHttpConnector(httpClient))
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + (apiKey != null && !apiKey.isEmpty() ? apiKey : ""))
-                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024)) // 10MB
-                .build();
+        this.clientConnector = new ReactorClientHttpConnector(httpClient);
+        this.webClient = buildWebClient(this.baseUrl, this.apiKey);
     }
     public String getModel() { return model; }
 
-    public String call(String systemPrompt, String userPrompt) {
-        return callWithTraceId(systemPrompt, userPrompt, null, null);
+    public String resolveModel(String provider) {
+        return resolveSelectedProvider(provider).model();
     }
 
-    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId) {
-        return callWithTraceId(systemPrompt, userPrompt, traceId, null);
+    public String generateImageWithProvider(String provider, String prompt, String traceId) {
+        String normalizedPrompt = prompt == null ? "" : prompt.trim();
+        if (normalizedPrompt.isEmpty()) {
+            return null;
+        }
+
+        AiProviderSelection.SelectedProvider selectedProvider = resolveImageProvider(provider);
+        if (selectedProvider == null || isBlank(selectedProvider.imageModel())) {
+            log.warn("OpenAI image generation skipped traceId={} provider={} reason=no-image-model-configured", traceId, provider);
+            return null;
+        }
+
+        try {
+            return generateImage(selectedProvider, normalizedPrompt, traceId);
+        } catch (Exception primaryError) {
+            log.warn("OpenAI image generation failed traceId={} provider={} model={} reason={}",
+                    traceId,
+                    selectedProvider.provider(),
+                    selectedProvider.imageModel(),
+                    safeMsg(primaryError));
+
+            if (!"openai".equalsIgnoreCase(selectedProvider.provider())) {
+                AiProviderSelection.SelectedProvider fallbackProvider = resolveImageProvider("openai");
+                if (fallbackProvider != null
+                        && !isBlank(fallbackProvider.imageModel())
+                        && !"openai".equalsIgnoreCase(selectedProvider.provider())) {
+                    try {
+                        log.info("OpenAI image generation fallback traceId={} fromProvider={} toProvider=openai",
+                                traceId,
+                                selectedProvider.provider());
+                        return generateImage(fallbackProvider, normalizedPrompt, traceId + "-fallback");
+                    } catch (Exception fallbackError) {
+                        log.warn("OpenAI image generation fallback failed traceId={} provider=openai model={} reason={}",
+                                traceId,
+                                fallbackProvider.imageModel(),
+                                safeMsg(fallbackError));
+                    }
+                }
+            }
+            return null;
+        }
     }
 
-    /**
-     * Call with custom temperature and maxTokens.
-     */
-    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId,
+    public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId) {
+        return callInternal(provider, systemPrompt, userPrompt, traceId, null);
+    }
+
+    public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId,
                                    Double temperature, Integer maxTokens) {
         this.overrideTemperature = temperature;
         this.overrideMaxTokens = maxTokens;
         try {
-            return callWithTraceId(systemPrompt, userPrompt, traceId, null);
+            return callInternal(provider, systemPrompt, userPrompt, traceId, null);
         } finally {
             this.overrideTemperature = null;
             this.overrideMaxTokens = null;
         }
     }
 
-    /**
-     * Call with custom model, temperature and maxTokens.
-     */
-    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId,
+    public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId,
                                    String modelOverride, Double temperature, Integer maxTokens) {
         this.overrideModel = modelOverride;
         this.overrideTemperature = temperature;
         this.overrideMaxTokens = maxTokens;
         try {
-            return callWithTraceId(systemPrompt, userPrompt, traceId, null);
+            return callInternal(provider, systemPrompt, userPrompt, traceId, null);
         } finally {
             this.overrideModel = null;
             this.overrideTemperature = null;
@@ -227,7 +273,39 @@ public class OpenAiClient implements AssistantOpenAiClient {
         }
     }
 
+    public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
+        return callInternal(provider, systemPrompt, userPrompt, traceId, xDebugFail);
+    }
+
+    public String call(String systemPrompt, String userPrompt) {
+        return callInternal(null, systemPrompt, userPrompt, null, null);
+    }
+
+    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId) {
+        return callInternal(null, systemPrompt, userPrompt, traceId, null);
+    }
+
+    /**
+     * Call with custom temperature and maxTokens.
+     */
+    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId,
+                                   Double temperature, Integer maxTokens) {
+        return callWithProvider(null, systemPrompt, userPrompt, traceId, temperature, maxTokens);
+    }
+
+    /**
+     * Call with custom model, temperature and maxTokens.
+     */
+    public String callWithTraceId(String systemPrompt, String userPrompt, String traceId,
+                                   String modelOverride, Double temperature, Integer maxTokens) {
+        return callWithProvider(null, systemPrompt, userPrompt, traceId, modelOverride, temperature, maxTokens);
+    }
+
     public String callWithTraceId(String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
+        return callInternal(null, systemPrompt, userPrompt, traceId, xDebugFail);
+    }
+
+    private String callInternal(String provider, String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
         long startTime = System.currentTimeMillis();
         int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         AtomicInteger attemptCounter = new AtomicInteger(1);
@@ -235,8 +313,10 @@ public class OpenAiClient implements AssistantOpenAiClient {
         boolean fallbackUsed = false;
         boolean parseSuccess = false;
         int payloadBytes = 0;
+        AiProviderSelection.SelectedProvider selectedProvider = resolveSelectedProvider(provider);
+        WebClient targetWebClient = getWebClient(selectedProvider);
         String effectiveEndpoint = endpointMode;
-        String effectiveModel = overrideModel != null ? overrideModel : model;
+        String effectiveModel = overrideModel != null ? overrideModel : selectedProvider.model();
         String output;
 
         try {
@@ -257,22 +337,23 @@ public class OpenAiClient implements AssistantOpenAiClient {
 
             OpenAiCallResult callResult;
             try {
-                callResult = callByMode(effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
             } catch (Exception e) {
                 if (shouldFallbackFromResponses(effectiveEndpoint, e)) {
                     fallbackUsed = true;
                     effectiveEndpoint = ENDPOINT_MODE_CHAT_COMPLETIONS;
                     effectiveModel = fallbackModel;
-                    log.warn("OpenAI fallback engaged traceId={} fromEndpoint={} fromModel={} toEndpoint={} toModel={} reason={} errorCode={} httpStatus={}",
+                    log.warn("OpenAI fallback engaged traceId={} provider={} fromEndpoint={} fromModel={} toEndpoint={} toModel={} reason={} errorCode={} httpStatus={}",
                             traceId,
+                            selectedProvider.provider(),
                             endpointMode,
-                            model,
+                            selectedProvider.model(),
                             effectiveEndpoint,
                             effectiveModel,
                             safeMsg(e),
                             extractOpenAiErrorCode(e),
                             extractHttpStatus(e));
-                    callResult = callByMode(effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                    callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
                 } else {
                     throw e;
                 }
@@ -284,10 +365,10 @@ public class OpenAiClient implements AssistantOpenAiClient {
 
             circuitBreaker.recordSuccess();
             long latency = System.currentTimeMillis() - startTime;
-            log.info("OpenAI call succeeded traceId={} attempt={} latencyMs={} httpStatus=200 inputLength={} outputLength={}",
-                    traceId, attemptCounter.get(), latency, inputLength, output.length());
-            log.info("OpenAI call metrics traceId={} prompt_version={} endpoint={} model={} payload_bytes={} input_chars={} draft_chars={} response_ms={} parse_success={} fallback_used={}",
-                    traceId, PROMPT_VERSION, effectiveEndpoint, effectiveModel, payloadBytes, inputLength, draftChars, latency, parseSuccess, fallbackUsed);
+            log.info("OpenAI call succeeded traceId={} provider={} attempt={} latencyMs={} httpStatus=200 inputLength={} outputLength={}",
+                    traceId, selectedProvider.provider(), attemptCounter.get(), latency, inputLength, output.length());
+            log.info("OpenAI call metrics traceId={} provider={} baseUrl={} prompt_version={} endpoint={} model={} payload_bytes={} input_chars={} draft_chars={} response_ms={} parse_success={} fallback_used={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), PROMPT_VERSION, effectiveEndpoint, effectiveModel, payloadBytes, inputLength, draftChars, latency, parseSuccess, fallbackUsed);
             return output;
 
         } catch (Exception e) {
@@ -301,8 +382,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
             String responseBody = sanitizeError(extractResponseBody(e));
 
             circuitBreaker.recordFailure();
-            log.error("OpenAI call failed traceId={} attempt={} latencyMs={} errorType={} httpStatus={} rootCauseClass={} rootCauseMsg={} inputLength={} fallbackUsed={} endpoint={} model={}{} responseBody={}",
-                    traceId, attemptCounter.get(), latency, errorType, httpStatus != null ? httpStatus : "",
+            log.error("OpenAI call failed traceId={} provider={} baseUrl={} attempt={} latencyMs={} errorType={} httpStatus={} rootCauseClass={} rootCauseMsg={} inputLength={} fallbackUsed={} endpoint={} model={}{} responseBody={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), attemptCounter.get(), latency, errorType, httpStatus != null ? httpStatus : "",
                     rootCauseClass, rootCauseMsg, inputLength, fallbackUsed, effectiveEndpoint, effectiveModel,
                     openaiRequestId != null ? " openaiRequestId=" + openaiRequestId : "",
                     responseBody);
@@ -392,10 +473,37 @@ public class OpenAiClient implements AssistantOpenAiClient {
     }
 
     public OpenAiResponsesTextResult createTextResponse(OpenAiResponsesTextRequest request) {
-        String targetModel = isBlank(request.model()) ? model : request.model().trim();
+        AiProviderSelection.SelectedProvider selectedProvider = resolveSelectedProvider(request.provider());
+        WebClient targetWebClient = getWebClient(selectedProvider);
+        String targetModel = isBlank(request.model()) ? selectedProvider.model() : request.model().trim();
         Retry retrySpec = Retry.backoff(config.getMaxRetries(), Duration.ofMillis(config.getInitialBackoffMs()))
                 .maxBackoff(Duration.ofMillis(config.getMaxBackoffMs()))
                 .filter(this::shouldRetry);
+
+        if (!supportsResponses(selectedProvider.provider())) {
+            OpenAiCallResult fallbackResult = callChatCompletionsForText(
+                    selectedProvider,
+                    targetWebClient,
+                    targetModel,
+                    request.instructions(),
+                    request.input(),
+                    retrySpec,
+                    request.maxOutputTokens()
+            );
+            log.info("OpenAI text response fallback provider={} baseUrl={} model={} payloadBytes={} outputLength={}",
+                    selectedProvider.provider(),
+                    selectedProvider.baseUrl(),
+                    targetModel,
+                    fallbackResult.payloadBytes(),
+                    fallbackResult.content().length());
+            return new OpenAiResponsesTextResult(
+                    null,
+                    fallbackResult.content(),
+                    null,
+                    null,
+                    fallbackResult.payloadBytes()
+            );
+        }
 
         ObjectNode payload = buildTextResponsesPayload(request);
         int payloadBytes = logFinalPayload(
@@ -409,7 +517,7 @@ public class OpenAiClient implements AssistantOpenAiClient {
 
         JsonNode responseNode;
         try {
-            responseNode = webClient.post()
+            responseNode = targetWebClient.post()
                     .uri("/v1/responses")
                     .bodyValue(payload)
                     .retrieve()
@@ -422,7 +530,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
             String responseBody = sanitizeError(extractResponseBody(e));
             String errorCode = extractOpenAiErrorCode(e);
             String errorParam = extractOpenAiErrorParam(e);
-            log.error("OpenAI text response failed model={} httpStatus={} errorCode={} errorParam={} payloadBytes={} responseBody={}",
+            log.error("OpenAI text response failed provider={} baseUrl={} model={} httpStatus={} errorCode={} errorParam={} payloadBytes={} responseBody={}",
+                    selectedProvider.provider(),
+                    selectedProvider.baseUrl(),
                     targetModel,
                     e.getStatusCode().value(),
                     errorCode,
@@ -447,7 +557,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
         Integer inputTokens = usage.path("input_tokens").isInt() ? usage.path("input_tokens").asInt() : null;
         Integer cachedTokens = usage.path("input_tokens_details").path("cached_tokens").isInt()
                 ? usage.path("input_tokens_details").path("cached_tokens").asInt() : null;
-        log.info("OpenAI text response parsed model={} payloadBytes={} responseId={} inputTokens={} cachedTokens={} outputLength={}",
+        log.info("OpenAI text response parsed provider={} baseUrl={} model={} payloadBytes={} responseId={} inputTokens={} cachedTokens={} outputLength={}",
+                selectedProvider.provider(),
+                selectedProvider.baseUrl(),
                 targetModel,
                 payloadBytes,
                 responseId,
@@ -455,6 +567,56 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 cachedTokens,
                 outputText.length());
         return new OpenAiResponsesTextResult(responseId, outputText, inputTokens, cachedTokens, payloadBytes);
+    }
+
+    private OpenAiCallResult callChatCompletionsForText(AiProviderSelection.SelectedProvider selectedProvider,
+                                                        WebClient targetWebClient,
+                                                        String model,
+                                                        String instructions,
+                                                        String input,
+                                                        Retry retrySpec,
+                                                        Integer maxOutputTokens) {
+        ChatRequest request = new ChatRequest(model, List.of(
+                new Message("system", instructions == null ? "" : instructions),
+                new Message("user", input == null ? "" : input)
+        ));
+        request.setTemperature(normalizeChatCompletionsTemperature(
+                selectedProvider,
+                overrideTemperature != null ? overrideTemperature : request.getTemperature()
+        ));
+        if (overrideMaxTokens != null) {
+            request.setMaxTokens(overrideMaxTokens);
+        } else if (maxOutputTokens != null) {
+            request.setMaxTokens(maxOutputTokens);
+        }
+        int payloadBytes = logFinalPayload(
+                null,
+                ENDPOINT_MODE_CHAT_COMPLETIONS,
+                model,
+                request,
+                estimateTextResponseInputChars(new OpenAiResponsesTextRequest(null, model, instructions, input, null, null, null, false, request.getMaxTokens())),
+                extractDraftChars(input)
+        );
+
+        ChatResponse response = targetWebClient.post()
+                .uri("/v1/chat/completions")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(ChatResponse.class)
+                .timeout(Duration.ofMillis(config.getResponseTimeoutMs()))
+                .retryWhen(retrySpec)
+                .timeout(Duration.ofMillis(effectiveOverallTimeoutMs))
+                .block();
+
+        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()
+                || response.getChoices().get(0).getMessage() == null) {
+            throw new RuntimeException("Empty response from OpenAI-compatible chat completions API");
+        }
+        String content = response.getChoices().get(0).getMessage().getContent();
+        if (isBlank(content)) {
+            throw new RuntimeException("Empty content in OpenAI-compatible chat completions response");
+        }
+        return new OpenAiCallResult(content, payloadBytes, true);
     }
 
     private static boolean isDevOrLocalProfile(String profile) {
@@ -465,19 +627,23 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return p.contains("dev") || p.contains("local");
     }
 
-    private OpenAiCallResult callByMode(String endpointMode,
+    private OpenAiCallResult callByMode(AiProviderSelection.SelectedProvider selectedProvider,
+                                        WebClient targetWebClient,
+                                        String endpointMode,
                                         String model,
                                         String systemPrompt,
                                         String userPrompt,
                                         String traceId,
                                         Retry retrySpec) {
-        if (ENDPOINT_MODE_RESPONSES.equals(endpointMode)) {
-            return callResponses(model, systemPrompt, userPrompt, traceId, retrySpec);
+        if (ENDPOINT_MODE_RESPONSES.equals(endpointMode) && supportsResponses(selectedProvider.provider())) {
+            return callResponses(targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
         }
-        return callChatCompletions(model, systemPrompt, userPrompt, traceId, retrySpec);
+        return callChatCompletions(selectedProvider, targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
     }
 
-    private OpenAiCallResult callChatCompletions(String model,
+    private OpenAiCallResult callChatCompletions(AiProviderSelection.SelectedProvider selectedProvider,
+                                                 WebClient targetWebClient,
+                                                 String model,
                                                  String systemPrompt,
                                                  String userPrompt,
                                                  String traceId,
@@ -486,14 +652,17 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 new Message("system", systemPrompt == null ? "" : systemPrompt),
                 new Message("user", userPrompt == null ? "" : userPrompt)
         ));
-        if (overrideTemperature != null) request.setTemperature(overrideTemperature);
+        request.setTemperature(normalizeChatCompletionsTemperature(
+                selectedProvider,
+                overrideTemperature != null ? overrideTemperature : request.getTemperature()
+        ));
         if (overrideMaxTokens != null) request.setMaxTokens(overrideMaxTokens);
         int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_CHAT_COMPLETIONS, model, request, inputChars, draftChars);
         logPromptPayload(traceId, request, ENDPOINT_MODE_CHAT_COMPLETIONS);
 
-        ChatResponse response = webClient.post()
+        ChatResponse response = targetWebClient.post()
                 .uri("/v1/chat/completions")
                 .bodyValue(request)
                 .retrieve()
@@ -514,7 +683,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
-    private OpenAiCallResult callResponses(String model,
+    private OpenAiCallResult callResponses(WebClient targetWebClient,
+                                           String model,
                                            String systemPrompt,
                                            String userPrompt,
                                            String traceId,
@@ -527,7 +697,7 @@ public class OpenAiClient implements AssistantOpenAiClient {
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_RESPONSES, model, request, inputChars, draftChars);
 
-        JsonNode responseNode = webClient.post()
+        JsonNode responseNode = targetWebClient.post()
                 .uri("/v1/responses")
                 .bodyValue(request)
                 .retrieve()
@@ -897,6 +1067,209 @@ public class OpenAiClient implements AssistantOpenAiClient {
             return ENDPOINT_MODE_RESPONSES;
         }
         return ENDPOINT_MODE_CHAT_COMPLETIONS;
+    }
+
+    private AiProviderSelection.SelectedProvider resolveSelectedProvider(String explicitProvider) {
+        AiProviderSelection.SelectedProvider selected = providerSelection.resolve(explicitProvider);
+        String resolvedProvider = firstNonBlank(selected.provider(), activeProvider, "openai");
+        String resolvedApiKey = firstNonBlank(selected.apiKey(), apiKey);
+        String resolvedBaseUrl = normalizeProviderBaseUrl(firstNonBlank(selected.baseUrl(), baseUrl, "https://api.openai.com"));
+        String resolvedModel = firstNonBlank(selected.model(), model, DEFAULT_MODEL);
+        return new AiProviderSelection.SelectedProvider(
+                resolvedProvider,
+                resolvedApiKey,
+                resolvedBaseUrl,
+                resolvedModel,
+                selected.imageModel()
+        );
+    }
+
+    private AiProviderSelection.SelectedProvider resolveImageProvider(String explicitProvider) {
+        AiProviderSelection.SelectedProvider selected = providerSelection.resolveOrNull(explicitProvider);
+        AiProviderSelection.SelectedProvider resolvedSelected = normalizeResolvedProvider(selected, activeProvider);
+        if (resolvedSelected != null && !isBlank(resolvedSelected.imageModel())) {
+            return resolvedSelected;
+        }
+
+        AiProviderSelection.SelectedProvider fallback = normalizeResolvedProvider(
+                providerSelection.resolveOrNull("openai"),
+                "openai"
+        );
+        if (fallback != null && !isBlank(fallback.imageModel())) {
+            if (resolvedSelected != null && !"openai".equalsIgnoreCase(resolvedSelected.provider())) {
+                log.info("OpenAI image provider fallback enabled requestedProvider={} fallbackProvider=openai",
+                        resolvedSelected.provider());
+            }
+            return fallback;
+        }
+
+        return resolvedSelected;
+    }
+
+    private AiProviderSelection.SelectedProvider normalizeResolvedProvider(
+            AiProviderSelection.SelectedProvider selected,
+            String fallbackProvider
+    ) {
+        if (selected == null) {
+            return null;
+        }
+        String resolvedProvider = firstNonBlank(selected.provider(), fallbackProvider, activeProvider, "openai");
+        String resolvedApiKey = firstNonBlank(selected.apiKey(), apiKey);
+        String resolvedBaseUrl = normalizeProviderBaseUrl(firstNonBlank(selected.baseUrl(), baseUrl, "https://api.openai.com"));
+        String resolvedModel = firstNonBlank(selected.model(), model, DEFAULT_MODEL);
+        return new AiProviderSelection.SelectedProvider(
+                resolvedProvider,
+                resolvedApiKey,
+                resolvedBaseUrl,
+                resolvedModel,
+                trimToNull(selected.imageModel())
+        );
+    }
+
+    private ObjectNode buildImageRequestPayload(AiProviderSelection.SelectedProvider provider, String prompt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", provider.imageModel());
+        payload.put("prompt", prompt);
+        payload.put("size", "1024x1024");
+        payload.put("n", 1);
+        return payload;
+    }
+
+    private String generateImage(AiProviderSelection.SelectedProvider provider, String prompt, String traceId) {
+        WebClient targetWebClient = getWebClient(provider);
+        ObjectNode payload = buildImageRequestPayload(provider, prompt);
+
+        int payloadBytes = logFinalPayload(traceId, "images", provider.imageModel(), payload, prompt.length(), 0);
+        ImageResponsePayload responsePayload = targetWebClient.post()
+                .uri("/v1/images/generations")
+                .bodyValue(payload)
+                .exchangeToMono(response -> readImageResponsePayload(response))
+                .timeout(Duration.ofMillis(config.getResponseTimeoutMs()))
+                .timeout(Duration.ofMillis(effectiveOverallTimeoutMs))
+                .block();
+
+        if (responsePayload == null || responsePayload.body() == null || responsePayload.body().length == 0) {
+            return null;
+        }
+
+        MediaType contentType = responsePayload.contentType();
+        if (contentType != null && contentType.getType().equalsIgnoreCase("image")) {
+            return "data:" + contentType + ";base64," + Base64.getEncoder().encodeToString(responsePayload.body());
+        }
+
+        String responseBody = new String(responsePayload.body(), StandardCharsets.UTF_8);
+
+        JsonNode responseNode;
+        try {
+            responseNode = objectMapper.readTree(responseBody);
+        } catch (Exception parseError) {
+            log.warn("OpenAI image response parse failed traceId={} provider={} model={} payloadBytes={} reason={} bodyPreview={}",
+                    traceId,
+                    provider.provider(),
+                    provider.imageModel(),
+                    payloadBytes,
+                    safeMsg(parseError),
+                    previewForLog(responseBody, 240));
+            return null;
+        }
+
+        JsonNode dataNode = responseNode.path("data");
+        if (!dataNode.isArray() || dataNode.isEmpty()) {
+            log.warn("OpenAI image response missing data traceId={} provider={} model={} payloadBytes={}",
+                    traceId, provider.provider(), provider.imageModel(), payloadBytes);
+            return null;
+        }
+
+        JsonNode first = dataNode.get(0);
+        String b64 = trimToNull(first.path("b64_json").asText(null));
+        if (b64 != null) {
+            return "data:image/png;base64," + b64;
+        }
+        return trimToNull(first.path("url").asText(null));
+    }
+
+    private reactor.core.publisher.Mono<ImageResponsePayload> readImageResponsePayload(ClientResponse response) {
+        HttpStatusCode statusCode = response.statusCode();
+        MediaType contentType = response.headers().contentType().orElse(null);
+        return response.bodyToMono(byte[].class)
+                .defaultIfEmpty(new byte[0])
+                .flatMap(body -> {
+                    if (statusCode.is2xxSuccessful()) {
+                        return reactor.core.publisher.Mono.just(new ImageResponsePayload(contentType, body));
+                    }
+                    return reactor.core.publisher.Mono.error(WebClientResponseException.create(
+                            statusCode.value(),
+                            statusCode.toString(),
+                            response.headers().asHttpHeaders(),
+                            body,
+                            StandardCharsets.UTF_8
+                    ));
+                });
+    }
+
+    private Double normalizeChatCompletionsTemperature(AiProviderSelection.SelectedProvider selectedProvider,
+                                                       Double requestedTemperature) {
+        if (selectedProvider == null) {
+            return requestedTemperature;
+        }
+        if ("kimi".equalsIgnoreCase(selectedProvider.provider())
+                && "kimi-k2.5".equalsIgnoreCase(firstNonBlank(selectedProvider.model()))) {
+            return 1.0d;
+        }
+        return requestedTemperature;
+    }
+
+    private WebClient getWebClient(AiProviderSelection.SelectedProvider provider) {
+        String cacheKey = provider.provider() + "|" + provider.baseUrl() + "|" + provider.apiKey();
+        return providerWebClients.computeIfAbsent(cacheKey, ignored -> buildWebClient(provider.baseUrl(), provider.apiKey()));
+    }
+
+    private WebClient buildWebClient(String baseUrl, String apiKey) {
+        ExchangeStrategies exchangeStrategies = ExchangeStrategies.builder()
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(config.getMaxInMemorySize()))
+                .build();
+        return WebClient.builder()
+                .baseUrl(normalizeProviderBaseUrl(baseUrl))
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + firstNonBlank(apiKey, ""))
+                .exchangeStrategies(exchangeStrategies)
+                .clientConnector(clientConnector)
+                .build();
+    }
+
+    private boolean supportsResponses(String provider) {
+        return "openai".equalsIgnoreCase(firstNonBlank(provider, activeProvider));
+    }
+
+    private String normalizeProviderBaseUrl(String rawBaseUrl) {
+        String base = firstNonBlank(rawBaseUrl, "https://api.openai.com");
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.endsWith("/v1")) {
+            return base.substring(0, base.length() - 3);
+        }
+        return base;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private int extractDraftChars(String userPrompt) {
@@ -1297,6 +1670,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
     }
 
     private record OpenAiCallResult(String content, int payloadBytes, boolean parseSuccess) {
+    }
+
+    private record ImageResponsePayload(MediaType contentType, byte[] body) {
     }
 
     // Request/Response DTOs

@@ -152,6 +152,7 @@ async function doGenerate() {
     const essayText = draftStore.draftText?.trim()
     result.value = await generateWritingMaterial({
       taskPrompt: props.taskPrompt.trim(),
+      aiProvider: draftStore.aiProvider,
       essayText: essayText && essayText.length >= 20 ? essayText : undefined,
       studyStage: props.studyStage,
       writingMode: props.writingMode,

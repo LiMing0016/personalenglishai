@@ -11,6 +11,7 @@
         <result column="title" property="title"/>
         <result column="task_prompt" property="taskPrompt"/>
         <result column="task_prompt_hash" property="taskPromptHash"/>
+        <result column="prompt_sheet_id" property="promptSheetId"/>
         <result column="initial_score" property="initialScore"/>
         <result column="latest_score" property="latestScore"/>
         <result column="submit_count" property="submitCount"/>
@@ -32,12 +33,12 @@
     </resultMap>
 
     <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO documents (public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, submit_count, status, latest_revision, created_at, updated_at)
-        VALUES (#{publicId}, #{tenantId}, #{workspaceId}, #{ownerUserId}, #{title}, #{taskPrompt}, #{taskPromptHash}, 0, #{status}, #{latestRevision}, NOW(), NOW())
+        INSERT INTO documents (public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, prompt_sheet_id, submit_count, status, latest_revision, created_at, updated_at)
+        VALUES (#{publicId}, #{tenantId}, #{workspaceId}, #{ownerUserId}, #{title}, #{taskPrompt}, #{taskPromptHash}, #{promptSheetId}, 0, #{status}, #{latestRevision}, NOW(), NOW())
     </insert>
 
     <select id="findByOwnerAndPromptHash" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, prompt_sheet_id,
                initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE owner_user_id = #{ownerUserId} AND task_prompt_hash = #{taskPromptHash}
@@ -54,8 +55,15 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updatePromptSheetId">
+        UPDATE documents
+        SET prompt_sheet_id = #{promptSheetId},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
     <select id="listByOwnerUserId" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, prompt_sheet_id,
                initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE owner_user_id = #{ownerUserId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
@@ -72,14 +80,14 @@
     </select>
 
     <select id="findByPublicIdAndTenantAndWorkspace" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, prompt_sheet_id,
                initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId} AND deleted_at IS NULL
     </select>
 
     <select id="findByPublicIdAndTenantAndWorkspaceIncludeDeleted" resultMap="DocumentResultMap">
-        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash,
+        SELECT id, public_id, tenant_id, workspace_id, owner_user_id, title, task_prompt, task_prompt_hash, prompt_sheet_id,
                initial_score, latest_score, submit_count, status, latest_revision, deleted_at, created_at, updated_at
         FROM documents
         WHERE public_id = #{publicId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}

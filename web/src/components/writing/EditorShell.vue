@@ -1,6 +1,11 @@
 <template>
   <div class="writing-root">
-    <ToolRail class="toolrail-fixed-overlay" :active-panel="panelStore.activePanel" @select="panelStore.selectPanel" />
+    <ToolRail
+      class="toolrail-fixed-overlay"
+      :active-panel="panelStore.activePanel"
+      :show-task-prompt="taskPromptViewerState.visible"
+      @select="panelStore.selectPanel"
+    />
     <div class="workspace-layout" :style="panelStore.layoutStyle">
       <div ref="leftPaneRef" class="left-pane">
         <DocEditor
@@ -53,9 +58,11 @@
           :conversation-id="draftStore.aiConversationId"
           :ai-generating="aiGenerating"
           :writing-mode="draftStore.writingMode"
+          :ai-provider="draftStore.aiProvider"
           :study-stage="props.studyStage"
           :topic-content="effectiveExamTopicContent"
           :task-prompt="effectiveExamTaskPrompt"
+          :attachment-image-url="sessionMetadata?.attachmentImageUrl ?? null"
           :ai-note="draftStore.aiNote"
           :evaluate-result="evaluateStore.evaluateResult"
           :active-error-id="activeErrorId"
@@ -93,6 +100,7 @@
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
           @update:ai-note="draftStore.aiNote = $event"
+          @update:ai-provider="onAiProviderChange"
           @update:writing-mode="draftStore.writingMode = $event"
           @update:task-prompt="draftStore.taskPrompt = $event"
           @ai-note-send="onAiNoteSend"
@@ -162,7 +170,8 @@ import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
 import { getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
-import type { PolishTier, WritingSessionMetadataResponse } from '@/api/writing'
+import type { PolishTier, WritingAiProvider, WritingSessionMetadataResponse } from '@/api/writing'
+import { resolveTaskPromptViewerState } from './taskPromptViewerState'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
@@ -170,6 +179,11 @@ const grammarStore = useGrammarStore()
 const evaluateStore = useEvaluateStore()
 const minWordCount = ref(60)
 const sessionMetadata = ref<WritingSessionMetadataResponse | null>(null)
+const aiProviderLabels: Record<WritingAiProvider, string> = {
+  openai: 'OpenAI',
+  kimi: 'Kimi',
+  qwen: '千问',
+}
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
 
@@ -228,6 +242,13 @@ const effectiveExamMinWords = computed(() =>
 )
 const effectiveExamRecommendedMaxWords = computed(() =>
   sessionMetadata.value?.recommendedMaxWords ?? effectiveExamPromptMetadata.value?.recommendedMaxWords ?? null,
+)
+const taskPromptViewerState = computed(() =>
+  resolveTaskPromptViewerState({
+    writingMode: draftStore.writingMode,
+    taskPrompt: effectiveExamTaskPrompt.value,
+    activePanel: panelStore.activePanel,
+  }),
 )
 
 const selectionStore = createWritingSelectionStore()
@@ -392,6 +413,12 @@ watch(() => panelStore.activePanel, (newPanel, oldPanel) => {
   }
   panelStore.saveState()
 }, { flush: 'post' })
+
+watch(() => effectiveExamTaskPrompt.value, (taskPrompt) => {
+  if (!taskPrompt.trim() && panelStore.activePanel === 'taskPrompt') {
+    panelStore.activePanel = null
+  }
+})
 
 // Sync composable → evaluateStore (single source of truth)
 watch(composableEvalResult, (result) => {
@@ -635,6 +662,7 @@ function onSubmit() {
   wrappedEvalSubmit({
     essay: draftStore.draftText.trim(),
     aiHint: draftStore.aiNote.trim() || undefined,
+    aiProvider: draftStore.aiProvider,
     mode: normalizedMode,
     taskPrompt: examTaskPrompt,
     lang: 'en',
@@ -788,6 +816,16 @@ function onAiChatCleared() {
   aiGenerating.value = false
 }
 
+function onAiProviderChange(provider: WritingAiProvider) {
+  if (draftStore.aiProvider === provider) return
+  draftStore.setAiProvider(provider)
+  lastChatResult.value = null
+  aiAbortController?.abort()
+  aiAbortController = null
+  aiGenerating.value = false
+  showToast(`已切换到 ${aiProviderLabels[provider] ?? provider}`, 'success')
+}
+
 async function onAiNoteSend() {
   if (aiGenerating.value) return
   const instruction = draftStore.aiNote.trim()
@@ -836,6 +874,7 @@ async function onAiNoteSend() {
       apiVersion: 1,
       intent: 'chat',
       mode: 'md',
+      aiProvider: draftStore.aiProvider,
       instruction,
       constraints: {
         contextScope,
@@ -897,11 +936,14 @@ function onAiNoteStop() {
   box-sizing: border-box;
   background: #f3f4f6;
   transform: none;
+  display: flex;
+  flex-direction: column;
 }
 .workspace-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--splitter-width) var(--rightWidth);
   min-width: 0;
+  flex: 1 1 auto;
   height: 100%;
   overflow: hidden;
   transform: none;

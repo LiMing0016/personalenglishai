@@ -1,0 +1,145 @@
+<svg width="1440" height="1120" viewBox="0 0 1440 1120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="1120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBFBFC"/>
+      <stop offset="1" stop-color="#F2F6F8"/>
+    </linearGradient>
+    <filter id="shadow" x="70" y="110" width="1300" height="900" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#14233A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="1120" fill="url(#bg)"/>
+  <circle cx="130" cy="120" r="180" fill="#E7F7F1"/>
+  <circle cx="130" cy="120" r="180" fill-opacity="0.4" fill="#E7F7F1"/>
+
+  <rect x="88" y="54" rx="18" ry="18" width="210" height="38" fill="#E9F7F2"/>
+  <text x="108" y="79" fill="#0F8A6C" font-size="18" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI 命题助手 · 聊天式原型</text>
+  <text x="88" y="142" fill="#152033" font-size="46" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">把“填表单”改成“像和 AI 说话一样命题”</text>
+  <text x="88" y="184" fill="#6B7688" font-size="24" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">推荐方向：对话式输入 + 结构化确认 + 单题预览。先让 AI 理解，再让 AI 出题。</text>
+
+  <g filter="url(#shadow)">
+    <rect x="88" y="236" rx="28" ry="28" width="848" height="804" fill="#FFFFFF" fill-opacity="0.94" stroke="#DEE4EA"/>
+    <rect x="88" y="236" rx="28" ry="28" width="848" height="58" fill="#F8FAFB"/>
+    <circle cx="120" cy="265" r="5" fill="#CBD4DE"/>
+    <circle cx="138" cy="265" r="5" fill="#CBD4DE"/>
+    <circle cx="156" cy="265" r="5" fill="#CBD4DE"/>
+    <text x="183" y="271" fill="#546376" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">考试写作 / AI 生成 / 低保真原型</text>
+
+    <line x1="620" y1="294" x2="620" y2="1040" stroke="#E1E7ED"/>
+    <rect x="118" y="324" rx="0" ry="0" width="472" height="0" fill="#FFFFFF"/>
+
+    <text x="118" y="350" fill="#152033" font-size="34" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">考试写作 · AI 命题助手</text>
+    <text x="118" y="382" fill="#6B7688" font-size="18" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">直接告诉 AI 你想练什么题，也可以补角色、数据、材料原文。</text>
+
+    <rect x="118" y="410" rx="22" ry="22" width="102" height="40" fill="#F4F6F8"/>
+    <text x="143" y="436" fill="#607081" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">手动输入</text>
+    <rect x="232" y="410" rx="22" ry="22" width="92" height="40" fill="#E8F7F2"/>
+    <text x="256" y="436" fill="#0F8A6C" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI 生成</text>
+    <rect x="336" y="410" rx="22" ry="22" width="92" height="40" fill="#F4F6F8"/>
+    <text x="360" y="436" fill="#607081" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">历年真题</text>
+    <line x1="118" y1="472" x2="590" y2="472" stroke="#E1E7ED"/>
+
+    <rect x="118" y="494" rx="16" ry="16" width="114" height="32" fill="#EEF2F5"/>
+    <text x="142" y="515" fill="#617180" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">阶段 A · 澄清需求</text>
+
+    <rect x="336" y="548" rx="22" ry="22" width="254" height="88" fill="url(#userBubble)"/>
+    <defs>
+      <linearGradient id="userBubble" x1="336" y1="548" x2="590" y2="636" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#128A6D"/>
+        <stop offset="1" stop-color="#0B6D56"/>
+      </linearGradient>
+    </defs>
+    <text x="360" y="580" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">给我一篇关于 AI Agent 大模型</text>
+    <text x="360" y="604" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">近 5 年发展趋势的图表作文题，</text>
+    <text x="360" y="628" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">最好偏考研风格。</text>
+
+    <rect x="118" y="656" rx="22" ry="22" width="392" height="178" fill="#FFF6DB" stroke="#F0D48B"/>
+    <text x="142" y="686" fill="#684B00" font-size="15" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI 理解结果</text>
+    <text x="142" y="716" fill="#5F4300" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">我理解你想要一篇图表题，主题是</text>
+    <text x="142" y="740" fill="#5F4300" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI Agent 大模型近 5 年发展趋势，</text>
+    <text x="142" y="764" fill="#5F4300" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">但目前还缺少体裁和字数要求。</text>
+    <rect x="142" y="786" rx="16" ry="16" width="70" height="30" fill="#FFFFFF"/>
+    <text x="160" y="806" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">议论文</text>
+    <rect x="222" y="786" rx="16" ry="16" width="70" height="30" fill="#FFFFFF"/>
+    <text x="240" y="806" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">说明文</text>
+    <rect x="302" y="786" rx="16" ry="16" width="84" height="30" fill="#FFFFFF"/>
+    <text x="321" y="806" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">300 词左右</text>
+    <rect x="396" y="786" rx="16" ry="16" width="92" height="30" fill="#FFFFFF"/>
+    <text x="418" y="806" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">带具体数据</text>
+
+    <rect x="264" y="856" rx="22" ry="22" width="326" height="88" fill="url(#userBubble)"/>
+    <text x="288" y="888" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">说明文，300 词左右，图表里要体现</text>
+    <text x="288" y="912" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">2020 到 2024 年采用率变化，</text>
+    <text x="288" y="936" fill="#FFFFFF" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">并给一个明显上升趋势。</text>
+
+    <rect x="118" y="964" rx="22" ry="22" width="392" height="104" fill="#FFFFFF" stroke="#DFE5EB"/>
+    <text x="142" y="994" fill="#152033" font-size="15" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI 已准备好生成</text>
+    <text x="142" y="1022" fill="#4F6174" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">已补齐题型、体裁、字数和数据趋势。</text>
+    <rect x="142" y="1036" rx="16" ry="16" width="104" height="30" fill="#F7FBF9" stroke="#CFE6DD"/>
+    <text x="160" y="1056" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">高级设置</text>
+    <rect x="258" y="1036" rx="16" ry="16" width="104" height="30" fill="#F7FBF9" stroke="#CFE6DD"/>
+    <text x="276" y="1056" fill="#1B6D59" font-size="13" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">直接生成题目</text>
+
+    <rect x="118" y="1088" rx="22" ry="22" width="472" height="96" fill="#FFFFFF" stroke="#DFE5EB"/>
+    <text x="142" y="1120" fill="#39485A" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">继续补充：如果你有角色、材料原文、图表数据，也可以直接贴在这里……</text>
+    <text x="142" y="1150" fill="#7A8898" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">支持自然语言整段输入，不强制逐项填写</text>
+    <rect x="492" y="1110" rx="18" ry="18" width="78" height="34" fill="#0F8A6C"/>
+    <text x="516" y="1132" fill="#FFFFFF" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">发送</text>
+
+    <text x="654" y="350" fill="#152033" font-size="24" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">结构化确认</text>
+    <text x="654" y="382" fill="#6B7688" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">默认折叠，只在 AI 需要确认或用户主动展开时出现。</text>
+
+    <rect x="654" y="410" rx="18" ry="18" width="250" height="78" fill="#F8FAFB" stroke="#E4EAF0"/>
+    <text x="674" y="436" fill="#718091" font-size="12" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">主题</text>
+    <text x="674" y="466" fill="#223042" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">AI Agent 大模型近 5 年发展趋势</text>
+
+    <rect x="654" y="500" rx="18" ry="18" width="250" height="64" fill="#F8FAFB" stroke="#E4EAF0"/>
+    <text x="674" y="526" fill="#718091" font-size="12" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">题型 / 体裁</text>
+    <text x="674" y="552" fill="#223042" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">图表题 · 说明文</text>
+
+    <rect x="654" y="576" rx="18" ry="18" width="250" height="64" fill="#F8FAFB" stroke="#E4EAF0"/>
+    <text x="674" y="602" fill="#718091" font-size="12" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">字数 / 约束</text>
+    <text x="674" y="628" fill="#223042" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">300 词左右 · 2020-2024 上升趋势</text>
+
+    <rect x="654" y="660" rx="16" ry="16" width="250" height="48" fill="#0F8A6C"/>
+    <text x="748" y="691" text-anchor="middle" fill="#FFFFFF" font-size="16" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">生成题目</text>
+    <rect x="654" y="718" rx="16" ry="16" width="250" height="48" fill="#F4F6F8" stroke="#DFE5EB"/>
+    <text x="748" y="749" text-anchor="middle" fill="#455466" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">展开高级设置</text>
+
+    <rect x="654" y="800" rx="22" ry="22" width="250" height="196" fill="#FFFFFF" stroke="#DFE5EB"/>
+    <text x="674" y="830" fill="#152033" font-size="20" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">生成后预览</text>
+    <text x="674" y="858" fill="#6B7688" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">不做花哨图片，先保持干净、像考试题。</text>
+    <rect x="674" y="878" rx="16" ry="16" width="210" height="94" fill="#F6FAF8" stroke="#D6EAE4"/>
+    <text x="692" y="906" fill="#152033" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">Writing Task</text>
+    <text x="692" y="932" fill="#2C3644" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">题干：描述图表变化并分析原因</text>
+    <text x="692" y="954" fill="#2C3644" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">图表：2020-2024 采用率 12%→67%</text>
+    <text x="692" y="976" fill="#2C3644" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">操作：换一题 / 编辑 / 开始写作</text>
+  </g>
+
+  <rect x="972" y="236" rx="28" ry="28" width="380" height="804" fill="#FFFFFF" fill-opacity="0.92" stroke="#DEE4EA"/>
+  <text x="1000" y="282" fill="#152033" font-size="30" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">交互方案</text>
+  <text x="1000" y="316" fill="#6B7688" font-size="17" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">推荐用“聊天式输入”替代“大片字段表单”。</text>
+
+  <rect x="1000" y="350" rx="18" ry="18" width="324" height="92" fill="#FFFFFF" stroke="#DEE4EA"/>
+  <text x="1020" y="382" fill="#152033" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">1. 用户先说需求</text>
+  <text x="1020" y="412" fill="#6B7688" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">主题、角色、数据、材料原文都可直接输入。</text>
+
+  <rect x="1000" y="456" rx="18" ry="18" width="324" height="92" fill="#FFFFFF" stroke="#DEE4EA"/>
+  <text x="1020" y="488" fill="#152033" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">2. AI 先澄清再生成</text>
+  <text x="1020" y="518" fill="#6B7688" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">缺什么就追问什么，并给快捷补充按钮。</text>
+
+  <rect x="1000" y="562" rx="18" ry="18" width="324" height="92" fill="#FFFFFF" stroke="#DEE4EA"/>
+  <text x="1020" y="594" fill="#152033" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">3. 高级设置默认折叠</text>
+  <text x="1020" y="624" fill="#6B7688" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">只在必要时显示结构化确认，不让用户感觉在填后台表单。</text>
+
+  <rect x="1000" y="668" rx="18" ry="18" width="324" height="92" fill="#FFFFFF" stroke="#DEE4EA"/>
+  <text x="1020" y="700" fill="#152033" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">4. 最终展示像“真题卡片”</text>
+  <text x="1020" y="730" fill="#6B7688" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">图表题、漫画题先走文字说明与结构化卡片，不做廉价伪图片。</text>
+
+  <rect x="1000" y="794" rx="18" ry="18" width="324" height="156" fill="#F8FAFB" stroke="#D7DDE5" stroke-dasharray="6 6"/>
+  <text x="1020" y="828" fill="#546477" font-size="16" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">这张图重点看 3 件事</text>
+  <text x="1020" y="860" fill="#546477" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">1. 输入方式像聊天，不像表单</text>
+  <text x="1020" y="888" fill="#546477" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">2. AI 回答先澄清，再正式生成题目</text>
+  <text x="1020" y="916" fill="#546477" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">3. 最终题目以干净的真题文本卡片呈现</text>
+</svg>

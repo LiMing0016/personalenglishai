@@ -4,9 +4,9 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO writing_metadata
-            (document_id, user_id, mode, study_stage, title_snapshot, topic_title, prompt_text, genre, source_type, created_at, updated_at)
+            (document_id, user_id, mode, study_stage, title_snapshot, topic_title, prompt_text, attachment_image_url, genre, source_type, created_at, updated_at)
         VALUES
-            (#{documentId}, #{userId}, #{mode}, #{studyStage}, #{titleSnapshot}, #{topicTitle}, #{promptText}, #{genre}, #{sourceType}, NOW(), NOW())
+            (#{documentId}, #{userId}, #{mode}, #{studyStage}, #{titleSnapshot}, #{topicTitle}, #{promptText}, #{attachmentImageUrl}, #{genre}, #{sourceType}, NOW(), NOW())
     </insert>
 
     <update id="updateByDocumentId" parameterType="com.personalenglishai.backend.entity.WritingMetadata">
@@ -17,6 +17,7 @@
             title_snapshot = #{titleSnapshot},
             topic_title = #{topicTitle},
             prompt_text = #{promptText},
+            attachment_image_url = #{attachmentImageUrl},
             genre = #{genre},
             source_type = #{sourceType},
             updated_at = NOW()
@@ -24,7 +25,7 @@
     </update>
     <select id="selectByDocumentId" resultType="com.personalenglishai.backend.entity.WritingMetadata">
         SELECT id, document_id, user_id, mode, study_stage, title_snapshot, topic_title,
-               prompt_text, genre, source_type, created_at, updated_at
+               prompt_text, attachment_image_url, genre, source_type, created_at, updated_at
         FROM writing_metadata
         WHERE document_id = #{documentId}
         LIMIT 1

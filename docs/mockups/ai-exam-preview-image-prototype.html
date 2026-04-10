@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图片题预览页原型</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background: #f4f6f8; color: #1a2333; }
+    .page { width: 1320px; margin: 0 auto; padding: 36px 24px 52px; }
+    .top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
+    .badge { display:inline-block; padding:8px 14px; border-radius:999px; background:#e7f6f1; color:#0f8a6c; font-size:14px; font-weight:700; }
+    h1 { margin:14px 0 8px; font-size:32px; }
+    .desc { margin:0; color:#667487; font-size:16px; }
+    .screen { background:rgba(255,255,255,.9); border:1px solid #dde4ea; border-radius:28px; box-shadow:0 18px 36px rgba(24,35,51,.06); padding:20px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; padding-bottom:18px; border-bottom:1px solid #dde4ea; }
+    .crumb { color:#6c7789; font-size:14px; }
+    .actions { display:flex; gap:12px; }
+    .btn { padding:10px 14px; border-radius:14px; border:1px solid #dde4ea; background:#fff; color:#445466; font-size:14px; font-weight:700; }
+    .btn.primary { background:#0f8a6c; color:#fff; border-color:transparent; }
+    .paper-wrap { display:flex; justify-content:center; padding:28px 0 16px; }
+    .paper { width:820px; background:#fffdfa; border:1px solid #efe7db; border-radius:18px; box-shadow:0 20px 40px rgba(24,35,51,.08); padding:50px 62px 58px; }
+    .part { font:700 28px Georgia,"Times New Roman",serif; margin-bottom:24px; }
+    .label { margin:0 0 14px; color:#8a775c; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .image-box { border:1px solid #ece4d9; border-radius:14px; padding:22px; background:rgba(255,255,255,.72); margin-bottom:28px; }
+    .visual { height:300px; border:2px dashed #cdbfa9; border-radius:14px; background:linear-gradient(180deg,rgba(255,255,255,.8),rgba(246,240,232,.65)); position:relative; overflow:hidden; }
+    .goal { position:absolute; width:94px; height:46px; border:3px solid #43362a; border-radius:6px; }
+    .person { position:absolute; width:48px; height:48px; border:2px solid #43362a; border-radius:50%; }
+    .line { position:absolute; height:2px; background:#43362a; transform-origin:left center; }
+    .caption { margin-top:12px; color:#6b5a44; text-align:center; font-size:14px; }
+    .directions { font:700 24px Georgia,"Times New Roman",serif; margin:26px 0 18px; }
+    .paper-text { font:24px/1.82 Georgia,"Times New Roman",serif; margin:0 0 18px; text-indent:1.4em; }
+    .meta { font:22px/1.8 Georgia,"Times New Roman",serif; margin-top:18px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top">
+      <div>
+        <div class="badge">图片题预览页</div>
+        <h1>先展示 Directions 与题干，再展示图片 / 漫画附件</h1>
+        <p class="desc">更贴近真实真题顺序：先读任务说明，再看配图或漫画内容。</p>
+      </div>
+    </div>
+
+    <div class="screen">
+      <div class="topbar">
+        <div class="crumb">考试写作 / AI 生成 / 图片题预览</div>
+        <div class="actions">
+          <button class="btn">返回修改</button>
+          <button class="btn">换一题</button>
+          <button class="btn primary">开始写作</button>
+        </div>
+      </div>
+
+      <div class="paper-wrap">
+        <article class="paper">
+          <div class="part">Part B</div>
+
+          <div class="directions">51. Directions:</div>
+          <p class="paper-text">Write an essay of 160-200 words based on the following drawing. In your essay, you should first describe the drawing, then interpret its meaning, and give your comment on it.</p>
+          <div class="meta">You should write neatly on ANSWER SHEET 2. Write no less than 160 words. (20 points)</div>
+
+          <p class="label" style="margin-top:28px;">Attachment / Visual Prompt</p>
+          <div class="image-box">
+            <div class="visual">
+              <div class="goal" style="left:48px;top:28px;"></div>
+              <div class="goal" style="right:48px;top:28px;"></div>
+              <div class="goal" style="left:90px;bottom:28px;width:126px;"></div>
+              <div class="goal" style="right:90px;bottom:28px;width:126px;"></div>
+
+              <div class="person" style="left:120px;top:84px;"></div>
+              <div class="person" style="right:120px;top:84px;"></div>
+              <div class="person" style="left:238px;top:124px;"></div>
+              <div class="person" style="left:144px;bottom:62px;"></div>
+              <div class="person" style="right:144px;bottom:62px;"></div>
+
+              <div class="line" style="left:142px;top:132px;width:48px;transform:rotate(16deg);"></div>
+              <div class="line" style="right:144px;top:132px;width:42px;transform:rotate(-16deg);"></div>
+              <div class="line" style="left:264px;top:170px;width:28px;transform:rotate(8deg);"></div>
+              <div class="line" style="left:164px;bottom:88px;width:46px;transform:rotate(-22deg);"></div>
+              <div class="line" style="right:164px;bottom:88px;width:46px;transform:rotate(22deg);"></div>
+            </div>
+            <div class="caption">图片 / 漫画内容区</div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

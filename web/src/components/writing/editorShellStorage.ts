@@ -5,6 +5,7 @@ export const WRITING_STORAGE_KEYS = {
   scrollTop: 'peai:writing:scrollTop',
   draft: 'peai:writing:draft',
   legacyDraft: 'peai:draft:writing',
+  aiProvider: 'peai:writing:aiProvider',
   aiNoteDraft: 'peai:writing:aiNoteDraft',
   aiConversationId: 'peai:writing:aiConversationId',
   writingMode: 'peai:writing:mode',
@@ -115,6 +116,36 @@ export function loadTaskPrompt(): string {
     return localStorage.getItem(WRITING_STORAGE_KEYS.taskPrompt) ?? ''
   } catch {
     return ''
+  }
+}
+
+export type WritingAiProvider = 'openai' | 'kimi' | 'qwen'
+
+export function saveAiProviderNow(provider: WritingAiProvider, scope?: string | null): void {
+  try {
+    localStorage.setItem(scopedKey(WRITING_STORAGE_KEYS.aiProvider, scope), provider)
+  } catch {
+    // ignore localStorage failure
+  }
+}
+
+export function loadAiProvider(scope?: string | null): WritingAiProvider | null {
+  try {
+    const raw = localStorage.getItem(scopedKey(WRITING_STORAGE_KEYS.aiProvider, scope))?.trim()
+    if (raw === 'openai' || raw === 'kimi' || raw === 'qwen') {
+      return raw
+    }
+  } catch {
+    // ignore localStorage failure
+  }
+  return null
+}
+
+export function clearAiProviderNow(scope?: string | null): void {
+  try {
+    localStorage.removeItem(scopedKey(WRITING_STORAGE_KEYS.aiProvider, scope))
+  } catch {
+    // ignore localStorage failure
   }
 }
 
