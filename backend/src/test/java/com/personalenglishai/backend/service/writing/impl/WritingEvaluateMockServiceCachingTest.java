@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -126,6 +127,7 @@ class WritingEvaluateMockServiceCachingTest {
         when(rubricService.normalizeMode("exam")).thenReturn("exam");
         when(rubricService.getActiveRubric("postgrad", "exam")).thenReturn(rubric);
         when(rubricTextBuilder.buildRubricText("postgrad", "exam")).thenReturn("rubric text");
+        when(openAiClient.resolveModel(nullable(String.class))).thenReturn("gpt-4o");
         when(openAiClient.createTextResponse(any()))
                 .thenReturn(new OpenAiResponsesTextResult("resp_new", aiResultJson(), 1500, 1200, 4096));
         when(grammarCheckService.check(request.getEssay(), "lite")).thenReturn(List.of());
@@ -136,7 +138,6 @@ class WritingEvaluateMockServiceCachingTest {
                         "postgrad-exam-policy-v1", 75, 75, null, 0, Map.of(), List.of(), null
                 ));
         when(abilityProfileMapper.selectByUserId(1L)).thenReturn(null);
-        when(openAiClient.getModel()).thenReturn("gpt-4o");
 
         WritingEvaluateResponse response = service.evaluate(request);
 
@@ -244,7 +245,7 @@ class WritingEvaluateMockServiceCachingTest {
         when(scorePromptCacheKeyBuilder.build(context))
                 .thenReturn("score:gpt-4o:score-v1:postgrad-exam-v1:postgrad:exam:task2");
         when(runtimeStateService.get("doc_postgrad")).thenReturn(null);
-        when(openAiClient.getModel()).thenReturn("gpt-4o");
+        when(openAiClient.resolveModel(nullable(String.class))).thenReturn("gpt-4o");
         when(openAiClient.createTextResponse(any()))
                 .thenReturn(new OpenAiResponsesTextResult("resp_new", aiResultJson(), 1500, 0, 4096));
         when(grammarCheckService.check(request.getEssay(), "lite")).thenReturn(List.of());
