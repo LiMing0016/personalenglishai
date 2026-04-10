@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>图表题预览页原型</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background: #f4f6f8; color: #1a2333; }
+    .page { width: 1320px; margin: 0 auto; padding: 36px 24px 52px; }
+    .badge { display:inline-block; padding:8px 14px; border-radius:999px; background:#e7f6f1; color:#0f8a6c; font-size:14px; font-weight:700; }
+    h1 { margin:14px 0 8px; font-size:32px; }
+    .desc { margin:0 0 20px; color:#667487; font-size:16px; }
+    .screen { background:rgba(255,255,255,.9); border:1px solid #dde4ea; border-radius:28px; box-shadow:0 18px 36px rgba(24,35,51,.06); padding:20px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; padding-bottom:18px; border-bottom:1px solid #dde4ea; }
+    .crumb { color:#6c7789; font-size:14px; }
+    .actions { display:flex; gap:12px; }
+    .btn { padding:10px 14px; border-radius:14px; border:1px solid #dde4ea; background:#fff; color:#445466; font-size:14px; font-weight:700; }
+    .btn.primary { background:#0f8a6c; color:#fff; border-color:transparent; }
+    .paper-wrap { display:flex; justify-content:center; padding:28px 0 16px; }
+    .paper { width:820px; background:#fffdfa; border:1px solid #efe7db; border-radius:18px; box-shadow:0 20px 40px rgba(24,35,51,.08); padding:50px 62px 58px; }
+    .part { font:700 28px Georgia,"Times New Roman",serif; margin-bottom:24px; }
+    .label { margin:0 0 14px; color:#8a775c; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .chart-box { border:1px solid #ece4d9; border-radius:14px; padding:24px 28px; background:rgba(255,255,255,.72); margin-bottom:28px; }
+    .chart-title { text-align:center; font-size:18px; font-weight:700; margin-bottom:18px; color:#334356; }
+    table { width:100%; border-collapse:collapse; font-family: Georgia,"Times New Roman",serif; font-size:20px; }
+    th, td { border:1px solid #d8d0c3; padding:12px 10px; text-align:center; }
+    th { background:#faf6ef; }
+    .directions { font:700 24px Georgia,"Times New Roman",serif; margin:26px 0 18px; }
+    .paper-text { font:24px/1.82 Georgia,"Times New Roman",serif; margin:0 0 18px; text-indent:1.4em; }
+    .meta { font:22px/1.8 Georgia,"Times New Roman",serif; margin-top:18px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="badge">图表题预览页</div>
+    <h1>先展示 Directions 与题干，再展示图表 / 表格</h1>
+    <p class="desc">按真题纸面顺序，先明确写作任务，再在下方给出表格或图表内容。</p>
+
+    <div class="screen">
+      <div class="topbar">
+        <div class="crumb">考试写作 / AI 生成 / 图表题预览</div>
+        <div class="actions">
+          <button class="btn">返回修改</button>
+          <button class="btn">换一题</button>
+          <button class="btn primary">开始写作</button>
+        </div>
+      </div>
+
+      <div class="paper-wrap">
+        <article class="paper">
+          <div class="part">Part B</div>
+
+          <div class="directions">51. Directions:</div>
+          <p class="paper-text">Write an essay of 160-200 words based on the table above. In your essay, you should first describe the table, then analyze the reasons behind the changes, and finally give your comment.</p>
+          <div class="meta">You should write neatly on ANSWER SHEET 2. Write no less than 160 words. (20 points)</div>
+
+          <p class="label" style="margin-top:28px;">Chart / Table</p>
+          <div class="chart-box">
+            <div class="chart-title">Adoption Rate of AI Agent Tools among University Students (2020-2024)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Year</th>
+                  <th>2020</th>
+                  <th>2021</th>
+                  <th>2022</th>
+                  <th>2023</th>
+                  <th>2024</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>Rate</th>
+                  <td>12%</td>
+                  <td>19%</td>
+                  <td>31%</td>
+                  <td>48%</td>
+                  <td>67%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

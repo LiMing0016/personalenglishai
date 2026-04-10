@@ -27,7 +27,7 @@ class AuditTopicServiceTest {
         when(qwenService.isEnabled()).thenReturn(true);
         when(qwenService.chat(anyString(), anyString()))
                 .thenReturn("""
-                        {"status":"complete","topic":"根据所给图表写一篇作文","genre":"看图作文","wordRange":"160-200","requirements":"first describe the drawing, then interpret its meaning, and give your comment on it.","message":null}
+                        {"status":"complete","topic":"根据所给图表写一篇作文","promptType":"comic","genre":"看图作文","wordRange":"160-200","requirements":"first describe the drawing, then interpret its meaning, and give your comment on it.","message":null}
                         """);
 
         AuditTopicResponse response = service.audit(request);
@@ -35,5 +35,6 @@ class AuditTopicServiceTest {
         assertThat(response.getTopic()).isEqualTo(request.getTopic());
         assertThat(response.getGenre()).isEqualTo("看图作文");
         assertThat(response.getWordRange()).isEqualTo("160-200");
+        assertThat(response.getPromptType()).isEqualTo("comic");
     }
 }

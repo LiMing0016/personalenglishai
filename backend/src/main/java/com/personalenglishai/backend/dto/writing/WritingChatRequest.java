@@ -21,6 +21,7 @@ public class WritingChatRequest {
     private String aiHint;
     /** 选中的文本，作为提问上下文（可选） */
     private String selectedText;
+    private String aiProvider;
 
     public String getEssay() {
         return essay;
@@ -68,5 +69,13 @@ public class WritingChatRequest {
 
     public void setSelectedText(String selectedText) {
         this.selectedText = selectedText;
+    }
+
+    public String getAiProvider() {
+        return aiProvider;
+    }
+
+    public void setAiProvider(String aiProvider) {
+        this.aiProvider = aiProvider;
     }
 }

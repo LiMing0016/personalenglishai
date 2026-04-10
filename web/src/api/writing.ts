@@ -3,9 +3,12 @@
  */
 import { http } from './http'
 
+export type WritingAiProvider = 'openai' | 'kimi' | 'qwen'
+
 export interface WritingEvaluateRequest {
   essay: string
   aiHint?: string
+  aiProvider?: WritingAiProvider
   mode?: 'free' | 'exam'
   lang?: string
   taskPrompt?: string
@@ -145,6 +148,7 @@ export function evaluateWriting(
     .post<WritingEvaluateResponse>('/writing/evaluate', {
       essay: payload.essay,
       aiHint: payload.aiHint ?? undefined,
+      aiProvider: payload.aiProvider ?? undefined,
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
@@ -171,6 +175,7 @@ export function submitEvaluateWriting(
     .post<WritingEvaluateTaskSubmitResponse>('/writing/evaluate/submit', {
       essay: payload.essay,
       aiHint: payload.aiHint ?? undefined,
+      aiProvider: payload.aiProvider ?? undefined,
       mode: normalizedMode,
       lang: payload.lang ?? 'en',
       taskPrompt,
@@ -267,6 +272,7 @@ export function getEvaluationDetail(id: number): Promise<EvaluationDetailRespons
 export interface WritingChatRequest {
   essay: string
   instruction: string
+  aiProvider?: WritingAiProvider
   lang?: string
   mode?: string
   aiHint?: string
@@ -302,6 +308,7 @@ export interface TrustedRewriteSegment {
 
 export interface PolishRequest {
   original: string
+  aiProvider?: WritingAiProvider
   context?: string
   reason?: string
   tier: PolishTier
@@ -328,6 +335,7 @@ export function polishSuggestion(req: PolishRequest): Promise<PolishResponse> {
 
 export interface PolishEssayRequest {
   text: string
+  aiProvider?: WritingAiProvider
   tier: PolishTier
   studyStage?: string | null
   writingMode?: 'free' | 'exam'
@@ -406,6 +414,7 @@ export function polishEssay(req: PolishEssayRequest): Promise<PolishEssayRespons
 
 export interface WritingModelEssayRequest {
   essay: string
+  aiProvider?: WritingAiProvider
   studyStage?: string | null
   writingMode?: 'free' | 'exam'
   taskType?: string | null
@@ -491,6 +500,7 @@ export function clearTrustedRewrite(docId: string): Promise<void> {
 
 export interface WritingTemplateRequest {
   text: string
+  aiProvider?: WritingAiProvider
   taskPrompt?: string
   studyStage?: string | null
   writingMode?: 'free' | 'exam'
@@ -535,6 +545,7 @@ export function extractWritingTemplate(req: WritingTemplateRequest): Promise<Wri
 
 export interface WritingMaterialRequest {
   taskPrompt: string
+  aiProvider?: WritingAiProvider
   essayText?: string
   studyStage?: string | null
   writingMode?: 'free' | 'exam'
@@ -585,6 +596,7 @@ export function generateWritingMaterial(req: WritingMaterialRequest): Promise<Wr
 export interface TranslateRequest {
   text: string
   mode: 'full' | 'detailed'
+  aiProvider?: WritingAiProvider
 }
 
 export interface HighlightItem {
@@ -693,10 +705,11 @@ export interface SuggestionsResponse {
 
 export function fetchWritingSuggestions(
   text: string,
+  aiProvider?: WritingAiProvider,
   options?: { signal?: AbortSignal }
 ): Promise<SuggestionsResponse> {
   return http
-    .post<SuggestionsResponse>('/writing/suggestions', { text }, {
+    .post<SuggestionsResponse>('/writing/suggestions', { text, aiProvider: aiProvider ?? undefined }, {
       timeout: 30000,
       signal: options?.signal,
     })
@@ -711,6 +724,7 @@ export function chatWriting(payload: WritingChatRequest): Promise<WritingChatRes
     .post<WritingChatResponse>('/writing/chat', {
       essay: payload.essay,
       instruction: payload.instruction,
+      aiProvider: payload.aiProvider ?? undefined,
       lang: payload.lang ?? 'en',
       mode: payload.mode ?? 'free',
       aiHint: payload.aiHint ?? undefined,
@@ -726,21 +740,128 @@ export interface AuditTopicRequest {
   genre?: string | null | null
   wordRange?: string | null
   requirements?: string | null
+  studyStage?: string | null
 }
 
 export interface AuditTopicResponse {
   status: 'complete' | 'need_more_info' | 'invalid'
   topic?: string
+  promptType?: 'general' | 'material' | 'chart' | 'comic'
   genre?: string | null | null
   wordRange?: string | null
   requirements?: string | null
   message?: string
 }
 
-export function auditTopic(req: AuditTopicRequest): Promise<AuditTopicResponse> {
+export function auditTopic(
+  req: AuditTopicRequest,
+  options?: { signal?: AbortSignal },
+): Promise<AuditTopicResponse> {
   return http
-    .post<AuditTopicResponse>('/writing/audit-topic', req, { timeout: 35000 })
+    .post<AuditTopicResponse>('/writing/audit-topic', req, {
+      timeout: 35000,
+      signal: options?.signal,
+    })
     .then((res) => res.data)
+}
+
+export interface ExamPromptChartSpec {
+  title?: string | null
+  displayType?: string | null
+  columns: string[]
+  rows: string[][]
+  summary?: string | null
+}
+
+export interface ExamPromptComicScene {
+  title?: string | null
+  description: string
+  dialogue?: string | null
+}
+
+export interface GenerateExamPromptRequest {
+  originalInput: string
+  topic: string
+  studyStage?: string | null
+  promptType?: 'general' | 'material' | 'chart' | 'comic'
+  taskType?: string | null
+  genre?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+  maxScore?: number | null
+  aiProvider?: WritingAiProvider
+}
+
+export interface GenerateExamPromptResponse {
+  promptType: 'general' | 'material' | 'chart' | 'comic'
+  paper?: string | null
+  promptSheetId?: number | null
+  topic: string
+  promptText: string
+  part?: string | null
+  questionNo?: string | null
+  directions?: string | null
+  requirements?: string | null
+  genre?: string | null
+  wordRange?: string | null
+  maxScore?: number | null
+  sourceType: 'ai_generated'
+  taskType?: string | null
+  minWords?: number | null
+  recommendedMaxWords?: number | null
+  attachmentType?: 'none' | 'material' | 'visual' | null
+  attachmentTitle?: string | null
+  attachmentContent?: string | null
+  attachmentImageUrl?: string | null
+  visualKind?: 'image' | 'comic' | 'chart' | 'table' | null
+  materialText?: string | null
+  chartSpec?: ExamPromptChartSpec | null
+  comicScenes?: ExamPromptComicScene[]
+}
+
+export function generateExamPrompt(
+  req: GenerateExamPromptRequest,
+  options?: { signal?: AbortSignal },
+): Promise<GenerateExamPromptResponse> {
+  return http
+    .post<GenerateExamPromptResponse>('/writing/generate-exam-prompt', req, {
+      timeout: 120000,
+      signal: options?.signal,
+    })
+    .then((res) => ({
+      promptType: res.data.promptType ?? 'general',
+      paper: res.data.paper ?? null,
+      promptSheetId: res.data.promptSheetId ?? null,
+      topic: res.data.topic ?? req.topic,
+      promptText: res.data.promptText ?? req.topic,
+      part: res.data.part ?? null,
+      questionNo: res.data.questionNo ?? null,
+      directions: res.data.directions ?? null,
+      requirements: res.data.requirements ?? null,
+      genre: res.data.genre ?? null,
+      wordRange: res.data.wordRange ?? null,
+      maxScore: res.data.maxScore ?? null,
+      sourceType: 'ai_generated',
+      taskType: res.data.taskType ?? null,
+      minWords: res.data.minWords ?? null,
+      recommendedMaxWords: res.data.recommendedMaxWords ?? null,
+      attachmentType: res.data.attachmentType ?? null,
+      attachmentTitle: res.data.attachmentTitle ?? null,
+      attachmentContent: res.data.attachmentContent ?? null,
+      attachmentImageUrl: res.data.attachmentImageUrl ?? null,
+      visualKind: res.data.visualKind ?? null,
+      materialText: res.data.materialText ?? null,
+      chartSpec: res.data.chartSpec
+        ? {
+            title: res.data.chartSpec.title ?? null,
+            displayType: res.data.chartSpec.displayType ?? null,
+            columns: res.data.chartSpec.columns ?? [],
+            rows: res.data.chartSpec.rows ?? [],
+            summary: res.data.chartSpec.summary ?? null,
+          }
+        : null,
+      comicScenes: res.data.comicScenes ?? [],
+    }))
 }
 
 // ── Recognize Topic Image (千问 VL 图片识别) ──
@@ -771,6 +892,8 @@ export interface StartSessionRequest {
   titleSnapshot?: string
   topicTitle?: string
   promptText?: string
+  promptSheetId?: number | null
+  attachmentImageUrl?: string | null
   genre?: string | null
   examType?: string | null
   taskType?: string | null
@@ -783,11 +906,13 @@ export interface StartSessionRequest {
 export interface WritingSessionMetadataResponse {
   documentId: string
   metadataId: number
+  promptSheetId?: number | null
   mode: 'free' | 'exam'
   studyStage?: string | null
   titleSnapshot: string
   topicTitle?: string | null
   promptText?: string | null
+  attachmentImageUrl?: string | null
   genre?: string | null | null
   sourceType: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
   createdAt: string

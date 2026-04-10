@@ -128,7 +128,7 @@
         <span class="draft-toggle-dot">{{ includeDraft ? '\u25CF' : '\u25CB' }}</span>
         <span class="draft-toggle-label">{{ includeDraft ? '\u5F15\u7528\u4F5C\u6587' : '\u4E0D\u5F15\u7528\u4F5C\u6587' }}</span>
       </button>
-      <div class="composer-input-wrap">
+      <div class="composer-shell">
         <div v-if="selectedText" class="composer-selected-text">
           <span class="composer-selected-label">Selected text</span>
           <SelectedTextChip
@@ -136,34 +136,6 @@
             :max-chars="68"
             @dismiss="clearSelectedText"
           />
-        </div>
-        <div ref="modeMenuRef" class="mode-plus-wrap">
-          <button
-            type="button"
-            class="mode-plus-btn"
-            title="写作模式"
-            @click.stop="toggleModeMenu"
-          >
-            +
-          </button>
-          <div v-if="modeMenuOpen" class="mode-menu" @click.stop>
-            <button
-              type="button"
-              class="mode-menu-item"
-              :class="{ active: writingMode === 'free' }"
-              @click="selectWritingMode('free')"
-            >
-              自由写作
-            </button>
-            <button
-              type="button"
-              class="mode-menu-item"
-              :class="{ active: writingMode === 'exam' }"
-              @click="selectWritingMode('exam')"
-            >
-              考试写作
-            </button>
-          </div>
         </div>
         <textarea
           ref="composerInputRef"
@@ -175,17 +147,78 @@
           @input="onInput"
           @keydown="onKeydown"
         />
-        <button
-          type="button"
-          class="send-icon-btn"
-          :class="{ generating: isGenerating, disabled: !canSend }"
-          :disabled="!isGenerating && !canSend"
-          :title="isGenerating ? 'Stop' : 'Send'"
-          @click="onSendOrStop"
-        >
-          <span v-if="!isGenerating" class="send-arrow" aria-hidden="true">↑</span>
-          <span v-else class="send-stop" aria-hidden="true"></span>
-        </button>
+        <div class="composer-bottom-row">
+          <div ref="modeMenuRef" class="mode-plus-wrap">
+            <button
+              type="button"
+              class="mode-plus-btn"
+              title="写作模式"
+              @click.stop="toggleModeMenu"
+            >
+              +
+            </button>
+            <div v-if="modeMenuOpen" class="mode-menu" @click.stop>
+              <button
+                type="button"
+                class="mode-menu-item"
+                :class="{ active: writingMode === 'free' }"
+                @click="selectWritingMode('free')"
+              >
+                自由写作
+              </button>
+              <button
+                type="button"
+                class="mode-menu-item"
+                :class="{ active: writingMode === 'exam' }"
+                @click="selectWritingMode('exam')"
+              >
+                考试写作
+              </button>
+            </div>
+          </div>
+          <div ref="providerMenuRef" class="provider-picker-wrap">
+            <button
+              type="button"
+              class="provider-picker-btn"
+              :aria-expanded="providerMenuOpen ? 'true' : 'false'"
+              title="当前会话模型"
+              @click.stop="toggleProviderMenu"
+            >
+              <span class="provider-picker-label">
+                <span class="provider-picker-icon" aria-hidden="true">⚡</span>
+                {{ currentProviderLabel }}
+              </span>
+              <span class="provider-picker-caret" aria-hidden="true">▼</span>
+            </button>
+            <div v-if="providerMenuOpen" class="provider-menu" @click.stop>
+              <button
+                v-for="option in providerOptions"
+                :key="option.value"
+                type="button"
+                class="provider-menu-item"
+                :class="{ active: aiProvider === option.value }"
+                @click="selectAiProvider(option.value)"
+              >
+                <span class="provider-menu-item-label">
+                  <span class="provider-picker-icon" aria-hidden="true">⚡</span>
+                  {{ option.label }}
+                </span>
+                <span v-if="aiProvider === option.value" class="provider-menu-check" aria-hidden="true">✓</span>
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="send-icon-btn"
+            :class="{ generating: isGenerating, disabled: !canSend }"
+            :disabled="!isGenerating && !canSend"
+            :title="isGenerating ? 'Stop' : 'Send'"
+            @click="onSendOrStop"
+          >
+            <span v-if="!isGenerating" class="send-arrow" aria-hidden="true">↑</span>
+            <span v-else class="send-stop" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
       <div class="composer-actions">
         <button
@@ -207,6 +240,7 @@ import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
+import type { WritingAiProvider } from '@/api/writing'
 
 type WritingMode = 'free' | 'exam'
 type MessageRole = 'user' | 'assistant'
@@ -227,6 +261,7 @@ const props = withDefaults(
     conversationId?: string
     isGenerating?: boolean
     writingMode?: WritingMode
+    aiProvider: WritingAiProvider
     taskPrompt?: string
   }>(),
   {
@@ -248,12 +283,15 @@ const emit = defineEmits<{
   cleared: []
   'update:writingMode': [value: WritingMode]
   'update:taskPrompt': [value: string]
+  'update:aiProvider': [value: WritingAiProvider]
 }>()
 
 const messageListRef = ref<HTMLElement | null>(null)
 const composerInputRef = ref<HTMLTextAreaElement | null>(null)
 const modeMenuRef = ref<HTMLElement | null>(null)
+const providerMenuRef = ref<HTMLElement | null>(null)
 const modeMenuOpen = ref(false)
+const providerMenuOpen = ref(false)
 const includeDraft = ref(false)
 const taskPromptExpanded = ref(false)
 const messages = ref<ChatMessage[]>([
@@ -264,6 +302,14 @@ const selectionStore = inject(writingSelectionStoreKey, null)
 const selectedText = computed(() => selectionStore?.selectedText.value ?? '')
 const writingMode = computed<WritingMode>(() => (props.writingMode === 'exam' ? 'exam' : 'free'))
 const isExamMode = computed(() => writingMode.value === 'exam')
+const providerOptions: Array<{ value: WritingAiProvider; label: string }> = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'qwen', label: '千问' },
+]
+const currentProviderLabel = computed(
+  () => providerOptions.find((option) => option.value === props.aiProvider)?.label ?? props.aiProvider
+)
 
 const canSend = computed(() => props.modelValue.trim().length > 0)
 
@@ -491,6 +537,7 @@ function resetAudit() {
 
 function toggleModeMenu() {
   modeMenuOpen.value = !modeMenuOpen.value
+  if (modeMenuOpen.value) providerMenuOpen.value = false
 }
 
 function selectWritingMode(nextMode: WritingMode) {
@@ -499,6 +546,16 @@ function selectWritingMode(nextMode: WritingMode) {
     taskPromptExpanded.value = true
   }
   modeMenuOpen.value = false
+}
+
+function toggleProviderMenu() {
+  providerMenuOpen.value = !providerMenuOpen.value
+  if (providerMenuOpen.value) modeMenuOpen.value = false
+}
+
+function selectAiProvider(provider: WritingAiProvider) {
+  emit('update:aiProvider', provider)
+  providerMenuOpen.value = false
 }
 
 function toggleTaskPrompt() {
@@ -597,6 +654,10 @@ defineExpose<{
 
 onClickOutside(modeMenuRef, () => {
   modeMenuOpen.value = false
+})
+
+onClickOutside(providerMenuRef, () => {
+  providerMenuOpen.value = false
 })
 
 onMounted(() => {
@@ -743,9 +804,9 @@ watch(
 }
 .composer-selected-text {
   position: absolute;
-  top: 8px;
-  left: 52px;
-  right: 58px;
+  top: 12px;
+  left: 14px;
+  right: 14px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -758,37 +819,41 @@ watch(
   font-weight: 600;
   color: #6b7280;
 }
-.composer-input {
-  width: 100%;
-  min-height: 72px;
-  max-height: 140px;
-  resize: vertical;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
-  line-height: 1.45;
-  box-sizing: border-box;
-}
-.composer-input-wrap {
+.composer-shell {
   position: relative;
 }
-.composer-input-wrap .composer-input {
-  padding-left: 52px;
-  padding-right: 58px;
+.composer-input {
+  width: 100%;
+  min-height: 132px;
+  max-height: 220px;
+  resize: vertical;
+  border: 1px solid #d1d5db;
+  border-radius: 18px;
+  padding: 16px 16px 60px;
+  font-size: 14px;
+  line-height: 1.55;
+  box-sizing: border-box;
+  background: #fff;
 }
 .composer-input--with-selection {
-  padding-top: 42px;
+  padding-top: 44px;
+}
+.composer-bottom-row {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .mode-plus-wrap {
-  position: absolute;
-  left: 10px;
-  bottom: 10px;
-  z-index: 2;
+  position: relative;
 }
 .mode-plus-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: 1px solid #d1d5db;
   border-radius: 999px;
   background: #fff;
@@ -800,7 +865,7 @@ watch(
 .mode-menu {
   position: absolute;
   left: 0;
-  bottom: 38px;
+  bottom: 44px;
   width: 136px;
   padding: 4px;
   border: 1px solid #e5e7eb;
@@ -826,6 +891,80 @@ watch(
   background: #ecfdf5;
   color: #047857;
   font-weight: 600;
+}
+.provider-picker-wrap {
+  position: relative;
+}
+.provider-picker-btn {
+  min-width: 132px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.provider-picker-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.provider-picker-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+.provider-picker-caret {
+  color: #6b7280;
+  font-size: 10px;
+}
+.provider-menu {
+  position: absolute;
+  left: 0;
+  bottom: 44px;
+  min-width: 188px;
+  padding: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+}
+.provider-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #111827;
+  font-size: 14px;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.provider-menu-item:hover {
+  background: #f3f4f6;
+}
+.provider-menu-item.active {
+  background: #eef6ff;
+}
+.provider-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.provider-menu-check {
+  color: #0f766e;
+  font-size: 15px;
+  font-weight: 700;
 }
 .task-prompt-box {
   border: 1px solid #d1d5db;
@@ -1026,11 +1165,9 @@ watch(
   cursor: pointer;
 }
 .send-icon-btn {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  width: 34px;
-  height: 34px;
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
   padding: 0;
   display: inline-flex;
@@ -1073,6 +1210,13 @@ watch(
   }
   .composer {
     padding-right: var(--assistant-safe-padding-right, 16px);
+  }
+  .composer-bottom-row {
+    gap: 8px;
+  }
+  .provider-picker-btn {
+    min-width: 118px;
+    padding-inline: 12px;
   }
 }
 </style>

@@ -13,6 +13,7 @@ public class WritingMaterialRequest {
     private String essayText;
     private String studyStage;
     private String writingMode;
+    private String aiProvider;
 
     @JsonIgnore
     private Long userId;
@@ -28,6 +29,9 @@ public class WritingMaterialRequest {
 
     public String getWritingMode() { return writingMode; }
     public void setWritingMode(String writingMode) { this.writingMode = writingMode; }
+
+    public String getAiProvider() { return aiProvider; }
+    public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }

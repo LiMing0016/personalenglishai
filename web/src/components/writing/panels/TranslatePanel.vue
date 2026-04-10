@@ -165,7 +165,7 @@ async function doTranslate() {
   try {
     // 只调一次 GPT（按当前模式），后端返回 translation/sentences
     const res = await translateEssay(
-      { text, mode: mode.value },
+      { text, mode: mode.value, aiProvider: draftStore.aiProvider },
       { signal: abortController.signal },
     )
 

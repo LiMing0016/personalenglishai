@@ -26,6 +26,11 @@ public class OpenAiClientConfig {
     private int responseTimeoutMs = 30000;
 
     /**
+     * 响应体缓冲上限（字节），默认 16MB
+     */
+    private int maxInMemorySize = 16 * 1024 * 1024;
+
+    /**
      * 总体超时（毫秒），默认 35 秒
      */
     private int overallTimeoutMs = 35000;
@@ -94,6 +99,14 @@ public class OpenAiClientConfig {
 
     public void setResponseTimeoutMs(int responseTimeoutMs) {
         this.responseTimeoutMs = responseTimeoutMs;
+    }
+
+    public int getMaxInMemorySize() {
+        return maxInMemorySize;
+    }
+
+    public void setMaxInMemorySize(int maxInMemorySize) {
+        this.maxInMemorySize = maxInMemorySize;
     }
 
     public int getOverallTimeoutMs() {

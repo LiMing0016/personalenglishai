@@ -1,0 +1,77 @@
+<svg width="1440" height="920" viewBox="0 0 1440 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAFBFC"/>
+      <stop offset="1" stop-color="#F3F6F8"/>
+    </linearGradient>
+    <filter id="cardShadow" x="168" y="150" width="1104" height="560" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#182233" flood-opacity="0.08"/>
+    </filter>
+    <filter id="menuShadow" x="294" y="467" width="224" height="202" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#182233" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="920" fill="url(#bg)"/>
+  <circle cx="111" cy="112" r="160" fill="#E8F7F2" fill-opacity="0.6"/>
+
+  <rect x="88" y="48" width="192" height="36" rx="18" fill="#E8F7F2"/>
+  <text x="108" y="71" fill="#0F8A6C" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">浅色工作台原型</text>
+  <text x="88" y="132" fill="#1B2535" font-size="32" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">一个统一输入区，把题目和素材先收进来</text>
+  <text x="88" y="168" fill="#6D7788" font-size="16" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">更像安静的写作工作台，不再像通用 AI 聊天页。</text>
+
+  <g filter="url(#cardShadow)">
+    <rect x="192" y="186" width="1056" height="474" rx="32" fill="white" fill-opacity="0.94" stroke="#DFE5EB"/>
+  </g>
+
+  <text x="244" y="254" fill="#1B2535" font-size="20" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">考试写作 · 题目工作台</text>
+  <text x="244" y="286" fill="#6D7788" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">描述你想练的作文题，也可以通过 `+` 插入图片、材料或历年真题，AI 负责整理成题单。</text>
+
+  <rect x="244" y="326" width="952" height="248" rx="26" fill="#FCFDFE" stroke="#E4EAF0"/>
+  <rect x="268" y="350" width="904" height="160" rx="18" fill="#FFFFFF"/>
+
+  <text x="292" y="392" fill="#364355" font-size="18" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">我想练一篇考研风格的作文题，主题是年轻人与父母责任的平衡。</text>
+  <text x="292" y="426" fill="#364355" font-size="18" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">如果有合适的材料，也可以帮我整理成材料作文。</text>
+
+  <rect x="286" y="526" width="42" height="42" rx="21" fill="#F5F7FA" stroke="#D8E0E8"/>
+  <line x1="307" y1="538" x2="307" y2="556" stroke="#4B5A6C" stroke-width="2" stroke-linecap="round"/>
+  <line x1="298" y1="547" x2="316" y2="547" stroke="#4B5A6C" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="344" y="526" width="112" height="42" rx="21" fill="#F8FAFC" stroke="#E1E7EE"/>
+  <text x="372" y="552" fill="#435264" font-size="15" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">考研风格</text>
+
+  <rect x="468" y="526" width="96" height="42" rx="21" fill="#F8FAFC" stroke="#E1E7EE"/>
+  <text x="496" y="552" fill="#435264" font-size="15" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">160-200</text>
+
+  <text x="292" y="612" fill="#8A93A1" font-size="14" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">未指定的体裁、分值和格式要求，可由 AI 在下一步自动整理。</text>
+
+  <rect x="1118" y="518" width="46" height="46" rx="23" fill="#0F8A6C"/>
+  <path d="M1141 530V551" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M1131 540L1141 530L1151 540" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g filter="url(#menuShadow)">
+    <rect x="308" y="481" width="196" height="160" rx="20" fill="white"/>
+    <rect x="308" y="481" width="196" height="160" rx="20" stroke="#DFE5EB"/>
+  </g>
+
+  <rect x="324" y="497" width="164" height="36" rx="12" fill="#F7FAFC"/>
+  <circle cx="342" cy="515" r="8" fill="#E8F7F2"/>
+  <path d="M338 515L341 512L344 515L347 511" stroke="#0F8A6C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="360" y="520" fill="#1E2938" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">上传图片</text>
+
+  <rect x="324" y="541" width="164" height="36" rx="12" fill="#F7FAFC"/>
+  <rect x="336" y="553" width="13" height="10" rx="2" stroke="#0F8A6C" stroke-width="1.5"/>
+  <line x1="339" y1="556" x2="347" y2="556" stroke="#0F8A6C" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="339" y1="560" x2="347" y2="560" stroke="#0F8A6C" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="360" y="564" fill="#1E2938" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">上传材料</text>
+
+  <rect x="324" y="585" width="164" height="36" rx="12" fill="#F7FAFC"/>
+  <rect x="336" y="597" width="13" height="11" rx="2" stroke="#0F8A6C" stroke-width="1.5"/>
+  <line x1="339" y1="600" x2="347" y2="600" stroke="#0F8A6C" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="339" y1="604" x2="347" y2="604" stroke="#0F8A6C" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="360" y="608" fill="#1E2938" font-size="14" font-weight="700" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">历年真题</text>
+
+  <rect x="244" y="710" width="952" height="88" rx="22" fill="white" fill-opacity="0.9" stroke="#DFE5EB"/>
+  <text x="274" y="744" fill="#1B2535" font-size="17" font-weight="800" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">为什么这一版更合适</text>
+  <text x="274" y="776" fill="#627184" font-size="15" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">输入框更像编辑器，不像聊天工具；`+` 浮层更轻；页面重点仍然是“组织一道题”，而不是“和 AI 对话”。</text>
+</svg>

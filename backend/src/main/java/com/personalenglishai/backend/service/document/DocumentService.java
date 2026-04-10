@@ -10,6 +10,7 @@ import com.personalenglishai.backend.entity.WritingMetadata;
 import com.personalenglishai.backend.mapper.DocumentMapper;
 import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
+import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,13 +32,16 @@ public class DocumentService {
     private final DocumentMapper documentMapper;
     private final WritingMetadataMapper writingMetadataMapper;
     private final WritingExamMetadataMapper writingExamMetadataMapper;
+    private final WritingPromptSheetService writingPromptSheetService;
 
     public DocumentService(DocumentMapper documentMapper,
-                          WritingMetadataMapper writingMetadataMapper,
-                          WritingExamMetadataMapper writingExamMetadataMapper) {
+                           WritingMetadataMapper writingMetadataMapper,
+                           WritingExamMetadataMapper writingExamMetadataMapper,
+                           WritingPromptSheetService writingPromptSheetService) {
         this.documentMapper = documentMapper;
         this.writingMetadataMapper = writingMetadataMapper;
         this.writingExamMetadataMapper = writingExamMetadataMapper;
+        this.writingPromptSheetService = writingPromptSheetService;
     }
 
     /** 生成对外稳定 public_id */
@@ -190,6 +194,10 @@ public class DocumentService {
                 // 返回已有文档（若有元数据更新则补齐）
                 if (metadata != null) {
                     upsertWritingMetadata(existing, ownerUserId, metadata);
+                    if (metadata.getPromptSheetId() != null) {
+                        documentMapper.updatePromptSheetId(existing.getId(), metadata.getPromptSheetId());
+                        writingPromptSheetService.bindDocument(metadata.getPromptSheetId(), existing.getId());
+                    }
                 }
                 DocumentRevision r = documentMapper.findRevisionByDocumentIdAndRevision(
                         existing.getId(), existing.getLatestRevision());
@@ -230,10 +238,14 @@ public class DocumentService {
         doc.setTitle(title != null ? title : "");
         doc.setTaskPrompt(taskPrompt);
         doc.setTaskPromptHash(taskPrompt != null && !taskPrompt.isBlank() ? sha256(taskPrompt.trim()) : null);
+        doc.setPromptSheetId(metadata == null ? null : metadata.getPromptSheetId());
         doc.setSubmitCount(0);
         doc.setStatus(0);
         doc.setLatestRevision(1);
         documentMapper.insertDocument(doc);
+        if (metadata != null && metadata.getPromptSheetId() != null) {
+            writingPromptSheetService.bindDocument(metadata.getPromptSheetId(), doc.getId());
+        }
 
         DocumentRevision rev = new DocumentRevision();
         rev.setDocumentId(doc.getId());
@@ -277,11 +289,13 @@ public class DocumentService {
         WritingSessionMetadataResponse response = new WritingSessionMetadataResponse();
         response.setDocumentId(publicDocId);
         response.setMetadataId(metadata.getId());
+        response.setPromptSheetId(doc.getPromptSheetId());
         response.setMode(metadata.getMode());
         response.setStudyStage(metadata.getStudyStage());
         response.setTitleSnapshot(metadata.getTitleSnapshot());
         response.setTopicTitle(metadata.getTopicTitle());
         response.setPromptText(metadata.getPromptText());
+        response.setAttachmentImageUrl(metadata.getAttachmentImageUrl());
         response.setGenre(metadata.getGenre());
         response.setSourceType(metadata.getSourceType());
         response.setCreatedAt(metadata.getCreatedAt());
@@ -342,6 +356,7 @@ public class DocumentService {
         String resolvedStudyStage = trimToNull(metadata.getStudyStage());
         String resolvedTopicTitle = normalizeTextToMax(metadata.getTopicTitle(), WRITING_METADATA_TITLE_MAX_LEN);
         String resolvedPromptText = trimToNull(metadata.getPromptText());
+        String resolvedAttachmentImageUrl = trimToNull(metadata.getAttachmentImageUrl());
         String resolvedGenre = trimToNull(metadata.getGenre());
 
         WritingMetadata target = existingMetadata;
@@ -354,6 +369,7 @@ public class DocumentService {
             newMetadata.setTitleSnapshot(resolvedTitle);
             newMetadata.setTopicTitle(resolvedTopicTitle);
             newMetadata.setPromptText(resolvedPromptText);
+            newMetadata.setAttachmentImageUrl(resolvedAttachmentImageUrl);
             newMetadata.setGenre(resolvedGenre);
             newMetadata.setSourceType(sourceType != null ? sourceType : normalizeSourceType(null, mode));
             writingMetadataMapper.insert(newMetadata);
@@ -365,6 +381,7 @@ public class DocumentService {
             existingMetadata.setTitleSnapshot(coalesceString(resolvedTitle, existingMetadata.getTitleSnapshot()));
             existingMetadata.setTopicTitle(coalesceString(resolvedTopicTitle, existingMetadata.getTopicTitle()));
             existingMetadata.setPromptText(coalesceString(resolvedPromptText, existingMetadata.getPromptText()));
+            existingMetadata.setAttachmentImageUrl(coalesceString(resolvedAttachmentImageUrl, existingMetadata.getAttachmentImageUrl()));
             existingMetadata.setGenre(coalesceString(resolvedGenre, existingMetadata.getGenre()));
             existingMetadata.setSourceType(coalesceString(sourceType, existingMetadata.getSourceType()));
             writingMetadataMapper.updateByDocumentId(existingMetadata);
@@ -495,6 +512,8 @@ public class DocumentService {
         private String titleSnapshot;
         private String topicTitle;
         private String promptText;
+        private Long promptSheetId;
+        private String attachmentImageUrl;
         private String genre;
         private String sourceType;
         private String examType;
@@ -541,6 +560,22 @@ public class DocumentService {
 
         public void setPromptText(String promptText) {
             this.promptText = promptText;
+        }
+
+        public Long getPromptSheetId() {
+            return promptSheetId;
+        }
+
+        public void setPromptSheetId(Long promptSheetId) {
+            this.promptSheetId = promptSheetId;
+        }
+
+        public String getAttachmentImageUrl() {
+            return attachmentImageUrl;
+        }
+
+        public void setAttachmentImageUrl(String attachmentImageUrl) {
+            this.attachmentImageUrl = attachmentImageUrl;
         }
 
         public String getGenre() {

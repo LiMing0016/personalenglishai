@@ -15,6 +15,7 @@ public class WritingMetadata {
     private String titleSnapshot;
     private String topicTitle;
     private String promptText;
+    private String attachmentImageUrl;
     private String genre;
     private String sourceType;
     private LocalDateTime createdAt;
@@ -82,6 +83,14 @@ public class WritingMetadata {
 
     public void setPromptText(String promptText) {
         this.promptText = promptText;
+    }
+
+    public String getAttachmentImageUrl() {
+        return attachmentImageUrl;
+    }
+
+    public void setAttachmentImageUrl(String attachmentImageUrl) {
+        this.attachmentImageUrl = attachmentImageUrl;
     }
 
     public String getGenre() {

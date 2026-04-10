@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import {
   fetchWritingSuggestions,
   type SuggestionErrorItem,
@@ -10,6 +11,7 @@ export function useWritingSuggestions(
   essayText: () => string,
   enabled: () => boolean,
 ) {
+  const draftStore = useWritingDraftStore()
   // Snapshot of text to fetch suggestions for.
   // null = no fetch yet; set when we want to trigger a fetch.
   const fetchText = ref<string | null>(null)
@@ -24,7 +26,7 @@ export function useWritingSuggestions(
 
   const query = useQuery({
     queryKey: computed(() => ['writingSuggestions', fetchText.value]),
-    queryFn: () => fetchWritingSuggestions(fetchText.value!),
+    queryFn: () => fetchWritingSuggestions(fetchText.value!, draftStore.aiProvider),
     enabled: computed(() => fetchText.value != null && enabled()),
     staleTime: 5 * 60 * 1000,
   })

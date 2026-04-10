@@ -19,8 +19,6 @@ import java.util.*;
 public class WritingTemplateServiceImpl implements WritingTemplateService {
 
     private static final Logger log = LoggerFactory.getLogger(WritingTemplateServiceImpl.class);
-    private static final String TEMPLATE_MODEL = "gpt-4o-mini";
-
     private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
 
@@ -45,8 +43,14 @@ public class WritingTemplateServiceImpl implements WritingTemplateService {
                 request.getTaskPrompt() != null && !request.getTaskPrompt().isBlank());
 
         long start = System.currentTimeMillis();
-        String raw = openAiClient.callWithTraceId(systemPrompt, userPrompt, traceId,
-                TEMPLATE_MODEL, 0.3, 8192);
+        String raw = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt,
+                traceId,
+                0.3,
+                8192
+        );
         long elapsed = System.currentTimeMillis() - start;
 
         WritingTemplateResponse response = parseResponse(raw, traceId);

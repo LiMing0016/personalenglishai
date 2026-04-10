@@ -19,8 +19,6 @@ import java.util.stream.Collectors;
 public class WritingTranslateServiceImpl implements WritingTranslateService {
 
     private static final Logger log = LoggerFactory.getLogger(WritingTranslateServiceImpl.class);
-    private static final String TRANSLATE_MODEL = "gpt-4o-mini";
-
     private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
 
@@ -44,8 +42,14 @@ public class WritingTranslateServiceImpl implements WritingTranslateService {
                 traceId, userId, mode, request.getText().length());
 
         long start = System.currentTimeMillis();
-        String rawResponse = openAiClient.callWithTraceId(systemPrompt, userPrompt, traceId,
-                TRANSLATE_MODEL, 0.3, 8192);
+        String rawResponse = openAiClient.callWithProvider(
+                request.getAiProvider(),
+                systemPrompt,
+                userPrompt,
+                traceId,
+                0.3,
+                8192
+        );
         long elapsed = System.currentTimeMillis() - start;
 
         List<TranslateResponse.SentenceTranslation> sentences = parseSentences(rawResponse, traceId);

@@ -3,11 +3,13 @@ import { http } from './http'
 
 export type AiIntent = 'generate' | 'rewrite' | 'explain' | 'chat'
 export type AiMode = 'sm' | 'md' | 'lg'
+export type AiProvider = 'openai' | 'kimi' | 'qwen'
 
 export interface AiCommandPayload {
   apiVersion: 1
   intent: AiIntent
   mode?: AiMode
+  aiProvider?: AiProvider
   instruction: string
   constraints?: Record<string, unknown>
   contextRefs: {

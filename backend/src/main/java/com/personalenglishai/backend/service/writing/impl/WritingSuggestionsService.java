@@ -89,14 +89,14 @@ public class WritingSuggestionsService {
         this.objectMapper = objectMapper;
     }
 
-    public SuggestionsResponse analyze(String essayText) {
+    public SuggestionsResponse analyze(String essayText, String aiProvider) {
         if (essayText == null || essayText.isBlank()) {
             return new SuggestionsResponse(List.of(), List.of());
         }
 
         String trimmed = essayText.trim();
 
-        List<ErrorItem> errors = callGptForErrors(trimmed);
+        List<ErrorItem> errors = callGptForErrors(trimmed, aiProvider);
         List<SuggestionItem> suggestions = List.of();
 
         log.info("AI suggestions done. gptErrors={} suggestions={}", errors.size(), suggestions.size());
@@ -107,11 +107,11 @@ public class WritingSuggestionsService {
     //  GPT 硬性错误复检
     // ════════════════════════════════════════════════════════════════
 
-    private List<ErrorItem> callGptForErrors(String essayText) {
+    private List<ErrorItem> callGptForErrors(String essayText, String aiProvider) {
         try {
             long start = System.currentTimeMillis();
             String userPrompt = "Essay to analyze:\n\n" + essayText;
-            String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, "suggestions",
+            String raw = openAiClient.callWithProvider(aiProvider, SYSTEM_PROMPT, userPrompt, "suggestions",
                     0.3, 1024);
             long elapsed = System.currentTimeMillis() - start;
             List<ErrorItem> errors = parseGptResponse(raw, essayText);

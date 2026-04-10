@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.WritingPromptSheetMapper">
+
+    <resultMap id="BaseResultMap" type="com.personalenglishai.backend.entity.WritingPromptSheet">
+        <id column="id" property="id"/>
+        <result column="paper" property="paper"/>
+        <result column="document_id" property="documentId"/>
+        <result column="study_stage" property="studyStage"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="task_type" property="taskType"/>
+        <result column="prompt_type" property="promptType"/>
+        <result column="topic_title" property="topicTitle"/>
+        <result column="directions" property="directions"/>
+        <result column="prompt_text" property="promptText"/>
+        <result column="requirements_text" property="requirementsText"/>
+        <result column="genre" property="genre"/>
+        <result column="word_count_min" property="wordCountMin"/>
+        <result column="word_count_max" property="wordCountMax"/>
+        <result column="attachment_type" property="attachmentType"/>
+        <result column="attachment_payload_json" property="attachmentPayloadJson"/>
+        <result column="structured_payload_json" property="structuredPayloadJson"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_prompt_sheet (
+            paper, document_id, study_stage, source_type, task_type, prompt_type, topic_title,
+            directions, prompt_text, requirements_text, genre, word_count_min, word_count_max,
+            attachment_type, attachment_payload_json, structured_payload_json, status, created_at, updated_at
+        ) VALUES (
+            #{paper}, #{documentId}, #{studyStage}, #{sourceType}, #{taskType}, #{promptType}, #{topicTitle},
+            #{directions}, #{promptText}, #{requirementsText}, #{genre}, #{wordCountMin}, #{wordCountMax},
+            #{attachmentType}, #{attachmentPayloadJson}, #{structuredPayloadJson}, #{status}, NOW(), NOW()
+        )
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT id, paper, document_id, study_stage, source_type, task_type, prompt_type, topic_title,
+               directions, prompt_text, requirements_text, genre, word_count_min, word_count_max,
+               attachment_type, attachment_payload_json, structured_payload_json, status, created_at, updated_at
+        FROM writing_prompt_sheet
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <update id="updateDocumentId">
+        UPDATE writing_prompt_sheet
+        SET document_id = #{documentId},
+            updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+</mapper>

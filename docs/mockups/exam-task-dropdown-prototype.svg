@@ -1,0 +1,55 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#F5F8FC"/>
+  <rect x="40" y="28" width="1120" height="844" rx="28" fill="#FFFDF9" stroke="#E6ECF3" stroke-width="2"/>
+
+  <rect x="98" y="86" width="158" height="54" rx="27" fill="#F8FBFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="126" y="120" fill="#334155" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">Task 2</text>
+  <path d="M223 108L235 108L229 116L223 108Z" fill="#64748B"/>
+
+  <rect x="274" y="86" width="274" height="54" rx="27" fill="#F8FBFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="309" y="120" fill="#334155" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">Picture-based Essay</text>
+
+  <rect x="566" y="86" width="126" height="54" rx="27" fill="#F8FBFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="604" y="120" fill="#334155" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">200词</text>
+
+  <rect x="710" y="86" width="126" height="54" rx="27" fill="#F8FBFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="752" y="120" fill="#334155" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">100分</text>
+
+  <rect x="914" y="86" width="188" height="54" rx="27" fill="#ECFDF5" stroke="#9FD7BC" stroke-width="2"/>
+  <circle cx="953" cy="113" r="6" fill="#10B981"/>
+  <text x="971" y="120" fill="#047857" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">重新整理中...</text>
+
+  <text x="110" y="212" fill="#8A6D3B" font-size="26" font-family="Inter, Arial, sans-serif" font-weight="800" letter-spacing="4">DIRECTIONS:</text>
+
+  <text x="110" y="286" fill="#0F172A" font-size="24" font-family="Georgia, 'Times New Roman', serif">
+    <tspan x="110" dy="0">Write an essay of about 200 words based on the following</tspan>
+    <tspan x="110" dy="52">comic strip. In your essay, you should: 1) describe the comic</tspan>
+    <tspan x="110" dy="52">briefly, 2) interpret the implied meaning of the 'Agent Race'</tspan>
+    <tspan x="110" dy="52">between the two AI companies, and 3) give your comments</tspan>
+    <tspan x="110" dy="52">on how this competition influences the development of AI.</tspan>
+  </text>
+
+  <text x="132" y="580" fill="#0F172A" font-size="22" font-family="Georgia, 'Times New Roman', serif">
+    <tspan x="132" dy="0">• You should write about 200 words neatly on the ANSWER SHEET.</tspan>
+    <tspan x="162" dy="48">Do not sign your own name at the end of the essay.</tspan>
+  </text>
+
+  <text x="110" y="712" fill="#475569" font-size="20" font-family="Georgia, 'Times New Roman', serif">
+    <tspan x="110" dy="0">字数要求：200 词</tspan>
+    <tspan x="320" dy="0">满分：100 分</tspan>
+  </text>
+
+  <line x1="110" y1="754" x2="1090" y2="754" stroke="#EBE4D8" stroke-width="2"/>
+
+  <rect x="894" y="154" width="208" height="168" rx="20" fill="#FFFFFF" stroke="#D9E4EF" stroke-width="2"/>
+  <text x="924" y="192" fill="#334155" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">切换任务</text>
+  <rect x="914" y="212" width="168" height="42" rx="21" fill="#F1F5F9"/>
+  <text x="970" y="238" fill="#475569" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">Task 1</text>
+  <rect x="914" y="266" width="168" height="42" rx="21" fill="#DCFCE7" stroke="#86EFAC" stroke-width="2"/>
+  <text x="970" y="292" fill="#166534" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">Task 2</text>
+
+  <text x="895" y="356" fill="#64748B" font-size="16" font-family="Inter, Arial, sans-serif">
+    <tspan x="895" dy="0">切换后保留当前题单内容，</tspan>
+    <tspan x="895" dy="24">只在顶部显示轻量刷新状态。</tspan>
+  </text>
+</svg>

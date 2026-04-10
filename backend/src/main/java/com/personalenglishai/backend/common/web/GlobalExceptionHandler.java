@@ -14,6 +14,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+
+import java.net.SocketTimeoutException;
+import java.util.Locale;
 
 /**
  * 全局异常处理器
@@ -56,6 +60,15 @@ public class GlobalExceptionHandler {
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
     }
 
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException e) {
+        if (isClientAbortLike(e)) {
+            log.warn("客户端连接已断开，跳过响应写回: {}", rootCauseMessage(e));
+            return;
+        }
+        log.warn("异步响应不可用: {}", e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleOther(Exception e) {
         log.error("系统异常", e);
@@ -87,5 +100,39 @@ public class GlobalExceptionHandler {
             case "429" -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.BAD_REQUEST;
         };
+    }
+
+    static boolean isClientAbortLike(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SocketTimeoutException) {
+                return true;
+            }
+
+            String className = current.getClass().getName();
+            if (className.endsWith("ClientAbortException")) {
+                return true;
+            }
+
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("broken pipe")
+                        || normalized.contains("connection reset by peer")
+                        || normalized.contains("response not usable")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private String rootCauseMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage();
     }
 }

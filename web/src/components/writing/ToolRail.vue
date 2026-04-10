@@ -10,8 +10,16 @@
       @click="$emit('select', item.mode)"
     >
       <span class="rail-icon" aria-hidden="true">
+        <!-- Task Prompt: 题单 -->
+        <svg v-if="item.mode === 'taskPrompt'" width="22" height="22" viewBox="0 0 32 32" fill="none">
+          <rect x="5" y="4" width="18" height="24" rx="3" class="ic-stroke" stroke-width="1.8" fill="white"/>
+          <path d="M11 4h14a2 2 0 0 1 2 2v18" class="ic-light-stroke" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="9" y1="11" x2="19" y2="11" class="ic-primary-stroke" stroke-width="2" stroke-linecap="round"/>
+          <line x1="9" y1="16" x2="19" y2="16" class="ic-primary-stroke" stroke-width="2" stroke-linecap="round"/>
+          <line x1="9" y1="21" x2="16" y2="21" class="ic-light-stroke" stroke-width="2" stroke-linecap="round"/>
+        </svg>
         <!-- Evaluate: 三颗星（深蓝小 + 青绿大 + 浅青小） -->
-        <svg v-if="item.mode === 'score'" width="22" height="22" viewBox="0 0 32 32" fill="none">
+        <svg v-else-if="item.mode === 'score'" width="22" height="22" viewBox="0 0 32 32" fill="none">
           <path d="M7.5 6.5l1.8 3.6-1.8 3.6-1.8-3.6z" class="ic-accent"/>
           <path d="M7.2 5l2.3 4.8 5.2.8-3.7 3.7.8 5.2L7.2 17l-4.6 2.5.8-5.2L0 10.6l5.2-.8z" class="ic-accent" opacity="0.9"/>
           <path d="M16.5 2l3 6 6.5 1-4.7 4.7 1 6.5-5.8-3.2-5.8 3.2 1-6.5L7 9l6.5-1z" class="ic-primary"/>
@@ -98,6 +106,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { buildToolRailItems } from './toolRailState'
+
 export type PanelMode =
   | 'score'
   | 'rewrite'
@@ -107,25 +118,24 @@ export type PanelMode =
   | 'explain'
   | 'translate'
   | 'aiNote'
-
-defineProps<{
-  activePanel: PanelMode | null
-}>()
+  | 'taskPrompt'
 
 defineEmits<{
   select: [mode: PanelMode]
 }>()
 
-const items: { mode: PanelMode; label: string; title: string }[] = [
-  { mode: 'score', label: '评价', title: '作文评价' },
-  { mode: 'grammarCheck', label: '语法', title: '实时语法检查' },
-  { mode: 'rewrite', label: '润色', title: '分级润色' },
-  { mode: 'structure', label: '范文', title: '范文' },
-  { mode: 'improve', label: '模版', title: '写作模版' },
-  { mode: 'explain', label: '素材', title: '写作素材' },
-  { mode: 'translate', label: '翻译', title: '翻译' },
-  { mode: 'aiNote', label: 'AI助手', title: 'AI 助手' },
-]
+const props = defineProps<{
+  activePanel: PanelMode | null
+  showTaskPrompt?: boolean
+}>()
+
+const items = computed(() =>
+  buildToolRailItems({ showTaskPrompt: Boolean(props.showTaskPrompt) }) as ReadonlyArray<{
+    mode: PanelMode
+    label: string
+    title: string
+  }>,
+)
 </script>
 
 <style scoped>

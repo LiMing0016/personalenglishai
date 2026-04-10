@@ -15,7 +15,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +41,7 @@ class WritingModelEssayServiceImplTest {
         when(rubricService.normalizeMode(anyString())).thenReturn("exam");
         when(rubricService.getActiveRubric("postgrad", "exam")).thenReturn(mockRubric("postgrad-exam-v1"));
         when(rubricTextBuilder.buildRubricText("postgrad", "exam")).thenReturn("content_quality: A...");
-        when(openAiClient.callWithTraceId(anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyDouble(), org.mockito.ArgumentMatchers.anyInt()))
+        when(openAiClient.callWithProvider(nullable(String.class), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("""
                         {
                           "excellentEssay": {
@@ -84,7 +87,7 @@ class WritingModelEssayServiceImplTest {
         when(rubricService.normalizeMode(anyString())).thenReturn("free");
         when(rubricService.getActiveRubric("highschool", "free")).thenReturn(mockRubric("highschool-free-v1"));
         when(rubricTextBuilder.buildRubricText("highschool", "free")).thenReturn("structure: A...");
-        when(openAiClient.callWithTraceId(anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyDouble(), org.mockito.ArgumentMatchers.anyInt()))
+        when(openAiClient.callWithProvider(nullable(String.class), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("""
                         {
                           "excellentEssay": {"label":"优秀作文","essay":"Essay A","summary":"A","highScoreReasons":[],"improvementGuidance":[]},
@@ -100,13 +103,13 @@ class WritingModelEssayServiceImplTest {
         service.generate(request);
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(openAiClient).callWithTraceId(
-                org.mockito.ArgumentMatchers.anyString(),
+        verify(openAiClient).callWithProvider(
+                nullable(String.class),
+                anyString(),
                 userPromptCaptor.capture(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.anyDouble(),
-                org.mockito.ArgumentMatchers.anyInt()
+                anyString(),
+                anyDouble(),
+                anyInt()
         );
 
         assertThat(userPromptCaptor.getValue())

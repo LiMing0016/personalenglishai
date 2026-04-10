@@ -80,7 +80,7 @@ class WritingPolishServiceImplTest {
                 )
         );
         when(writingEvaluateService.evaluateForPolish(any())).thenReturn(baseline, candidate);
-        when(openAiClient.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
+        when(openAiClient.callWithProvider(any(), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("{\"summary\":{\"strengths\":[\"结构较稳\"],\"improvements\":[\"补足题意\"]},\"topicAlignmentStatus\":\"partial\",\"polishedEssay\":\""
                         + polishedEssay.replace("\"", "\\\"")
                         + "\"}");
@@ -100,7 +100,8 @@ class WritingPolishServiceImplTest {
 
         ArgumentCaptor<String> systemPromptCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(openAiClient).callWithTraceId(
+        verify(openAiClient).callWithProvider(
+                any(),
                 systemPromptCaptor.capture(),
                 userPromptCaptor.capture(),
                 anyString(),
@@ -175,7 +176,7 @@ class WritingPolishServiceImplTest {
         candidate.getExamPolicy().setCapScore(60);
 
         when(writingEvaluateService.evaluateForPolish(any())).thenReturn(baseline, candidate);
-        when(openAiClient.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
+        when(openAiClient.callWithProvider(any(), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("""
                         {
                           "summary":{"strengths":["表达较好"],"improvements":["任务完成下降"]},
@@ -250,7 +251,7 @@ class WritingPolishServiceImplTest {
                 )
         );
         when(writingEvaluateService.evaluateForPolish(any())).thenReturn(baseline, candidate);
-        when(openAiClient.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
+        when(openAiClient.callWithProvider(any(), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
                 .thenReturn("""
                         {
                           "summary":{"strengths":["结构稳定"],"improvements":["继续提升内容"]},

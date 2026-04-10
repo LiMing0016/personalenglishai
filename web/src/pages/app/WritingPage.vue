@@ -262,12 +262,12 @@
       当前学段：<strong>{{ getStageLabel(currentStage) }}</strong>
     </p>
     <div class="mode-grid">
-      <button class="mode-card" @click="createFreeDoc">
+      <button class="mode-card" @click="createBlankFreeDoc">
         <span class="mode-icon">&#9997;&#65039;</span>
         <span class="mode-name">自由模式</span>
         <span class="mode-desc">自由写作，AI 实时辅助与反馈</span>
       </button>
-      <button class="mode-card" @click="navigateToPhase('exam-setup')">
+      <button class="mode-card" @click="openExamSetupFromModeSelect">
         <span class="mode-icon">&#9200;</span>
         <span class="mode-name">考试模式</span>
         <span class="mode-desc">模拟考试环境，限时写作与评分</span>
@@ -280,10 +280,12 @@
   <ExamSetupPage
     v-else-if="phase === 'exam-setup'"
     :initial-topic="resumeTopicForSetup"
+    :resume-metadata="resumeMetadataForSetup"
     :study-stage="currentStage ?? ''"
     @confirm="onExamConfirm"
     @back="onExamSetupBack"
     @save-draft="onExamSaveDraft"
+    @switch-mode="onExamSetupSwitchMode"
   />
 
   <!-- Editor -->
@@ -321,46 +323,14 @@ echarts.use([
 ])
 import EditorShell from '@/components/writing/EditorShell.vue'
 import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
-import type { ExamTopicInfo } from '@/pages/app/ExamSetupPage.vue'
+import type { ExamTopicInfo } from '@/pages/app/examPromptHelpers'
+import { buildExamTaskPrompt } from '@/pages/app/examPromptHelpers'
 import { stageCache } from '@/stores/stageCache'
 import { getStageLabel } from '@/constants/stage'
 import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats } from '@/api/writing'
-import type { WritingDocumentItem, WritingStatsResponse } from '@/api/writing'
+import type { WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
-
-function buildExamTaskPrompt(info: ExamTopicInfo) {
-  const lines: string[] = []
-  const topic = info.topic?.trim()
-  const imageDescription = info.imageDescription?.trim()
-  const materialText = info.materialText?.trim()
-  const genre = info.genre?.trim()
-  const wordRange = info.wordRange?.trim()
-  const requirements = info.requirements?.trim()
-
-  if (topic) {
-    lines.push('题目要求（润色后必须继续严格对齐）：')
-    lines.push(topic)
-  }
-  if (imageDescription) {
-    if (imageDescription !== topic) {
-      lines.push('图画信息：')
-      lines.push(imageDescription)
-    }
-  }
-  if (materialText) {
-    if (materialText !== topic) {
-      lines.push('材料信息：')
-      lines.push(materialText)
-    }
-  }
-  if (genre) lines.push(`体裁：${genre}`)
-  if (wordRange) lines.push(`字数要求：${wordRange}词`)
-  if (requirements) lines.push(`写作要求：${requirements}`)
-  if (info.maxScore && info.maxScore !== 100) lines.push(`满分分值：${info.maxScore}分`)
-
-  return lines.join('\n')
-}
 
 type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
@@ -378,6 +348,7 @@ const initialExistingContent = ref<string | null>(null)
 const examMaxScore = useSessionStorage<number | null>('peai:writing:examMaxScore', null)
 const initialSubmitCount = ref(0)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
+const resumeMetadataForSetup = ref<WritingSessionMetadataResponse | null>(null)
 
 function resolveRoutePhase(): RoutePhase {
   switch (route.name) {
@@ -721,15 +692,15 @@ async function loadDocList() {
   }
 }
 
-async function createFreeDoc() {
+async function createFreeDoc(seed?: { title?: string; initialTaskPrompt?: string | null }) {
   chosenMode.value = 'free'
-  initialTaskPrompt.value = undefined
+  initialTaskPrompt.value = seed?.initialTaskPrompt ?? undefined
   examMaxScore.value = null
   initialExistingContent.value = null
   initialSubmitCount.value = 0
   try {
     const now = new Date()
-    const freeTitle = `自由写作 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const freeTitle = seed?.title?.trim() || `自由写作 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     const session = await startWritingSession({
       mode: 'free',
       title: freeTitle,
@@ -758,6 +729,16 @@ async function createFreeDoc() {
   await navigateToPhase('editor')
 }
 
+async function createBlankFreeDoc() {
+  await createFreeDoc()
+}
+
+async function openExamSetupFromModeSelect() {
+  resumeTopicForSetup.value = undefined
+  resumeMetadataForSetup.value = null
+  await navigateToPhase('exam-setup')
+}
+
 async function onExamConfirm(info: ExamTopicInfo) {
   resumeTopicForSetup.value = undefined
   chosenMode.value = 'exam'
@@ -776,6 +757,8 @@ async function onExamConfirm(info: ExamTopicInfo) {
       titleSnapshot: info.topic.slice(0, 100),
       topicTitle: info.topic,
       promptText: prompt,
+      promptSheetId: info.promptSheetId ?? null,
+      attachmentImageUrl: info.attachmentImageUrl ?? null,
       genre: info.genre ?? undefined,
       examType: info.examType,
       taskType: info.taskType,
@@ -813,7 +796,12 @@ async function openDocument(doc: WritingDocumentItem) {
 
   // 考试模式草稿（status=0，从题目设置页保存退出，未点击"开始写作"）→ 回到题目设置页
   if (doc.taskPrompt && doc.status === 0) {
-    resumeTopicForSetup.value = doc.taskPrompt
+    const metadata = await getWritingSessionMetadata(doc.docId).catch((err) => {
+      console.warn('[WritingPage] load setup draft metadata failed', err)
+      return null
+    })
+    resumeMetadataForSetup.value = metadata
+    resumeTopicForSetup.value = metadata?.topicTitle?.trim() || doc.title?.trim() || undefined
     void navigateToPhase('exam-setup')
     return
   }
@@ -823,7 +811,20 @@ async function openDocument(doc: WritingDocumentItem) {
 
 async function onExamSetupBack() {
   resumeTopicForSetup.value = undefined
-  await navigateToPhase('mode-select')
+  resumeMetadataForSetup.value = null
+  await navigateToPhase('doc-list')
+}
+
+async function onExamSetupSwitchMode(payload: { mode: 'free' | 'exam'; info?: ExamTopicInfo | null }) {
+  if (payload.mode === 'free') {
+    resumeTopicForSetup.value = undefined
+    resumeMetadataForSetup.value = null
+    const seedInfo = payload.info ?? null
+    await createFreeDoc(seedInfo ? {
+      title: seedInfo.topic.slice(0, 100),
+      initialTaskPrompt: buildExamTaskPrompt(seedInfo),
+    } : undefined)
+  }
 }
 
 async function onEditorBack() {
@@ -835,6 +836,8 @@ async function onEditorBack() {
 }
 
 async function onExamSaveDraft() {
+  resumeTopicForSetup.value = undefined
+  resumeMetadataForSetup.value = null
   await navigateToPhase('doc-list')
 }
 

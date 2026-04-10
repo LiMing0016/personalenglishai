@@ -113,6 +113,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue'
 import { extractWritingTemplate, type WritingTemplateResponse } from '@/api/writing'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { showToast } from '@/utils/toast'
 import {
   clearWritingTemplateResult,
@@ -131,6 +132,8 @@ const props = withDefaults(defineProps<{
   studyStage: null,
   writingMode: 'free',
 })
+
+const draftStore = useWritingDraftStore()
 
 const loading = ref(false)
 const error = ref<string | null>(null)
@@ -191,6 +194,7 @@ async function generateTemplates() {
   try {
     const res = await extractWritingTemplate({
       text: props.fullEssay,
+      aiProvider: draftStore.aiProvider,
       taskPrompt: props.taskPrompt?.trim() || undefined,
       studyStage: props.studyStage,
       writingMode: props.writingMode ?? 'free',

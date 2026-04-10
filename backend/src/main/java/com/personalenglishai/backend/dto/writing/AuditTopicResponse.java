@@ -9,6 +9,7 @@ public class AuditTopicResponse {
     private String status;
 
     private String topic;
+    private String promptType;
     private String genre;
     private String wordRange;
 
@@ -20,20 +21,22 @@ public class AuditTopicResponse {
 
     public AuditTopicResponse() {}
 
-    public static AuditTopicResponse complete(String topic, String genre, String wordRange, String requirements) {
+    public static AuditTopicResponse complete(String topic, String promptType, String genre, String wordRange, String requirements) {
         var r = new AuditTopicResponse();
         r.status = "complete";
         r.topic = topic;
+        r.promptType = promptType;
         r.genre = genre;
         r.wordRange = wordRange;
         r.requirements = requirements;
         return r;
     }
 
-    public static AuditTopicResponse needMoreInfo(String topic, String genre, String wordRange, String requirements, String message) {
+    public static AuditTopicResponse needMoreInfo(String topic, String promptType, String genre, String wordRange, String requirements, String message) {
         var r = new AuditTopicResponse();
         r.status = "need_more_info";
         r.topic = topic;
+        r.promptType = promptType;
         r.genre = genre;
         r.wordRange = wordRange;
         r.requirements = requirements;
@@ -53,6 +56,9 @@ public class AuditTopicResponse {
 
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
+
+    public String getPromptType() { return promptType; }
+    public void setPromptType(String promptType) { this.promptType = promptType; }
 
     public String getGenre() { return genre; }
     public void setGenre(String genre) { this.genre = genre; }

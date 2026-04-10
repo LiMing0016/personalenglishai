@@ -1,0 +1,121 @@
+<svg width="1600" height="980" viewBox="0 0 1600 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1600" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5F8FC"/>
+      <stop offset="1" stop-color="#EEF3F8"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FBFCFE"/>
+    </linearGradient>
+    <filter id="drop" x="178" y="80" width="1244" height="860" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg2)"/>
+  <circle cx="118" cy="160" r="150" fill="#DFF6EE" fill-opacity="0.7"/>
+  <circle cx="1478" cy="846" r="170" fill="#E6EEF9" fill-opacity="0.8"/>
+
+  <g filter="url(#drop)">
+    <rect x="220" y="120" width="1160" height="780" rx="30" fill="url(#panel)"/>
+  </g>
+
+  <text x="286" y="198" fill="#0F172A" font-size="30" font-family="Inter, Arial, sans-serif" font-weight="700">写作工作台</text>
+  <text x="286" y="236" fill="#64748B" font-size="16" font-family="Inter, Arial, sans-serif">
+    模式切换和题目整理都在同一页面完成。左侧负责对话输入，右侧负责题单画布。
+  </text>
+
+  <rect x="1084" y="172" width="210" height="42" rx="21" fill="#F8FAFC" stroke="#DCE5EF"/>
+  <rect x="1088" y="176" width="102" height="34" rx="17" fill="#FFFFFF" stroke="#DCE5EF"/>
+  <text x="1116" y="198" fill="#475569" font-size="14" font-family="Inter, Arial, sans-serif" font-weight="700">自由模式</text>
+  <rect x="1194" y="176" width="96" height="34" rx="17" fill="#ECFDF5"/>
+  <text x="1218" y="198" fill="#047857" font-size="14" font-family="Inter, Arial, sans-serif" font-weight="700">考试模式</text>
+
+  <line x1="778" y1="276" x2="778" y2="830" stroke="#E4EAF2" stroke-width="2"/>
+
+  <text x="286" y="304" fill="#0F172A" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">左侧：对话输入</text>
+  <text x="842" y="304" fill="#0F172A" font-size="18" font-family="Inter, Arial, sans-serif" font-weight="700">右侧：题单画布</text>
+
+  <rect x="286" y="330" width="430" height="474" rx="24" fill="#FFFFFF" stroke="#E2E8F0"/>
+  <text x="316" y="368" fill="#94A3B8" font-size="14" font-family="Inter, Arial, sans-serif">
+    例如：请帮我整理一道考研英语风格的作文题，
+  </text>
+  <text x="316" y="394" fill="#94A3B8" font-size="14" font-family="Inter, Arial, sans-serif">
+    主题是年轻人与家庭责任的平衡。我还想加一段材料。
+  </text>
+
+  <rect x="316" y="432" width="238" height="70" rx="18" fill="#F8FAFC" stroke="#E5EAF1"/>
+  <text x="336" y="461" fill="#64748B" font-size="14" font-family="Inter, Arial, sans-serif">用户：</text>
+  <text x="382" y="461" fill="#64748B" font-size="14" font-family="Inter, Arial, sans-serif">给我整理一道考研英语材料题</text>
+  <text x="336" y="485" fill="#64748B" font-size="14" font-family="Inter, Arial, sans-serif">主题是家庭责任与个人发展</text>
+
+  <rect x="396" y="520" width="290" height="104" rx="18" fill="#F0FDF4" stroke="#BBF7D0"/>
+  <text x="416" y="550" fill="#166534" font-size="14" font-family="Inter, Arial, sans-serif" font-weight="600">AI：</text>
+  <text x="444" y="550" fill="#166534" font-size="14" font-family="Inter, Arial, sans-serif">已切到考试模式。我会整理成标准题单，</text>
+  <text x="416" y="576" fill="#166534" font-size="14" font-family="Inter, Arial, sans-serif">字数、满分、体裁会显示在右边画布顶部。</text>
+  <text x="416" y="602" fill="#166534" font-size="14" font-family="Inter, Arial, sans-serif">如果你有材料或题图，可以通过 + 添加。</text>
+
+  <rect x="316" y="652" width="176" height="52" rx="16" fill="#FFFFFF" stroke="#DCE5EF"/>
+  <text x="338" y="683" fill="#0F172A" font-size="14" font-family="Inter, Arial, sans-serif" font-weight="600">材料文件已添加</text>
+
+  <rect x="316" y="730" width="370" height="56" rx="18" fill="#FBFCFE" stroke="#DCE5EF"/>
+  <circle cx="346" cy="758" r="14" fill="#FFFFFF" stroke="#0F766E"/>
+  <text x="340" y="764" fill="#0F766E" font-size="22" font-family="Inter, Arial, sans-serif">+</text>
+  <text x="372" y="762" fill="#64748B" font-size="13" font-family="Inter, Arial, sans-serif">添加图片和文件 / 历年真题</text>
+  <circle cx="664" cy="758" r="15" fill="#F97316"/>
+  <path d="M657 758H671" stroke="#FFF" stroke-width="2" stroke-linecap="round"/>
+  <path d="M664 751V765" stroke="#FFF" stroke-width="2" stroke-linecap="round"/>
+
+  <text x="286" y="842" fill="#94A3B8" font-size="13" font-family="Inter, Arial, sans-serif">
+    左边不再放体裁、字数、分值参数。这里只负责像 GPT 一样对话式输入。
+  </text>
+
+  <rect x="842" y="330" width="492" height="500" rx="24" fill="#F8FAFC" stroke="#E2E8F0"/>
+
+  <rect x="872" y="356" width="432" height="56" rx="18" fill="#FFFFFF" stroke="#E5EAF1"/>
+  <rect x="892" y="372" width="64" height="24" rx="12" fill="#EEF2FF"/>
+  <text x="915" y="388" fill="#4338CA" font-size="12" font-family="Inter, Arial, sans-serif" font-weight="700">材料题</text>
+  <rect x="970" y="372" width="60" height="24" rx="12" fill="#EFF6FF"/>
+  <text x="990" y="388" fill="#1D4ED8" font-size="12" font-family="Inter, Arial, sans-serif" font-weight="700">议论文</text>
+  <rect x="1044" y="372" width="78" height="24" rx="12" fill="#F8FAFC" stroke="#DCE5EF"/>
+  <text x="1066" y="388" fill="#475569" font-size="12" font-family="Inter, Arial, sans-serif" font-weight="700">160-200词</text>
+  <rect x="1136" y="372" width="54" height="24" rx="12" fill="#F8FAFC" stroke="#DCE5EF"/>
+  <text x="1155" y="388" fill="#475569" font-size="12" font-family="Inter, Arial, sans-serif" font-weight="700">20分</text>
+  <rect x="1202" y="372" width="72" height="24" rx="12" fill="#ECFDF5"/>
+  <text x="1224" y="388" fill="#047857" font-size="12" font-family="Inter, Arial, sans-serif" font-weight="700">编辑参数</text>
+
+  <rect x="888" y="434" width="400" height="360" rx="20" fill="#FFFEF9" stroke="#E7DCC7"/>
+  <text x="920" y="480" fill="#0F172A" font-size="34" font-family="Georgia, 'Times New Roman', serif" font-weight="700">Directions:</text>
+
+  <text x="920" y="536" fill="#0F172A" font-size="22" font-family="Georgia, 'Times New Roman', serif">
+    Write an essay of 160-200 words based on the
+  </text>
+  <text x="920" y="568" fill="#0F172A" font-size="22" font-family="Georgia, 'Times New Roman', serif">
+    following material. In your essay, you should first
+  </text>
+  <text x="920" y="600" fill="#0F172A" font-size="22" font-family="Georgia, 'Times New Roman', serif">
+    summarize the material, then explain its meaning,
+  </text>
+  <text x="920" y="632" fill="#0F172A" font-size="22" font-family="Georgia, 'Times New Roman', serif">
+    and finally give your own comment.
+  </text>
+
+  <line x1="920" y1="660" x2="1240" y2="660" stroke="#E7DCC7"/>
+
+  <text x="920" y="694" fill="#8A6D3B" font-size="13" font-family="Inter, Arial, sans-serif" font-weight="700" letter-spacing="1.8">MATERIAL</text>
+  <text x="920" y="726" fill="#334155" font-size="15" font-family="Georgia, 'Times New Roman', serif">
+    Nowadays, more and more young people find themselves caught
+  </text>
+  <text x="920" y="750" fill="#334155" font-size="15" font-family="Georgia, 'Times New Roman', serif">
+    between personal ambition and family responsibilities...
+  </text>
+
+  <rect x="842" y="850" width="492" height="48" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+  <text x="872" y="879" fill="#64748B" font-size="13" font-family="Inter, Arial, sans-serif">
+    去掉 Part B 和返回修改。右边只保留 Directions、题干要求、附件，以及一排题单参数。
+  </text>
+
+  <rect x="1158" y="920" width="176" height="48" rx="16" fill="#85C8B4"/>
+  <text x="1210" y="950" fill="#FFFFFF" font-size="16" font-family="Inter, Arial, sans-serif" font-weight="700">开始写作</text>
+</svg>

@@ -17,6 +17,8 @@ public class PolishRequest {
     @NotBlank
     private String tier; // basic | steady | advanced | perfect
 
+    private String aiProvider;
+
     @JsonIgnore
     private Long userId;
 
@@ -31,6 +33,9 @@ public class PolishRequest {
 
     public String getTier() { return tier; }
     public void setTier(String tier) { this.tier = tier; }
+
+    public String getAiProvider() { return aiProvider; }
+    public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }

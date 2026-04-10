@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 命题助手预览页原型</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #dde4ea;
+      --text: #182233;
+      --subtle: #6c7789;
+      --brand: #0f8a6c;
+      --brand-soft: #e7f6f1;
+      --paper: #fffdfa;
+      --paper-line: #ece4d9;
+      --paper-shadow: 0 20px 40px rgba(24, 35, 51, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(15, 138, 108, 0.08), transparent 28%),
+        linear-gradient(180deg, #f8fafb 0%, var(--bg) 100%);
+    }
+
+    .page {
+      width: 1440px;
+      margin: 0 auto;
+      padding: 42px 32px 56px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 24px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 14px 0 8px;
+      font-size: 34px;
+      line-height: 1.15;
+    }
+
+    .header p {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 17px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+    }
+
+    .chip {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--line);
+      color: #4f6173;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 26px;
+      align-items: start;
+    }
+
+    .left-rail {
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 16px 32px rgba(24, 35, 51, 0.05);
+    }
+
+    .rail-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .rail-text {
+      margin: 0 0 16px;
+      color: var(--subtle);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .rail-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: #f8fafb;
+      border: 1px solid #e7edf1;
+      margin-bottom: 12px;
+    }
+
+    .rail-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .rail-card span {
+      color: var(--subtle);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .screen {
+      padding: 20px;
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid var(--line);
+      box-shadow: 0 18px 36px rgba(24, 35, 51, 0.06);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 4px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .breadcrumbs {
+      color: var(--subtle);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .action {
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-weight: 700;
+      font-size: 14px;
+      border: 1px solid var(--line);
+      background: white;
+      color: #455466;
+    }
+
+    .action.primary {
+      background: var(--brand);
+      color: white;
+      border-color: transparent;
+    }
+
+    .paper-wrap {
+      display: flex;
+      justify-content: center;
+      padding: 34px 0 18px;
+    }
+
+    .paper {
+      width: 840px;
+      min-height: 980px;
+      padding: 54px 64px 60px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,253,250,0.98)),
+        repeating-linear-gradient(
+          to bottom,
+          transparent 0,
+          transparent 34px,
+          rgba(236, 228, 217, 0.32) 35px,
+          transparent 36px
+        );
+      border: 1px solid #efe7db;
+      border-radius: 18px;
+      box-shadow: var(--paper-shadow);
+      position: relative;
+    }
+
+    .paper::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px solid rgba(219, 207, 189, 0.45);
+      pointer-events: none;
+      border-radius: 8px;
+    }
+
+    .exam-part {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+
+    .directions-label {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 22px;
+    }
+
+    .paper-text {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 24px;
+      line-height: 1.82;
+      text-indent: 1.4em;
+      margin: 0 0 20px;
+    }
+
+    .meta-line {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 22px;
+      line-height: 1.8;
+      margin: 20px 0 26px;
+    }
+
+    .attachment-label {
+      margin: 26px 0 16px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #8a775c;
+      text-transform: uppercase;
+    }
+
+    .material-box,
+    .image-box {
+      border: 1px solid var(--paper-line);
+      background: rgba(255,255,255,0.72);
+      border-radius: 14px;
+    }
+
+    .material-box {
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+
+    .material-box p {
+      margin: 0 0 14px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 22px;
+      line-height: 1.78;
+      text-indent: 1.3em;
+    }
+
+    .image-box {
+      padding: 22px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .image-panel {
+      border-radius: 12px;
+      border: 1px solid #ddd3c3;
+      background: #fffefb;
+      padding: 16px;
+      min-height: 220px;
+    }
+
+    .image-caption {
+      margin-top: 10px;
+      color: #73624b;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .sketch {
+      width: 100%;
+      height: 190px;
+      border: 2px dashed #cdbfa9;
+      border-radius: 10px;
+      position: relative;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(198, 181, 155, 0.12), transparent 20%),
+        linear-gradient(180deg, rgba(255,255,255,0.8), rgba(247,241,232,0.6));
+    }
+
+    .sketch .circle {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      border: 2px solid #43362a;
+      border-radius: 50%;
+    }
+
+    .sketch .line {
+      position: absolute;
+      height: 2px;
+      background: #43362a;
+      transform-origin: left center;
+    }
+
+    .sketch .goal {
+      position: absolute;
+      width: 88px;
+      height: 42px;
+      border: 3px solid #43362a;
+      border-radius: 6px;
+    }
+
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 10px 4px;
+      border-top: 1px solid var(--line);
+      margin-top: 10px;
+    }
+
+    .footer-hint {
+      color: var(--subtle);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="badge">AI 命题助手 · 预览页原型</div>
+        <h1>保留产品页面外壳，中间题目内容区做成真题纸面风格</h1>
+        <p>重点是先看材料 / 图片 / 图表，再看 Directions 和写作要求，阅读顺序尽量贴近真实考试。</p>
+      </div>
+      <div class="toolbar">
+        <div class="chip">材料题</div>
+        <div class="chip">图片题</div>
+        <div class="chip">图表题</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="left-rail">
+        <h2 class="rail-title">页面原则</h2>
+        <p class="rail-text">外层仍然是产品页面，用户不会出戏；中间核心区域则进入“考试读题模式”。</p>
+
+        <div class="rail-card">
+          <strong>1. 顶部先展示附件</strong>
+          <span>材料题显示完整材料，图片题显示图片或漫画，图表题显示图表或表格。</span>
+        </div>
+
+        <div class="rail-card">
+          <strong>2. 下方再展示 Directions</strong>
+          <span>Directions、题干、字数、分值放在纸面中段，更像真实考卷。</span>
+        </div>
+
+        <div class="rail-card">
+          <strong>3. 按钮留在产品壳里</strong>
+          <span>换一题、返回修改、开始写作仍然用产品按钮，不挤进试卷内容里。</span>
+        </div>
+      </aside>
+
+      <main class="screen">
+        <div class="topbar">
+          <div class="breadcrumbs">考试写作 / AI 生成 / 题目预览</div>
+          <div class="actions">
+            <button class="action">返回修改</button>
+            <button class="action">换一题</button>
+            <button class="action primary">开始写作</button>
+          </div>
+        </div>
+
+        <div class="paper-wrap">
+          <article class="paper">
+            <div class="exam-part">Part B</div>
+
+            <div class="attachment-label">Attachment / Visual Prompt</div>
+            <div class="image-box">
+              <div class="image-panel">
+                <div class="sketch">
+                  <div class="goal" style="left: 20px; top: 18px;"></div>
+                  <div class="goal" style="right: 20px; top: 18px;"></div>
+                  <div class="goal" style="left: 44px; bottom: 18px; width: 120px;"></div>
+                  <div class="goal" style="right: 44px; bottom: 18px; width: 120px;"></div>
+
+                  <div class="circle" style="left: 94px; top: 54px;"></div>
+                  <div class="circle" style="right: 96px; top: 54px;"></div>
+                  <div class="circle" style="left: 168px; top: 92px;"></div>
+                  <div class="circle" style="left: 88px; bottom: 48px;"></div>
+                  <div class="circle" style="right: 88px; bottom: 48px;"></div>
+
+                  <div class="line" style="left: 108px; top: 102px; width: 44px; transform: rotate(18deg);"></div>
+                  <div class="line" style="right: 112px; top: 104px; width: 40px; transform: rotate(-16deg);"></div>
+                  <div class="line" style="left: 188px; top: 142px; width: 24px; transform: rotate(8deg);"></div>
+                  <div class="line" style="left: 104px; bottom: 72px; width: 38px; transform: rotate(-24deg);"></div>
+                  <div class="line" style="right: 100px; bottom: 72px; width: 38px; transform: rotate(22deg);"></div>
+                </div>
+                <div class="image-caption">漫画 / 图片附件区域</div>
+              </div>
+
+              <div class="image-panel">
+                <strong style="display:block; font-size:16px; margin-bottom:10px;">可切换的附件说明</strong>
+                <p style="margin:0; color:#5f6f81; line-height:1.8; font-size:15px;">
+                  如果是材料题，这里替换成完整材料正文。
+                  如果是图表题，这里替换成真实表格或图表。
+                  如果是图片题，这里展示用户上传图片，或展示 AI 生成的漫画 / 场景图。
+                </p>
+              </div>
+            </div>
+
+            <div class="directions-label">51. Directions:</div>
+            <p class="paper-text">
+              Write an essay of 160-200 words based on the following drawing. In your essay, you should first describe the drawing, then interpret its meaning, and give your comment on it.
+            </p>
+            <div class="meta-line">
+              You should write neatly on ANSWER SHEET 2. Write no less than 160 words. (20 points)
+            </div>
+
+            <div class="attachment-label">Material Version Example</div>
+            <div class="material-box">
+              <p>
+                Nowadays, more and more young people find themselves caught between personal ambitions and family responsibilities.
+                Some choose to pursue careers in big cities, while their parents are left behind with growing emotional and practical needs.
+              </p>
+              <p>
+                When facing such a dilemma, people are often forced to reconsider what success truly means and how family duty should be balanced with self-development.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="footer-bar">
+          <div class="footer-hint">题目附件先于 Directions 展示，符合先看题面素材、再读写作任务的阅读顺序。</div>
+          <div class="actions">
+            <button class="action">返回修改</button>
+            <button class="action">换一题</button>
+            <button class="action primary">开始写作</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

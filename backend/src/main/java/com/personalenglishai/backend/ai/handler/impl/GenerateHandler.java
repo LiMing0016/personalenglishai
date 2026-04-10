@@ -63,7 +63,7 @@ public class GenerateHandler implements IntentHandler {
                 + "context_document:\n" + contextText;
 
         try {
-            String raw = openAiClient.callWithTraceId(SYSTEM_PROMPT, userPrompt, traceId, ctx.getXDebugFail());
+            String raw = openAiClient.callWithProvider(req.getAiProvider(), SYSTEM_PROMPT, userPrompt, traceId, ctx.getXDebugFail());
             AiResult parsed = parser.parseStrict(raw);
 
             AICommandResponse response = new AICommandResponse();

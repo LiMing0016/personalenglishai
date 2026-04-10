@@ -15,8 +15,14 @@ import {
   loadAiNoteDraftNow,
   saveAiNoteDraftNow,
   clearAiNoteDraftNow,
+  loadAiProvider,
+  saveAiProviderNow,
+  clearAiProviderNow,
+  type WritingAiProvider,
 } from '@/components/writing/editorShellStorage'
 import { getDocumentContent } from '@/api/document'
+
+const DEFAULT_AI_PROVIDER: WritingAiProvider = 'openai'
 
 export const useWritingDraftStore = defineStore('writingDraft', () => {
   const draftText = ref('')
@@ -24,6 +30,7 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
   const taskPrompt = ref('')
   const aiNote = ref('')
   const aiConversationId = ref(createConversationId())
+  const aiProvider = ref<WritingAiProvider>(DEFAULT_AI_PROVIDER)
   const docId = ref<string | null>(null)
   const docRevision = ref<number | null>(null)
   const submitCount = ref(0)
@@ -44,8 +51,10 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
   }
 
   function flushAll() {
-    saveDraftNow(draftText.value ?? '', getScope())
-    saveAiNoteDraftNow(aiNote.value ?? '', getScope())
+    const scope = getScope()
+    saveDraftNow(draftText.value ?? '', scope)
+    saveAiNoteDraftNow(aiNote.value ?? '', scope)
+    if (scope) saveAiProviderNow(aiProvider.value, scope)
   }
 
   const debouncedSaveAiNote = useDebounceFn((v: string) => {
@@ -107,6 +116,16 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     { immediate: false },
   )
 
+  watch(
+    aiProvider,
+    (provider) => {
+      const scope = getScope()
+      if (!scope) return
+      saveAiProviderNow(provider, scope)
+    },
+    { immediate: false },
+  )
+
   /**
    * Lightweight init: only resolves docId and restores local caches.
    * Does NOT fetch from backend. Use hydrateByDocId() for full restore.
@@ -135,6 +154,7 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
 
     const scope = getScope()
     aiConversationId.value = loadConversationId(scope)
+    aiProvider.value = loadAiProvider(scope) ?? DEFAULT_AI_PROVIDER
 
     // Restore draft by current document scope; global fallback only for non-doc mode.
     const saved = loadDraftNow(scope) ?? (scope ? null : loadDraftNow()) ?? (scope ? null : loadDraft())
@@ -181,6 +201,7 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
 
       // Restore conversation
       aiConversationId.value = loadConversationId(scope)
+      aiProvider.value = loadAiProvider(scope) ?? DEFAULT_AI_PROVIDER
 
       return true
     } catch (e) {
@@ -207,8 +228,10 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     clearCurrentDraftContent()
     try {
       clearConversationId(scope)
+      if (scope) clearAiProviderNow(scope)
       localStorage.removeItem(WRITING_STORAGE_KEYS.legacyDraft)
     } catch (_) {}
+    aiProvider.value = DEFAULT_AI_PROVIDER
     docId.value = null
     docRevision.value = null
   }
@@ -217,12 +240,19 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     aiConversationId.value = createConversationId()
   }
 
+  function setAiProvider(provider: WritingAiProvider) {
+    if (aiProvider.value === provider) return
+    aiProvider.value = provider
+    resetConversation()
+  }
+
   return {
     draftText,
     writingMode,
     taskPrompt,
     aiNote,
     aiConversationId,
+    aiProvider,
     docId,
     docRevision,
     submitCount,
@@ -234,5 +264,6 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     clearCurrentDraftContent,
     clearAll,
     resetConversation,
+    setAiProvider,
   }
 })

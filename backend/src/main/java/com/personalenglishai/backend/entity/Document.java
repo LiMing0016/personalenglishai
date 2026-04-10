@@ -15,6 +15,7 @@ public class Document {
     private String title;
     private String taskPrompt;
     private String taskPromptHash;
+    private Long promptSheetId;
     private Integer initialScore;
     private Integer latestScore;
     private Integer submitCount;
@@ -40,6 +41,8 @@ public class Document {
     public void setTaskPrompt(String taskPrompt) { this.taskPrompt = taskPrompt; }
     public String getTaskPromptHash() { return taskPromptHash; }
     public void setTaskPromptHash(String taskPromptHash) { this.taskPromptHash = taskPromptHash; }
+    public Long getPromptSheetId() { return promptSheetId; }
+    public void setPromptSheetId(Long promptSheetId) { this.promptSheetId = promptSheetId; }
     public Integer getInitialScore() { return initialScore; }
     public void setInitialScore(Integer initialScore) { this.initialScore = initialScore; }
     public Integer getLatestScore() { return latestScore; }

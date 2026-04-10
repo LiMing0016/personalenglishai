@@ -20,17 +20,20 @@ public class AuditTopicService {
     private static final String SYSTEM_PROMPT = """
             你是考试写作助手。分析用户输入的英语作文题目，提取并补全以下信息：
             1. topic：题目正文。尽量保留用户原始题目文本，不要概括成“根据所给图表写一篇作文”这种过于泛化的摘要；若原文包含英文题目要求，优先保留原英文正文
-            2. genre：体裁（书信、议论文、说明文、演讲稿、看图作文、通知、日记，或 null）
-            3. wordRange：字数范围（如 "80-120"，或 null）
-            4. requirements：写作要求/要点（如 "1) describe the picture briefly 2) interpret the meaning 3) give your comments"，从原文提取，没有则 null）
-            5. status：
+            2. promptType：题型，只能是 general、material、chart、comic 之一
+            3. genre：体裁（书信、议论文、说明文、演讲稿、看图作文、通知、日记，或 null）
+            4. wordRange：字数范围（如 "80-120"，或 null）
+            5. requirements：写作要求/要点（如 "1) describe the picture briefly 2) interpret the meaning 3) give your comments"，从原文提取，没有则 null）
+            6. status：
                - "complete"：题目有效且信息完整
                - "need_more_info"：题目有效但缺少体裁或字数，在 message 中友好提示
                - "invalid"：输入明显不是作文题目（数字、乱码等），在 message 中引导用户
-            6. message：给用户的中文提示（status 为 complete 时可为 null）
+            7. message：给用户的中文提示（status 为 complete 时可为 null）
 
             规则：
             - 如果用户已选择体裁或字数（genre/wordRange 不为空），直接采用，不要覆盖
+            - 如果用户明确提到材料、图表、表格、柱状图、折线图、饼图、漫画、图画、分镜等信息，要据此判断 promptType
+            - 如果无法判断题型，promptType 设为 general
             - 如果用户未选择，尝试从题目文本中推断
             - topic 必须尽量贴近原题，不要重写成简短标题，不要丢失图表/图片/材料等关键信息
             - requirements 是题目中的具体写作要点（如需要描述图片、阐释含义、给出评论等），原样提取，不要编造
@@ -39,7 +42,7 @@ public class AuditTopicService {
             - genre 必须是以下之一：书信、议论文、说明文、演讲稿、看图作文、通知、日记，或 null
 
             只输出合法 JSON，不要输出其他内容：
-            {"status":"...","topic":"...","genre":"...","wordRange":"...","requirements":"...","message":"..."}
+            {"status":"...","topic":"...","promptType":"...","genre":"...","wordRange":"...","requirements":"...","message":"..."}
             """;
 
     public AuditTopicService(QwenService qwenService) {
@@ -73,6 +76,9 @@ public class AuditTopicService {
         if (request.getWordRange() != null && !request.getWordRange().isBlank()) {
             sb.append("\n用户已选字数：").append(request.getWordRange());
         }
+        if (request.getStudyStage() != null && !request.getStudyStage().isBlank()) {
+            sb.append("\n当前学段：").append(request.getStudyStage());
+        }
         return sb.toString();
     }
 
@@ -87,6 +93,7 @@ public class AuditTopicService {
 
             String status = node.path("status").asText("complete");
             String topic = normalizeTopic(node.path("topic").asText(request.getTopic()), request.getTopic());
+            String promptType = normalizePromptType(node.path("promptType").asText(null), request.getTopic());
             String genre = nullIfEmpty(node.path("genre").asText(null));
             String wordRange = nullIfEmpty(node.path("wordRange").asText(null));
             String requirements = nullIfEmpty(node.path("requirements").asText(null));
@@ -105,10 +112,10 @@ public class AuditTopicService {
             }
 
             if ("need_more_info".equals(status)) {
-                return AuditTopicResponse.needMoreInfo(topic, genre, wordRange, requirements, message);
+                return AuditTopicResponse.needMoreInfo(topic, promptType, genre, wordRange, requirements, message);
             }
 
-            return AuditTopicResponse.complete(topic, genre, wordRange, requirements);
+            return AuditTopicResponse.complete(topic, promptType, genre, wordRange, requirements);
         } catch (Exception e) {
             log.warn("[AUDIT-TOPIC] parse failed: {}", raw, e);
             return fallback(request);
@@ -119,6 +126,7 @@ public class AuditTopicService {
     private AuditTopicResponse fallback(AuditTopicRequest request) {
         return AuditTopicResponse.complete(
                 request.getTopic(),
+                normalizePromptType(null, request.getTopic()),
                 request.getGenre(),
                 request.getWordRange(),
                 request.getRequirements()
@@ -178,6 +186,31 @@ public class AuditTopicService {
                 || normalized.equals("write an essay based on the picture below")
                 || normalized.equals("write an essay based on the following drawing")
                 || normalized.equals("write an essay based on the material below");
+    }
+
+    private String normalizePromptType(String promptType, String originalTopic) {
+        String normalized = nullIfEmpty(promptType);
+        if (normalized != null) {
+            return switch (normalized.toLowerCase()) {
+                case "material", "chart", "comic" -> normalized.toLowerCase();
+                default -> "general";
+            };
+        }
+
+        String source = originalTopic == null ? "" : originalTopic.toLowerCase();
+        if (source.contains("材料") || source.contains("material")) {
+            return "material";
+        }
+        if (source.contains("图表") || source.contains("表格") || source.contains("chart")
+                || source.contains("table") || source.contains("柱状图")
+                || source.contains("折线图") || source.contains("饼图")) {
+            return "chart";
+        }
+        if (source.contains("漫画") || source.contains("图画") || source.contains("drawing")
+                || source.contains("picture") || source.contains("分镜")) {
+            return "comic";
+        }
+        return "general";
     }
 
     // ── 图片识别 ──

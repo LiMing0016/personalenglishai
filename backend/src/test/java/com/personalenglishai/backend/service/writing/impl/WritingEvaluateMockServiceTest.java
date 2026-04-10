@@ -333,7 +333,7 @@ class WritingEvaluateMockServiceTest {
                 "postgrad-exam-policy-v1", 75, 75, null, 0, Map.of(), List.of(), null
         ));
         when(abilityProfileMapper.selectByUserId(1L)).thenReturn(null);
-        when(openAiClient.getModel()).thenReturn("gpt-test");
+        when(openAiClient.resolveModel(null)).thenReturn("gpt-test");
         when(scorePromptContextResolver.resolve(eq(request), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new ScorePromptContext(
                         "doc-1",
@@ -368,7 +368,7 @@ class WritingEvaluateMockServiceTest {
     @DisplayName("能力画像应记录当前生效的 rubric key")
     void updateAbilityProfileUsesEffectiveRubricKey() {
         when(abilityProfileMapper.selectByUserId(1L)).thenReturn(null);
-        when(openAiClient.getModel()).thenReturn("gpt-test");
+        when(openAiClient.resolveModel(null)).thenReturn("gpt-test");
 
         ReflectionTestUtils.invokeMethod(
                 service,
@@ -382,7 +382,8 @@ class WritingEvaluateMockServiceTest {
                         "expression", 76,
                         "task_achievement", 84
                 ),
-                "postgrad-exam-v1"
+                "postgrad-exam-v1",
+                null
         );
 
         ArgumentCaptor<UserAbilityProfile> captor = ArgumentCaptor.forClass(UserAbilityProfile.class);

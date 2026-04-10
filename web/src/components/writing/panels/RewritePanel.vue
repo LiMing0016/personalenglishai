@@ -1,210 +1,195 @@
 <template>
   <section class="rewrite-panel">
-    <div class="rewrite-panel__header">
-      <div>
-        <h3 class="rewrite-panel__title">自动润色</h3>
-        <p class="rewrite-panel__subtitle">
-          按当前题目与评分标准生成一版候选稿，并在同一 rubric 下做一次安全复评。
-        </p>
+    <div class="rewrite-panel__card">
+      <div class="rewrite-panel__meta">
+        <span class="rewrite-panel__badge">{{ writingModeLabel }}</span>
+        <span v-if="studyStageLabel" class="rewrite-panel__badge">学段：{{ studyStageLabel }}</span>
+        <span v-if="taskTypeLabel" class="rewrite-panel__badge">题型：{{ taskTypeLabel }}</span>
+      </div>
+
+      <div class="rewrite-panel__section">
+        <div class="rewrite-panel__section-title">润色档次</div>
+        <div class="rewrite-panel__tiers">
+          <button
+            v-for="item in tierOptions"
+            :key="item.value"
+            type="button"
+            class="rewrite-panel__tier"
+            :class="{ 'is-active': polishTier === item.value }"
+            @click="selectTier(item.value)"
+          >
+            <span class="rewrite-panel__tier-label">{{ item.label }}</span>
+            <span class="rewrite-panel__tier-desc">{{ item.desc }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="rewrite-panel__section rewrite-panel__context">
+        <div>
+          <div class="rewrite-panel__section-title">题目内容</div>
+          <p class="rewrite-panel__context-text">{{ displayedTopicContent }}</p>
+        </div>
+        <div>
+          <div class="rewrite-panel__section-title">写作要求</div>
+          <p class="rewrite-panel__context-text">{{ displayedTaskPrompt }}</p>
+        </div>
+      </div>
+
+      <div class="rewrite-panel__actions">
+        <button
+          type="button"
+          class="rewrite-panel__primary"
+          :disabled="locked || polishingAll || !polishTier || !fullEssay.trim()"
+          @click="doPolishAll"
+        >
+          {{ polishingAll ? '润色中...' : '生成候选稿' }}
+        </button>
       </div>
     </div>
 
-    <div v-if="locked" class="rewrite-panel__notice rewrite-panel__notice--warn">
-      当前为考试首写锁定状态，暂不支持自动润色。
+    <div v-if="polishError" class="rewrite-panel__notice rewrite-panel__notice--error">
+      <div>{{ polishError }}</div>
+      <button type="button" class="rewrite-panel__link" @click="retryCurrentFlow">重试</button>
     </div>
 
-    <template v-else>
-      <div class="rewrite-panel__card">
-        <div class="rewrite-panel__meta">
-          <span class="rewrite-panel__badge">{{ writingModeLabel }}</span>
-          <span v-if="studyStageLabel" class="rewrite-panel__badge">学段：{{ studyStageLabel }}</span>
-          <span v-if="taskTypeLabel" class="rewrite-panel__badge">题型：{{ taskTypeLabel }}</span>
+    <div
+      v-if="hasSummaryCard"
+      class="rewrite-panel__card rewrite-panel__summary-card"
+    >
+      <div class="rewrite-panel__summary-head">
+        <div>
+          <div class="rewrite-panel__section-title">本次润色结果</div>
+          <p class="rewrite-panel__summary-text">
+            当前档位目标：{{ targetBandLabel }}
+            <span v-if="processingModeLabel"> · {{ processingModeLabel }}</span>
+          </p>
         </div>
+        <button type="button" class="rewrite-panel__link" @click="summaryCollapsed = !summaryCollapsed">
+          {{ summaryCollapsed ? '展开' : '收起' }}
+        </button>
+      </div>
 
-        <div class="rewrite-panel__section">
-          <div class="rewrite-panel__section-title">润色档次</div>
-          <div class="rewrite-panel__tiers">
-            <button
-              v-for="item in tierOptions"
-              :key="item.value"
-              type="button"
-              class="rewrite-panel__tier"
-              :class="{ 'is-active': polishTier === item.value }"
-              @click="selectTier(item.value)"
-            >
-              <span class="rewrite-panel__tier-label">{{ item.label }}</span>
-              <span class="rewrite-panel__tier-desc">{{ item.desc }}</span>
-            </button>
-          </div>
-        </div>
+      <div class="rewrite-panel__meta rewrite-panel__meta--wrap">
+        <span v-if="alignmentLabel" class="rewrite-panel__badge" :class="alignmentBadgeClass">{{ alignmentLabel }}</span>
+        <span v-if="routeLabel" class="rewrite-panel__badge">{{ routeLabel }}</span>
+        <span v-if="baselineBandLabel" class="rewrite-panel__badge">原文档位：{{ baselineBandLabel }}</span>
+        <span v-if="finalBandLabel" class="rewrite-panel__badge">候选稿档位：{{ finalBandLabel }}</span>
+        <span
+          v-if="accepted !== null"
+          class="rewrite-panel__badge"
+          :class="accepted ? 'rewrite-panel__badge--success' : 'rewrite-panel__badge--danger'"
+        >
+          {{ accepted ? '已通过安全复评' : '未通过安全复评' }}
+        </span>
+      </div>
 
-        <div class="rewrite-panel__section rewrite-panel__context">
+      <div v-if="!summaryCollapsed" class="rewrite-panel__summary-body">
+        <div class="rewrite-panel__summary-grid">
           <div>
-            <div class="rewrite-panel__section-title">题目内容</div>
-            <p class="rewrite-panel__context-text">{{ displayedTopicContent }}</p>
+            <div class="rewrite-panel__section-title">分数对比</div>
+            <p class="rewrite-panel__summary-text">{{ scoreSummary }}</p>
           </div>
-          <div>
-            <div class="rewrite-panel__section-title">写作要求</div>
-            <p class="rewrite-panel__context-text">{{ displayedTaskPrompt }}</p>
+          <div v-if="bindingReasonLabel">
+            <div class="rewrite-panel__section-title">当前约束</div>
+            <p class="rewrite-panel__summary-text">{{ bindingReasonLabel }}</p>
           </div>
         </div>
 
-        <div class="rewrite-panel__actions">
+        <div v-if="polishSummary?.strengths?.length" class="rewrite-panel__summary-list">
+          <div class="rewrite-panel__section-title">做得好的地方</div>
+          <ul>
+            <li v-for="item in polishSummary.strengths" :key="`strength-${item}`">{{ item }}</li>
+          </ul>
+        </div>
+
+        <div v-if="polishSummary?.improvements?.length" class="rewrite-panel__summary-list">
+          <div class="rewrite-panel__section-title">仍需改进</div>
+          <ul>
+            <li v-for="item in polishSummary.improvements" :key="`improvement-${item}`">{{ item }}</li>
+          </ul>
+        </div>
+
+        <div v-if="unmetCoreDimensionsLabel.length" class="rewrite-panel__summary-list">
+          <div class="rewrite-panel__section-title">未达标核心维度</div>
+          <ul>
+            <li v-for="item in unmetCoreDimensionsLabel" :key="`dimension-${item}`">{{ item }}</li>
+          </ul>
+        </div>
+
+        <div v-if="targetGap" class="rewrite-panel__notice" :class="accepted ? 'rewrite-panel__notice--info' : 'rewrite-panel__notice--warn'">
+          {{ targetGap }}
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="polishedEssay"
+      class="rewrite-panel__card rewrite-panel__result-card"
+      :class="{ 'rewrite-panel__result-card--disabled': accepted === false }"
+    >
+      <div class="rewrite-panel__result-head">
+        <div>
+          <div class="rewrite-panel__section-title">整篇候选稿</div>
+          <p class="rewrite-panel__summary-text">
+            {{ accepted ? '已通过安全复评，可替换正文。' : '候选稿未通过安全复评，仅供参考。' }}
+          </p>
+        </div>
+        <div class="rewrite-panel__actions rewrite-panel__actions--inline">
           <button
             type="button"
-            class="rewrite-panel__primary"
-            :disabled="polishingAll || !polishTier || !fullEssay.trim()"
-            @click="doPolishAll"
+            class="rewrite-panel__secondary"
+            :disabled="accepted === false"
+            @click="applyWholeEssay"
           >
-            {{ polishingAll ? '润色中...' : '生成候选稿' }}
+            整篇替换
           </button>
+          <button type="button" class="rewrite-panel__link" @click="dismissWholeEssay">忽略</button>
         </div>
       </div>
 
-      <div v-if="polishError" class="rewrite-panel__notice rewrite-panel__notice--error">
-        <div>{{ polishError }}</div>
-        <button type="button" class="rewrite-panel__link" @click="retryCurrentFlow">重试</button>
-      </div>
+      <article class="rewrite-panel__essay">
+        <p v-for="(paragraph, index) in polishedParagraphs" :key="`paragraph-${index}`">
+          {{ paragraph }}
+        </p>
+      </article>
+    </div>
 
-      <div
-        v-if="hasSummaryCard"
-        class="rewrite-panel__card rewrite-panel__summary-card"
-      >
-        <div class="rewrite-panel__summary-head">
-          <div>
-            <div class="rewrite-panel__section-title">本次润色结果</div>
-            <p class="rewrite-panel__summary-text">
-              当前档位目标：{{ targetBandLabel }}
-              <span v-if="processingModeLabel"> · {{ processingModeLabel }}</span>
-            </p>
-          </div>
-          <button type="button" class="rewrite-panel__link" @click="summaryCollapsed = !summaryCollapsed">
-            {{ summaryCollapsed ? '展开' : '收起' }}
-          </button>
-        </div>
-
-        <div class="rewrite-panel__meta rewrite-panel__meta--wrap">
-          <span v-if="alignmentLabel" class="rewrite-panel__badge" :class="alignmentBadgeClass">{{ alignmentLabel }}</span>
-          <span v-if="routeLabel" class="rewrite-panel__badge">{{ routeLabel }}</span>
-          <span v-if="baselineBandLabel" class="rewrite-panel__badge">原文档位：{{ baselineBandLabel }}</span>
-          <span v-if="finalBandLabel" class="rewrite-panel__badge">候选稿档位：{{ finalBandLabel }}</span>
-          <span
-            v-if="accepted !== null"
-            class="rewrite-panel__badge"
-            :class="accepted ? 'rewrite-panel__badge--success' : 'rewrite-panel__badge--danger'"
+    <div v-else-if="sentences.length" class="rewrite-panel__card">
+      <div class="rewrite-panel__section-title">句子级建议</div>
+      <div class="rewrite-panel__sentence-list">
+        <article
+          v-for="(item, idx) in sentences"
+          :key="`${idx}-${item.original}`"
+          class="rewrite-panel__sentence-item"
+        >
+          <button
+            type="button"
+            class="rewrite-panel__sentence-toggle"
+            @click="toggleSentence(idx, item.start, item.end)"
           >
-            {{ accepted ? '已通过安全复评' : '未通过安全复评' }}
-          </span>
-        </div>
-
-        <div v-if="!summaryCollapsed" class="rewrite-panel__summary-body">
-          <div class="rewrite-panel__summary-grid">
-            <div>
-              <div class="rewrite-panel__section-title">分数对比</div>
-              <p class="rewrite-panel__summary-text">{{ scoreSummary }}</p>
-            </div>
-            <div v-if="bindingReasonLabel">
-              <div class="rewrite-panel__section-title">当前约束</div>
-              <p class="rewrite-panel__summary-text">{{ bindingReasonLabel }}</p>
-            </div>
-          </div>
-
-          <div v-if="polishSummary?.strengths?.length" class="rewrite-panel__summary-list">
-            <div class="rewrite-panel__section-title">做得好的地方</div>
-            <ul>
-              <li v-for="item in polishSummary.strengths" :key="`strength-${item}`">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="polishSummary?.improvements?.length" class="rewrite-panel__summary-list">
-            <div class="rewrite-panel__section-title">仍需改进</div>
-            <ul>
-              <li v-for="item in polishSummary.improvements" :key="`improvement-${item}`">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="unmetCoreDimensionsLabel.length" class="rewrite-panel__summary-list">
-            <div class="rewrite-panel__section-title">未达标核心维度</div>
-            <ul>
-              <li v-for="item in unmetCoreDimensionsLabel" :key="`dimension-${item}`">{{ item }}</li>
-            </ul>
-          </div>
-
-          <div v-if="targetGap" class="rewrite-panel__notice" :class="accepted ? 'rewrite-panel__notice--info' : 'rewrite-panel__notice--warn'">
-            {{ targetGap }}
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="polishedEssay"
-        class="rewrite-panel__card rewrite-panel__result-card"
-        :class="{ 'rewrite-panel__result-card--disabled': accepted === false }"
-      >
-        <div class="rewrite-panel__result-head">
-          <div>
-            <div class="rewrite-panel__section-title">整篇候选稿</div>
-            <p class="rewrite-panel__summary-text">
-              {{ accepted ? '已通过安全复评，可替换正文。' : '候选稿未通过安全复评，仅供参考。' }}
-            </p>
-          </div>
-          <div class="rewrite-panel__actions rewrite-panel__actions--inline">
+            <span>原句 {{ idx + 1 }}</span>
+            <span>{{ expandedIdx === idx ? '收起' : '展开' }}</span>
+          </button>
+          <p class="rewrite-panel__sentence-original">{{ item.original }}</p>
+          <div v-if="expandedIdx === idx" class="rewrite-panel__sentence-detail">
+            <p class="rewrite-panel__sentence-polished" v-html="renderDiff(item.original, item.polished)"></p>
+            <p v-if="item.explanation" class="rewrite-panel__sentence-expl">{{ item.explanation }}</p>
             <button
               type="button"
               class="rewrite-panel__secondary"
-              :disabled="accepted === false"
-              @click="applyWholeEssay"
+              :disabled="replacedSet.has(idx)"
+              @click="replaceSentence(item, idx)"
             >
-              整篇替换
+              {{ replacedSet.has(idx) ? '已替换' : '应用此句' }}
             </button>
-            <button type="button" class="rewrite-panel__link" @click="dismissWholeEssay">忽略</button>
           </div>
-        </div>
-
-        <article class="rewrite-panel__essay">
-          <p v-for="(paragraph, index) in polishedParagraphs" :key="`paragraph-${index}`">
-            {{ paragraph }}
-          </p>
         </article>
       </div>
+    </div>
 
-      <div v-else-if="sentences.length" class="rewrite-panel__card">
-        <div class="rewrite-panel__section-title">句子级建议</div>
-        <div class="rewrite-panel__sentence-list">
-          <article
-            v-for="(item, idx) in sentences"
-            :key="`${idx}-${item.original}`"
-            class="rewrite-panel__sentence-item"
-          >
-            <button
-              type="button"
-              class="rewrite-panel__sentence-toggle"
-              @click="toggleSentence(idx, item.start, item.end)"
-            >
-              <span>原句 {{ idx + 1 }}</span>
-              <span>{{ expandedIdx === idx ? '收起' : '展开' }}</span>
-            </button>
-            <p class="rewrite-panel__sentence-original">{{ item.original }}</p>
-            <div v-if="expandedIdx === idx" class="rewrite-panel__sentence-detail">
-              <p class="rewrite-panel__sentence-polished" v-html="renderDiff(item.original, item.polished)"></p>
-              <p v-if="item.explanation" class="rewrite-panel__sentence-expl">{{ item.explanation }}</p>
-              <button
-                type="button"
-                class="rewrite-panel__secondary"
-                :disabled="replacedSet.has(idx)"
-                @click="replaceSentence(item, idx)"
-              >
-                {{ replacedSet.has(idx) ? '已替换' : '应用此句' }}
-              </button>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <div v-if="!polishedEssay && !sentences.length && !polishingAll && !polishError" class="rewrite-panel__card rewrite-panel__empty">
-        选择一个档位后生成候选稿。系统只会在候选稿通过同 rubric 安全复评时允许替换正文。
-      </div>
-    </template>
+    <div v-if="!polishedEssay && !sentences.length && !polishingAll && !polishError" class="rewrite-panel__card rewrite-panel__empty">
+      选择一个档位后生成候选稿。系统只会在候选稿通过同 rubric 安全复评时允许替换正文。
+    </div>
   </section>
 </template>
 
@@ -219,6 +204,7 @@ import {
   polishEssay,
 } from '@/api/writing'
 import { loadPolishResult, savePolishResult } from '../editorShellStorage'
+import { useWritingDraftStore } from '@/stores/writingDraftStore'
 
 type SentenceSuggestion = {
   original: string
@@ -240,6 +226,8 @@ const props = defineProps<{
   minWords?: number | null
   recommendedMaxWords?: number | null
 }>()
+
+const draftStore = useWritingDraftStore()
 
 const emit = defineEmits<{
   'replace-sentence': [payload: { start: number; end: number; original: string; replacement: string; tier: PolishTier }]
@@ -388,6 +376,7 @@ async function doPolishAll() {
   try {
     const response = await polishEssay({
       text: props.fullEssay,
+      aiProvider: draftStore.aiProvider,
       tier: polishTier.value,
       studyStage: props.studyStage ?? null,
       writingMode: props.writingMode ?? 'free',
@@ -677,19 +666,6 @@ function escapeHtml(text: string) {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.rewrite-panel__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.rewrite-panel__title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #17324d;
 }
 
 .rewrite-panel__subtitle,

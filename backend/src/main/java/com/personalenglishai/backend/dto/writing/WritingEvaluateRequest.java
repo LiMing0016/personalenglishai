@@ -34,6 +34,7 @@ public class WritingEvaluateRequest {
     private Integer maxScore;
     /** Optional document public_id for binding evaluations to a document. */
     private String documentId;
+    private String aiProvider;
 
     /** 由 Controller 从 JWT 注入，不对外暴露 */
     @JsonIgnore
@@ -152,6 +153,14 @@ public class WritingEvaluateRequest {
 
     public void setDocumentId(String documentId) {
         this.documentId = documentId;
+    }
+
+    public String getAiProvider() {
+        return aiProvider;
+    }
+
+    public void setAiProvider(String aiProvider) {
+        this.aiProvider = aiProvider;
     }
 
     public Long getUserId() {

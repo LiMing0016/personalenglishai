@@ -20,6 +20,8 @@ public class StartWritingSessionRequest {
     private String titleSnapshot;
     private String topicTitle;
     private String promptText;
+    private Long promptSheetId;
+    private String attachmentImageUrl;
     private String genre;
     private String examType;
     private String taskType;
@@ -97,6 +99,22 @@ public class StartWritingSessionRequest {
 
     public void setPromptText(String promptText) {
         this.promptText = promptText;
+    }
+
+    public Long getPromptSheetId() {
+        return promptSheetId;
+    }
+
+    public void setPromptSheetId(Long promptSheetId) {
+        this.promptSheetId = promptSheetId;
+    }
+
+    public String getAttachmentImageUrl() {
+        return attachmentImageUrl;
+    }
+
+    public void setAttachmentImageUrl(String attachmentImageUrl) {
+        this.attachmentImageUrl = attachmentImageUrl;
     }
 
     public String getGenre() {

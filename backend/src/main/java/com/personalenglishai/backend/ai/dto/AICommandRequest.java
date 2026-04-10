@@ -30,6 +30,8 @@ public class AICommandRequest {
 
     private OutputOptions output;
 
+    private String aiProvider;
+
     public Integer getApiVersion() {
         return apiVersion;
     }
@@ -84,5 +86,13 @@ public class AICommandRequest {
 
     public void setOutput(OutputOptions output) {
         this.output = output;
+    }
+
+    public String getAiProvider() {
+        return aiProvider;
+    }
+
+    public void setAiProvider(String aiProvider) {
+        this.aiProvider = aiProvider;
     }
 }

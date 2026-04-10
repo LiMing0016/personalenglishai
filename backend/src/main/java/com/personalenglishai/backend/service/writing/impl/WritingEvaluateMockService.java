@@ -189,7 +189,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             }
             String renderedRubricHash = sha256(rubricText);
             String promptVersion = "score-v1";
-            String modelName = openAiClient.getModel();
+            String requestProvider = request.getAiProvider();
+            String modelName = openAiClient.resolveModel(requestProvider);
             ScorePromptContext promptContext = scorePromptContextResolver.resolve(
                     request,
                     modelName,
@@ -210,6 +211,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             boolean essayHashChanged = runtimeState != null && !essayHash.equals(runtimeState.lastEssayHash());
             String cacheMode = resolvePromptCacheRetention(modelName);
             OpenAiResponsesTextResult openAiResult = scoreEssayWithRetry(
+                    requestProvider,
                     requestId,
                     systemPrompt,
                     promptPrefix,
@@ -228,6 +230,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             } catch (Exception parseEx) {
                 log.warn("JSON parse failed, retrying once. requestId={} reason={}", requestId, parseEx.getMessage());
                 openAiResult = scoreEssayWithRetry(
+                        requestProvider,
                         requestId + "-retry",
                         systemPrompt,
                         promptPrefix,
@@ -291,8 +294,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                     essayHashChanged,
                     false);
             if (persistSideEffects) {
-                updateAbilityProfile(request.getUserId(), result.scoreByDimension(), rubric.getRubricKey());
-                saveEvaluationQuietly(request, mode, response, rubric, effectiveStage);
+                updateAbilityProfile(request.getUserId(), result.scoreByDimension(), rubric.getRubricKey(), requestProvider);
+                saveEvaluationQuietly(request, mode, response, rubric, effectiveStage, requestProvider);
             }
             return response;
         } catch (Exception e) {
@@ -319,7 +322,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                                    String stage, String rubricKey, String taskType) {
         ScorePromptContext context = new ScorePromptContext(
                 trimToNull(request.getDocumentId()),
-                openAiClient.getModel(),
+                openAiClient.resolveModel(request.getAiProvider()),
                 "score-v1",
                 rubricKey == null ? "unknown" : rubricKey,
                 stage,
@@ -404,35 +407,38 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
         );
     }
 
-    private OpenAiResponsesTextResult scoreEssayWithRetry(String traceId,
+    private OpenAiResponsesTextResult scoreEssayWithRetry(String requestProvider,
+                                                          String traceId,
                                                           String systemPrompt,
                                                           String promptPrefix,
                                                           String promptSuffix,
                                                           String promptCacheKey,
                                                           String previousResponseId,
                                                           String cacheMode,
-                                                          String docId) {
+        String docId) {
         try {
-            return callScoreModel(systemPrompt, promptPrefix, promptSuffix, promptCacheKey, previousResponseId, cacheMode);
+            return callScoreModel(requestProvider, systemPrompt, promptPrefix, promptSuffix, promptCacheKey, previousResponseId, cacheMode);
         } catch (OpenAiResponsesException e) {
             if (previousResponseId != null && isInvalidPreviousResponseId(e)) {
                 runtimeStateService.clear(docId);
                 log.warn("score response invalid previous_response_id, retrying cold start traceId={} promptCacheKey={} reason={}",
                         traceId, promptCacheKey, e.getMessage());
-                return callScoreModel(systemPrompt, promptPrefix, promptSuffix, promptCacheKey, null, cacheMode);
+                return callScoreModel(requestProvider, systemPrompt, promptPrefix, promptSuffix, promptCacheKey, null, cacheMode);
             }
             throw e;
         }
     }
 
-    private OpenAiResponsesTextResult callScoreModel(String systemPrompt,
+    private OpenAiResponsesTextResult callScoreModel(String requestProvider,
+                                                     String systemPrompt,
                                                      String promptPrefix,
                                                      String promptSuffix,
                                                      String promptCacheKey,
                                                      String previousResponseId,
                                                      String cacheMode) {
         return openAiClient.createTextResponse(new OpenAiResponsesTextRequest(
-                openAiClient.getModel(),
+                requestProvider,
+                openAiClient.resolveModel(requestProvider),
                 systemPrompt,
                 promptPrefix + promptSuffix,
                 previousResponseId,
@@ -825,7 +831,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     // Ability profile update（EWA 指数加权平均）
     // ================================================================
 
-    private void updateAbilityProfile(Long userId, Map<String, Integer> scoreByDimension, String rubricKey) {
+    private void updateAbilityProfile(Long userId, Map<String, Integer> scoreByDimension, String rubricKey, String aiProvider) {
         if (userId == null) return;
         try {
             UserAbilityProfile existing = abilityProfileMapper.selectByUserId(userId);
@@ -860,7 +866,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
             updated.setAssessedScore(sum.divide(BigDecimal.valueOf(5), 2, RoundingMode.HALF_UP));
             updated.setConfidence(BigDecimal.valueOf(Math.min(1.0, newCount * 0.1))
                     .setScale(3, RoundingMode.HALF_UP));
-            updated.setModelVersion(openAiClient.getModel());
+            updated.setModelVersion(openAiClient.resolveModel(aiProvider));
             updated.setRubricVersion(trimToNull(rubricKey));
             updated.setUpdatedAt(LocalDateTime.now());
 
@@ -955,7 +961,8 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
     private void saveEvaluationQuietly(WritingEvaluateRequest request, String mode,
                                        WritingEvaluateResponse response,
                                        RubricActiveResponse rubric,
-                                       String effectiveStage) {
+                                       String effectiveStage,
+                                       String aiProvider) {
         Long userId = request.getUserId();
         if (userId == null) return;
         try {
@@ -965,7 +972,7 @@ public class WritingEvaluateMockService implements WritingEvaluateService {
                     response,
                     rubric,
                     effectiveStage,
-                    openAiClient.getModel()
+                    openAiClient.resolveModel(aiProvider)
             );
             log.info("essayEvaluation saved. userId={} id={} docId={}",
                     userId,
