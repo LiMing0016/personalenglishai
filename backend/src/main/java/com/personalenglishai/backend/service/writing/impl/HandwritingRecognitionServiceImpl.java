@@ -106,8 +106,7 @@ public class HandwritingRecognitionServiceImpl implements HandwritingRecognition
             return new RecognizeHandwritingImageResponse(imageBase64, trimToNull(recognizedText), trimToNull(normalizedText), confidence);
         } catch (Exception e) {
             log.warn("[WRITING-HANDWRITING] parse failed raw={}", raw, e);
-            String text = trimToNull(stripped);
-            return new RecognizeHandwritingImageResponse(imageBase64, text, text, null);
+            return new RecognizeHandwritingImageResponse(imageBase64, null, null, null);
         }
     }
 

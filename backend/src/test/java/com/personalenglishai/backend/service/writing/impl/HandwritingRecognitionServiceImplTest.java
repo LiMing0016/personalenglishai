@@ -69,4 +69,27 @@ class HandwritingRecognitionServiceImplTest {
                 .doesNotContain("data:image/png;base64,abc");
         assertThat(imageDataUrlCaptor.getValue()).isEqualTo("data:image/png;base64,abc");
     }
+
+    @Test
+    void recognizeShouldFailClosedOnMalformedUpstreamOutput() {
+        HandwritingRecognitionServiceImpl service = new HandwritingRecognitionServiceImpl(
+                openAiClient,
+                new ObjectMapper()
+        );
+
+        when(openAiClient.callVisionWithProvider(eq("openai"), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn("not json, just upstream error text");
+
+        RecognizeHandwritingImageRequest request = new RecognizeHandwritingImageRequest();
+        request.setImageBase64("data:image/png;base64,abc");
+        request.setAiProvider("openai");
+
+        var response = service.recognize(request);
+
+        assertThat(response.getImageUrl()).isEqualTo("data:image/png;base64,abc");
+        assertThat(response.getRecognizedText()).isNull();
+        assertThat(response.getNormalizedText()).isNull();
+        assertThat(response.getConfidence()).isNull();
+        verify(openAiClient).callVisionWithProvider(eq("openai"), anyString(), anyString(), anyString(), anyString());
+    }
 }

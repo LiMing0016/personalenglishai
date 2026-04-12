@@ -248,29 +248,85 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                          String userPrompt,
                                          String imageDataUrl,
                                          String traceId) {
+        long startTime = System.currentTimeMillis();
         String normalizedImageDataUrl = trimToNull(imageDataUrl);
         if (normalizedImageDataUrl == null) {
             return null;
         }
 
+        int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
+        AtomicInteger attemptCounter = new AtomicInteger(1);
+        int draftChars = extractDraftChars(userPrompt);
+        boolean fallbackUsed = false;
+        boolean parseSuccess = false;
+        int payloadBytes = 0;
         AiProviderSelection.SelectedProvider selectedProvider = resolveSelectedProvider(provider);
         WebClient targetWebClient = getWebClient(selectedProvider);
         String effectiveModel = overrideModel != null ? overrideModel : selectedProvider.model();
 
         Retry retrySpec = Retry.backoff(config.getMaxRetries(), Duration.ofMillis(config.getInitialBackoffMs()))
                 .maxBackoff(Duration.ofMillis(config.getMaxBackoffMs()))
-                .filter(this::shouldRetry);
+                .filter(this::shouldRetry)
+                .doBeforeRetry(retrySignal -> attemptCounter.incrementAndGet());
 
-        return callVisionChatCompletions(
-                selectedProvider,
-                targetWebClient,
-                effectiveModel,
-                systemPrompt,
-                userPrompt,
-                normalizedImageDataUrl,
-                traceId,
-                retrySpec
-        ).content();
+        try {
+            OpenAiCallResult callResult = callVisionChatCompletions(
+                    selectedProvider,
+                    targetWebClient,
+                    effectiveModel,
+                    systemPrompt,
+                    userPrompt,
+                    normalizedImageDataUrl,
+                    traceId,
+                    retrySpec
+            );
+
+            String output = callResult.content();
+            payloadBytes = callResult.payloadBytes();
+            parseSuccess = callResult.parseSuccess();
+
+            circuitBreaker.recordSuccess();
+            long latency = System.currentTimeMillis() - startTime;
+            log.info("OpenAI vision call succeeded traceId={} provider={} attempt={} latencyMs={} httpStatus=200 inputLength={} outputLength={}",
+                    traceId, selectedProvider.provider(), attemptCounter.get(), latency, inputLength, output.length());
+            log.info("OpenAI vision call metrics traceId={} provider={} baseUrl={} prompt_version={} endpoint={} model={} payload_bytes={} input_chars={} draft_chars={} response_ms={} parse_success={} fallback_used={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), PROMPT_VERSION, "vision_chat_completions", effectiveModel, payloadBytes, inputLength, draftChars, latency, parseSuccess, fallbackUsed);
+            return output;
+        } catch (Exception e) {
+            long latency = System.currentTimeMillis() - startTime;
+            Throwable root = rootCause(e);
+            String errorType = classifyError(e);
+            String httpStatus = extractHttpStatus(e);
+            String rootCauseClass = root != null ? root.getClass().getSimpleName() : "";
+            String rootCauseMsg = root != null ? safeMsg(root) : "";
+            String openaiRequestId = extractOpenAiRequestId(e);
+            String responseBody = sanitizeError(extractResponseBody(e));
+
+            circuitBreaker.recordFailure();
+            log.error("OpenAI vision call failed traceId={} provider={} baseUrl={} attempt={} latencyMs={} errorType={} httpStatus={} rootCauseClass={} rootCauseMsg={} inputLength={} fallbackUsed={} endpoint={} model={}{} responseBody={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), attemptCounter.get(), latency, errorType, httpStatus != null ? httpStatus : "",
+                    rootCauseClass, rootCauseMsg, inputLength, fallbackUsed, "vision_chat_completions", effectiveModel,
+                    openaiRequestId != null ? " openaiRequestId=" + openaiRequestId : "",
+                    responseBody);
+
+            String errorMsg = "Failed to call OpenAI API";
+            if (e instanceof TooManyRequests) {
+                errorMsg = "AI service rate limited, please try again";
+            } else if (e instanceof WebClientResponseException we) {
+                int status = we.getStatusCode().value();
+                if (status == 429) {
+                    errorMsg = "AI service rate limited, please try again";
+                } else if (status >= 500) {
+                    errorMsg = "OpenAI API upstream error";
+                } else {
+                    errorMsg = "OpenAI API error: " + status;
+                }
+            } else if (e instanceof WebClientRequestException) {
+                errorMsg = "Request timeout or network error";
+            }
+
+            throw new RuntimeException(errorMsg, e);
+        }
     }
 
     public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId) {
