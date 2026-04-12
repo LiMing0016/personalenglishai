@@ -503,6 +503,66 @@ class WritingControllerTest {
     }
 
     @Nested
+    @DisplayName("POST /api/writing/bind-handwriting-import")
+    class BindHandwritingImport {
+
+        @Test
+        @DisplayName("binds latest handwriting metadata and returns session metadata")
+        void bindHandwritingImport_success() throws Exception {
+            WritingSessionMetadataResponse response = new WritingSessionMetadataResponse();
+            response.setDocumentId("doc-1");
+            response.setLatestHandwrittenSourceType("image");
+            response.setLatestHandwrittenSourceImageUrl("https://example.com/handwriting.png");
+            response.setLatestHandwrittenRecognizedText("recognized text");
+            response.setLatestHandwrittenImportedAt(LocalDateTime.of(2026, 4, 12, 11, 0));
+            when(documentService.getSessionMetadataByDocId(any(), any(), eq("doc-1"), eq(1L)))
+                    .thenReturn(response);
+
+            mockMvc.perform(post("/api/writing/bind-handwriting-import")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .requestAttr("userId", 1L)
+                            .content("""
+                                    {
+                                      "docId":"doc-1",
+                                      "sourceType":"image",
+                                      "imageUrl":"https://example.com/handwriting.png",
+                                      "recognizedText":"recognized text"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.documentId").value("doc-1"))
+                    .andExpect(jsonPath("$.latestHandwrittenSourceType").value("image"))
+                    .andExpect(jsonPath("$.latestHandwrittenSourceImageUrl")
+                            .value("https://example.com/handwriting.png"))
+                    .andExpect(jsonPath("$.latestHandwrittenRecognizedText").value("recognized text"))
+                    .andExpect(jsonPath("$.latestHandwrittenImportedAt").value("2026-04-12T11:00:00"));
+
+            ArgumentCaptor<BindHandwritingImportRequest> requestCaptor =
+                    ArgumentCaptor.forClass(BindHandwritingImportRequest.class);
+            verify(documentService).bindHandwritingImport(eq("1"), eq("default"), requestCaptor.capture(), eq(1L));
+            assertEquals("doc-1", requestCaptor.getValue().getDocId());
+            assertEquals("image", requestCaptor.getValue().getSourceType());
+            assertEquals("https://example.com/handwriting.png", requestCaptor.getValue().getImageUrl());
+            assertEquals("recognized text", requestCaptor.getValue().getRecognizedText());
+        }
+
+        @Test
+        @DisplayName("returns 401 when userId is missing")
+        void bindHandwritingImport_noAuth() throws Exception {
+            mockMvc.perform(post("/api/writing/bind-handwriting-import")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "docId":"doc-1",
+                                      "imageUrl":"https://example.com/handwriting.png",
+                                      "recognizedText":"recognized text"
+                                    }
+                                    """))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
     @DisplayName("POST /api/writing/recognize-handwriting-image")
     class RecognizeHandwritingImage {
 

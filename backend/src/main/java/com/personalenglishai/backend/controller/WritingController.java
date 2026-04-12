@@ -53,6 +53,7 @@ import com.personalenglishai.backend.dto.writing.WritingModelEssayRequest;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptRequest;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
+import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
 import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
@@ -691,6 +692,27 @@ public class WritingController {
     public ResponseEntity<RecognizeHandwritingImageResponse> recognizeHandwritingImage(
             @Valid @RequestBody RecognizeHandwritingImageRequest request) {
         return ResponseEntity.ok(handwritingRecognitionService.recognize(request));
+    }
+
+    /** 绑定手写导入结果到当前文档元数据 */
+    @PostMapping("/bind-handwriting-import")
+    public ResponseEntity<WritingSessionMetadataResponse> bindHandwritingImport(
+            @Valid @RequestBody BindHandwritingImportRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String tenantId = String.valueOf(userId);
+        documentService.bindHandwritingImport(tenantId, "default", request, userId);
+        WritingSessionMetadataResponse response = documentService.getSessionMetadataByDocId(
+                tenantId, "default", request.getDocId(), userId
+        );
+        if (response == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(response);
     }
 
     /** 历年真题列表（分页 + 搜索 + 按年份筛选） */

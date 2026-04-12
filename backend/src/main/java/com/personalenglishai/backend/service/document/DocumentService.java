@@ -2,6 +2,7 @@ package com.personalenglishai.backend.service.document;
 
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
+import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.entity.Document;
 import com.personalenglishai.backend.entity.DocumentRevision;
@@ -298,6 +299,10 @@ public class DocumentService {
         response.setAttachmentImageUrl(metadata.getAttachmentImageUrl());
         response.setGenre(metadata.getGenre());
         response.setSourceType(metadata.getSourceType());
+        response.setLatestHandwrittenSourceType(metadata.getHandwrittenSourceType());
+        response.setLatestHandwrittenSourceImageUrl(metadata.getHandwrittenSourceImageUrl());
+        response.setLatestHandwrittenRecognizedText(metadata.getHandwrittenRecognizedText());
+        response.setLatestHandwrittenImportedAt(metadata.getHandwrittenImportedAt());
         response.setCreatedAt(metadata.getCreatedAt());
         response.setUpdatedAt(metadata.getUpdatedAt());
 
@@ -314,6 +319,63 @@ public class DocumentService {
         }
 
         return response;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void bindHandwritingImport(String tenantId, String workspaceId, BindHandwritingImportRequest request, Long ownerUserId) {
+        if (request == null) {
+            return;
+        }
+        bindHandwritingImport(
+                tenantId,
+                workspaceId,
+                request.getDocId(),
+                ownerUserId,
+                request.getSourceType(),
+                request.getImageUrl(),
+                request.getRecognizedText()
+        );
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void bindHandwritingImport(String tenantId, String workspaceId, String publicDocId, Long ownerUserId,
+                                      String sourceType, String imageUrl, String recognizedText) {
+        String ws = workspaceId != null && !workspaceId.isBlank() ? workspaceId : WORKSPACE_DEFAULT;
+        Document doc = documentMapper.findByPublicIdAndTenantAndWorkspace(publicDocId, tenantId, ws);
+        if (doc == null) {
+            throw new BizException(ErrorCode.DOC_NOT_FOUND, "document not found");
+        }
+        if (!doc.getOwnerUserId().equals(ownerUserId)) {
+            throw new BizException(ErrorCode.DOC_FORBIDDEN, "not owner");
+        }
+
+        WritingMetadata metadata = writingMetadataMapper.selectByDocumentId(doc.getId());
+        if (metadata == null) {
+            metadata = new WritingMetadata();
+            metadata.setDocumentId(doc.getId());
+            metadata.setUserId(ownerUserId);
+            metadata.setMode(doc.getPromptSheetId() != null ? "exam" : "free");
+            metadata.setStudyStage(null);
+            metadata.setTitleSnapshot(normalizeTextToMax(doc.getTitle(), WRITING_METADATA_TITLE_MAX_LEN));
+            metadata.setTopicTitle(normalizeTextToMax(doc.getTaskPrompt(), WRITING_METADATA_TITLE_MAX_LEN));
+            metadata.setPromptText(trimToNull(doc.getTaskPrompt()));
+            metadata.setAttachmentImageUrl(null);
+            metadata.setGenre(null);
+            metadata.setSourceType(normalizeSourceType(null, metadata.getMode()));
+        } else {
+            metadata.setUserId(ownerUserId);
+        }
+
+        metadata.setHandwrittenSourceType(normalizeHandwrittenSourceType(sourceType));
+        metadata.setHandwrittenSourceImageUrl(trimToNull(imageUrl));
+        metadata.setHandwrittenRecognizedText(trimToNull(recognizedText));
+        metadata.setHandwrittenImportedAt(LocalDateTime.now());
+
+        if (metadata.getId() == null) {
+            writingMetadataMapper.insert(metadata);
+        } else {
+            writingMetadataMapper.updateByDocumentId(metadata);
+        }
     }
     public List<Document> listByOwner(String tenantId, String workspaceId, Long ownerUserId, int offset, int limit) {
         return documentMapper.listByOwnerUserId(ownerUserId, tenantId,
@@ -453,6 +515,11 @@ public class DocumentService {
             case "manual", "past_prompt", "ai_generated", "free_input" -> normalized;
             default -> "exam".equals(mode) ? "manual" : "free_input";
         };
+    }
+
+    private String normalizeHandwrittenSourceType(String sourceType) {
+        String value = trimToNull(sourceType);
+        return value == null ? "image" : value.toLowerCase();
     }
 
     private String trimToNull(String raw) {

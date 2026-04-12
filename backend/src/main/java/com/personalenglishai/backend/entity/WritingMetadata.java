@@ -18,6 +18,10 @@ public class WritingMetadata {
     private String attachmentImageUrl;
     private String genre;
     private String sourceType;
+    private String handwrittenSourceType;
+    private String handwrittenSourceImageUrl;
+    private String handwrittenRecognizedText;
+    private LocalDateTime handwrittenImportedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -107,6 +111,38 @@ public class WritingMetadata {
 
     public void setSourceType(String sourceType) {
         this.sourceType = sourceType;
+    }
+
+    public String getHandwrittenSourceType() {
+        return handwrittenSourceType;
+    }
+
+    public void setHandwrittenSourceType(String handwrittenSourceType) {
+        this.handwrittenSourceType = handwrittenSourceType;
+    }
+
+    public String getHandwrittenSourceImageUrl() {
+        return handwrittenSourceImageUrl;
+    }
+
+    public void setHandwrittenSourceImageUrl(String handwrittenSourceImageUrl) {
+        this.handwrittenSourceImageUrl = handwrittenSourceImageUrl;
+    }
+
+    public String getHandwrittenRecognizedText() {
+        return handwrittenRecognizedText;
+    }
+
+    public void setHandwrittenRecognizedText(String handwrittenRecognizedText) {
+        this.handwrittenRecognizedText = handwrittenRecognizedText;
+    }
+
+    public LocalDateTime getHandwrittenImportedAt() {
+        return handwrittenImportedAt;
+    }
+
+    public void setHandwrittenImportedAt(LocalDateTime handwrittenImportedAt) {
+        this.handwrittenImportedAt = handwrittenImportedAt;
     }
 
     public LocalDateTime getCreatedAt() {

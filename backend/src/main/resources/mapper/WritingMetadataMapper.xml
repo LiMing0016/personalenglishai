@@ -4,9 +4,13 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO writing_metadata
-            (document_id, user_id, mode, study_stage, title_snapshot, topic_title, prompt_text, attachment_image_url, genre, source_type, created_at, updated_at)
+            (document_id, user_id, mode, study_stage, title_snapshot, topic_title, prompt_text, attachment_image_url, genre, source_type,
+             handwritten_source_type, handwritten_source_image_url, handwritten_recognized_text, handwritten_imported_at,
+             created_at, updated_at)
         VALUES
-            (#{documentId}, #{userId}, #{mode}, #{studyStage}, #{titleSnapshot}, #{topicTitle}, #{promptText}, #{attachmentImageUrl}, #{genre}, #{sourceType}, NOW(), NOW())
+            (#{documentId}, #{userId}, #{mode}, #{studyStage}, #{titleSnapshot}, #{topicTitle}, #{promptText}, #{attachmentImageUrl}, #{genre}, #{sourceType},
+             #{handwrittenSourceType}, #{handwrittenSourceImageUrl}, #{handwrittenRecognizedText}, #{handwrittenImportedAt},
+             NOW(), NOW())
     </insert>
 
     <update id="updateByDocumentId" parameterType="com.personalenglishai.backend.entity.WritingMetadata">
@@ -20,12 +24,18 @@
             attachment_image_url = #{attachmentImageUrl},
             genre = #{genre},
             source_type = #{sourceType},
+            handwritten_source_type = COALESCE(#{handwrittenSourceType}, handwritten_source_type),
+            handwritten_source_image_url = COALESCE(#{handwrittenSourceImageUrl}, handwritten_source_image_url),
+            handwritten_recognized_text = COALESCE(#{handwrittenRecognizedText}, handwritten_recognized_text),
+            handwritten_imported_at = COALESCE(#{handwrittenImportedAt}, handwritten_imported_at),
             updated_at = NOW()
         WHERE document_id = #{documentId}
     </update>
     <select id="selectByDocumentId" resultType="com.personalenglishai.backend.entity.WritingMetadata">
         SELECT id, document_id, user_id, mode, study_stage, title_snapshot, topic_title,
-               prompt_text, attachment_image_url, genre, source_type, created_at, updated_at
+               prompt_text, attachment_image_url, genre, source_type,
+               handwritten_source_type, handwritten_source_image_url, handwritten_recognized_text, handwritten_imported_at,
+               created_at, updated_at
         FROM writing_metadata
         WHERE document_id = #{documentId}
         LIMIT 1
