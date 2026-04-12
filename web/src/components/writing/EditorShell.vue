@@ -138,10 +138,8 @@
 
     <HandwritingImportDialog
       v-model="showHandwritingImportDialog"
-      :doc-id="draftStore.docId"
       :current-text="draftStore.draftText"
       :ai-provider="draftStore.aiProvider"
-      source-type="image"
       @confirm="onHandwritingImportConfirm"
     />
   </div>
@@ -723,14 +721,9 @@ function openHandwritingImport(closeToolbar?: () => void) {
 function onHandwritingImportConfirm(payload: {
   mode: 'replace' | 'append'
   combinedText: string
-  importedText: string
-  metadata?: WritingSessionMetadataResponse
 }) {
   draftStore.draftText = payload.combinedText
   cursorPlacement.value = { at: payload.combinedText.length }
-  if (payload.metadata) {
-    sessionMetadata.value = payload.metadata
-  }
   showToast(
     payload.mode === 'append' ? '已追加手写识别内容' : '已替换为手写识别内容',
     'success',

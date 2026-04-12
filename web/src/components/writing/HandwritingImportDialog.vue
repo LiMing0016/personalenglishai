@@ -154,7 +154,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
-  bindHandwritingImport,
   recognizeHandwritingImage,
   type RecognizeHandwritingImageResponse,
   type WritingAiProvider,
@@ -170,22 +169,16 @@ import {
   type HandwritingImportConfirmPayload,
 } from './handwritingImportHelpers'
 
-type HandwritingImportConfirmedPayload = HandwritingImportConfirmPayload & {
-  metadata?: Awaited<ReturnType<typeof bindHandwritingImport>>
-}
+type HandwritingImportConfirmedPayload = HandwritingImportConfirmPayload
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
-  docId?: string | null
   currentText?: string
   aiProvider?: WritingAiProvider | null
-  sourceType?: string | null
 }>(), {
   modelValue: false,
-  docId: null,
   currentText: '',
   aiProvider: null,
-  sourceType: 'image',
 })
 
 const emit = defineEmits<{
@@ -204,9 +197,7 @@ const recognitionStatus = ref<'idle' | 'ready' | 'recognizing' | 'error'>('idle'
 const confirmBusy = ref(false)
 const strategy = ref<HandwritingImportStrategy>('replace')
 const gate = createHandwritingImportRunGate()
-const confirmGate = createHandwritingImportRunGate()
 const abortController = ref<AbortController | null>(null)
-const confirmAbortController = ref<AbortController | null>(null)
 
 const normalizedText = computed(() =>
   normalizeHandwritingText(
@@ -248,9 +239,7 @@ watch(
     } else {
       releasePreviewUrl()
       abortActiveRecognition()
-      abortActiveConfirm()
       gate.reset()
-      confirmGate.reset()
     }
   },
 )
@@ -258,9 +247,7 @@ watch(
 onBeforeUnmount(() => {
   releasePreviewUrl()
   abortActiveRecognition()
-  abortActiveConfirm()
   gate.reset()
-  confirmGate.reset()
 })
 
 function openFilePicker() {
@@ -325,13 +312,6 @@ function abortActiveRecognition() {
   if (abortController.value) {
     abortController.value.abort()
     abortController.value = null
-  }
-}
-
-function abortActiveConfirm() {
-  if (confirmAbortController.value) {
-    confirmAbortController.value.abort()
-    confirmAbortController.value = null
   }
 }
 
@@ -462,10 +442,6 @@ async function confirmImport() {
 
   confirmBusy.value = true
   recognitionError.value = ''
-  const runId = confirmGate.start()
-  abortActiveConfirm()
-  const controller = new AbortController()
-  confirmAbortController.value = controller
 
   try {
     const payload = buildHandwritingImportConfirmPayload({
@@ -475,37 +451,13 @@ async function confirmImport() {
       imageUrl: recognitionResult.value.imageUrl ?? null,
       mode: strategy.value,
     })
-    const metadata = props.docId?.trim() && payload.imageUrl
-      ? await bindHandwritingImport({
-          docId: props.docId.trim(),
-          sourceType: props.sourceType ?? undefined,
-          imageUrl: payload.imageUrl,
-          recognizedText: payload.recognizedText,
-        }, {
-          signal: controller.signal,
-        })
-      : undefined
-
-    if (!confirmGate.canApply(runId)) {
-      return
-    }
-
-    emit('confirm', {
-      ...payload,
-      metadata,
-    })
+    emit('confirm', payload)
     emit('update:modelValue', false)
   } catch (error) {
-    if (controller.signal.aborted) {
-      return
-    }
     recognitionStatus.value = 'error'
     recognitionError.value = error instanceof Error ? error.message : '导入失败，请重试'
   } finally {
     confirmBusy.value = false
-    if (confirmAbortController.value === controller) {
-      confirmAbortController.value = null
-    }
   }
 }
 </script>
