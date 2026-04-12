@@ -17,6 +17,8 @@ import com.personalenglishai.backend.dto.writing.AuditTopicRequest;
 import com.personalenglishai.backend.dto.writing.AuditTopicResponse;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageRequest;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageRequest;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
 import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
 import com.personalenglishai.backend.dto.writing.GrammarSuppressRequest;
@@ -51,9 +53,11 @@ import com.personalenglishai.backend.dto.writing.WritingModelEssayRequest;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptRequest;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
+import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
 import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
+import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
@@ -92,6 +96,7 @@ public class WritingController {
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final EssayPromptService essayPromptService;
+    private final HandwritingRecognitionService handwritingRecognitionService;
     private final GrammarSuppressService grammarSuppressService;
     private final TrustedRewriteService trustedRewriteService;
     private final ObjectMapper objectMapper;
@@ -112,6 +117,7 @@ public class WritingController {
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              EssayPromptService essayPromptService,
+                             HandwritingRecognitionService handwritingRecognitionService,
                              GrammarSuppressService grammarSuppressService,
                              TrustedRewriteService trustedRewriteService,
                              ObjectMapper objectMapper) {
@@ -131,6 +137,7 @@ public class WritingController {
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.essayPromptService = essayPromptService;
+        this.handwritingRecognitionService = handwritingRecognitionService;
         this.grammarSuppressService = grammarSuppressService;
         this.trustedRewriteService = trustedRewriteService;
         this.objectMapper = objectMapper;
@@ -677,6 +684,34 @@ public class WritingController {
     public ResponseEntity<RecognizeTopicImageResponse> recognizeTopicImage(
             @Valid @RequestBody RecognizeTopicImageRequest request) {
         RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64());
+        return ResponseEntity.ok(response);
+    }
+
+    /** 手写作文识别（当前 AI provider） */
+    @PostMapping("/recognize-handwriting-image")
+    public ResponseEntity<RecognizeHandwritingImageResponse> recognizeHandwritingImage(
+            @Valid @RequestBody RecognizeHandwritingImageRequest request) {
+        return ResponseEntity.ok(handwritingRecognitionService.recognize(request));
+    }
+
+    /** 绑定手写导入结果到当前文档元数据 */
+    @PostMapping("/bind-handwriting-import")
+    public ResponseEntity<WritingSessionMetadataResponse> bindHandwritingImport(
+            @Valid @RequestBody BindHandwritingImportRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String tenantId = String.valueOf(userId);
+        documentService.bindHandwritingImport(tenantId, "default", request, userId);
+        WritingSessionMetadataResponse response = documentService.getSessionMetadataByDocId(
+                tenantId, "default", request.getDocId(), userId
+        );
+        if (response == null) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.ok(response);
     }
 

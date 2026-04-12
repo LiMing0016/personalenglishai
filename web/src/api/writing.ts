@@ -629,6 +629,91 @@ export function translateEssay(
     .then((res) => res.data)
 }
 
+// ── Handwriting Import ──
+
+export interface RecognizeHandwritingImageRequest {
+  imageBase64: string
+  aiProvider?: WritingAiProvider
+}
+
+export interface RecognizeHandwritingImageResponse {
+  imageUrl?: string | null
+  recognizedText?: string | null
+  normalizedText?: string | null
+  confidence?: number | null
+}
+
+export interface BindHandwritingImportRequest {
+  docId: string
+  sourceType?: string | null
+  imageUrl: string
+  recognizedText: string
+}
+
+export function recognizeHandwritingImage(
+  payload: RecognizeHandwritingImageRequest,
+  options?: { signal?: AbortSignal },
+): Promise<RecognizeHandwritingImageResponse> {
+  return http
+    .post<RecognizeHandwritingImageResponse>('/writing/recognize-handwriting-image', {
+      imageBase64: payload.imageBase64,
+      aiProvider: payload.aiProvider ?? undefined,
+    }, {
+      timeout: 120000,
+      signal: options?.signal,
+    })
+    .then((res) => ({
+      imageUrl: res.data.imageUrl ?? null,
+      recognizedText: res.data.recognizedText ?? null,
+      normalizedText: res.data.normalizedText ?? null,
+      confidence:
+        res.data.confidence == null
+          ? null
+          : Number(res.data.confidence),
+    }))
+}
+
+export function bindHandwritingImport(
+  payload: BindHandwritingImportRequest,
+  options?: { signal?: AbortSignal },
+): Promise<WritingSessionMetadataResponse> {
+  return http
+    .post<WritingSessionMetadataResponse>('/writing/bind-handwriting-import', {
+      docId: payload.docId,
+      sourceType: payload.sourceType ?? undefined,
+      imageUrl: payload.imageUrl,
+      recognizedText: payload.recognizedText,
+    }, {
+      timeout: 30000,
+      signal: options?.signal,
+    })
+    .then((res) => ({
+      documentId: res.data.documentId,
+      metadataId: res.data.metadataId,
+      promptSheetId: res.data.promptSheetId ?? null,
+      mode: res.data.mode === 'exam' ? 'exam' : 'free',
+      studyStage: res.data.studyStage ?? null,
+      titleSnapshot: res.data.titleSnapshot,
+      topicTitle: res.data.topicTitle ?? null,
+      promptText: res.data.promptText ?? null,
+      attachmentImageUrl: res.data.attachmentImageUrl ?? null,
+      genre: res.data.genre ?? null,
+      sourceType: res.data.sourceType,
+      latestHandwrittenSourceType: res.data.latestHandwrittenSourceType ?? null,
+      latestHandwrittenSourceImageUrl: res.data.latestHandwrittenSourceImageUrl ?? null,
+      latestHandwrittenRecognizedText: res.data.latestHandwrittenRecognizedText ?? null,
+      latestHandwrittenImportedAt: res.data.latestHandwrittenImportedAt ?? null,
+      createdAt: res.data.createdAt,
+      updatedAt: res.data.updatedAt,
+      examMetadataId: res.data.examMetadataId ?? null,
+      examType: res.data.examType ?? null,
+      taskType: res.data.taskType ?? null,
+      minWords: res.data.minWords ?? null,
+      recommendedMaxWords: res.data.recommendedMaxWords ?? null,
+      maxScore: res.data.maxScore ?? null,
+    }))
+}
+
 export function toggleEssayFavorite(id: number): Promise<{ favorited: boolean }> {
   return http
     .post<{ favorited: boolean }>(`/writing/history/${id}/favorite`)
@@ -915,6 +1000,10 @@ export interface WritingSessionMetadataResponse {
   attachmentImageUrl?: string | null
   genre?: string | null | null
   sourceType: 'manual' | 'past_prompt' | 'ai_generated' | 'free_input'
+  latestHandwrittenSourceType?: string | null
+  latestHandwrittenSourceImageUrl?: string | null
+  latestHandwrittenRecognizedText?: string | null
+  latestHandwrittenImportedAt?: string | null
   createdAt: string
   updatedAt: string
   examMetadataId?: number | null

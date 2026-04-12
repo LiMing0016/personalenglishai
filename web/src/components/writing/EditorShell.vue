@@ -27,7 +27,18 @@
           @dismiss-error="grammarStore.dismissError"
           @bubble-action="onBubbleAction"
           @back="onBack"
-        />
+        >
+          <template #toolbar-extra-actions="{ closeToolbar }">
+            <div class="toolbar-extra-separator" />
+            <button
+              type="button"
+              class="toolbar-extra-button"
+              @click="openHandwritingImport(closeToolbar)"
+            >
+              上传手写作文
+            </button>
+          </template>
+        </DocEditor>
       </div>
 
       <Splitter
@@ -124,6 +135,13 @@
         </div>
       </div>
     </Teleport>
+
+    <HandwritingImportDialog
+      v-model="showHandwritingImportDialog"
+      :current-text="draftStore.draftText"
+      :ai-provider="draftStore.aiProvider"
+      @confirm="onHandwritingImportConfirm"
+    />
   </div>
 </template>
 
@@ -154,6 +172,7 @@ const props = withDefaults(defineProps<{
 })
 
 import DocEditor from './DocEditor.vue'
+import HandwritingImportDialog from './HandwritingImportDialog.vue'
 import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
@@ -170,7 +189,11 @@ import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
 import { getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
-import type { PolishTier, WritingAiProvider, WritingSessionMetadataResponse } from '@/api/writing'
+import type {
+  PolishTier,
+  WritingAiProvider,
+  WritingSessionMetadataResponse,
+} from '@/api/writing'
 import { resolveTaskPromptViewerState } from './taskPromptViewerState'
 
 const panelStore = usePanelStore()
@@ -201,6 +224,7 @@ const lastDismissedPinned = ref('')
 const lastChatResult = ref<{ displayText: string; replaceText?: string } | null>(null)
 const aiDocId = ref('')
 const cursorPlacement = ref<{ at: number } | null>(null)
+const showHandwritingImportDialog = ref(false)
 const aiGenerating = ref(false)
 let aiAbortController: AbortController | null = null
 const {
@@ -687,6 +711,23 @@ function onDismissSelection() {
   lastDismissedPinned.value = selectedTextPinned.value
   selectionDismissed.value = true
   selectedSpanPinned.value = null
+}
+
+function openHandwritingImport(closeToolbar?: () => void) {
+  closeToolbar?.()
+  showHandwritingImportDialog.value = true
+}
+
+function onHandwritingImportConfirm(payload: {
+  mode: 'replace' | 'append'
+  combinedText: string
+}) {
+  draftStore.draftText = payload.combinedText
+  cursorPlacement.value = { at: payload.combinedText.length }
+  showToast(
+    payload.mode === 'append' ? '已追加手写识别内容' : '已替换为手写识别内容',
+    'success',
+  )
 }
 
 // ── 退出确认 ──

@@ -128,6 +128,8 @@
       <span class="menu-icon" style="opacity: 0.6">T&#x338;</span>
       <span>清除格式</span>
     </button>
+
+    <slot name="extra-actions" />
   </div>
 </template>
 
@@ -357,5 +359,28 @@ function onColorPick(value: string) {
   cursor: pointer;
   background: transparent;
   margin-left: auto;
+}
+:slotted(.toolbar-extra-separator) {
+  display: block;
+  height: 1px;
+  margin: 6px 12px;
+  background: #e5e7eb;
+}
+:slotted(.toolbar-extra-button) {
+  display: flex;
+  align-items: center;
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+:slotted(.toolbar-extra-button:hover) {
+  background: #f3f4f6;
 }
 </style>

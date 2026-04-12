@@ -155,6 +155,52 @@ class OpenAiClientResponsesPayloadTest {
         assertThat(payload.has("response_format")).isFalse();
     }
 
+    @Test
+    void buildVisionChatCompletionsPayloadShouldIncludeRealImageItem() throws Exception {
+        OpenAiClient client = new OpenAiClient(
+                providerSelection("openai", "https://api.openai.com", "gpt-4o"),
+                "test",
+                "chat_completions",
+                "gpt-4o",
+                false,
+                false,
+                12000,
+                new OpenAiClientConfig()
+        );
+
+        Method method = OpenAiClient.class.getDeclaredMethod(
+                "buildVisionChatCompletionsPayload",
+                AiProviderSelection.SelectedProvider.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class
+        );
+        method.setAccessible(true);
+
+        AiProviderSelection.SelectedProvider selectedProvider =
+                providerSelection("openai", "https://api.openai.com", "gpt-4o").resolve("openai");
+        JsonNode payload = (JsonNode) method.invoke(
+                client,
+                selectedProvider,
+                "gpt-4o",
+                "system prompt",
+                "transcribe the image",
+                "data:image/png;base64,abc"
+        );
+
+        assertThat(payload.path("model").asText()).isEqualTo("gpt-4o");
+        assertThat(payload.path("messages").isArray()).isTrue();
+        assertThat(payload.path("messages").get(1).path("content").isArray()).isTrue();
+        assertThat(payload.path("messages").get(1).path("content").get(0).path("type").asText())
+                .isEqualTo("text");
+        assertThat(payload.path("messages").get(1).path("content").get(1).path("type").asText())
+                .isEqualTo("image_url");
+        assertThat(payload.path("messages").get(1).path("content").get(1).path("image_url").path("url").asText())
+                .isEqualTo("data:image/png;base64,abc");
+        assertThat(payload.toString()).doesNotContain("\"imageBase64\"");
+    }
+
     private AiProviderSelection providerSelection(String provider, String baseUrl, String model) {
         return providerSelection(provider, baseUrl, model, null);
     }

@@ -243,6 +243,92 @@ public class OpenAiClient implements AssistantOpenAiClient {
         }
     }
 
+    public String callVisionWithProvider(String provider,
+                                         String systemPrompt,
+                                         String userPrompt,
+                                         String imageDataUrl,
+                                         String traceId) {
+        long startTime = System.currentTimeMillis();
+        String normalizedImageDataUrl = trimToNull(imageDataUrl);
+        if (normalizedImageDataUrl == null) {
+            return null;
+        }
+
+        int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
+        AtomicInteger attemptCounter = new AtomicInteger(1);
+        int draftChars = extractDraftChars(userPrompt);
+        boolean fallbackUsed = false;
+        boolean parseSuccess = false;
+        int payloadBytes = 0;
+        AiProviderSelection.SelectedProvider selectedProvider = resolveSelectedProvider(provider);
+        WebClient targetWebClient = getWebClient(selectedProvider);
+        String effectiveModel = overrideModel != null ? overrideModel : selectedProvider.model();
+
+        Retry retrySpec = Retry.backoff(config.getMaxRetries(), Duration.ofMillis(config.getInitialBackoffMs()))
+                .maxBackoff(Duration.ofMillis(config.getMaxBackoffMs()))
+                .filter(this::shouldRetry)
+                .doBeforeRetry(retrySignal -> attemptCounter.incrementAndGet());
+
+        try {
+            OpenAiCallResult callResult = callVisionChatCompletions(
+                    selectedProvider,
+                    targetWebClient,
+                    effectiveModel,
+                    systemPrompt,
+                    userPrompt,
+                    normalizedImageDataUrl,
+                    traceId,
+                    retrySpec
+            );
+
+            String output = callResult.content();
+            payloadBytes = callResult.payloadBytes();
+            parseSuccess = callResult.parseSuccess();
+
+            circuitBreaker.recordSuccess();
+            long latency = System.currentTimeMillis() - startTime;
+            log.info("OpenAI vision call succeeded traceId={} provider={} attempt={} latencyMs={} httpStatus=200 inputLength={} outputLength={}",
+                    traceId, selectedProvider.provider(), attemptCounter.get(), latency, inputLength, output.length());
+            log.info("OpenAI vision call metrics traceId={} provider={} baseUrl={} prompt_version={} endpoint={} model={} payload_bytes={} input_chars={} draft_chars={} response_ms={} parse_success={} fallback_used={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), PROMPT_VERSION, "vision_chat_completions", effectiveModel, payloadBytes, inputLength, draftChars, latency, parseSuccess, fallbackUsed);
+            return output;
+        } catch (Exception e) {
+            long latency = System.currentTimeMillis() - startTime;
+            Throwable root = rootCause(e);
+            String errorType = classifyError(e);
+            String httpStatus = extractHttpStatus(e);
+            String rootCauseClass = root != null ? root.getClass().getSimpleName() : "";
+            String rootCauseMsg = root != null ? safeMsg(root) : "";
+            String openaiRequestId = extractOpenAiRequestId(e);
+            String responseBody = sanitizeError(extractResponseBody(e));
+
+            circuitBreaker.recordFailure();
+            log.error("OpenAI vision call failed traceId={} provider={} baseUrl={} attempt={} latencyMs={} errorType={} httpStatus={} rootCauseClass={} rootCauseMsg={} inputLength={} fallbackUsed={} endpoint={} model={}{} responseBody={}",
+                    traceId, selectedProvider.provider(), selectedProvider.baseUrl(), attemptCounter.get(), latency, errorType, httpStatus != null ? httpStatus : "",
+                    rootCauseClass, rootCauseMsg, inputLength, fallbackUsed, "vision_chat_completions", effectiveModel,
+                    openaiRequestId != null ? " openaiRequestId=" + openaiRequestId : "",
+                    responseBody);
+
+            String errorMsg = "Failed to call OpenAI API";
+            if (e instanceof TooManyRequests) {
+                errorMsg = "AI service rate limited, please try again";
+            } else if (e instanceof WebClientResponseException we) {
+                int status = we.getStatusCode().value();
+                if (status == 429) {
+                    errorMsg = "AI service rate limited, please try again";
+                } else if (status >= 500) {
+                    errorMsg = "OpenAI API upstream error";
+                } else {
+                    errorMsg = "OpenAI API error: " + status;
+                }
+            } else if (e instanceof WebClientRequestException) {
+                errorMsg = "Request timeout or network error";
+            }
+
+            throw new RuntimeException(errorMsg, e);
+        }
+    }
+
     public String callWithProvider(String provider, String systemPrompt, String userPrompt, String traceId) {
         return callInternal(provider, systemPrompt, userPrompt, traceId, null);
     }
@@ -683,6 +769,46 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
+    private OpenAiCallResult callVisionChatCompletions(AiProviderSelection.SelectedProvider selectedProvider,
+                                                       WebClient targetWebClient,
+                                                       String model,
+                                                       String systemPrompt,
+                                                       String userPrompt,
+                                                       String imageDataUrl,
+                                                       String traceId,
+                                                       Retry retrySpec) {
+        ObjectNode request = buildVisionChatCompletionsPayload(
+                selectedProvider,
+                model,
+                systemPrompt,
+                userPrompt,
+                imageDataUrl
+        );
+        int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
+        int draftChars = extractDraftChars(userPrompt);
+        int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_CHAT_COMPLETIONS, model, request, inputChars, draftChars);
+
+        ChatResponse response = targetWebClient.post()
+                .uri("/v1/chat/completions")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(ChatResponse.class)
+                .timeout(Duration.ofMillis(config.getResponseTimeoutMs()))
+                .retryWhen(retrySpec)
+                .timeout(Duration.ofMillis(effectiveOverallTimeoutMs))
+                .block();
+
+        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()
+                || response.getChoices().get(0).getMessage() == null) {
+            throw new RuntimeException("Empty response from OpenAI vision API");
+        }
+        String content = response.getChoices().get(0).getMessage().getContent();
+        if (isBlank(content)) {
+            throw new RuntimeException("Empty content in OpenAI vision response");
+        }
+        return new OpenAiCallResult(content, payloadBytes, true);
+    }
+
     private OpenAiCallResult callResponses(WebClient targetWebClient,
                                            String model,
                                            String systemPrompt,
@@ -737,6 +863,44 @@ public class OpenAiClient implements AssistantOpenAiClient {
         }
         ObjectNode text = payload.putObject("text");
         text.putObject("format").put("type", "text");
+        return payload;
+    }
+
+    private ObjectNode buildVisionChatCompletionsPayload(AiProviderSelection.SelectedProvider selectedProvider,
+                                                         String model,
+                                                         String systemPrompt,
+                                                         String userPrompt,
+                                                         String imageDataUrl) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+
+        ArrayNode messages = payload.putArray("messages");
+
+        ObjectNode systemMessage = messages.addObject();
+        systemMessage.put("role", "system");
+        systemMessage.put("content", systemPrompt == null ? "" : systemPrompt);
+
+        ObjectNode userMessage = messages.addObject();
+        userMessage.put("role", "user");
+        ArrayNode content = userMessage.putArray("content");
+
+        ObjectNode textItem = content.addObject();
+        textItem.put("type", "text");
+        textItem.put("text", userPrompt == null ? "" : userPrompt);
+
+        ObjectNode imageItem = content.addObject();
+        imageItem.put("type", "image_url");
+        ObjectNode imageUrl = imageItem.putObject("image_url");
+        imageUrl.put("url", imageDataUrl);
+
+        payload.put("temperature", normalizeChatCompletionsTemperature(
+                selectedProvider,
+                overrideTemperature != null ? overrideTemperature : 0.2d
+        ));
+        payload.put("max_tokens", overrideMaxTokens != null ? overrideMaxTokens : 4096);
+
+        ObjectNode responseFormat = payload.putObject("response_format");
+        responseFormat.put("type", "json_object");
         return payload;
     }
 

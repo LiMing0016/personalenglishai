@@ -25,7 +25,11 @@
             <button type="button" class="btn-menu" title="格式与设置" @click="toolbarOpen = !toolbarOpen">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
             </button>
-            <EditorToolbar v-if="toolbarOpen" :editor="editor" class="toolbar-dropdown" />
+            <EditorToolbar v-if="toolbarOpen" :editor="editor" class="toolbar-dropdown">
+              <template #extra-actions>
+                <slot name="toolbar-extra-actions" :close-toolbar="closeToolbarMenu" />
+              </template>
+            </EditorToolbar>
           </div>
         </div>
       </header>
@@ -626,6 +630,10 @@ function clear() {
   emit('clear')
   editor.value?.commands.clearContent()
   emit('update:draftText', '')
+}
+
+function closeToolbarMenu() {
+  toolbarOpen.value = false
 }
 </script>
 

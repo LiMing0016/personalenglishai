@@ -2,11 +2,14 @@ package com.personalenglishai.backend.service.document;
 
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
+import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
 import com.personalenglishai.backend.entity.Document;
 import com.personalenglishai.backend.entity.DocumentRevision;
+import com.personalenglishai.backend.entity.WritingMetadata;
 import com.personalenglishai.backend.mapper.DocumentMapper;
 import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
+import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -130,6 +133,117 @@ class DocumentServiceTest {
         assertThat(result.docId).isEqualTo("doc_existing");
         verify(documentMapper).updatePromptSheetId(20L, 99L);
         verify(writingPromptSheetService).bindDocument(99L, 20L);
+    }
+
+    @Test
+    @DisplayName("bindHandwritingImport updates existing metadata with latest handwriting fields")
+    void bindHandwritingImport_updatesExistingMetadata() {
+        Document doc = buildDoc(30L, 1L, 1);
+        doc.setPublicId("doc_handwriting");
+        doc.setTaskPrompt("Write about your hometown");
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_handwriting", "tenant-1", "default"))
+                .thenReturn(doc);
+
+        WritingMetadata metadata = new WritingMetadata();
+        metadata.setId(88L);
+        metadata.setDocumentId(30L);
+        metadata.setUserId(1L);
+        metadata.setMode("exam");
+        metadata.setTitleSnapshot("Original title");
+        metadata.setTopicTitle("Original topic");
+        metadata.setPromptText("Original prompt");
+        metadata.setSourceType("manual");
+        metadata.setCreatedAt(LocalDateTime.of(2026, 4, 12, 9, 0));
+        when(writingMetadataMapper.selectByDocumentId(30L)).thenReturn(metadata);
+
+        BindHandwritingImportRequest request = new BindHandwritingImportRequest();
+        request.setDocId("doc_handwriting");
+        request.setSourceType("image");
+        request.setImageUrl("https://example.com/handwriting.png");
+        request.setRecognizedText("recognized paragraph");
+
+        documentService.bindHandwritingImport("tenant-1", "default", request, 1L);
+
+        ArgumentCaptor<WritingMetadata> metadataCaptor = ArgumentCaptor.forClass(WritingMetadata.class);
+        verify(writingMetadataMapper).updateByDocumentId(metadataCaptor.capture());
+        WritingMetadata updated = metadataCaptor.getValue();
+        assertThat(updated.getDocumentId()).isEqualTo(30L);
+        assertThat(updated.getHandwrittenSourceType()).isEqualTo("image");
+        assertThat(updated.getHandwrittenSourceImageUrl()).isEqualTo("https://example.com/handwriting.png");
+        assertThat(updated.getHandwrittenRecognizedText()).isEqualTo("recognized paragraph");
+        assertThat(updated.getHandwrittenImportedAt()).isNotNull();
+        assertThat(updated.getTitleSnapshot()).isEqualTo("Original title");
+        verify(writingMetadataMapper, never()).insert(any(WritingMetadata.class));
+    }
+
+    @Test
+    @DisplayName("bindHandwritingImport inserts minimal metadata when missing")
+    void bindHandwritingImport_insertsMinimalMetadata() {
+        Document doc = buildDoc(40L, 1L, 1);
+        doc.setPublicId("doc_new");
+        doc.setTaskPrompt("Write an essay based on the chart below.");
+        doc.setPromptSheetId(501L);
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_new", "tenant-1", "default"))
+                .thenReturn(doc);
+        when(writingMetadataMapper.selectByDocumentId(40L)).thenReturn(null);
+
+        documentService.bindHandwritingImport(
+                "tenant-1",
+                "default",
+                "doc_new",
+                1L,
+                "photo",
+                "https://example.com/import.png",
+                "recognized text"
+        );
+
+        ArgumentCaptor<WritingMetadata> metadataCaptor = ArgumentCaptor.forClass(WritingMetadata.class);
+        verify(writingMetadataMapper).insert(metadataCaptor.capture());
+        WritingMetadata inserted = metadataCaptor.getValue();
+        assertThat(inserted.getDocumentId()).isEqualTo(40L);
+        assertThat(inserted.getUserId()).isEqualTo(1L);
+        assertThat(inserted.getMode()).isEqualTo("exam");
+        assertThat(inserted.getSourceType()).isEqualTo("manual");
+        assertThat(inserted.getHandwrittenSourceType()).isEqualTo("photo");
+        assertThat(inserted.getHandwrittenSourceImageUrl()).isEqualTo("https://example.com/import.png");
+        assertThat(inserted.getHandwrittenRecognizedText()).isEqualTo("recognized text");
+        assertThat(inserted.getHandwrittenImportedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("getSessionMetadataByDocId returns handwritten import fields")
+    void getSessionMetadataByDocId_includesHandwrittenFields() {
+        Document doc = buildDoc(50L, 1L, 1);
+        doc.setPublicId("doc_meta");
+        doc.setPromptSheetId(501L);
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_meta", "tenant-1", "default"))
+                .thenReturn(doc);
+
+        WritingMetadata metadata = new WritingMetadata();
+        metadata.setId(90L);
+        metadata.setDocumentId(50L);
+        metadata.setUserId(1L);
+        metadata.setMode("exam");
+        metadata.setTitleSnapshot("Title");
+        metadata.setTopicTitle("Topic");
+        metadata.setPromptText("Prompt");
+        metadata.setSourceType("manual");
+        metadata.setHandwrittenSourceType("image");
+        metadata.setHandwrittenSourceImageUrl("https://example.com/meta.png");
+        metadata.setHandwrittenRecognizedText("recognized text");
+        metadata.setHandwrittenImportedAt(LocalDateTime.of(2026, 4, 12, 12, 0));
+        metadata.setCreatedAt(LocalDateTime.of(2026, 4, 12, 11, 59));
+        metadata.setUpdatedAt(LocalDateTime.of(2026, 4, 12, 12, 1));
+        when(writingMetadataMapper.selectByDocumentId(50L)).thenReturn(metadata);
+
+        WritingSessionMetadataResponse response =
+                documentService.getSessionMetadataByDocId("tenant-1", "default", "doc_meta", 1L);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getLatestHandwrittenSourceType()).isEqualTo("image");
+        assertThat(response.getLatestHandwrittenSourceImageUrl()).isEqualTo("https://example.com/meta.png");
+        assertThat(response.getLatestHandwrittenRecognizedText()).isEqualTo("recognized text");
+        assertThat(response.getLatestHandwrittenImportedAt()).isEqualTo(LocalDateTime.of(2026, 4, 12, 12, 0));
     }
 
     @Test
