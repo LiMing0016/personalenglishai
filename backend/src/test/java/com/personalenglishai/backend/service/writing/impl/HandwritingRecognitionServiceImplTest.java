@@ -29,7 +29,7 @@ class HandwritingRecognitionServiceImplTest {
                 new ObjectMapper()
         );
 
-        when(openAiClient.callWithProvider(eq("openai"), anyString(), anyString(), anyString()))
+        when(openAiClient.callVisionWithProvider(eq("openai"), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn("""
                         {
                           "recognizedText": "Line 1\\nLine 2",
@@ -51,10 +51,12 @@ class HandwritingRecognitionServiceImplTest {
 
         ArgumentCaptor<String> systemPromptCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(openAiClient).callWithProvider(
+        ArgumentCaptor<String> imageDataUrlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(openAiClient).callVisionWithProvider(
                 eq("openai"),
                 systemPromptCaptor.capture(),
                 userPromptCaptor.capture(),
+                imageDataUrlCaptor.capture(),
                 nullable(String.class)
         );
         assertThat(systemPromptCaptor.getValue())
@@ -63,6 +65,8 @@ class HandwritingRecognitionServiceImplTest {
                 .contains("不要输出解释、分析、markdown 或代码块");
         assertThat(userPromptCaptor.getValue())
                 .contains("请识别这张图片中的手写英文作文正文")
-                .contains("data:image/png;base64,abc");
+                .contains("只输出 JSON")
+                .doesNotContain("data:image/png;base64,abc");
+        assertThat(imageDataUrlCaptor.getValue()).isEqualTo("data:image/png;base64,abc");
     }
 }

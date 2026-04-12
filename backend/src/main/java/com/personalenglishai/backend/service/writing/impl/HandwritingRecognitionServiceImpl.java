@@ -53,22 +53,35 @@ public class HandwritingRecognitionServiceImpl implements HandwritingRecognition
             return new RecognizeHandwritingImageResponse(null, null, null, null);
         }
 
-        String raw = openAiClient.callWithProvider(
+        String imageDataUrl = normalizeImageDataUrl(imageBase64);
+        String raw = openAiClient.callVisionWithProvider(
                 provider,
                 SYSTEM_PROMPT,
-                buildUserPrompt(imageBase64),
+                buildUserPrompt(),
+                imageDataUrl,
                 traceId
         );
 
         return parseResponse(raw, imageBase64);
     }
 
-    private String buildUserPrompt(String imageBase64) {
+    private String buildUserPrompt() {
         return """
                 请识别这张图片中的手写英文作文正文。
-                图片内容（base64，可能带 data URL 前缀）：
-                %s
-                """.formatted(imageBase64);
+                只输出 JSON，不要解释、分析或 markdown。
+                保留原文自然段和换行，不要补写缺失内容。
+                """;
+    }
+
+    private String normalizeImageDataUrl(String imageBase64) {
+        String value = trimToNull(imageBase64);
+        if (value == null) {
+            return null;
+        }
+        if (value.startsWith("data:")) {
+            return value;
+        }
+        return "data:image/png;base64," + value;
     }
 
     private RecognizeHandwritingImageResponse parseResponse(String raw, String imageBase64) {
