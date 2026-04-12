@@ -17,6 +17,8 @@ import com.personalenglishai.backend.dto.writing.AuditTopicRequest;
 import com.personalenglishai.backend.dto.writing.AuditTopicResponse;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageRequest;
 import com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageRequest;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageResponse;
 import com.personalenglishai.backend.dto.writing.GrammarCheckRequest;
 import com.personalenglishai.backend.dto.writing.GrammarCheckResponse;
 import com.personalenglishai.backend.dto.writing.GrammarSuppressRequest;
@@ -54,6 +56,7 @@ import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
+import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
@@ -92,6 +95,7 @@ public class WritingController {
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
     private final EssayPromptService essayPromptService;
+    private final HandwritingRecognitionService handwritingRecognitionService;
     private final GrammarSuppressService grammarSuppressService;
     private final TrustedRewriteService trustedRewriteService;
     private final ObjectMapper objectMapper;
@@ -112,6 +116,7 @@ public class WritingController {
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
                              EssayPromptService essayPromptService,
+                             HandwritingRecognitionService handwritingRecognitionService,
                              GrammarSuppressService grammarSuppressService,
                              TrustedRewriteService trustedRewriteService,
                              ObjectMapper objectMapper) {
@@ -131,6 +136,7 @@ public class WritingController {
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
         this.essayPromptService = essayPromptService;
+        this.handwritingRecognitionService = handwritingRecognitionService;
         this.grammarSuppressService = grammarSuppressService;
         this.trustedRewriteService = trustedRewriteService;
         this.objectMapper = objectMapper;
@@ -678,6 +684,13 @@ public class WritingController {
             @Valid @RequestBody RecognizeTopicImageRequest request) {
         RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64());
         return ResponseEntity.ok(response);
+    }
+
+    /** 手写作文识别（当前 AI provider） */
+    @PostMapping("/recognize-handwriting-image")
+    public ResponseEntity<RecognizeHandwritingImageResponse> recognizeHandwritingImage(
+            @Valid @RequestBody RecognizeHandwritingImageRequest request) {
+        return ResponseEntity.ok(handwritingRecognitionService.recognize(request));
     }
 
     /** 历年真题列表（分页 + 搜索 + 按年份筛选） */

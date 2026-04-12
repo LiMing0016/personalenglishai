@@ -14,6 +14,7 @@ import com.personalenglishai.backend.service.writing.AuditTopicService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
+import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
 import com.personalenglishai.backend.service.writing.WritingPolishService;
 import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
@@ -27,10 +28,14 @@ import com.personalenglishai.backend.service.writing.TrustedRewriteService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
 import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
+import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageRequest;
+import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageResponse;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
 import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
+import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -51,6 +56,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -107,6 +113,9 @@ class WritingControllerTest {
 
     @MockBean
     private EssayPromptService essayPromptService;
+
+    @MockBean
+    private HandwritingRecognitionService handwritingRecognitionService;
 
     @MockBean
     private WritingTemplateService writingTemplateService;
@@ -438,6 +447,124 @@ class WritingControllerTest {
                     501L,
                     metadataCaptor.getValue().getPromptSheetId()
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("Handwriting import DTO contract")
+    class HandwritingImportContract {
+
+        @Test
+        @DisplayName("serializes handwriting request and response fields")
+        void handwritingDtos_useExpectedJsonFields() throws Exception {
+            RecognizeHandwritingImageRequest recognizeRequest = new RecognizeHandwritingImageRequest();
+            recognizeRequest.setImageBase64("data:image/png;base64,abc");
+            recognizeRequest.setAiProvider("openai");
+
+            BindHandwritingImportRequest bindRequest = new BindHandwritingImportRequest();
+            bindRequest.setDocId("doc-1");
+            bindRequest.setSourceType("image");
+            bindRequest.setImageUrl("data:image/png;base64,abc");
+            bindRequest.setRecognizedText("recognized text");
+
+            RecognizeHandwritingImageResponse recognizeResponse =
+                    new RecognizeHandwritingImageResponse(
+                            "data:image/png;base64,abc",
+                            "raw line 1",
+                            "normalized paragraph 1",
+                            new java.math.BigDecimal("0.82"));
+
+            assertEquals(
+                    "data:image/png;base64,abc",
+                    objectMapper.readTree(objectMapper.writeValueAsString(recognizeRequest))
+                            .get("imageBase64")
+                            .asText());
+            assertEquals(
+                    "openai",
+                    objectMapper.readTree(objectMapper.writeValueAsString(recognizeRequest))
+                            .get("aiProvider")
+                            .asText());
+            assertEquals(
+                    "doc-1",
+                    objectMapper.readTree(objectMapper.writeValueAsString(bindRequest))
+                            .get("docId")
+                            .asText());
+            assertEquals(
+                    "image",
+                    objectMapper.readTree(objectMapper.writeValueAsString(bindRequest))
+                            .get("sourceType")
+                            .asText());
+            assertEquals(
+                    "normalized paragraph 1",
+                    objectMapper.readTree(objectMapper.writeValueAsString(recognizeResponse))
+                            .get("normalizedText")
+                            .asText());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/recognize-handwriting-image")
+    class RecognizeHandwritingImage {
+
+        @Test
+        @DisplayName("returns structured result from handwriting recognition service")
+        void recognizeHandwritingImage_success() throws Exception {
+            RecognizeHandwritingImageResponse response =
+                    new RecognizeHandwritingImageResponse(
+                            "data:image/png;base64,abc",
+                            "raw line 1",
+                            "normalized paragraph 1",
+                            new java.math.BigDecimal("0.82"));
+            when(handwritingRecognitionService.recognize(any())).thenReturn(response);
+
+            mockMvc.perform(post("/api/writing/recognize-handwriting-image")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "imageBase64":"data:image/png;base64,abc",
+                                      "aiProvider":"openai"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.imageUrl").value("data:image/png;base64,abc"))
+                    .andExpect(jsonPath("$.recognizedText").value("raw line 1"))
+                    .andExpect(jsonPath("$.normalizedText").value("normalized paragraph 1"))
+                    .andExpect(jsonPath("$.confidence").value(0.82));
+
+            ArgumentCaptor<RecognizeHandwritingImageRequest> requestCaptor =
+                    ArgumentCaptor.forClass(RecognizeHandwritingImageRequest.class);
+            verify(handwritingRecognitionService).recognize(requestCaptor.capture());
+            assertEquals("data:image/png;base64,abc", requestCaptor.getValue().getImageBase64());
+            assertEquals("openai", requestCaptor.getValue().getAiProvider());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/writing/documents/{docId}/metadata")
+    class SessionMetadata {
+
+        @Test
+        @DisplayName("returns latest handwritten source fields")
+        void metadata_includesLatestHandwrittenFields() throws Exception {
+            WritingSessionMetadataResponse response = new WritingSessionMetadataResponse();
+            response.setDocumentId("doc-1");
+            response.setLatestHandwrittenSourceType("image");
+            response.setLatestHandwrittenSourceImageUrl("data:image/png;base64,abc");
+            response.setLatestHandwrittenRecognizedText("handwritten source text");
+            response.setLatestHandwrittenImportedAt(LocalDateTime.of(2026, 4, 12, 10, 30));
+            when(documentService.getSessionMetadataByDocId(any(), any(), eq("doc-1"), eq(1L)))
+                    .thenReturn(response);
+
+            mockMvc.perform(get("/api/writing/documents/doc-1/metadata")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.latestHandwrittenSourceType").value("image"))
+                    .andExpect(jsonPath("$.latestHandwrittenSourceImageUrl")
+                            .value("data:image/png;base64,abc"))
+                    .andExpect(jsonPath("$.latestHandwrittenRecognizedText")
+                            .value("handwritten source text"))
+                    .andExpect(jsonPath("$.latestHandwrittenImportedAt")
+                            .value("2026-04-12T10:30:00"));
         }
     }
 

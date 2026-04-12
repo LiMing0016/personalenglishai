@@ -18,6 +18,10 @@ public class WritingSessionMetadataResponse {
     private String attachmentImageUrl;
     private String genre;
     private String sourceType;
+    private String latestHandwrittenSourceType;
+    private String latestHandwrittenSourceImageUrl;
+    private String latestHandwrittenRecognizedText;
+    private LocalDateTime latestHandwrittenImportedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -114,6 +118,38 @@ public class WritingSessionMetadataResponse {
 
     public void setSourceType(String sourceType) {
         this.sourceType = sourceType;
+    }
+
+    public String getLatestHandwrittenSourceType() {
+        return latestHandwrittenSourceType;
+    }
+
+    public void setLatestHandwrittenSourceType(String latestHandwrittenSourceType) {
+        this.latestHandwrittenSourceType = latestHandwrittenSourceType;
+    }
+
+    public String getLatestHandwrittenSourceImageUrl() {
+        return latestHandwrittenSourceImageUrl;
+    }
+
+    public void setLatestHandwrittenSourceImageUrl(String latestHandwrittenSourceImageUrl) {
+        this.latestHandwrittenSourceImageUrl = latestHandwrittenSourceImageUrl;
+    }
+
+    public String getLatestHandwrittenRecognizedText() {
+        return latestHandwrittenRecognizedText;
+    }
+
+    public void setLatestHandwrittenRecognizedText(String latestHandwrittenRecognizedText) {
+        this.latestHandwrittenRecognizedText = latestHandwrittenRecognizedText;
+    }
+
+    public LocalDateTime getLatestHandwrittenImportedAt() {
+        return latestHandwrittenImportedAt;
+    }
+
+    public void setLatestHandwrittenImportedAt(LocalDateTime latestHandwrittenImportedAt) {
+        this.latestHandwrittenImportedAt = latestHandwrittenImportedAt;
     }
 
     public LocalDateTime getCreatedAt() {
