@@ -70,7 +70,7 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
 
         String raw = openAiClient.callWithProvider(
                 request.getAiProvider(),
-                buildSystemPrompt(),
+                buildSystemPrompt(stage),
                 buildUserPrompt(request, stage, promptType, references),
                 traceId,
                 0.8,
@@ -99,8 +99,11 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
         return response;
     }
 
-    private String buildSystemPrompt() {
-        return systemPromptTemplate;
+    private String buildSystemPrompt(String stage) {
+        String stageInstruction = "当前学段硬约束：" + stage + "。你必须仿照该学段对应的真实考试风格来组织题面、任务要求、字数习惯和表达语气，不要写成泛化的普通作文提示。";
+        return systemPromptTemplate
+                .replace("{{stage}}", stage)
+                .trim() + "\n\n" + stageInstruction;
     }
 
     private String buildUserPrompt(GenerateExamPromptRequest request,
@@ -109,7 +112,6 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
                                    List<EssayPrompt> references) {
         return userPromptTemplate
                 .replace("{{inputBlock}}", buildInputBlock(request, stage, promptType))
-                .replace("{{originalInputBlock}}", trimToNull(request.getOriginalInput()) == null ? "(none)" : request.getOriginalInput().trim())
                 .replace("{{styleReferencesBlock}}", buildStyleReferencesBlock(references))
                 .trim();
     }
@@ -117,6 +119,7 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
     private String buildInputBlock(GenerateExamPromptRequest request, String stage, String promptType) {
         List<String> lines = new ArrayList<>();
         lines.add("study_stage=" + stage);
+        lines.add("study_stage_constraint=必须仿照该学段考试风格命题");
         lines.add("requested_prompt_type=" + promptType);
         lines.add("topic=" + trimToNull(request.getTopic()));
         if (trimToNull(request.getGenre()) != null) {
@@ -407,11 +410,11 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
 
     private String defaultSystemPrompt() {
         return """
-                你是一位英语考试命题助手。你的任务是把用户想练的主题、材料、人物设定或数据要求，整理成一题“仿照真实考试风格”的英语写作题。
+                你是一位英语考试命题助手。你的任务是把用户想练的主题、材料、人物设定或数据要求，整理成一题“仿照 {{stage}} 真实考试风格”的英语写作题。
 
                 严格要求：
                 - 用户给出的细节是硬约束，必须尽量保留，不要随意替换题材或核心事实
-                - 题目必须符合对应学段的考试写作语气，不要写成普通作文提示
+                - 当前学段是硬约束，题目必须符合该学段的考试写作语气、题面结构和字数习惯，不要写成普通作文提示
                 - 只生成 1 道题
                 - 不生成真实图片，只生成结构化信息
                 - chart 类型输出 chartSpec
@@ -473,9 +476,6 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
         return """
                 [INPUT]
                 {{inputBlock}}
-
-                [ORIGINAL_INPUT]
-                {{originalInputBlock}}
 
                 [STYLE_REFERENCES]
                 {{styleReferencesBlock}}

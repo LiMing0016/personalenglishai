@@ -7,11 +7,13 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateRequest;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EssayEvaluation;
+import com.personalenglishai.backend.mapper.DocumentScoreSummaryMapper;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.EssayFavoriteMapper;
 import com.personalenglishai.backend.service.document.DocumentService;
 import com.personalenglishai.backend.service.writing.AuditTopicService;
 import com.personalenglishai.backend.service.writing.WritingChatService;
+import com.personalenglishai.backend.service.writing.WritingDashboardService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
@@ -20,6 +22,7 @@ import com.personalenglishai.backend.service.writing.WritingTranslateService;
 import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.service.writing.WritingModelEssayService;
+import com.personalenglishai.backend.service.writing.WritingExamDialogueService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
@@ -29,6 +32,7 @@ import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsServ
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
 import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
 import com.personalenglishai.backend.dto.writing.BindHandwritingImportRequest;
+import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnResponse;
 import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageRequest;
 import com.personalenglishai.backend.dto.writing.RecognizeHandwritingImageResponse;
 import com.personalenglishai.backend.dto.writing.WritingMaterialRequest;
@@ -49,7 +53,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.lang.reflect.Constructor;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -112,6 +118,12 @@ class WritingControllerTest {
     private EssayFavoriteMapper essayFavoriteMapper;
 
     @MockBean
+    private DocumentScoreSummaryMapper documentScoreSummaryMapper;
+
+    @MockBean
+    private WritingDashboardService writingDashboardService;
+
+    @MockBean
     private EssayPromptService essayPromptService;
 
     @MockBean
@@ -128,6 +140,9 @@ class WritingControllerTest {
 
     @MockBean
     private WritingExamPromptService writingExamPromptService;
+
+    @MockBean
+    private WritingExamDialogueService writingExamDialogueService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -353,6 +368,212 @@ class WritingControllerTest {
                             .requestAttr("userId", 1L))
                     .andExpect(status().isOk())
                     .andExpect(content().json("{\"items\":[],\"total\":0}"));
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/writing/dashboard/assets")
+    class DashboardAssets {
+
+        @Test
+        @DisplayName("returns summary and monthly series for all modes")
+        void dashboardAssets_success() throws Exception {
+            when(writingDashboardService.buildAssetDashboard(1L, "all", "month"))
+                    .thenReturn(assetDashboardResponse(
+                            Map.of(
+                                    "totalEssays", 3,
+                                    "totalWords", 1010,
+                                    "totalSentences", 66,
+                                    "avgGrammarErrorsPerEssay", 4.0
+                            ),
+                            List.of(
+                                    periodRow("2026-03-01", "3月", 600, 40, 2),
+                                    periodRow("2026-04-01", "4月", 410, 26, 1)
+                            )
+                    ));
+
+            mockMvc.perform(get("/api/writing/dashboard/assets?mode=all&granularity=month")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.summary.totalEssays").value(3))
+                    .andExpect(jsonPath("$.summary.totalWords").value(1010))
+                    .andExpect(jsonPath("$.summary.totalSentences").value(66))
+                    .andExpect(jsonPath("$.summary.avgGrammarErrorsPerEssay").value(4.0))
+                    .andExpect(jsonPath("$.series[0].periodLabel").value("3月"))
+                    .andExpect(jsonPath("$.series[0].wordCount").value(600))
+                    .andExpect(jsonPath("$.series[0].sentenceCount").value(40))
+                    .andExpect(jsonPath("$.series[0].essayCount").value(2))
+                    .andExpect(jsonPath("$.series[1].periodLabel").value("4月"))
+                    .andExpect(jsonPath("$.series[1].wordCount").value(410))
+                    .andExpect(jsonPath("$.series[1].sentenceCount").value(26))
+                    .andExpect(jsonPath("$.series[1].essayCount").value(1));
+        }
+
+        @Test
+        @DisplayName("filters exam mode and groups weekly")
+        void dashboardAssets_weeklyExamMode() throws Exception {
+            when(writingDashboardService.buildAssetDashboard(1L, "exam", "week"))
+                    .thenReturn(assetDashboardResponse(
+                            Map.of(
+                                    "totalEssays", 2,
+                                    "totalWords", 720,
+                                    "totalSentences", 47,
+                                    "avgGrammarErrorsPerEssay", 4.5
+                            ),
+                            List.of(
+                                    periodRow("2026-04-06", "4/6", 300, 20, 1),
+                                    periodRow("2026-04-13", "4/13", 420, 27, 1)
+                            )
+                    ));
+
+            mockMvc.perform(get("/api/writing/dashboard/assets?mode=exam&granularity=week")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.summary.totalEssays").value(2))
+                    .andExpect(jsonPath("$.series.length()").value(2))
+                    .andExpect(jsonPath("$.series[0].periodLabel").value("4/6"))
+                    .andExpect(jsonPath("$.series[1].periodLabel").value("4/13"));
+        }
+
+        @Test
+        @DisplayName("returns 401 when userId is missing")
+        void dashboardAssets_noAuth() throws Exception {
+            mockMvc.perform(get("/api/writing/dashboard/assets"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        private Map<String, Object> assetDashboardResponse(Map<String, Object> summary, List<Map<String, Object>> series) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("summary", summary);
+            response.put("series", series);
+            return response;
+        }
+
+        private Map<String, Object> periodRow(
+                String periodStart,
+                String periodLabel,
+                int wordCount,
+                int sentenceCount,
+                int essayCount
+        ) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("periodStart", periodStart);
+            row.put("periodLabel", periodLabel);
+            row.put("wordCount", wordCount);
+            row.put("sentenceCount", sentenceCount);
+            row.put("essayCount", essayCount);
+            return row;
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/generate-exam-dialogue-turn")
+    class GenerateExamDialogueTurn {
+
+        @Test
+        @DisplayName("returns assistant reply blocks and draft preview status")
+        void generateExamDialogueTurn_returnsAssistantReplyAndDraftPreview() throws Exception {
+            GenerateExamDialogueTurnResponse response = new GenerateExamDialogueTurnResponse();
+            response.setPreviewStatus("draft");
+            response.setMissingFields(List.of("待补充字数"));
+
+            GenerateExamDialogueTurnResponse.AssistantReplyBlock replyBlock =
+                    new GenerateExamDialogueTurnResponse.AssistantReplyBlock();
+            replyBlock.setKind("understanding");
+            replyBlock.setText("我理解你想保留原题表述。");
+            response.setAssistantReplyBlocks(List.of(replyBlock));
+
+            GenerateExamPromptResponse promptSheetDraft = new GenerateExamPromptResponse();
+            promptSheetDraft.setPromptType("comic");
+            promptSheetDraft.setTopic("Write an essay based on the picture below.");
+            promptSheetDraft.setPromptText("Write an essay based on the picture below.");
+            promptSheetDraft.setRequirements("1) describe the picture briefly 2) interpret the meaning 3) give your comments");
+            response.setPromptSheetDraft(promptSheetDraft);
+
+            when(writingExamDialogueService.generateTurn(eq(1L), any())).thenReturn(response);
+
+            mockMvc.perform(post("/api/writing/generate-exam-dialogue-turn")
+                            .requestAttr("userId", 1L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "studyStage": "postgrad",
+                                      "aiProvider": "openai",
+                                      "selectedMode": "exam",
+                                      "messages": [
+                                        {
+                                          "role": "user",
+                                          "kind": "text",
+                                          "text": "不要改图片原题"
+                                        }
+                                      ]
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.previewStatus").value("draft"))
+                    .andExpect(jsonPath("$.assistantReplyBlocks[0].text").value("我理解你想保留原题表述。"))
+                    .andExpect(jsonPath("$.missingFields[0]").value("待补充字数"))
+                    .andExpect(jsonPath("$.promptSheetDraft.promptType").value("comic"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/audit-topic")
+    class AuditTopic {
+
+        @Test
+        @DisplayName("passes selected aiProvider to audit service")
+        void auditTopic_passesAiProvider() throws Exception {
+            var response = com.personalenglishai.backend.dto.writing.AuditTopicResponse.complete(
+                    "Write an essay based on the picture below.",
+                    "comic",
+                    "看图作文",
+                    "160-200",
+                    "1) describe the picture briefly 2) interpret the meaning 3) give your comments"
+            );
+            when(auditTopicService.audit(any(), eq("openai"))).thenReturn(response);
+
+            mockMvc.perform(post("/api/writing/audit-topic")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "topic": "请识别这道作文题",
+                                      "studyStage": "postgrad",
+                                      "aiProvider": "openai"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.promptType").value("comic"));
+
+            ArgumentCaptor<com.personalenglishai.backend.dto.writing.AuditTopicRequest> requestCaptor =
+                    ArgumentCaptor.forClass(com.personalenglishai.backend.dto.writing.AuditTopicRequest.class);
+            verify(auditTopicService).audit(requestCaptor.capture(), eq("openai"));
+            assertEquals("请识别这道作文题", requestCaptor.getValue().getTopic());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/writing/recognize-topic-image")
+    class RecognizeTopicImage {
+
+        @Test
+        @DisplayName("passes selected aiProvider to image recognition service")
+        void recognizeTopicImage_passesAiProvider() throws Exception {
+            when(auditTopicService.recognizeImage("data:image/png;base64,abc", "openai"))
+                    .thenReturn(new com.personalenglishai.backend.dto.writing.RecognizeTopicImageResponse("Directions..."));
+
+            mockMvc.perform(post("/api/writing/recognize-topic-image")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "imageBase64": "data:image/png;base64,abc",
+                                      "aiProvider": "openai"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.text").value("Directions..."));
+
+            verify(auditTopicService).recognizeImage("data:image/png;base64,abc", "openai");
         }
     }
 
