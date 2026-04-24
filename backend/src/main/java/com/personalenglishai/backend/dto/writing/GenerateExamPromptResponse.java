@@ -25,6 +25,7 @@ public class GenerateExamPromptResponse {
     private Integer minWords;
     private Integer recommendedMaxWords;
     private String attachmentType;
+    private String attachmentSource;
     private String attachmentTitle;
     private String attachmentContent;
     private String attachmentImageUrl;
@@ -175,6 +176,14 @@ public class GenerateExamPromptResponse {
 
     public void setAttachmentTitle(String attachmentTitle) {
         this.attachmentTitle = attachmentTitle;
+    }
+
+    public String getAttachmentSource() {
+        return attachmentSource;
+    }
+
+    public void setAttachmentSource(String attachmentSource) {
+        this.attachmentSource = attachmentSource;
     }
 
     public String getAttachmentContent() {

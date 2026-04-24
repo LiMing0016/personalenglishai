@@ -114,10 +114,14 @@ class WritingExamPromptServiceImplTest {
         );
         assertThat(systemPromptCaptor.getValue())
                 .contains("你是一位英语考试命题助手")
+                .contains("仿照 postgrad 真实考试风格")
+                .contains("当前学段硬约束：postgrad")
+                .contains("仿照该学段对应的真实考试风格")
                 .contains("只生成 1 道题")
                 .contains("除 JSON 外不要输出任何其他内容。");
         assertThat(userPromptCaptor.getValue())
                 .contains("study_stage=postgrad")
+                .contains("study_stage_constraint=必须仿照该学段考试风格命题")
                 .contains("requested_prompt_type=chart")
                 .contains("2021-2024")
                 .contains("Write an essay based on the chart below and give your comments.")
@@ -225,5 +229,60 @@ class WritingExamPromptServiceImplTest {
         assertThat(response.getTaskType()).isEqualTo("task2");
         assertThat(response.getPromptSheetId()).isEqualTo(202L);
         verify(openAiClient).generateImageWithProvider(nullable(String.class), contains("Two AI companies face each other"), anyString());
+    }
+
+    @Test
+    void generateShouldNotDuplicateOriginalInputInUserPrompt() {
+        WritingExamPromptServiceImpl service = new WritingExamPromptServiceImpl(
+                openAiClient,
+                essayPromptService,
+                new ObjectMapper(),
+                new WritingPromptSheetAssembler(),
+                writingPromptSheetService
+        );
+
+        when(essayPromptService.listByStage(4)).thenReturn(List.of());
+        when(openAiClient.callWithProvider(nullable(String.class), anyString(), anyString(), anyString(), anyDouble(), anyInt()))
+                .thenReturn("""
+                        {
+                          "promptType": "comic",
+                          "topic": "大学生考研压力",
+                          "promptText": "Write an essay based on the comic below.",
+                          "requirements": "1) describe the comic 2) analyze the issue 3) give your comments",
+                          "genre": "议论文",
+                          "wordRange": "160-200",
+                          "maxScore": 20
+                        }
+                        """);
+        WritingPromptSheet promptSheet = new WritingPromptSheet();
+        promptSheet.setId(404L);
+        promptSheet.setPaper("ai-20260416-comic404");
+        when(writingPromptSheetService.createGeneratedPromptSheet(any(), any())).thenReturn(promptSheet);
+
+        GenerateExamPromptRequest request = new GenerateExamPromptRequest();
+        request.setOriginalInput("我要的是图画作文，你给我配一张图");
+        request.setStudyStage("postgrad");
+        request.setTopic("大学生考研压力");
+        request.setPromptType("comic");
+        request.setWordRange("160-200");
+        request.setRequirements("分析大学生面临的考研赛境，并提出可能的解决方案。");
+
+        service.generate(request);
+
+        ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(openAiClient).callWithProvider(
+                nullable(String.class),
+                anyString(),
+                userPromptCaptor.capture(),
+                anyString(),
+                anyDouble(),
+                anyInt()
+        );
+        assertThat(userPromptCaptor.getValue())
+                .contains("[INPUT]")
+                .doesNotContain("[ORIGINAL_INPUT]")
+                .contains("topic=大学生考研压力")
+                .contains("requested_prompt_type=comic")
+                .doesNotContain("我要的是图画作文，你给我配一张图\n\n我要的是图画作文，你给我配一张图");
     }
 }

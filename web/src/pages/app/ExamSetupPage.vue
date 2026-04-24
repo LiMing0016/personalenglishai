@@ -23,58 +23,95 @@
       <div class="workbench-board">
         <section class="workbench-pane workbench-pane--dialogue">
           <div class="conversation-shell">
-              <div v-if="hasConversationLog" class="conversation-log">
-              <div v-if="submittedTopic.trim()" class="conversation-bubble conversation-bubble--user">
-                <p class="bubble-text bubble-text--pre">{{ submittedTopic.trim() }}</p>
-              </div>
-
-              <div v-if="selectedPrompt || uploadedImage || materialAttachmentText" class="asset-stack">
-                <div v-if="selectedPrompt" class="asset-card">
-                  <div class="asset-card-header">
-                    <span class="asset-card-title">历年真题已插入</span>
-                    <button class="asset-clear-btn" type="button" @click="selectedPrompt = null">移除</button>
-                  </div>
-                  <p class="asset-card-name">{{ selectedPrompt.paper || '已选择真题' }}</p>
-                  <p class="asset-card-text">{{ selectedPrompt.promptText.slice(0, 120) }}{{ selectedPrompt.promptText.length > 120 ? '...' : '' }}</p>
-                </div>
-
-                <div v-if="uploadedImage" class="asset-card asset-card--visual">
-                  <div class="asset-card-header">
-                    <span class="asset-card-title">图片附件已添加</span>
-                    <div class="asset-card-actions">
-                      <button class="asset-inline-btn" type="button" :disabled="recognizing" @click="onRecognizeImage">{{ recognizing ? '识别中...' : '识别图片文字' }}</button>
-                      <button class="asset-clear-btn" type="button" @click="removeImage">移除</button>
+            <div ref="conversationLogRef" class="conversation-log">
+              <template v-if="hasConversationLog">
+                <div
+                  v-for="message in conversationMessages"
+                  :key="message.id"
+                  class="conversation-entry"
+                  :class="{
+                    'conversation-entry--user': message.role === 'user',
+                    'conversation-entry--assistant': message.role === 'assistant',
+                    'conversation-entry--status': message.role === 'status',
+                  }"
+                >
+                  <div
+                    v-if="message.kind === 'asset'"
+                    class="asset-card"
+                    :class="{ 'asset-card--visual': message.assetType === 'image' }"
+                  >
+                    <div class="asset-card-header">
+                      <span class="asset-card-title">{{ getAssetMessageTitle(message) }}</span>
                     </div>
+                    <p v-if="message.assetName" class="asset-card-name">{{ message.assetName }}</p>
+                    <p v-if="message.assetSummary || message.text" class="asset-card-text">
+                      {{ message.assetSummary || message.text }}
+                    </p>
+                    <img
+                      v-if="message.assetType === 'image' && message.imageUrl"
+                      :src="message.imageUrl"
+                      class="asset-image"
+                      alt="题目附件图片"
+                    />
                   </div>
-                  <img :src="uploadedImage" class="asset-image" alt="题目附件图片" />
+
+                  <div
+                    v-else
+                    class="conversation-bubble"
+                    :class="{
+                      'conversation-bubble--assistant': message.role === 'assistant',
+                      'conversation-bubble--user': message.role === 'user',
+                      'conversation-bubble--warning': message.tone === 'warning',
+                      'conversation-bubble--success': message.tone === 'success',
+                      'conversation-bubble--muted': message.role === 'status' || message.tone === 'muted',
+                    }"
+                  >
+                    <p v-if="message.role === 'assistant' && message.replyKind" class="bubble-label">
+                      {{ getAssistantReplyLabel(message.replyKind) }}
+                    </p>
+                    <p class="bubble-text" :class="{ 'bubble-text--pre': message.kind !== 'status' }">{{ message.text }}</p>
+                  </div>
                 </div>
 
-                <div v-if="materialAttachmentText" class="asset-card">
-                  <div class="asset-card-header">
-                    <span class="asset-card-title">材料文件已添加</span>
-                    <button class="asset-clear-btn" type="button" @click="clearMaterialAttachment">移除</button>
+                <div v-if="workbenchBusy" class="conversation-entry conversation-entry--assistant">
+                  <div class="conversation-bubble conversation-bubble--assistant conversation-bubble--muted">
+                    <p class="bubble-text">正在整理题单...</p>
                   </div>
-                  <p class="asset-card-name">{{ materialAttachmentName || '已添加文本材料' }}</p>
-                  <p class="asset-card-text">{{ materialAttachmentText.slice(0, 180) }}{{ materialAttachmentText.length > 180 ? '...' : '' }}</p>
                 </div>
-              </div>
+              </template>
 
-              <div v-if="showPreviewRefreshWarning" class="conversation-bubble conversation-bubble--assistant conversation-bubble--warning">
-                <p class="bubble-text">左侧内容有更新，右侧题单待刷新。</p>
-              </div>
-
-              <div v-else-if="readyPreview && !workbenchBusy" class="conversation-bubble conversation-bubble--assistant conversation-bubble--success">
-                <p class="bubble-text">题单已整理完成，可以直接开始写作。</p>
+              <div v-else class="conversation-empty">
+                <p class="conversation-empty-title">从左侧对话开始设计题目</p>
+                <p class="conversation-empty-text">输入需求，或插入图片、材料、真题。每轮对话后，右侧题单会自动刷新。</p>
               </div>
             </div>
 
             <div class="composer-frame">
               <div class="composer-shell">
+                <div v-if="hasActiveAssets" class="composer-asset-strip">
+                  <div v-if="selectedPrompt" class="composer-asset-chip">
+                    <span class="composer-asset-chip-label">真题</span>
+                    <span class="composer-asset-chip-text">{{ selectedPrompt.paper || selectedPrompt.title || '已选真题' }}</span>
+                    <button type="button" class="composer-asset-chip-close" @click="removeSelectedPrompt">×</button>
+                  </div>
+                  <div v-if="uploadedImage" class="composer-asset-chip">
+                    <span class="composer-asset-chip-label">图片</span>
+                    <span class="composer-asset-chip-text">当前图片附件</span>
+                    <button type="button" class="composer-asset-chip-action" @click="openAttachmentPicker">更换</button>
+                    <button type="button" class="composer-asset-chip-action" :disabled="recognizing" @click="onRecognizeImage">{{ recognizing ? '识别中' : '识别文字' }}</button>
+                    <button type="button" class="composer-asset-chip-close" @click="removeImage">×</button>
+                  </div>
+                  <div v-if="materialAttachmentText" class="composer-asset-chip">
+                    <span class="composer-asset-chip-label">材料</span>
+                    <span class="composer-asset-chip-text">{{ materialAttachmentName || '已加材料' }}</span>
+                    <button type="button" class="composer-asset-chip-close" @click="clearMaterialAttachment">×</button>
+                  </div>
+                </div>
                 <textarea
                   ref="topicInputRef"
                   v-model="topic"
                   class="workbench-input"
-                  rows="6"
+                  rows="2"
                   placeholder="例如：请帮我整理一道考研英语风格的作文题，主题是年轻人与家庭责任的平衡。我还想加一段材料。"
                   @keydown="onWorkbenchInputKeydown"
                 />
@@ -162,6 +199,13 @@
           <div class="paper-frame paper-frame--canvas">
             <div class="paper-sheet paper-sheet--canvas">
               <template v-if="previewSheet">
+                <div class="paper-status-bar" :class="previewStatusToneClass">
+                  <span class="paper-status-bar__label">{{ previewStatusText }}</span>
+                  <span v-if="previewMissingFields.length" class="paper-status-bar__meta">
+                    {{ previewMissingFields.join(' · ') }}
+                  </span>
+                </div>
+
                 <div v-if="showExamTaskSelector" class="paper-task-center">
                   <button
                     type="button"
@@ -292,6 +336,8 @@
                 </div>
                 <div class="canvas-empty">
                   <p class="canvas-empty-label">Directions:</p>
+                  <p class="canvas-empty-title">等待开始整理</p>
+                  <p class="canvas-empty-text">请在左侧发出第一条命题消息，或插入图片、材料、真题。</p>
                 </div>
               </template>
             </div>
@@ -404,36 +450,42 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useLocalStorage, useDebounceFn, onClickOutside, useEventListener, StorageSerializers } from '@vueuse/core'
-import { auditTopic, recognizeTopicImage, startWritingSession, getWritingSessionMetadata, getEssayPrompts, generateExamPrompt } from '@/api/writing'
+import { generateExamDialogueTurn, recognizeTopicImage, startWritingSession, getWritingSessionMetadata, getEssayPrompts } from '@/api/writing'
 import type { EssayPromptItem, GenerateExamPromptResponse, WritingAiProvider } from '@/api/writing'
 import { getStageId } from '@/constants/stage'
 import {
   buildExamResumePreview,
   buildVisualAttachmentPreview,
-  buildPromptSheetFromPastPrompt,
   buildExamTaskPrompt,
-  extractPromptFallback,
   getExamTaskSelectionLabel,
   getExamTaskSelectionOptions,
-  normalizePromptSheet,
   parseWordRange,
 } from '@/pages/app/examPromptHelpers'
 import type { ExamPromptSheet, ExamPromptType, ExamTaskSelectionValue, ExamTopicInfo } from '@/pages/app/examPromptHelpers'
 import type { WritingSessionMetadataResponse } from '@/api/writing'
 import {
-  canStartWorkbenchFromPreview,
-  commitWorkbenchSubmission,
   isWorkbenchAbortError,
-  persistExamSetupStateSnapshot,
   resolveWorkbenchComposerAction,
   resolveRestoredDraftTopic,
   resolveWorkbenchCanvasState,
+  persistExamSetupStateSnapshot,
   restoreExamSetupStateSnapshot,
   shouldConfirmModeSwitch,
-  shouldShowWorkbenchRefreshWarning,
   shouldSubmitWorkbenchOnEnter,
   shouldUseInitialTopicSeed,
 } from '@/pages/app/examWorkbenchState'
+import {
+  buildDialogueTurnMessages,
+  buildPreviewResultFromDialogue,
+  createAssistantReplyMessages,
+  createStatusMessage,
+  createUserAssetMessage,
+  createUserTextMessage,
+} from '@/pages/app/examWorkbenchConversation.ts'
+import type {
+  ExamWorkbenchConversationMessage,
+  ExamWorkbenchPreviewStatus,
+} from '@/pages/app/examWorkbenchConversation.ts'
 import { loadAiProvider, saveAiProviderNow } from '@/components/writing/editorShellStorage'
 
 const props = defineProps<{
@@ -468,16 +520,20 @@ const showPastPromptPicker = ref(false)
 const attachmentInputRef = ref<HTMLInputElement | null>(null)
 const topicInputRef = ref<HTMLTextAreaElement | null>(null)
 const providerMenuRef = ref<HTMLElement | null>(null)
+const conversationLogRef = ref<HTMLElement | null>(null)
 const materialAttachmentText = ref<string | null>(null)
 const materialAttachmentName = ref<string | null>(null)
 const previewSheet = ref<ExamPromptSheet | null>(null)
 const previewTopicInfo = ref<ExamTopicInfo | null>(null)
+const previewStatus = ref<ExamWorkbenchPreviewStatus>('empty')
+const previewMissingFields = ref<string[]>([])
 const previewDirty = ref(false)
 const pendingSubmission = ref(false)
 const selectedMode = ref<'free' | 'exam'>('exam')
 const selectedExamTask = ref<ExamTaskSelectionValue>('task1')
 const selectedAiProvider = ref<WritingAiProvider>(loadAiProvider() ?? 'openai')
 const submittedTopic = ref('')
+const conversationMessages = ref<ExamWorkbenchConversationMessage[]>([])
 
 // ── 手动输入表单 ──
 
@@ -508,23 +564,41 @@ function applyImageFile(file: File) {
     recognizeError.value = '图片不能超过 5MB'
     return
   }
+  const isReplacing = !!uploadedImage.value
   recognizeError.value = null
   materialAttachmentText.value = null
   materialAttachmentName.value = null
   const reader = new FileReader()
-  reader.onload = () => {
+  reader.onload = async () => {
     const dataUrl = reader.result as string
     uploadedImage.value = dataUrl
     // 提取纯 base64（去掉 data:image/xxx;base64, 前缀）
     uploadedImageBase64.value = dataUrl.split(',')[1] || null
+    appendConversationMessages([
+      createUserAssetMessage('image', {
+        text: isReplacing ? '我更换了一张题目图片' : '我上传了一张题目图片',
+        assetName: file.name,
+        assetSummary: '图片附件已加入当前命题对话，请优先保留原图题意。',
+        imageUrl: dataUrl,
+      }),
+    ])
+    await refreshDialoguePreview()
   }
   reader.readAsDataURL(file)
 }
 
 function removeImage() {
+  if (!uploadedImage.value) return
   uploadedImage.value = null
   uploadedImageBase64.value = null
   recognizeError.value = null
+  if (attachmentInputRef.value) {
+    attachmentInputRef.value.value = ''
+  }
+  appendConversationMessages([
+    createStatusMessage('已移除当前图片附件，右侧题单会按剩余上下文重新整理。', 'warning'),
+  ])
+  void refreshDialoguePreview()
 }
 
 async function onWorkbenchAttachmentChange(e: Event) {
@@ -552,6 +626,14 @@ async function onWorkbenchAttachmentChange(e: Event) {
     uploadedImage.value = null
     uploadedImageBase64.value = null
     recognizeError.value = null
+    appendConversationMessages([
+      createUserAssetMessage('material', {
+        text: '我补充了一份材料附件',
+        assetName: file.name,
+        assetSummary: trimmed.slice(0, 180),
+      }),
+    ])
+    await refreshDialoguePreview()
   } catch (error) {
     console.warn('[ExamSetup] read attachment failed', error)
     workbenchError.value = '暂不支持该文件，请上传文本类材料或图片'
@@ -562,6 +644,9 @@ async function onWorkbenchAttachmentChange(e: Event) {
 
 function openAttachmentPicker() {
   attachmentMenuOpen.value = false
+  if (attachmentInputRef.value) {
+    attachmentInputRef.value.value = ''
+  }
   attachmentInputRef.value?.click()
 }
 
@@ -574,8 +659,13 @@ function openPastPromptPicker() {
 }
 
 function clearMaterialAttachment() {
+  if (!materialAttachmentText.value) return
   materialAttachmentText.value = null
   materialAttachmentName.value = null
+  appendConversationMessages([
+    createStatusMessage('已移除当前材料附件，右侧题单会按剩余上下文重新整理。', 'warning'),
+  ])
+  void refreshDialoguePreview()
 }
 
 async function onRecognizeImage() {
@@ -583,12 +673,17 @@ async function onRecognizeImage() {
   recognizing.value = true
   recognizeError.value = null
   try {
-    const res = await recognizeTopicImage({ imageBase64: uploadedImageBase64.value })
+    const res = await recognizeTopicImage({
+      imageBase64: uploadedImageBase64.value,
+      aiProvider: selectedAiProvider.value,
+    })
     if (res.text) {
-      // 追加到现有题目文本
       topic.value = topic.value
         ? topic.value.trimEnd() + '\n' + res.text
         : res.text
+      appendConversationMessages([
+        createStatusMessage('图片文字已识别并放入输入框，你可以继续补充要求后发送。', 'info'),
+      ])
     } else {
       recognizeError.value = '未能识别到文字内容，请尝试更清晰的图片'
     }
@@ -619,11 +714,12 @@ const readyPreview = computed(() => {
     && workbenchStep.value === 'preview'
     && !!previewTopicInfo.value
     && !!previewSheet.value
+    && previewStatus.value === 'ready'
     && !previewDirty.value
 })
 
 const hasSubmittedContext = computed(() => {
-  return !!submittedTopic.value.trim()
+  return conversationMessages.value.length > 0
     || !!selectedPrompt.value
     || !!uploadedImage.value
     || !!materialAttachmentText.value
@@ -649,22 +745,8 @@ const composerAction = computed(() =>
   resolveWorkbenchComposerAction({ workbenchBusy: workbenchBusy.value }),
 )
 
-const showPreviewRefreshWarning = computed(() =>
-  shouldShowWorkbenchRefreshWarning({
-    previewDirty: previewDirty.value,
-    workbenchBusy: workbenchBusy.value,
-    hasSubmittedContext: hasSubmittedContext.value,
-  }),
-)
-
 const hasConversationLog = computed(() => {
-  return !!submittedTopic.value.trim()
-    || !!selectedPrompt.value
-    || !!uploadedImage.value
-    || !!materialAttachmentText.value
-    || previewDirty.value
-    || readyPreview.value
-    || workbenchBusy.value
+  return conversationMessages.value.length > 0 || workbenchBusy.value
 })
 
 const examTaskSelectionOptions = computed(() => getExamTaskSelectionOptions(props.studyStage ?? null))
@@ -676,16 +758,12 @@ const showExamTaskSelector = computed(() => {
 const selectedExamTaskLabel = computed(() => getExamTaskSelectionLabel(selectedExamTask.value) ?? 'Task 1')
 
 const canAssemble = computed(() => {
-  return !!selectedPrompt.value || !!topic.value.trim() || !!uploadedImage.value || !!materialAttachmentText.value
+  return !!topic.value.trim()
 })
 
 const canEnterCurrentMode = computed(() => {
-  return canStartWorkbenchFromPreview({
-    selectedMode: selectedMode.value,
-    workbenchStep: workbenchStep.value,
-    hasPreviewSheet: !!previewSheet.value,
-    hasPreviewInfo: !!previewTopicInfo.value,
-  })
+  if (selectedMode.value === 'exam') return readyPreview.value
+  return workbenchStep.value === 'preview' && !!previewTopicInfo.value
 })
 
 const providerOptions: Array<{ value: WritingAiProvider; label: string }> = [
@@ -697,6 +775,36 @@ const providerOptions: Array<{ value: WritingAiProvider; label: string }> = [
 const currentProviderLabel = computed(
   () => providerOptions.find((option) => option.value === selectedAiProvider.value)?.label ?? selectedAiProvider.value,
 )
+
+const hasActiveAssets = computed(() =>
+  !!uploadedImage.value || !!materialAttachmentText.value || !!selectedPrompt.value,
+)
+
+const previewStatusText = computed(() => {
+  if (previewStatus.value === 'ready') return '已整理完成'
+  if (previewStatus.value === 'draft') return '草稿中'
+  return '等待输入'
+})
+
+const previewStatusToneClass = computed(() => {
+  if (previewStatus.value === 'ready') return 'paper-status-bar--ready'
+  if (previewStatus.value === 'draft') return 'paper-status-bar--draft'
+  return 'paper-status-bar--empty'
+})
+
+function getAssistantReplyLabel(kind: string | null | undefined): string {
+  if (kind === 'understanding') return '理解'
+  if (kind === 'follow_up') return '追问'
+  if (kind === 'action') return '动作'
+  return '回复'
+}
+
+function getAssetMessageTitle(message: ExamWorkbenchConversationMessage): string {
+  if (message.assetType === 'image') return '图片附件'
+  if (message.assetType === 'material') return '材料附件'
+  if (message.assetType === 'past_prompt') return '历年真题'
+  return '附件'
+}
 
 // ── AI 确认流程 ──
 
@@ -736,11 +844,6 @@ const aiError = ref<string | null>(null)
 const aiParsedIntent = ref<ParsedAiIntent | null>(null)
 const aiGeneratedPrompt = ref<GenerateExamPromptResponse | null>(null)
 const assembleAbortController = ref<AbortController | null>(null)
-const assemblyRollbackState = ref<{
-  topic: string
-  submittedTopic: string
-  pendingSubmission: boolean
-} | null>(null)
 
 function getEffectiveWordRange(): string | null {
   return showCustomWordRange.value
@@ -753,25 +856,6 @@ function getEffectiveWorkbenchInput(preferSubmittedTopic = false): string {
   if (draftInput) return draftInput
   if (preferSubmittedTopic) return submittedTopic.value.trim()
   return ''
-}
-
-function buildExamTaskSelectionInstruction(taskType: string | null): string | null {
-  const label = getExamTaskSelectionLabel(taskType)
-  if (!label) return null
-  return `考试任务要求：当前固定为 ${label}。请严格按照 ${label} 的命题方式整理题单，不要切换到其他任务。`
-}
-
-function resolvePromptTopicSource(prompt: EssayPromptItem): string {
-  const materialText = prompt.materialText?.trim()
-  if (materialText) return materialText
-  const imageDescription = prompt.imageDescription?.trim()
-  if (imageDescription) return imageDescription
-  return prompt.promptText.trim()
-}
-
-function resolvePromptRequirements(prompt: EssayPromptItem): string | null {
-  const fallback = extractPromptFallback(prompt.promptText, null, null)
-  return fallback.requirements || prompt.promptText.trim() || null
 }
 
 function startPreview(info: ExamTopicInfo, sheet: ExamPromptSheet) {
@@ -787,190 +871,124 @@ function startPreview(info: ExamTopicInfo, sheet: ExamPromptSheet) {
   workbenchError.value = null
 }
 
-function buildPastPromptTopicInfo(prompt: EssayPromptItem): ExamTopicInfo {
-  const wordRange = prompt.wordCountMin && prompt.wordCountMax
-    ? `${prompt.wordCountMin}-${prompt.wordCountMax}`
-    : prompt.wordCountMin
-      ? `${prompt.wordCountMin}`
-      : null
+function getActiveAssets() {
   return {
-    paper: prompt.paper?.trim() || null,
-    promptSheetId: null,
-    topic: prompt.promptText.trim(),
-    genre: genre.value,
-    wordRange,
-    requirements: resolvePromptRequirements(prompt),
-    imageDescription: prompt.imageDescription?.trim() || null,
-    materialText: prompt.materialText?.trim() || null,
-    attachmentImageUrl: prompt.imageUrl?.trim() || null,
-    maxScore: prompt.maxScore ?? maxScore.value,
-    sourceType: 'past_prompt',
-    examType: props.studyStage ?? null,
-    taskType: selectedExamTask.value ?? prompt.task ?? null,
-    minWords: prompt.wordCountMin ?? null,
-    recommendedMaxWords: prompt.wordCountMax ?? null,
-    promptType: prompt.materialText ? 'material' : prompt.imageUrl || prompt.imageDescription ? 'comic' : 'general',
-    chartSpec: null,
-    comicScenes: [],
+    uploadedImage: uploadedImage.value,
+    materialAttachmentText: materialAttachmentText.value,
+    materialAttachmentName: materialAttachmentName.value,
+    selectedPrompt: selectedPrompt.value,
   }
 }
 
-async function assembleWorkbenchPromptSheet(options: { preferSubmittedTopic?: boolean } = {}) {
+function scrollConversationToBottom() {
+  const el = conversationLogRef.value
+  if (!el) return
+  el.scrollTop = el.scrollHeight
+}
+
+function appendConversationMessages(messages: ExamWorkbenchConversationMessage[]) {
+  if (!messages.length) return
+  conversationMessages.value = [...conversationMessages.value, ...messages]
+  void nextTick(() => {
+    scrollConversationToBottom()
+  })
+}
+
+function applyDialoguePreviewState(nextStatus: ExamWorkbenchPreviewStatus, missingFields: string[], info: ExamTopicInfo | null, sheet: ExamPromptSheet | null) {
+  previewStatus.value = nextStatus
+  previewMissingFields.value = [...missingFields]
+  if (info && sheet) {
+    startPreview(info, sheet)
+    return
+  }
+  previewTopicInfo.value = null
+  previewSheet.value = null
+  workbenchStep.value = 'compose'
+  previewDirty.value = false
+  pendingSubmission.value = false
+  workbenchError.value = null
+}
+
+async function refreshDialoguePreview() {
+  const taskLabel = getExamTaskSelectionLabel(selectedExamTask.value)
+  const requestMessages = buildDialogueTurnMessages(
+    conversationMessages.value,
+    getActiveAssets(),
+    taskLabel ? `考试任务要求：当前固定为 ${taskLabel}，请严格按照该任务整理题单。` : null,
+  )
+  if (!requestMessages.length) {
+    applyDialoguePreviewState('empty', [], null, null)
+    return
+  }
+
   workbenchError.value = null
   workbenchBusy.value = true
   const abortController = new AbortController()
   assembleAbortController.value = abortController
-  assemblyRollbackState.value = {
-    topic: topic.value,
-    submittedTopic: submittedTopic.value,
-    pendingSubmission: pendingSubmission.value,
-  }
+
   try {
-    const selectedPromptTopic = selectedPrompt.value ? resolvePromptTopicSource(selectedPrompt.value) : null
-    const rawInput = getEffectiveWorkbenchInput(options.preferSubmittedTopic === true)
-    const submission = commitWorkbenchSubmission(rawInput)
-    if (topic.value.trim() && submission.submittedText) {
-      submittedTopic.value = submission.submittedText
-      topic.value = submission.nextDraftText
-      pendingSubmission.value = true
-      saveLiveStateNow()
-      await nextTick()
-      syncTopicInputHeight()
-    }
-    const hasMaterial = !!materialAttachmentText.value?.trim()
-    const hasImage = !!uploadedImage.value
-    const taskSelectionInstruction = buildExamTaskSelectionInstruction(selectedExamTask.value)
-    const shouldUsePastPromptDirectly = !!selectedPrompt.value
-      && rawInput === (selectedPromptTopic ?? '')
-      && !hasMaterial
-      && !hasImage
-      && (!selectedExamTask.value || selectedExamTask.value === selectedPrompt.value.task)
-
-    if (shouldUsePastPromptDirectly && selectedPrompt.value) {
-      startPreview(
-        buildPastPromptTopicInfo(selectedPrompt.value),
-        buildPromptSheetFromPastPrompt(selectedPrompt.value),
-      )
-      showPastPromptPicker.value = false
-      return
-    }
-
-    const effectiveInput = rawInput
-      || (hasMaterial
-        ? '请根据附件材料整理为标准考试写作题单。'
-        : hasImage
-          ? '请根据附件图片整理为标准考试写作题单。'
-          : '')
-
-    if (!effectiveInput) {
-      pendingSubmission.value = false
-      workbenchError.value = '请先输入题目要求，或通过 “+” 添加图片、文件、历年真题'
-      return
-    }
-    pendingSubmission.value = true
-    saveLiveStateNow()
-
-    const originalInputParts = [effectiveInput]
-    if (taskSelectionInstruction) {
-      originalInputParts.push(taskSelectionInstruction)
-    }
-    if (selectedPrompt.value) {
-      originalInputParts.push(`历年真题参考：\n${selectedPrompt.value.promptText.trim()}`)
-    }
-    if (hasMaterial) {
-      originalInputParts.push(`附件材料：\n${materialAttachmentText.value!.trim()}`)
-    }
-    if (hasImage) {
-      originalInputParts.push('已添加图片附件，请保留看图写作场景，并根据输入要求整理成标准题单。')
-    }
-    const originalInput = originalInputParts.join('\n\n')
-
-    const audit = await auditTopic({
-      topic: originalInput,
-      genre: genre.value,
-      wordRange: getEffectiveWordRange() ?? undefined,
+    const response = await generateExamDialogueTurn({
       studyStage: props.studyStage ?? null,
-    }, {
-      signal: abortController.signal,
-    }).catch((error) => {
-      if (isWorkbenchAbortError(error)) throw error
-      console.warn('[ExamSetup] audit before preview failed', error)
-      return null
-    })
-
-    const promptType = audit?.promptType
-      ?? (hasMaterial
-        ? 'material'
-        : hasImage
-          ? 'comic'
-          : 'general')
-    const normalizedWordRange = audit?.wordRange ?? getEffectiveWordRange() ?? null
-    const response = await generateExamPrompt({
-      originalInput,
-      topic: audit?.topic?.trim() || effectiveInput,
-      studyStage: props.studyStage ?? null,
-      promptType,
-      taskType: selectedExamTask.value ?? null,
-      genre: audit?.genre ?? genre.value,
-      wordRange: normalizedWordRange,
-      requirements: audit?.requirements ?? null,
-      maxScore: maxScore.value,
       aiProvider: selectedAiProvider.value,
+      selectedMode: selectedMode.value,
+      messages: requestMessages,
     }, {
       signal: abortController.signal,
     })
 
-    const parsedWordRange = parseWordRange(response.wordRange ?? normalizedWordRange)
-    const info: ExamTopicInfo = {
-      paper: response.paper ?? null,
-      promptSheetId: response.promptSheetId ?? null,
-      topic: response.promptText,
-      genre: response.genre ?? audit?.genre ?? genre.value ?? null,
-      wordRange: response.wordRange ?? normalizedWordRange,
-      requirements: response.requirements ?? audit?.requirements ?? null,
-      imageDescription: hasImage ? (response.attachmentContent ?? '请结合附件图片完成写作。') : null,
-      materialText: response.materialText ?? materialAttachmentText.value ?? null,
-      attachmentImageUrl: uploadedImage.value ?? response.attachmentImageUrl ?? null,
-      maxScore: response.maxScore ?? maxScore.value,
-      sourceType: response.sourceType ?? 'ai_generated',
-      examType: props.studyStage ?? null,
-      taskType: selectedExamTask.value ?? response.taskType ?? null,
-      minWords: response.minWords ?? parsedWordRange.minWords,
-      recommendedMaxWords: response.recommendedMaxWords ?? parsedWordRange.recommendedMaxWords,
-      promptType: response.promptType,
-      chartSpec: response.chartSpec ?? null,
-      comicScenes: response.comicScenes ?? [],
-    }
-
-    const sheet = normalizePromptSheet({
-      ...response,
-      attachmentImageUrl: uploadedImage.value ?? response.attachmentImageUrl ?? null,
-      attachmentType: uploadedImage.value && !response.attachmentType ? 'visual' : response.attachmentType ?? undefined,
-      visualKind: uploadedImage.value && !response.visualKind ? 'image' : response.visualKind ?? undefined,
-      attachmentContent: response.attachmentContent ?? (uploadedImage.value ? '请结合附件图片完成写作。' : undefined),
+    const preview = buildPreviewResultFromDialogue(response, {
+      studyStage: props.studyStage ?? null,
+      selectedMode: selectedMode.value,
+      activeAssets: getActiveAssets(),
     })
-    startPreview(info, sheet)
+
+    applyDialoguePreviewState(
+      preview.previewStatus,
+      preview.missingFields,
+      preview.previewTopicInfo,
+      preview.previewSheet,
+    )
+
+    appendConversationMessages([
+      ...createAssistantReplyMessages(response.assistantReplyBlocks, response.assistantReply),
+      createStatusMessage(
+        preview.previewStatus === 'ready'
+          ? '右侧题单已刷新为完成态，可以直接开始写作。'
+          : preview.previewStatus === 'draft'
+            ? '右侧题单已刷新为草稿态，继续补充后我会自动更新。'
+            : '当前信息仍不足以生成题单，请继续补充。',
+        preview.previewStatus === 'ready'
+          ? 'success'
+          : preview.previewStatus === 'draft'
+            ? 'info'
+            : 'warning',
+      ),
+    ])
     saveLiveStateNow()
   } catch (error) {
-    if (isWorkbenchAbortError(error)) {
-      const rollback = assemblyRollbackState.value
-      topic.value = rollback?.topic ?? ''
-      submittedTopic.value = rollback?.submittedTopic ?? ''
-      pendingSubmission.value = rollback?.pendingSubmission ?? false
-      workbenchError.value = null
-      saveLiveStateNow()
-      await nextTick()
-      syncTopicInputHeight()
-      return
-    }
-    console.warn('[ExamSetup] assemble prompt sheet failed', error)
-    pendingSubmission.value = false
-    workbenchError.value = '题目整理失败，请补充更明确的写作要求后重试'
+    if (isWorkbenchAbortError(error)) return
+    console.warn('[ExamSetup] refresh dialogue preview failed', error)
+    workbenchError.value = '题单整理失败，请补充更明确的要求后重试'
   } finally {
     assembleAbortController.value = null
-    assemblyRollbackState.value = null
     workbenchBusy.value = false
   }
+}
+
+async function assembleWorkbenchPromptSheet() {
+  const rawInput = getEffectiveWorkbenchInput()
+  if (!rawInput) {
+    workbenchError.value = '请先输入一条命题需求'
+    return
+  }
+  submittedTopic.value = rawInput
+  appendConversationMessages([createUserTextMessage(rawInput)])
+  topic.value = ''
+  pendingSubmission.value = true
+  saveLiveStateNow()
+  await nextTick()
+  syncTopicInputHeight()
+  await refreshDialoguePreview()
 }
 
 function onAssembleWorkbenchPromptSheet() {
@@ -1034,12 +1052,15 @@ function confirmModeSwitch() {
 function handleExamTaskSelection(taskType: ExamTaskSelectionValue) {
   if (selectedExamTask.value === taskType) return
   selectedExamTask.value = taskType
-  const hasWorkbenchInput = !!getEffectiveWorkbenchInput(true)
+  const hasWorkbenchInput = conversationMessages.value.length > 0
     || !!selectedPrompt.value
     || !!uploadedImage.value
     || !!materialAttachmentText.value
   if (!hasWorkbenchInput || selectedMode.value !== 'exam' || workbenchBusy.value) return
-  void assembleWorkbenchPromptSheet({ preferSubmittedTopic: true })
+  appendConversationMessages([
+    createStatusMessage(`已切换为 ${getExamTaskSelectionLabel(taskType) ?? taskType}，右侧题单正在同步刷新。`, 'info'),
+  ])
+  void refreshDialoguePreview()
 }
 
 function toggleExamTaskSelection() {
@@ -1057,6 +1078,15 @@ function startWritingFromPreview() {
   }
   clearExamSetupState()
   emit('confirm', previewTopicInfo.value)
+}
+
+function removeSelectedPrompt() {
+  if (!selectedPrompt.value) return
+  selectedPrompt.value = null
+  appendConversationMessages([
+    createStatusMessage('已移除当前历年真题参考，右侧题单会按剩余上下文重新整理。', 'warning'),
+  ])
+  void refreshDialoguePreview()
 }
 
 // ── 草稿与页面状态持久化 ──
@@ -1086,7 +1116,10 @@ const savedDraft = useLocalStorage<ExamSetupDraft | null>(DRAFT_KEY, null, {
 interface ExamSetupLiveState extends ExamSetupDraft {
   selectedMode: 'free' | 'exam'
   activeTab: TabKey
+  conversationMessages: ExamWorkbenchConversationMessage[]
   workbenchStep: WorkbenchStep
+  previewStatus: ExamWorkbenchPreviewStatus
+  previewMissingFields: string[]
   previewDirty: boolean
   pendingSubmission: boolean
   submittedTopic: string
@@ -1164,7 +1197,10 @@ onMounted(() => {
       uploadedImageBase64.value = state.uploadedImageBase64 ?? null
       materialAttachmentText.value = state.materialAttachmentText ?? null
       materialAttachmentName.value = state.materialAttachmentName ?? null
+      conversationMessages.value = (state.conversationMessages ?? []).map((message) => ({ ...message }))
       workbenchStep.value = state.workbenchStep ?? 'compose'
+      previewStatus.value = state.previewStatus ?? (state.previewSheet ? 'ready' : 'empty')
+      previewMissingFields.value = [...(state.previewMissingFields ?? [])]
       previewDirty.value = state.previewDirty ?? false
       pendingSubmission.value = state.pendingSubmission ?? false
       submittedTopic.value = state.submittedTopic ?? ''
@@ -1231,6 +1267,8 @@ onMounted(() => {
     const restored = buildExamResumePreview(props.resumeMetadata, props.studyStage ?? null)
     if (restored) {
       startPreview(restored.topicInfo, restored.sheet)
+      previewStatus.value = 'ready'
+      previewMissingFields.value = []
       submittedTopic.value = ''
       topic.value = ''
       if (restored.taskType) {
@@ -1286,6 +1324,7 @@ const showBackConfirm = ref(false)
 const isDirty = computed(() => {
   return topic.value.trim().length > 0
     || submittedTopic.value.trim().length > 0
+    || conversationMessages.value.length > 0
     || selectedExamTask.value !== null
     || genre.value !== null
     || wordRange.value !== null
@@ -1450,7 +1489,6 @@ async function useSelectedPrompt() {
   const prompt = selectedPrompt.value
   showPastPromptPicker.value = false
   attachmentMenuOpen.value = false
-  topic.value = topic.value.trim() || resolvePromptTopicSource(prompt)
   if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
     const range = `${prompt.wordCountMin}-${prompt.wordCountMax}`
     if (wordRangeOptions.includes(range)) {
@@ -1482,6 +1520,14 @@ async function useSelectedPrompt() {
   if (normalizedTask) {
     selectedExamTask.value = normalizedTask
   }
+  appendConversationMessages([
+    createUserAssetMessage('past_prompt', {
+      text: '我插入了一道历年真题作为参考',
+      assetName: prompt.paper || prompt.title,
+      assetSummary: prompt.promptText.slice(0, 180),
+    }),
+  ])
+  await refreshDialoguePreview()
 }
 
 function saveLiveStateNow() {
@@ -1490,7 +1536,10 @@ function saveLiveStateNow() {
     selectedMode: selectedMode.value,
     selectedExamTask: selectedExamTask.value,
     activeTab: activeTab.value,
+    conversationMessages: conversationMessages.value.map((message) => ({ ...message })),
     workbenchStep: workbenchStep.value,
+    previewStatus: previewStatus.value,
+    previewMissingFields: [...previewMissingFields.value],
     previewDirty: previewDirty.value,
     pendingSubmission: pendingSubmission.value,
     submittedTopic: submittedTopic.value,
@@ -1559,7 +1608,10 @@ watch(
     selectedMode,
     selectedExamTask,
     activeTab,
+    conversationMessages,
     workbenchStep,
+    previewStatus,
+    previewMissingFields,
     previewDirty,
     pendingSubmission,
     submittedTopic,
@@ -1784,6 +1836,19 @@ watch(activeTab, (tab) => {
   scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
 }
 
+.conversation-entry {
+  display: flex;
+}
+
+.conversation-entry--user {
+  justify-content: flex-end;
+}
+
+.conversation-entry--assistant,
+.conversation-entry--status {
+  justify-content: flex-start;
+}
+
 .conversation-bubble {
   max-width: 92%;
   padding: 14px 16px;
@@ -1817,6 +1882,44 @@ watch(activeTab, (tab) => {
   border-color: #a7f3d0;
 }
 
+.conversation-bubble--muted {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.conversation-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px;
+  border: 1px dashed #d7e2ea;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+}
+
+.conversation-empty-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.conversation-empty-text {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.bubble-label {
+  margin: 0 0 6px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .bubble-text {
   margin: 0;
   color: #334155;
@@ -1828,12 +1931,6 @@ watch(activeTab, (tab) => {
 
 .bubble-text--pre {
   white-space: pre-wrap;
-}
-
-.asset-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .asset-card,
@@ -1857,6 +1954,56 @@ watch(activeTab, (tab) => {
   display: block;
   flex: none;
   margin-top: auto;
+}
+
+.composer-asset-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.composer-asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dbe7f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+}
+
+.composer-asset-chip-label {
+  color: #047857;
+  font-weight: 700;
+}
+
+.composer-asset-chip-text {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-asset-chip-action,
+.composer-asset-chip-close {
+  border: none;
+  background: transparent;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composer-asset-chip-close {
+  color: #94a3b8;
+}
+
+.composer-asset-chip-close:hover {
+  color: #475569;
 }
 
 .composer-shell {
@@ -2222,6 +2369,45 @@ watch(activeTab, (tab) => {
   background: #fffefb;
   border: 1px solid #ebe4d8;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.paper-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.paper-status-bar--ready {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.paper-status-bar--draft {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.paper-status-bar--empty {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.paper-status-bar__label {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paper-status-bar__meta {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .paper-sheet--canvas {

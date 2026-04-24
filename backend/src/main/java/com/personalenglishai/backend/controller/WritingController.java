@@ -59,8 +59,12 @@ import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
+import com.personalenglishai.backend.service.writing.WritingExamDialogueService;
+import com.personalenglishai.backend.service.writing.WritingDashboardService;
 import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
+import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnRequest;
+import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnResponse;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.dto.writing.EssayPromptResponse;
 import com.personalenglishai.backend.dto.writing.EssayPromptListResponse;
@@ -95,6 +99,8 @@ public class WritingController {
     private final DocumentService documentService;
     private final EssayEvaluationMapper essayEvaluationMapper;
     private final EssayFavoriteMapper essayFavoriteMapper;
+    private final WritingDashboardService writingDashboardService;
+    private final WritingExamDialogueService writingExamDialogueService;
     private final EssayPromptService essayPromptService;
     private final HandwritingRecognitionService handwritingRecognitionService;
     private final GrammarSuppressService grammarSuppressService;
@@ -116,6 +122,8 @@ public class WritingController {
                              DocumentService documentService,
                              EssayEvaluationMapper essayEvaluationMapper,
                              EssayFavoriteMapper essayFavoriteMapper,
+                             WritingDashboardService writingDashboardService,
+                             WritingExamDialogueService writingExamDialogueService,
                              EssayPromptService essayPromptService,
                              HandwritingRecognitionService handwritingRecognitionService,
                              GrammarSuppressService grammarSuppressService,
@@ -136,6 +144,8 @@ public class WritingController {
         this.documentService = documentService;
         this.essayEvaluationMapper = essayEvaluationMapper;
         this.essayFavoriteMapper = essayFavoriteMapper;
+        this.writingDashboardService = writingDashboardService;
+        this.writingExamDialogueService = writingExamDialogueService;
         this.essayPromptService = essayPromptService;
         this.handwritingRecognitionService = handwritingRecognitionService;
         this.grammarSuppressService = grammarSuppressService;
@@ -655,6 +665,18 @@ public class WritingController {
         return ResponseEntity.ok(resp);
     }
 
+    @GetMapping("/dashboard/assets")
+    public ResponseEntity<java.util.Map<String, Object>> getDashboardAssets(
+            @RequestParam(defaultValue = "all") String mode,
+            @RequestParam(defaultValue = "month") String granularity,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(writingDashboardService.buildAssetDashboard(userId, mode, granularity));
+    }
+
     /**
      * 获取用户写作聚合统计（维度平均分 + 错误分布）
      * GET /api/writing/stats
@@ -671,19 +693,30 @@ public class WritingController {
         return ResponseEntity.ok(stats);
     }
 
-    /** 题目智能解析（千问） */
+    /** 题目智能解析 */
     @PostMapping("/audit-topic")
     public ResponseEntity<AuditTopicResponse> auditTopic(
             @Valid @RequestBody AuditTopicRequest request) {
-        AuditTopicResponse response = auditTopicService.audit(request);
+        AuditTopicResponse response = auditTopicService.audit(request, request.getAiProvider());
         return ResponseEntity.ok(response);
     }
 
-    /** 图片题目识别（千问 VL） */
+    @PostMapping("/generate-exam-dialogue-turn")
+    public ResponseEntity<GenerateExamDialogueTurnResponse> generateExamDialogueTurn(
+            @Valid @RequestBody GenerateExamDialogueTurnRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(writingExamDialogueService.generateTurn(userId, request));
+    }
+
+    /** 图片题目识别 */
     @PostMapping("/recognize-topic-image")
     public ResponseEntity<RecognizeTopicImageResponse> recognizeTopicImage(
             @Valid @RequestBody RecognizeTopicImageRequest request) {
-        RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64());
+        RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64(), request.getAiProvider());
         return ResponseEntity.ok(response);
     }
 

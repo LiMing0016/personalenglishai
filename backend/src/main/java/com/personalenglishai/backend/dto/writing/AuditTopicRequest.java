@@ -21,6 +21,9 @@ public class AuditTopicRequest {
     /** 当前学段，可为空 */
     private String studyStage;
 
+    /** 当前选择的 AI provider，可为空 */
+    private String aiProvider;
+
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
 
@@ -35,4 +38,7 @@ public class AuditTopicRequest {
 
     public String getStudyStage() { return studyStage; }
     public void setStudyStage(String studyStage) { this.studyStage = studyStage; }
+
+    public String getAiProvider() { return aiProvider; }
+    public void setAiProvider(String aiProvider) { this.aiProvider = aiProvider; }
 }

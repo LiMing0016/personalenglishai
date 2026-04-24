@@ -818,7 +818,7 @@ export function chatWriting(payload: WritingChatRequest): Promise<WritingChatRes
     .then((res) => res.data)
 }
 
-// ── Audit Topic (千问题目解析) ──
+// ── Audit Topic ──
 
 export interface AuditTopicRequest {
   topic: string
@@ -826,6 +826,7 @@ export interface AuditTopicRequest {
   wordRange?: string | null
   requirements?: string | null
   studyStage?: string | null
+  aiProvider?: WritingAiProvider
 }
 
 export interface AuditTopicResponse {
@@ -895,6 +896,7 @@ export interface GenerateExamPromptResponse {
   minWords?: number | null
   recommendedMaxWords?: number | null
   attachmentType?: 'none' | 'material' | 'visual' | null
+  attachmentSource?: 'none' | 'user_upload' | 'agent_generate' | 'user_text' | null
   attachmentTitle?: string | null
   attachmentContent?: string | null
   attachmentImageUrl?: string | null
@@ -949,10 +951,96 @@ export function generateExamPrompt(
     }))
 }
 
-// ── Recognize Topic Image (千问 VL 图片识别) ──
+export interface GenerateExamDialogueTurnMessage {
+  role: 'user'
+  kind: 'text' | 'asset'
+  text?: string | null
+  assetType?: string | null
+  assetSummary?: string | null
+}
+
+export interface GenerateExamDialogueTurnRequest {
+  studyStage?: string | null
+  aiProvider?: WritingAiProvider
+  selectedMode: 'free' | 'exam'
+  messages: GenerateExamDialogueTurnMessage[]
+}
+
+export interface GenerateExamDialogueAssistantReplyBlock {
+  kind: string
+  text: string
+}
+
+export interface GenerateExamDialogueTurnResponse {
+  assistantReply?: string | null
+  assistantReplyBlocks: GenerateExamDialogueAssistantReplyBlock[]
+  previewStatus: 'empty' | 'draft' | 'ready'
+  missingFields: string[]
+  promptSheetDraft: GenerateExamPromptResponse | null
+}
+
+export function generateExamDialogueTurn(
+  req: GenerateExamDialogueTurnRequest,
+  options?: { signal?: AbortSignal },
+): Promise<GenerateExamDialogueTurnResponse> {
+  return http
+    .post<GenerateExamDialogueTurnResponse>('/writing/generate-exam-dialogue-turn', req, {
+      timeout: 120000,
+      signal: options?.signal,
+    })
+    .then((res) => ({
+      assistantReply: res.data.assistantReply ?? null,
+      assistantReplyBlocks: (res.data.assistantReplyBlocks ?? []).map((block) => ({
+        kind: block.kind ?? 'info',
+        text: block.text ?? '',
+      })),
+      previewStatus: res.data.previewStatus ?? 'empty',
+      missingFields: res.data.missingFields ?? [],
+      promptSheetDraft: res.data.promptSheetDraft
+        ? {
+            promptType: res.data.promptSheetDraft.promptType ?? 'general',
+            paper: res.data.promptSheetDraft.paper ?? null,
+            promptSheetId: res.data.promptSheetDraft.promptSheetId ?? null,
+            topic: res.data.promptSheetDraft.topic ?? '',
+            promptText: res.data.promptSheetDraft.promptText ?? '',
+            part: res.data.promptSheetDraft.part ?? null,
+            questionNo: res.data.promptSheetDraft.questionNo ?? null,
+            directions: res.data.promptSheetDraft.directions ?? null,
+            requirements: res.data.promptSheetDraft.requirements ?? null,
+            genre: res.data.promptSheetDraft.genre ?? null,
+            wordRange: res.data.promptSheetDraft.wordRange ?? null,
+            maxScore: res.data.promptSheetDraft.maxScore ?? null,
+            sourceType: 'ai_generated',
+            taskType: res.data.promptSheetDraft.taskType ?? null,
+            minWords: res.data.promptSheetDraft.minWords ?? null,
+            recommendedMaxWords: res.data.promptSheetDraft.recommendedMaxWords ?? null,
+            attachmentType: res.data.promptSheetDraft.attachmentType ?? null,
+            attachmentSource: res.data.promptSheetDraft.attachmentSource ?? null,
+            attachmentTitle: res.data.promptSheetDraft.attachmentTitle ?? null,
+            attachmentContent: res.data.promptSheetDraft.attachmentContent ?? null,
+            attachmentImageUrl: res.data.promptSheetDraft.attachmentImageUrl ?? null,
+            visualKind: res.data.promptSheetDraft.visualKind ?? null,
+            materialText: res.data.promptSheetDraft.materialText ?? null,
+            chartSpec: res.data.promptSheetDraft.chartSpec
+              ? {
+                  title: res.data.promptSheetDraft.chartSpec.title ?? null,
+                  displayType: res.data.promptSheetDraft.chartSpec.displayType ?? null,
+                  columns: res.data.promptSheetDraft.chartSpec.columns ?? [],
+                  rows: res.data.promptSheetDraft.chartSpec.rows ?? [],
+                  summary: res.data.promptSheetDraft.chartSpec.summary ?? null,
+                }
+              : null,
+            comicScenes: res.data.promptSheetDraft.comicScenes ?? [],
+          }
+        : null,
+    }))
+}
+
+// ── Recognize Topic Image ──
 
 export interface RecognizeTopicImageRequest {
   imageBase64: string
+  aiProvider?: WritingAiProvider
 }
 
 export interface RecognizeTopicImageResponse {
@@ -1058,6 +1146,38 @@ export interface WritingDocumentsResponse {
 export function getWritingDocuments(page = 0, size = 10): Promise<WritingDocumentsResponse> {
   return http
     .get<WritingDocumentsResponse>('/writing/documents', { params: { page, size } })
+    .then((res) => res.data)
+}
+
+export type WritingDashboardMode = 'all' | 'free' | 'exam'
+export type WritingDashboardGranularity = 'week' | 'month'
+
+export interface WritingDashboardAssetSummary {
+  totalEssays: number
+  totalWords: number
+  totalSentences: number
+  avgGrammarErrorsPerEssay: number
+}
+
+export interface WritingDashboardAssetSeriesItem {
+  periodStart: string
+  periodLabel: string
+  wordCount: number
+  sentenceCount: number
+  essayCount: number
+}
+
+export interface WritingDashboardAssetsResponse {
+  summary: WritingDashboardAssetSummary
+  series: WritingDashboardAssetSeriesItem[]
+}
+
+export function getWritingDashboardAssets(params: {
+  mode?: WritingDashboardMode
+  granularity?: WritingDashboardGranularity
+}): Promise<WritingDashboardAssetsResponse> {
+  return http
+    .get<WritingDashboardAssetsResponse>('/writing/dashboard/assets', { params })
     .then((res) => res.data)
 }
 
