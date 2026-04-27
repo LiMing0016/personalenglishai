@@ -10,6 +10,7 @@ import type {
   WritingEvaluateResponse,
 } from '@/api/writing'
 import { findClosestMatch, hasValidSuggestion, resolveErrorSpan, shouldUseWordBoundary } from '@/components/writing/errorSpanResolver'
+import { resolveVisibleErrorSpans } from '@/components/writing/errorSpanState'
 import {
   clearTrustedRewriteSegments as clearTrustedRewriteSegmentsCache,
   saveGrammarErrors,
@@ -148,17 +149,28 @@ export const useGrammarStore = defineStore('grammar', () => {
   // ── Computed ──
   const grammarPanelErrors = computed(() => {
     const hidden = locallyHiddenIds.value
+    const text = draftStore.draftText
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
-      return grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
+      return resolveVisibleErrorSpans(
+        grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id)),
+        text,
+      )
     }
     if (preferEvaluateErrors.value && !evaluateStore.grammarReChecked && evaluateStore.evaluateResult?.errors?.length) {
-      return evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
+      return resolveVisibleErrorSpans(
+        evaluateStore.evaluateResult.errors.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id)),
+        text,
+      )
     }
-    return grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id))
+    return resolveVisibleErrorSpans(
+      grammarErrors.value.filter((e) => e.category !== 'suggestion' && !hidden.has(e.id)),
+      text,
+    )
   })
 
   const grammarPanelSuggestions = computed(() => {
     const hidden = locallyHiddenIds.value
+    const text = draftStore.draftText
     let base: CorrectionError[] = []
     if (evaluateStore.grammarReChecked && grammarErrors.value.length > 0) {
       base = grammarErrors.value.filter((e) => e.category === 'suggestion' && !hidden.has(e.id))
@@ -175,7 +187,7 @@ export const useGrammarStore = defineStore('grammar', () => {
       merged.push(item)
       seen.add(item.id)
     }
-    return filterTrustedSuggestions(merged)
+    return resolveVisibleErrorSpans(filterTrustedSuggestions(merged), text)
   })
 
   const hiddenTrustedSuggestionCount = computed(() => {
@@ -218,17 +230,10 @@ export const useGrammarStore = defineStore('grammar', () => {
     if (all) {
       all = filterTrustedSuggestions(all)
     }
-    // Re-resolve spans against current editor text to fix any offset drift
     if (!all || all.length === 0) return all
     const text = draftStore.draftText
     if (!text) return all
-    return all.map((e) => {
-      if (!e.original || !e.span) return e
-      const resolved = resolveErrorSpan(e, text)
-      if (!resolved) return e
-      if (resolved.start === e.span.start && resolved.end === e.span.end) return e
-      return { ...e, span: resolved }
-    })
+    return resolveVisibleErrorSpans(all, text)
   })
 
   /** True when the user has typed since the last grammar check completed (debounce pending). */

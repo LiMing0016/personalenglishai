@@ -14,6 +14,7 @@ import {
   resolveRestoredDraftTopic,
   shouldUseInitialTopicSeed,
   resolveWorkbenchCanvasState,
+  resolveExamSetupSaveAction,
 } from '../src/pages/app/examWorkbenchState.ts'
 
 test('commitWorkbenchSubmission clears draft while preserving submitted text', () => {
@@ -263,6 +264,32 @@ test('isWorkbenchAbortError recognizes abort-like request failures', () => {
   assert.equal(isWorkbenchAbortError({ code: 'ERR_CANCELED' }), true)
   assert.equal(isWorkbenchAbortError(new Error('other failure')), false)
   assert.equal(isWorkbenchAbortError(null), false)
+})
+
+test('resolveExamSetupSaveAction keeps partial AI prompt setup as setup state', () => {
+  assert.equal(
+    resolveExamSetupSaveAction({
+      hasPromptInfo: false,
+      isDirty: true,
+    }),
+    'saveSetupState',
+  )
+
+  assert.equal(
+    resolveExamSetupSaveAction({
+      hasPromptInfo: true,
+      isDirty: true,
+    }),
+    'createDraftDocument',
+  )
+
+  assert.equal(
+    resolveExamSetupSaveAction({
+      hasPromptInfo: false,
+      isDirty: false,
+    }),
+    'noop',
+  )
 })
 
 function createMemoryStorage() {

@@ -10,6 +10,7 @@ services:
     restart: always
     depends_on:
       - redis
+      - assistant-orchestrator
     ports:
       - "8080:8080"
     environment:
@@ -38,6 +39,9 @@ services:
       
       # Resend API Key（预留，未配置不影响启动）
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+
+      # Python OpenAI Agents SDK orchestrator
+      - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8002}
     networks:
       - app-network
     healthcheck:
@@ -101,12 +105,29 @@ services:
     networks:
       - app-network
 
+  assistant-orchestrator:
+    build:
+      context: ./python/ai_orchestrator
+    container_name: peai-assistant-orchestrator
+    restart: unless-stopped
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AI_ASSISTANT_MODEL=${AI_ASSISTANT_MODEL:-gpt-5.4-mini}
+      - AI_ASSISTANT_SESSION_DB_PATH=/data/assistant_sessions.db
+    ports:
+      - "8002:8002"
+    volumes:
+      - peai_assistant_data:/data
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
   peai_redis_data:
+  peai_assistant_data:
 
 # volumes:
 #   mysql_data:

@@ -9,6 +9,7 @@
 - 根目录 `AGENTS.md` 只负责仓库级协作规则。
 - 前端实现规则放在 `web/AGENTS.md`。
 - 后端实现规则放在 `backend/AGENTS.md`。
+- Python agent 开发规则放在 `python/AGENTS.md`。
 - 修改某一端代码时，优先同时遵守对应目录下的 `AGENTS.md`。
 
 ## 通用协作原则

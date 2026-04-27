@@ -255,25 +255,189 @@
     </div>
   </div>
 
-  <!-- Mode select -->
-  <div v-else-if="phase === 'mode-select'" class="gate-center">
-    <h2 class="gate-title">选择写作模式</h2>
-    <p class="gate-desc">
-      当前学段：<strong>{{ getStageLabel(currentStage) }}</strong>
-    </p>
-    <div class="mode-grid">
-      <button class="mode-card" @click="createBlankFreeDoc">
-        <span class="mode-icon">&#9997;&#65039;</span>
-        <span class="mode-name">自由模式</span>
-        <span class="mode-desc">自由写作，AI 实时辅助与反馈</span>
-      </button>
-      <button class="mode-card" @click="openExamSetupFromModeSelect">
-        <span class="mode-icon">&#9200;</span>
-        <span class="mode-name">考试模式</span>
-        <span class="mode-desc">模拟考试环境，限时写作与评分</span>
+  <!-- New writing task modal -->
+  <div v-else-if="phase === 'mode-select'" class="task-modal-page">
+    <div class="task-modal-backdrop" />
+    <section class="task-modal" aria-label="新建写作任务">
+      <button class="task-modal-close" type="button" title="退出" @click="navigateToPhase('doc-list')">&times;</button>
+      <p class="task-modal-kicker">写作设置</p>
+      <h2 class="task-modal-title">新建写作任务</h2>
+
+      <div class="task-modal-section">
+        <p class="task-modal-label">写作模式</p>
+        <div class="task-option-grid task-option-grid--two">
+          <button
+            class="task-option"
+            :class="{ active: newTaskMode === 'free' }"
+            type="button"
+            @click="newTaskMode = 'free'"
+          >
+            <span class="task-option-title">自由写作</span>
+            <span class="task-option-desc">直接进入空白写作页</span>
+          </button>
+          <button
+            class="task-option"
+            :class="{ active: newTaskMode === 'exam' }"
+            type="button"
+            @click="newTaskMode = 'exam'"
+          >
+            <span class="task-option-title">考试写作</span>
+            <span class="task-option-desc">先确定题目来源</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="newTaskMode === 'exam'" class="task-modal-section">
+        <p class="task-modal-label">题目来源</p>
+        <div class="task-option-grid task-option-grid--two">
+          <button
+            class="task-option"
+            :class="{ active: newTaskSource === 'past_prompt' }"
+            type="button"
+            @click="newTaskSource = 'past_prompt'"
+          >
+            <span class="task-option-title">历年真题</span>
+            <span class="task-option-desc">进入真题选择页，忠实复现原题</span>
+          </button>
+          <button
+            class="task-option"
+            :class="{ active: newTaskSource === 'ai_design' }"
+            type="button"
+            @click="newTaskSource = 'ai_design'"
+          >
+            <span class="task-option-title">AI 题目设计</span>
+            <span class="task-option-desc">按要求生成原创练习题</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="newTaskMode === 'exam' && newTaskSource === 'ai_design'" class="task-modal-section">
+        <p class="task-modal-label">AI 题目设计要求</p>
+        <div class="task-field-grid">
+          <label class="task-field">
+            <span>体裁</span>
+            <select v-model="newTaskGenre" class="task-select">
+              <option :value="null">请选择体裁</option>
+              <option v-for="option in newTaskGenreOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="task-field">
+            <span>字数</span>
+            <div class="task-word-row">
+              <select
+                v-model="newTaskWordRange"
+                class="task-select"
+                @change="newTaskCustomWordRange = newTaskWordRange === '__custom__' ? newTaskCustomWordRange : ''"
+              >
+                <option :value="null">请选择字数</option>
+                <option v-for="option in newTaskWordRangeOptions" :key="option" :value="option">{{ option }} 词</option>
+                <option value="__custom__">自定义</option>
+              </select>
+              <input
+                v-if="newTaskWordRange === '__custom__'"
+                v-model="newTaskCustomWordRange"
+                class="task-input"
+                type="text"
+                inputmode="numeric"
+                placeholder="160-200"
+              />
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="task-modal-actions">
+        <button class="task-btn task-btn--secondary" type="button" @click="navigateToPhase('doc-list')">退出</button>
+        <button class="task-btn task-btn--primary" type="button" @click="continueNewWritingTask">继续</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Past prompt select -->
+  <div v-else-if="phase === 'past-prompt-select'" class="past-prompt-page">
+    <button class="setup-back-link" type="button" @click="navigateToPhase('mode-select')">
+      &larr; 返回新建任务
+    </button>
+    <div class="past-prompt-header">
+      <div>
+        <p class="past-prompt-kicker">历年真题</p>
+        <h2 class="past-prompt-title">选择一套真题开始写作</h2>
+      </div>
+      <button class="task-btn task-btn--primary" type="button" :disabled="!selectedPastPrompt" @click="startWritingFromPastPrompt">
+        使用该真题
       </button>
     </div>
-    <button class="back-link" @click="navigateToPhase('doc-list')">&#8592; 返回文档列表</button>
+
+    <div class="past-prompt-toolbar">
+      <input
+        v-model="pastPromptKeyword"
+        class="past-prompt-search"
+        type="text"
+        placeholder="搜索题目、试卷或关键词"
+        @keyup.enter="loadPastPrompts(1)"
+      />
+      <select v-model="pastPromptYearSelect" class="past-prompt-select" @change="onPastPromptYearChange">
+        <option :value="0">全部年份</option>
+        <option v-for="year in pastPromptYears" :key="year" :value="year">{{ year }}</option>
+      </select>
+      <button class="task-btn task-btn--secondary" type="button" @click="loadPastPrompts(1)">搜索</button>
+    </div>
+
+    <div v-if="pastPromptLoading" class="past-prompt-empty">
+      <div class="gate-spinner" />
+      <span>加载真题中...</span>
+    </div>
+    <div v-else-if="pastPromptItems.length === 0" class="past-prompt-empty">
+      <span>暂未找到匹配的真题</span>
+    </div>
+    <div v-else class="past-prompt-layout">
+      <div class="past-prompt-list">
+        <button
+          v-for="prompt in pastPromptItems"
+          :key="prompt.id"
+          class="past-prompt-item"
+          :class="{ active: selectedPastPrompt?.id === prompt.id }"
+          type="button"
+          @click="selectedPastPrompt = prompt"
+        >
+          <span class="past-prompt-item-title">{{ prompt.title || prompt.paper || '未命名真题' }}</span>
+          <span class="past-prompt-item-meta">
+            {{ prompt.examYear || '年份未知' }} · {{ prompt.paper || '试卷未知' }} · {{ prompt.task || 'Task 未标注' }}
+          </span>
+          <span class="past-prompt-item-text">{{ prompt.promptText }}</span>
+        </button>
+      </div>
+
+      <aside class="past-prompt-preview">
+        <template v-if="selectedPastPrompt">
+          <p class="past-prompt-preview-kicker">{{ selectedPastPrompt.paper || '历年真题' }}</p>
+          <h3>{{ selectedPastPrompt.title || '真题预览' }}</h3>
+          <div class="past-prompt-preview-meta">
+            <span>{{ selectedPastPrompt.examYear || '年份未知' }}</span>
+            <span>{{ selectedPastPrompt.task || 'Task 未标注' }}</span>
+            <span>{{ formatPastPromptWordRange(selectedPastPrompt) || '字数未标注' }}</span>
+          </div>
+          <p class="past-prompt-preview-text">{{ selectedPastPrompt.promptText }}</p>
+          <div v-if="selectedPastPrompt.imageDescription" class="past-prompt-preview-block">
+            <strong>图片/图表信息</strong>
+            <p>{{ selectedPastPrompt.imageDescription }}</p>
+          </div>
+          <div v-if="selectedPastPrompt.materialText" class="past-prompt-preview-block">
+            <strong>材料内容</strong>
+            <p>{{ selectedPastPrompt.materialText }}</p>
+          </div>
+          <img
+            v-if="selectedPastPrompt.imageUrl"
+            class="past-prompt-preview-image"
+            :src="selectedPastPrompt.imageUrl"
+            alt="真题图片"
+          />
+        </template>
+        <p v-else class="past-prompt-preview-placeholder">从左侧选择一套真题查看题面。</p>
+      </aside>
+    </div>
   </div>
 
   <!-- Exam setup -->
@@ -282,6 +446,9 @@
     :initial-topic="resumeTopicForSetup"
     :resume-metadata="resumeMetadataForSetup"
     :study-stage="currentStage ?? ''"
+    :initial-genre="examSetupInitialGenre"
+    :initial-word-range="examSetupInitialWordRange"
+    :initial-tab="examSetupInitialTab"
     @confirm="onExamConfirm"
     @back="onExamSetupBack"
     @save-draft="onExamSaveDraft"
@@ -323,17 +490,20 @@ echarts.use([
 ])
 import EditorShell from '@/components/writing/EditorShell.vue'
 import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
-import type { ExamTopicInfo } from '@/pages/app/examPromptHelpers'
+import type { ExamPromptType, ExamTopicInfo } from '@/pages/app/examPromptHelpers'
 import { buildExamTaskPrompt } from '@/pages/app/examPromptHelpers'
 import { stageCache } from '@/stores/stageCache'
-import { getStageLabel } from '@/constants/stage'
-import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats } from '@/api/writing'
-import type { WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
+import { getStageId } from '@/constants/stage'
+import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats, getEssayPrompts } from '@/api/writing'
+import type { EssayPromptItem, WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 
-type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
+type Phase = 'loading' | 'doc-list' | 'mode-select' | 'past-prompt-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
+type NewTaskMode = 'free' | 'exam'
+type NewTaskSource = 'past_prompt' | 'ai_design'
+type ExamSetupInitialTab = 'manual' | 'ai' | 'past'
 
 const router = useRouter()
 const route = useRoute()
@@ -349,11 +519,31 @@ const examMaxScore = useSessionStorage<number | null>('peai:writing:examMaxScore
 const initialSubmitCount = ref(0)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
 const resumeMetadataForSetup = ref<WritingSessionMetadataResponse | null>(null)
+const newTaskMode = ref<NewTaskMode>('free')
+const newTaskSource = ref<NewTaskSource>('ai_design')
+const newTaskGenre = ref<string | null>(null)
+const newTaskWordRange = ref<string | null>(null)
+const newTaskCustomWordRange = ref('')
+const examSetupInitialGenre = ref<string | null>(null)
+const examSetupInitialWordRange = ref<string | null>(null)
+const examSetupInitialTab = ref<ExamSetupInitialTab | null>(null)
+
+const newTaskGenreOptions = [
+  { value: 'argumentative', label: '议论文' },
+  { value: 'material', label: '材料作文' },
+  { value: 'chart', label: '图表作文' },
+  { value: 'picture', label: '图画作文' },
+  { value: 'practical', label: '应用文' },
+  { value: 'letter', label: '书信' },
+]
+const newTaskWordRangeOptions = ['80-100', '100-120', '120-150', '160-200', '160-220', '250']
 
 function resolveRoutePhase(): RoutePhase {
   switch (route.name) {
     case 'WritingModeSelect':
       return 'mode-select'
+    case 'WritingPastPromptSelect':
+      return 'past-prompt-select'
     case 'WritingExamSetup':
       return 'exam-setup'
     case 'WritingEditor':
@@ -372,6 +562,8 @@ function routeNameForPhase(nextPhase: RoutePhase) {
   switch (nextPhase) {
     case 'mode-select':
       return 'WritingModeSelect'
+    case 'past-prompt-select':
+      return 'WritingPastPromptSelect'
     case 'exam-setup':
       return 'WritingExamSetup'
     case 'editor':
@@ -471,6 +663,9 @@ watch(phase, (p, prev) => {
   setImmersive(p === 'editor' ? true : false)
   if (!booting.value && p === 'doc-list' && prev && prev !== 'doc-list') {
     void loadDocList()
+  }
+  if (!booting.value && p === 'past-prompt-select' && pastPromptItems.value.length === 0 && !pastPromptLoading.value) {
+    void loadPastPrompts(1)
   }
 }, { immediate: true })
 
@@ -733,10 +928,134 @@ async function createBlankFreeDoc() {
   await createFreeDoc()
 }
 
+function getNewTaskEffectiveWordRange() {
+  if (newTaskWordRange.value === '__custom__') {
+    return newTaskCustomWordRange.value.trim() || null
+  }
+  return newTaskWordRange.value?.trim() || null
+}
+
+async function continueNewWritingTask() {
+  if (newTaskMode.value === 'free') {
+    examSetupInitialGenre.value = null
+    examSetupInitialWordRange.value = null
+    examSetupInitialTab.value = null
+    await createBlankFreeDoc()
+    return
+  }
+  if (newTaskSource.value === 'past_prompt') {
+    examSetupInitialGenre.value = null
+    examSetupInitialWordRange.value = null
+    examSetupInitialTab.value = null
+    await navigateToPhase('past-prompt-select')
+    return
+  }
+  const effectiveWordRange = getNewTaskEffectiveWordRange()
+  if (!newTaskGenre.value) {
+    showToast('请先选择体裁', 'error')
+    return
+  }
+  if (!effectiveWordRange) {
+    showToast('请先选择字数', 'error')
+    return
+  }
+  examSetupInitialGenre.value = newTaskGenre.value
+  examSetupInitialWordRange.value = effectiveWordRange
+  examSetupInitialTab.value = 'ai'
+  await openExamSetupFromModeSelect()
+}
+
 async function openExamSetupFromModeSelect() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
   await navigateToPhase('exam-setup')
+}
+
+const pastPromptKeyword = ref('')
+const pastPromptYear = ref<number | null>(null)
+const pastPromptYearSelect = ref(0)
+const pastPromptItems = ref<EssayPromptItem[]>([])
+const pastPromptYears = ref<number[]>([])
+const pastPromptLoading = ref(false)
+const selectedPastPrompt = ref<EssayPromptItem | null>(null)
+
+function onPastPromptYearChange() {
+  pastPromptYear.value = pastPromptYearSelect.value === 0 ? null : pastPromptYearSelect.value
+  selectedPastPrompt.value = null
+  void loadPastPrompts(1)
+}
+
+async function loadPastPrompts(page = 1) {
+  pastPromptLoading.value = true
+  try {
+    const res = await getEssayPrompts({
+      stageId: getStageId(currentStage.value),
+      keyword: pastPromptKeyword.value.trim() || undefined,
+      year: pastPromptYear.value ?? undefined,
+      page,
+      size: 12,
+    })
+    pastPromptItems.value = res.items
+    if (res.years.length > 0) {
+      pastPromptYears.value = res.years
+    }
+    if (selectedPastPrompt.value && !res.items.some((item) => item.id === selectedPastPrompt.value?.id)) {
+      selectedPastPrompt.value = null
+    }
+  } catch (e) {
+    console.warn('[WritingPage] load past prompts failed', e)
+    showToast('加载历年真题失败，请稍后重试', 'error')
+  } finally {
+    pastPromptLoading.value = false
+  }
+}
+
+function formatPastPromptWordRange(prompt: EssayPromptItem) {
+  if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
+    return `${prompt.wordCountMin}-${prompt.wordCountMax} 词`
+  }
+  if (prompt.wordCountMin != null) {
+    return `${prompt.wordCountMin}+ 词`
+  }
+  return ''
+}
+
+function buildPastPromptTopicInfo(prompt: EssayPromptItem): ExamTopicInfo {
+  const wordRange = formatPastPromptWordRange(prompt).replace(/\s*词$/, '') || null
+  const promptType: ExamPromptType = prompt.materialText?.trim()
+    ? 'material'
+    : prompt.imageUrl?.trim() || prompt.imageDescription?.trim()
+      ? 'comic'
+      : 'general'
+  const promptTitle = prompt.title?.trim() || prompt.paper?.trim() || prompt.promptText.trim()
+  return {
+    paper: prompt.paper?.trim() || null,
+    promptSheetId: null,
+    topic: promptTitle,
+    genre: null,
+    wordRange,
+    requirements: prompt.promptText.trim(),
+    imageDescription: prompt.imageDescription?.trim() || null,
+    materialText: prompt.materialText?.trim() || null,
+    attachmentImageUrl: prompt.imageUrl?.trim() || null,
+    maxScore: prompt.maxScore ?? 100,
+    sourceType: 'past_prompt',
+    examType: currentStage.value,
+    taskType: prompt.task ?? null,
+    minWords: prompt.wordCountMin ?? null,
+    recommendedMaxWords: prompt.wordCountMax ?? null,
+    promptType,
+    chartSpec: null,
+    comicScenes: [],
+  }
+}
+
+async function startWritingFromPastPrompt() {
+  if (!selectedPastPrompt.value) {
+    showToast('请先选择一套历年真题', 'error')
+    return
+  }
+  await onExamConfirm(buildPastPromptTopicInfo(selectedPastPrompt.value))
 }
 
 async function onExamConfirm(info: ExamTopicInfo) {
@@ -812,6 +1131,9 @@ async function openDocument(doc: WritingDocumentItem) {
 async function onExamSetupBack() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
+  examSetupInitialGenre.value = null
+  examSetupInitialWordRange.value = null
+  examSetupInitialTab.value = null
   await navigateToPhase('doc-list')
 }
 
@@ -838,6 +1160,9 @@ async function onEditorBack() {
 async function onExamSaveDraft() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
+  examSetupInitialGenre.value = null
+  examSetupInitialWordRange.value = null
+  examSetupInitialTab.value = null
   await navigateToPhase('doc-list')
 }
 
@@ -1591,9 +1916,410 @@ function formatTime(dateStr: string) {
 }
 .back-link:hover { color: #047857; }
 
+/* ── New task setup ── */
+.task-modal-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: #f3f4f6;
+}
+
+.task-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.task-modal {
+  position: relative;
+  z-index: 1;
+  width: min(880px, calc(100vw - 32px));
+  padding: 32px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.20);
+}
+
+.task-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 22px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+}
+.task-modal-close:hover { color: #334155; }
+
+.task-modal-kicker {
+  margin: 0 0 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-modal-title {
+  margin: 0 0 28px;
+  color: #0f172a;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.task-modal-section {
+  padding: 22px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.task-modal-label {
+  margin: 0 0 12px;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.task-option-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.task-option-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.task-option {
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.task-option:hover {
+  border-color: #10b981;
+}
+.task-option.active {
+  border-color: #10b981;
+  background: #ecfdf5;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.20);
+}
+
+.task-option-title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.task-option-desc {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.task-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.task-select,
+.task-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.task-word-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 10px;
+}
+
+.task-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 26px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.task-btn {
+  min-width: 116px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.task-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.task-btn--secondary {
+  background: #fff;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.task-btn--secondary:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+.task-btn--primary {
+  background: #047857;
+  color: #fff;
+}
+.task-btn--primary:hover:not(:disabled) {
+  background: #065f46;
+}
+
+/* ── Past prompts ── */
+.past-prompt-page {
+  min-height: 100vh;
+  padding: 32px min(5vw, 72px);
+  background: #f8fafc;
+}
+
+.setup-back-link {
+  border: none;
+  background: transparent;
+  color: #047857;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.past-prompt-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 28px;
+  margin-bottom: 20px;
+}
+
+.past-prompt-kicker {
+  margin: 0 0 6px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.past-prompt-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.past-prompt-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 180px auto;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.past-prompt-search,
+.past-prompt-select {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.past-prompt-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.past-prompt-list,
+.past-prompt-preview,
+.past-prompt-empty {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.past-prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.past-prompt-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.past-prompt-item:hover {
+  border-color: #10b981;
+}
+.past-prompt-item.active {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.past-prompt-item-title {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.past-prompt-item-meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.past-prompt-item-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.past-prompt-preview {
+  position: sticky;
+  top: 24px;
+  padding: 22px;
+}
+
+.past-prompt-preview h3 {
+  margin: 0 0 12px;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.past-prompt-preview-kicker {
+  margin: 0 0 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.past-prompt-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.past-prompt-preview-meta span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.past-prompt-preview-text,
+.past-prompt-preview-block p {
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.past-prompt-preview-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.past-prompt-preview-block strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f172a;
+}
+
+.past-prompt-preview-image {
+  width: 100%;
+  margin-top: 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.past-prompt-preview-placeholder {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.past-prompt-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  color: #64748b;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .task-modal { padding: 26px 20px; }
+  .task-option-grid--two,
+  .task-field-grid,
+  .past-prompt-layout,
+  .past-prompt-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .task-word-row {
+    grid-template-columns: 1fr;
+  }
+  .past-prompt-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .past-prompt-preview {
+    position: static;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1602,6 +2328,13 @@ function formatTime(dateStr: string) {
   .mode-grid { grid-template-columns: 1fr; }
   .doc-grid { grid-template-columns: 1fr; }
   .doc-section-header { flex-direction: column; align-items: flex-start; }
+  .task-modal-page { align-items: flex-start; }
+  .task-modal-actions {
+    flex-direction: column-reverse;
+  }
+  .task-btn {
+    width: 100%;
+  }
 }
 </style>
 

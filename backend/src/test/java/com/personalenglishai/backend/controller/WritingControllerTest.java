@@ -21,6 +21,7 @@ import com.personalenglishai.backend.service.writing.WritingTemplateService;
 import com.personalenglishai.backend.service.writing.WritingMaterialService;
 import com.personalenglishai.backend.service.writing.WritingModelEssayService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
+import com.personalenglishai.backend.service.writing.PromptSheetChatService;
 import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
@@ -128,6 +129,9 @@ class WritingControllerTest {
 
     @MockBean
     private WritingExamPromptService writingExamPromptService;
+
+    @MockBean
+    private PromptSheetChatService promptSheetChatService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;

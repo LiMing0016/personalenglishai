@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.GrammarLearningEventMapper">
+
+    <insert id="insertIgnore" parameterType="com.personalenglishai.backend.entity.GrammarLearningEvent">
+        INSERT IGNORE INTO grammar_learning_events (
+            event_id,
+            user_id,
+            conversation_id,
+            message_id,
+            event_type,
+            occurred_at,
+            study_stage,
+            assistant_mode,
+            source_agent,
+            task_type,
+            content_origin,
+            profile_eligible,
+            confidence,
+            schema_version,
+            skill_version,
+            taxonomy_version,
+            prompt_version,
+            model_version,
+            grammar_question_type,
+            grammar_error_type,
+            style_issue_type,
+            severity,
+            sentence_hash,
+            payload_json
+        ) VALUES (
+            #{eventId},
+            #{userId},
+            #{conversationId},
+            #{messageId},
+            #{eventType},
+            #{occurredAt},
+            #{studyStage},
+            #{assistantMode},
+            #{sourceAgent},
+            #{taskType},
+            #{contentOrigin},
+            #{profileEligible},
+            #{confidence},
+            #{schemaVersion},
+            #{skillVersion},
+            #{taxonomyVersion},
+            #{promptVersion},
+            #{modelVersion},
+            #{grammarQuestionType},
+            #{grammarErrorType},
+            #{styleIssueType},
+            #{severity},
+            #{sentenceHash},
+            #{payloadJson}
+        )
+    </insert>
+</mapper>

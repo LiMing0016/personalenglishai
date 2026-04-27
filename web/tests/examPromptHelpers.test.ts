@@ -3,14 +3,86 @@ import assert from 'node:assert/strict'
 
 import {
   buildExamResumePreview,
+  buildChartPreviewFigure,
   buildPromptSheetCopyText,
+  derivePromptConfigUpdateFromPromptSheet,
   buildVisualAttachmentPreview,
   buildExamTaskPrompt,
   getExamTaskSelectionOptions,
   getExamTaskSelectionLabel,
   isAiGenerationSupportedStage,
+  shouldRenderChartAsTable,
   type ExamTopicInfo,
 } from '../src/pages/app/examPromptHelpers.ts'
+
+test('buildChartPreviewFigure builds normalized multi-series trend preview for chart data', () => {
+  const preview = buildChartPreviewFigure({
+    title: 'China GDP and Engel Coefficient Trends',
+    displayType: 'chart',
+    columns: ['Year', 'GDP (trillion USD)', 'Engel coefficient (%)'],
+    rows: [
+      ['2014', '10.5', '31.2%'],
+      ['2017', '12.3', '29.3%'],
+      ['2020', '14.7', '27.5%'],
+      ['2023', '17.8', '25.1%'],
+    ],
+    summary: 'GDP rose while the Engel coefficient declined.',
+  })
+
+  assert.deepEqual(preview.labels, ['2014', '2017', '2020', '2023'])
+  assert.equal(preview.series.length, 2)
+  assert.equal(preview.series[0].points.length, 4)
+  assert.match(preview.series[0].polyline, /10,/)
+  assert.equal(shouldRenderChartAsTable({ displayType: 'table', columns: [], rows: [] }), true)
+  assert.equal(shouldRenderChartAsTable({ displayType: 'chart', columns: [], rows: [] }), false)
+})
+
+test('derivePromptConfigUpdateFromPromptSheet maps generated chart sheet back to setup config', () => {
+  const update = derivePromptConfigUpdateFromPromptSheet({
+    promptType: 'chart',
+    topic: 'Campus life trends',
+    promptText: 'Write an essay based on the chart below.',
+    requirements: 'describe the trend and comment on its significance',
+    genre: 'chart',
+    wordRange: '160-200 words',
+    maxScore: 20,
+    sourceType: 'ai_generated',
+    taskType: 'task2',
+    chartSpec: {
+      title: 'Campus activity participation',
+      displayType: 'chart',
+      columns: ['Year', 'Rate'],
+      rows: [['2020', '42%'], ['2024', '63%']],
+    },
+  })
+
+  assert.equal(update.taskType, 'task2')
+  assert.equal(update.promptType, 'chart')
+  assert.equal(update.genre, 'chart')
+  assert.equal(update.wordRange, '160-200')
+  assert.equal(update.requirements, 'describe the trend and comment on its significance')
+})
+
+test('derivePromptConfigUpdateFromPromptSheet maps visual kind comic back to picture genre', () => {
+  const update = derivePromptConfigUpdateFromPromptSheet({
+    promptType: 'comic',
+    topic: 'Family responsibility',
+    promptText: 'Write an essay based on the comic below.',
+    requirements: null,
+    genre: null,
+    wordRange: null,
+    maxScore: null,
+    sourceType: 'ai_generated',
+    taskType: 'task1',
+    visualKind: 'comic',
+    comicScenes: [
+      { title: 'Scene 1', description: 'A child helps an elderly parent.', dialogue: null },
+    ],
+  })
+
+  assert.equal(update.promptType, 'comic')
+  assert.equal(update.genre, 'picture')
+})
 
 test('buildExamTaskPrompt adds chart summary for chart prompts', () => {
   const info: ExamTopicInfo = {
@@ -252,4 +324,65 @@ test('buildExamResumePreview keeps generated visual attachment url for writing w
   const preview = buildVisualAttachmentPreview(restored?.sheet, restored?.topicInfo ?? null)
   assert.equal(preview.mode, 'image')
   assert.equal(preview.imageUrl, 'https://example.com/generated-line-chart.png')
+})
+
+test('buildExamResumePreview restores past prompt drawing image as visual attachment', () => {
+  const restored = buildExamResumePreview({
+    titleSnapshot: '考研英语一-大作文 2023',
+    topicTitle: 'Write an essay based on the picture below.',
+    promptText: [
+      '题目要求（润色后必须继续严格对齐）：',
+      'Write an essay based on the picture below.',
+      '图画信息：',
+      'A boatman throws discarded hotpot items into a river.',
+      '字数要求：160-200词',
+      '写作要求：Describe the picture briefly, interpret the implied meaning, and give your comments.',
+    ].join('\n'),
+    sourceType: 'past_prompt',
+    examType: 'postgrad',
+    taskType: 'task2',
+    minWords: 160,
+    recommendedMaxWords: 200,
+    maxScore: 20,
+    attachmentImageUrl: '/uploads/past-prompts/postgrad/en1/2023-task2.png',
+  }, 'postgrad')
+
+  assert.ok(restored)
+  assert.equal(restored?.sheet.attachmentType, 'visual')
+  assert.equal(restored?.sheet.attachmentContent, 'A boatman throws discarded hotpot items into a river.')
+  assert.equal(restored?.sheet.attachmentImageUrl, '/uploads/past-prompts/postgrad/en1/2023-task2.png')
+
+  const preview = buildVisualAttachmentPreview(restored?.sheet, restored?.topicInfo ?? null)
+  assert.equal(preview.mode, 'image')
+  assert.equal(preview.imageUrl, '/uploads/past-prompts/postgrad/en1/2023-task2.png')
+})
+
+test('buildExamResumePreview infers postgrad English I drawing image for legacy past prompt sessions', () => {
+  const restored = buildExamResumePreview({
+    titleSnapshot: '考研英语一大作文 2023',
+    topicTitle: '考研英语一大作文 2023',
+    promptText: [
+      '题目要求（润色后必须继续严格对齐）：',
+      'Write an essay based on the picture below.',
+      '图画信息：',
+      '（龙舟赛）。河边龙舟竞渡，岸上观众人山人海。',
+      '字数要求：160-200词',
+      '写作要求：Describe the picture briefly, interpret the implied meaning, and give your comments.',
+    ].join('\n'),
+    sourceType: 'past_prompt',
+    examType: 'postgrad',
+    taskType: 'task2',
+    minWords: 160,
+    recommendedMaxWords: 200,
+    maxScore: 20,
+    attachmentImageUrl: null,
+  }, 'postgrad')
+
+  assert.ok(restored)
+  assert.equal(restored?.sheet.attachmentType, 'visual')
+  assert.equal(restored?.sheet.attachmentImageUrl, '/uploads/past-prompts/postgrad/en1/2023-task2.png')
+
+  const preview = buildVisualAttachmentPreview(restored?.sheet, restored?.topicInfo ?? null)
+  assert.equal(preview.mode, 'image')
+  assert.equal(preview.imageUrl, '/uploads/past-prompts/postgrad/en1/2023-task2.png')
 })

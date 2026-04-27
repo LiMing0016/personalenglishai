@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.WritingTaskMetadataMapper">
+
+    <resultMap id="WritingTaskMetadataResultMap" type="com.personalenglishai.backend.entity.WritingTaskMetadata">
+        <id column="id" property="id"/>
+        <result column="document_id" property="documentId"/>
+        <result column="document_public_id" property="documentPublicId"/>
+        <result column="user_id" property="userId"/>
+        <result column="study_stage" property="studyStage"/>
+        <result column="assistant_mode" property="assistantMode"/>
+        <result column="prompt_text" property="promptText"/>
+        <result column="task_type" property="taskType"/>
+        <result column="central_task" property="centralTask"/>
+        <result column="must_answer_points_json" property="mustAnswerPointsJson"/>
+        <result column="writing_focus_json" property="writingFocusJson"/>
+        <result column="risk_points_json" property="riskPointsJson"/>
+        <result column="recommended_structure_json" property="recommendedStructureJson"/>
+        <result column="rubric_focus_json" property="rubricFocusJson"/>
+        <result column="metadata_version" property="metadataVersion"/>
+        <result column="rubric_source" property="rubricSource"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectByDocumentId" resultMap="WritingTaskMetadataResultMap">
+        SELECT id, document_id, document_public_id, user_id, study_stage, assistant_mode,
+               prompt_text, task_type, central_task, must_answer_points_json, writing_focus_json,
+               risk_points_json, recommended_structure_json, rubric_focus_json, metadata_version,
+               rubric_source, created_at, updated_at
+        FROM writing_task_metadata
+        WHERE document_id = #{documentId}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_task_metadata (
+            document_id,
+            document_public_id,
+            user_id,
+            study_stage,
+            assistant_mode,
+            prompt_text,
+            task_type,
+            central_task,
+            must_answer_points_json,
+            writing_focus_json,
+            risk_points_json,
+            recommended_structure_json,
+            rubric_focus_json,
+            metadata_version,
+            rubric_source,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{documentId},
+            #{documentPublicId},
+            #{userId},
+            #{studyStage},
+            #{assistantMode},
+            #{promptText},
+            #{taskType},
+            #{centralTask},
+            #{mustAnswerPointsJson},
+            #{writingFocusJson},
+            #{riskPointsJson},
+            #{recommendedStructureJson},
+            #{rubricFocusJson},
+            #{metadataVersion},
+            #{rubricSource},
+            NOW(),
+            NOW()
+        )
+    </insert>
+</mapper>

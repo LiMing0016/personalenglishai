@@ -11,6 +11,12 @@ node_modules/
 dist/
 .vite/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+python/ai_orchestrator/data/
+
 # Maven local repository cache
 backend/.m2/
 backend/.m2home/

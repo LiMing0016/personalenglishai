@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildPromptDesignSeedRequest,
+  hasPromptDesignSeed,
   normalizePromptSheet,
   type ExamPromptSheet,
 } from '../src/pages/app/examPromptHelpers.ts'
@@ -61,4 +63,29 @@ test('normalizePromptSheet maps general prompt into no-attachment sheet', () => 
 
   assert.equal(sheet.attachmentType, 'none')
   assert.equal(sheet.attachmentContent ?? null, null)
+})
+
+test('prompt design seed is available when settings contain writing constraints', () => {
+  assert.equal(hasPromptDesignSeed({ taskLabel: 'Task 1' }), false)
+  assert.equal(hasPromptDesignSeed({ genreLabel: '图画作文' }), true)
+  assert.equal(hasPromptDesignSeed({ wordRange: '160-200' }), true)
+  assert.equal(hasPromptDesignSeed({ requirements: 'describe and comment' }), true)
+  assert.equal(hasPromptDesignSeed({ hasImage: true }), true)
+})
+
+test('buildPromptDesignSeedRequest turns settings into an AI prompt design request', () => {
+  const request = buildPromptDesignSeedRequest({
+    studyStage: 'ielts',
+    taskLabel: 'Task 1',
+    genreLabel: '图画作文',
+    wordRange: '160-200',
+    requirements: 'describe the picture and give your comments',
+    hasImage: true,
+  })
+
+  assert.match(request, /学段\/考试：ielts/)
+  assert.match(request, /任务类型：Task 1/)
+  assert.match(request, /体裁：图画作文/)
+  assert.match(request, /字数要求：160-200词/)
+  assert.match(request, /不要生成范文或答案/)
 })
