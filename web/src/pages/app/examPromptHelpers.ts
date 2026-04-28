@@ -120,6 +120,7 @@ export interface PromptSheetLike {
   questionNo?: string | null
   directions?: string | null
   attachmentType?: ExamPromptAttachmentType | null
+  attachmentSource?: 'none' | 'user_upload' | 'agent_generate' | 'user_text' | null
   attachmentTitle?: string | null
   attachmentContent?: string | null
   attachmentImageUrl?: string | null
