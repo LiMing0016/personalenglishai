@@ -8,6 +8,8 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { ErrorSpan } from '../buildHighlightedHtml'
+import { resolveVisibleErrorSpans } from '../errorSpanState'
+import { docTextWithParagraphSeparators, textOffsetToDocPos } from './textOffsetMapping'
 
 export const errorHighlightPluginKey = new PluginKey('errorHighlight')
 
@@ -29,34 +31,17 @@ function buildDecorations(
   state: ErrorHighlightState,
 ): DecorationSet {
   const decorations: Decoration[] = []
-  const text = doc.textContent ?? ''
+  const text = docTextWithParagraphSeparators(doc)
   const { errors, activeErrorId, highlightRange } = state
-
-  // 将纯文本 offset 映射到 ProseMirror position
-  // 多段落时段落间用 \n\n 分隔，每个段落节点 nodeSize = textContent.length + 2
-  const textToPos = (offset: number): number => {
-    let charsSeen = 0
-    let pos = 0
-    for (let i = 0; i < doc.content.childCount; i++) {
-      const child = doc.content.child(i)
-      if (i > 0) charsSeen += 2 // \n\n separator between paragraphs
-      const childText = child.textContent
-      if (charsSeen + childText.length >= offset) {
-        return pos + 1 + (offset - charsSeen) // +1 for paragraph open tag
-      }
-      charsSeen += childText.length
-      pos += child.nodeSize
-    }
-    return doc.content.size
-  }
+  const resolvedErrors = resolveVisibleErrorSpans(errors, text)
 
   // 错误下划线
-  for (const error of errors) {
+  for (const error of resolvedErrors) {
     const { start, end } = error.span
     if (start >= end || start < 0 || end > text.length) continue
 
-    const from = textToPos(start)
-    const to = textToPos(end)
+    const from = textOffsetToDocPos(doc, start)
+    const to = textOffsetToDocPos(doc, end)
     if (from >= to) continue
 
     const isActive = activeErrorId === error.id
@@ -71,8 +56,8 @@ function buildDecorations(
 
   // 句子高亮
   if (highlightRange && highlightRange.start < highlightRange.end) {
-    const from = textToPos(highlightRange.start)
-    const to = textToPos(highlightRange.end)
+    const from = textOffsetToDocPos(doc, highlightRange.start)
+    const to = textOffsetToDocPos(doc, highlightRange.end)
     if (from < to) {
       decorations.push(
         Decoration.inline(from, to, {

@@ -64,6 +64,11 @@ export interface ShouldShowWorkbenchRefreshWarningInput {
   hasSubmittedContext: boolean
 }
 
+export interface ResolveExamSetupSaveActionInput {
+  hasPromptInfo: boolean
+  isDirty: boolean
+}
+
 export function commitWorkbenchSubmission(draftText: string): CommitWorkbenchSubmissionResult {
   const submittedText = draftText.trim() || null
   return {
@@ -150,4 +155,10 @@ export function canStartWorkbenchFromPreview(input: CanStartWorkbenchFromPreview
 
 export function shouldShowWorkbenchRefreshWarning(input: ShouldShowWorkbenchRefreshWarningInput): boolean {
   return input.previewDirty && !input.workbenchBusy && input.hasSubmittedContext
+}
+
+export function resolveExamSetupSaveAction(input: ResolveExamSetupSaveActionInput): 'createDraftDocument' | 'saveSetupState' | 'noop' {
+  if (input.hasPromptInfo) return 'createDraftDocument'
+  if (input.isDirty) return 'saveSetupState'
+  return 'noop'
 }

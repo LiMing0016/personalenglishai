@@ -906,6 +906,107 @@ export interface GenerateExamPromptResponse {
   comicScenes?: ExamPromptComicScene[]
 }
 
+export type PromptSheetCanvasAction =
+  | 'chat_only'
+  | 'ask_clarification'
+  | 'propose_patch'
+  | 'create_prompt_sheet'
+  | 'update_prompt_sheet'
+  | 'replace_prompt_sheet'
+
+export interface PromptSheetChatRequest {
+  message: string
+  studyStage?: string | null
+  taskType?: string | null
+  promptType?: 'general' | 'material' | 'chart' | 'comic' | null
+  genre?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+  currentTopic?: string | null
+  currentPromptText?: string | null
+  hasCanvas?: boolean
+  aiProvider?: WritingAiProvider
+}
+
+export interface PromptSheetChatResponse {
+  reply: string
+  action: PromptSheetCanvasAction
+  needsCanvasUpdate: boolean
+  needsConfirmation: boolean
+  canvasInstruction?: string | null
+  promptSheet?: GenerateExamPromptResponse | null
+  patch?: {
+    taskType?: string | null
+    promptType?: 'general' | 'material' | 'chart' | 'comic' | null
+    genre?: string | null
+    wordRange?: string | null
+    requirements?: string | null
+    topic?: string | null
+  } | null
+}
+
+function normalizeGeneratedExamPrompt(
+  data: Partial<GenerateExamPromptResponse>,
+  fallbackTopic: string,
+): GenerateExamPromptResponse {
+  return {
+    promptType: data.promptType ?? 'general',
+    paper: data.paper ?? null,
+    promptSheetId: data.promptSheetId ?? null,
+    topic: data.topic ?? fallbackTopic,
+    promptText: data.promptText ?? fallbackTopic,
+    part: data.part ?? null,
+    questionNo: data.questionNo ?? null,
+    directions: data.directions ?? null,
+    requirements: data.requirements ?? null,
+    genre: data.genre ?? null,
+    wordRange: data.wordRange ?? null,
+    maxScore: data.maxScore ?? null,
+    sourceType: 'ai_generated',
+    taskType: data.taskType ?? null,
+    minWords: data.minWords ?? null,
+    recommendedMaxWords: data.recommendedMaxWords ?? null,
+    attachmentType: data.attachmentType ?? null,
+    attachmentTitle: data.attachmentTitle ?? null,
+    attachmentContent: data.attachmentContent ?? null,
+    attachmentImageUrl: data.attachmentImageUrl ?? null,
+    visualKind: data.visualKind ?? null,
+    materialText: data.materialText ?? null,
+    chartSpec: data.chartSpec
+      ? {
+          title: data.chartSpec.title ?? null,
+          displayType: data.chartSpec.displayType ?? null,
+          columns: data.chartSpec.columns ?? [],
+          rows: data.chartSpec.rows ?? [],
+          summary: data.chartSpec.summary ?? null,
+        }
+      : null,
+    comicScenes: data.comicScenes ?? [],
+  }
+}
+
+export function chatPromptSheet(
+  req: PromptSheetChatRequest,
+  options?: { signal?: AbortSignal },
+): Promise<PromptSheetChatResponse> {
+  return http
+    .post<PromptSheetChatResponse>('/writing/prompt-sheet/chat', req, {
+      timeout: 60000,
+      signal: options?.signal,
+    })
+    .then((res) => ({
+      reply: res.data.reply ?? '可以，我们继续整理题单要求。',
+      action: res.data.action ?? 'chat_only',
+      needsCanvasUpdate: res.data.needsCanvasUpdate === true,
+      needsConfirmation: res.data.needsConfirmation === true,
+      canvasInstruction: res.data.canvasInstruction ?? null,
+      promptSheet: res.data.promptSheet
+        ? normalizeGeneratedExamPrompt(res.data.promptSheet, req.currentTopic ?? req.message)
+        : null,
+      patch: res.data.patch ?? null,
+    }))
+}
+
 export function generateExamPrompt(
   req: GenerateExamPromptRequest,
   options?: { signal?: AbortSignal },
@@ -915,40 +1016,7 @@ export function generateExamPrompt(
       timeout: 120000,
       signal: options?.signal,
     })
-    .then((res) => ({
-      promptType: res.data.promptType ?? 'general',
-      paper: res.data.paper ?? null,
-      promptSheetId: res.data.promptSheetId ?? null,
-      topic: res.data.topic ?? req.topic,
-      promptText: res.data.promptText ?? req.topic,
-      part: res.data.part ?? null,
-      questionNo: res.data.questionNo ?? null,
-      directions: res.data.directions ?? null,
-      requirements: res.data.requirements ?? null,
-      genre: res.data.genre ?? null,
-      wordRange: res.data.wordRange ?? null,
-      maxScore: res.data.maxScore ?? null,
-      sourceType: 'ai_generated',
-      taskType: res.data.taskType ?? null,
-      minWords: res.data.minWords ?? null,
-      recommendedMaxWords: res.data.recommendedMaxWords ?? null,
-      attachmentType: res.data.attachmentType ?? null,
-      attachmentTitle: res.data.attachmentTitle ?? null,
-      attachmentContent: res.data.attachmentContent ?? null,
-      attachmentImageUrl: res.data.attachmentImageUrl ?? null,
-      visualKind: res.data.visualKind ?? null,
-      materialText: res.data.materialText ?? null,
-      chartSpec: res.data.chartSpec
-        ? {
-            title: res.data.chartSpec.title ?? null,
-            displayType: res.data.chartSpec.displayType ?? null,
-            columns: res.data.chartSpec.columns ?? [],
-            rows: res.data.chartSpec.rows ?? [],
-            summary: res.data.chartSpec.summary ?? null,
-          }
-        : null,
-      comicScenes: res.data.comicScenes ?? [],
-    }))
+    .then((res) => normalizeGeneratedExamPrompt(res.data, req.topic))
 }
 
 export interface GenerateExamDialogueTurnMessage {

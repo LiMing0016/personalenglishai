@@ -104,6 +104,7 @@ import {
   createErrorHighlightPlugin,
   setErrorHighlightState,
 } from './tiptap/errorHighlightPlugin'
+import { textOffsetToDocPos } from './tiptap/textOffsetMapping'
 import type { SelectionState } from './docEditorSelection'
 
 const props = defineProps<{
@@ -601,20 +602,7 @@ function escapeHtml(text: string): string {
 }
 
 function textOffsetToPos(ed: Editor, offset: number): number {
-  const doc = ed.state.doc
-  let charsSeen = 0
-  let pos = 0
-  for (let i = 0; i < doc.content.childCount; i++) {
-    const child = doc.content.child(i)
-    if (i > 0) charsSeen += 2 // \n\n separator between paragraphs
-    const childText = child.textContent
-    if (charsSeen + childText.length >= offset) {
-      return pos + 1 + (offset - charsSeen) // +1 for paragraph open tag
-    }
-    charsSeen += childText.length
-    pos += child.nodeSize
-  }
-  return doc.content.size
+  return textOffsetToDocPos(ed.state.doc, offset)
 }
 
 function onBubbleAction(action: 'explain' | 'rewrite' | 'translate') {
@@ -785,11 +773,23 @@ function closeToolbarMenu() {
 
 /* ── 错误下划线 ── */
 .doc-content-wrapper mark[data-error-ids] {
-  background: transparent;
+  --error-bg: transparent;
+  --error-line-color: #10b981;
+  --error-line-height: 2px;
+  --error-underline-image: linear-gradient(var(--error-line-color), var(--error-line-color));
+  background-color: var(--error-bg);
+  background-image: var(--error-underline-image);
+  background-repeat: no-repeat;
+  background-size: 100% var(--error-line-height);
+  background-position: 0 calc(100% - 1px);
   border-radius: 2px;
+  border-bottom: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
-  padding: 1px 0;
+  transition: background-color 0.15s, box-shadow 0.15s;
+  padding: 1px 2px 2px;
+  margin: 0 -1px;
 }
 
 /* 红色系（拼写/语法类客观错误） */
@@ -798,8 +798,8 @@ function closeToolbarMenu() {
 .doc-content-wrapper mark.err-subject_verb,
 .doc-content-wrapper mark.err-tense,
 .doc-content-wrapper mark.err-syntax {
-  background: rgba(239, 68, 68, 0.13);
-  border-bottom: 2px solid #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.13);
+  --error-line-color: #ef4444;
 }
 /* 橙色系（用词/搭配/冠词/介词） */
 .doc-content-wrapper mark.err-word_choice,
@@ -807,71 +807,69 @@ function closeToolbarMenu() {
 .doc-content-wrapper mark.err-collocation,
 .doc-content-wrapper mark.err-article,
 .doc-content-wrapper mark.err-preposition {
-  background: rgba(245, 158, 11, 0.13);
-  border-bottom: 2px solid #f59e0b;
+  --error-bg: rgba(245, 158, 11, 0.13);
+  --error-line-color: #f59e0b;
 }
 /* 蓝紫色系（标点/逻辑） */
 .doc-content-wrapper mark.err-punctuation,
 .doc-content-wrapper mark.err-logic {
-  background: rgba(139, 92, 246, 0.13);
-  border-bottom: 2px solid #8b5cf6;
+  --error-bg: rgba(139, 92, 246, 0.13);
+  --error-line-color: #8b5cf6;
 }
 /* 紫色系（AI 建议） */
 .doc-content-wrapper mark.err-register_style,
 .doc-content-wrapper mark.err-clarity,
 .doc-content-wrapper mark.err-redundancy {
-  background: rgba(139, 92, 246, 0.10);
-  border-bottom: 2px dotted #8b5cf6;
+  --error-bg: rgba(139, 92, 246, 0.10);
+  --error-line-color: #8b5cf6;
 }
 /* GPT 复检硬性错误类型 */
 .doc-content-wrapper mark.err-plural,
 .doc-content-wrapper mark.err-countability,
 .doc-content-wrapper mark.err-comparative {
-  background: rgba(239, 68, 68, 0.13);
-  border-bottom: 2px solid #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.13);
+  --error-line-color: #ef4444;
 }
 /* 旧 type 兼容 */
 .doc-content-wrapper mark.err-grammar {
-  background: rgba(239, 68, 68, 0.13);
-  border-bottom: 2px solid #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.13);
+  --error-line-color: #ef4444;
 }
 .doc-content-wrapper mark.err-expression {
-  background: rgba(139, 92, 246, 0.13);
-  border-bottom: 2px solid #8b5cf6;
+  --error-bg: rgba(139, 92, 246, 0.13);
+  --error-line-color: #8b5cf6;
 }
 .doc-content-wrapper mark.err-coherence {
-  background: rgba(59, 130, 246, 0.13);
-  border-bottom: 2px solid #3b82f6;
+  --error-bg: rgba(59, 130, 246, 0.13);
+  --error-line-color: #3b82f6;
 }
 .doc-content-wrapper mark.err-format {
-  background: rgba(107, 114, 128, 0.13);
-  border-bottom: 2px solid #6b7280;
+  --error-bg: rgba(107, 114, 128, 0.13);
+  --error-line-color: #6b7280;
 }
 
 /* 严重程度 */
 .doc-content-wrapper mark.err-major {
-  border-bottom-width: 3px;
-  border-bottom-style: wavy;
+  --error-line-height: 3px;
 }
 .doc-content-wrapper mark.err-minor {
-  border-bottom-style: solid;
+  --error-line-height: 2px;
 }
 
 /* 选中/聚焦的错误 */
 .doc-content-wrapper mark.err-category-suggestion {
-  background: rgba(16, 185, 129, 0.14);
-  border-bottom: 2px solid #10b981;
+  --error-bg: rgba(16, 185, 129, 0.14);
+  --error-line-color: #10b981;
 }
 .doc-content-wrapper mark.err-category-suggestion.err-major {
-  border-bottom-style: wavy;
-  border-bottom-width: 3px;
+  --error-line-height: 3px;
 }
 .doc-content-wrapper mark.err-category-suggestion.err-minor {
-  border-bottom-style: solid;
+  --error-line-height: 2px;
 }
 
 .doc-content-wrapper mark.err-active {
-  background: rgba(251, 191, 36, 0.3) !important;
+  --error-bg: rgba(251, 191, 36, 0.3);
   box-shadow: 0 0 0 2px #fbbf24;
 }
 

@@ -10,10 +10,6 @@
           <h2 class="gate-title gate-title--centered">题目设计</h2>
         </div>
         <div class="workbench-header-actions">
-          <div class="mode-switch" role="tablist" aria-label="写作模式">
-            <button class="mode-switch-btn" :class="{ active: selectedMode === 'free' }" type="button" @click="handleModeSwitchRequest('free')">自由模式</button>
-            <button class="mode-switch-btn" :class="{ active: selectedMode === 'exam' }" type="button" @click="handleModeSwitchRequest('exam')">考试模式</button>
-          </div>
           <button class="gate-btn gate-btn--top" :disabled="!canEnterCurrentMode || workbenchBusy" @click="startWritingFromPreview">
             开始写作
           </button>
@@ -23,95 +19,72 @@
       <div class="workbench-board">
         <section class="workbench-pane workbench-pane--dialogue">
           <div class="conversation-shell">
-            <div ref="conversationLogRef" class="conversation-log">
-              <template v-if="hasConversationLog">
+            <div v-if="hasConversationLog" class="conversation-log">
+              <div
+                v-for="message in promptSheetMessages"
+                :key="message.id"
+                class="conversation-bubble"
+                :class="message.role === 'user' ? 'conversation-bubble--user' : 'conversation-bubble--assistant'"
+              >
                 <div
-                  v-for="message in conversationMessages"
-                  :key="message.id"
-                  class="conversation-entry"
-                  :class="{
-                    'conversation-entry--user': message.role === 'user',
-                    'conversation-entry--assistant': message.role === 'assistant',
-                    'conversation-entry--status': message.role === 'status',
-                  }"
-                >
-                  <div
-                    v-if="message.kind === 'asset'"
-                    class="asset-card"
-                    :class="{ 'asset-card--visual': message.assetType === 'image' }"
-                  >
-                    <div class="asset-card-header">
-                      <span class="asset-card-title">{{ getAssetMessageTitle(message) }}</span>
+                  v-if="message.role === 'assistant'"
+                  class="bubble-text bubble-text--markdown"
+                  v-html="renderAssistantMarkdown(message.content)"
+                ></div>
+                <p v-else class="bubble-text bubble-text--pre">{{ message.content }}</p>
+              </div>
+
+              <div v-if="!promptSheetMessages.length && submittedTopic.trim()" class="conversation-bubble conversation-bubble--user">
+                <p class="bubble-text bubble-text--pre">{{ submittedTopic.trim() }}</p>
+              </div>
+
+              <div v-if="selectedPrompt || uploadedImage || materialAttachmentText" class="asset-stack">
+                <div v-if="selectedPrompt" class="asset-card">
+                  <div class="asset-card-header">
+                    <span class="asset-card-title">历年真题已插入</span>
+                    <button class="asset-clear-btn" type="button" @click="selectedPrompt = null">移除</button>
+                  </div>
+                  <p class="asset-card-name">{{ selectedPrompt.paper || '已选择真题' }}</p>
+                  <p class="asset-card-text">{{ selectedPrompt.promptText.slice(0, 120) }}{{ selectedPrompt.promptText.length > 120 ? '...' : '' }}</p>
+                </div>
+
+                <div v-if="uploadedImage" class="asset-card asset-card--visual">
+                  <div class="asset-card-header">
+                    <span class="asset-card-title">图片附件已添加</span>
+                    <div class="asset-card-actions">
+                      <button class="asset-inline-btn" type="button" :disabled="recognizing" @click="onRecognizeImage">{{ recognizing ? '识别中...' : '识别图片文字' }}</button>
+                      <button class="asset-clear-btn" type="button" @click="removeImage">移除</button>
                     </div>
-                    <p v-if="message.assetName" class="asset-card-name">{{ message.assetName }}</p>
-                    <p v-if="message.assetSummary || message.text" class="asset-card-text">
-                      {{ message.assetSummary || message.text }}
-                    </p>
-                    <img
-                      v-if="message.assetType === 'image' && message.imageUrl"
-                      :src="message.imageUrl"
-                      class="asset-image"
-                      alt="题目附件图片"
-                    />
                   </div>
-
-                  <div
-                    v-else
-                    class="conversation-bubble"
-                    :class="{
-                      'conversation-bubble--assistant': message.role === 'assistant',
-                      'conversation-bubble--user': message.role === 'user',
-                      'conversation-bubble--warning': message.tone === 'warning',
-                      'conversation-bubble--success': message.tone === 'success',
-                      'conversation-bubble--muted': message.role === 'status' || message.tone === 'muted',
-                    }"
-                  >
-                    <p v-if="message.role === 'assistant' && message.replyKind" class="bubble-label">
-                      {{ getAssistantReplyLabel(message.replyKind) }}
-                    </p>
-                    <p class="bubble-text" :class="{ 'bubble-text--pre': message.kind !== 'status' }">{{ message.text }}</p>
-                  </div>
+                  <img :src="uploadedImage" class="asset-image" alt="题目附件图片" />
                 </div>
 
-                <div v-if="workbenchBusy" class="conversation-entry conversation-entry--assistant">
-                  <div class="conversation-bubble conversation-bubble--assistant conversation-bubble--muted">
-                    <p class="bubble-text">正在整理题单...</p>
+                <div v-if="materialAttachmentText" class="asset-card">
+                  <div class="asset-card-header">
+                    <span class="asset-card-title">材料文件已添加</span>
+                    <button class="asset-clear-btn" type="button" @click="clearMaterialAttachment">移除</button>
                   </div>
+                  <p class="asset-card-name">{{ materialAttachmentName || '已添加文本材料' }}</p>
+                  <p class="asset-card-text">{{ materialAttachmentText.slice(0, 180) }}{{ materialAttachmentText.length > 180 ? '...' : '' }}</p>
                 </div>
-              </template>
+              </div>
 
-              <div v-else class="conversation-empty">
-                <p class="conversation-empty-title">从左侧对话开始设计题目</p>
-                <p class="conversation-empty-text">输入需求，或插入图片、材料、真题。每轮对话后，右侧题单会自动刷新。</p>
+              <div v-if="showPreviewRefreshWarning" class="conversation-bubble conversation-bubble--assistant conversation-bubble--warning">
+                <p class="bubble-text">左侧内容有更新，右侧题单待刷新。</p>
+              </div>
+
+              <div v-else-if="readyPreview && !workbenchBusy" class="conversation-bubble conversation-bubble--assistant conversation-bubble--success">
+                <p class="bubble-text">右侧题单已更新，你可以继续调整题型、主题、材料或字数要求。</p>
               </div>
             </div>
 
             <div class="composer-frame">
               <div class="composer-shell">
-                <div v-if="hasActiveAssets" class="composer-asset-strip">
-                  <div v-if="selectedPrompt" class="composer-asset-chip">
-                    <span class="composer-asset-chip-label">真题</span>
-                    <span class="composer-asset-chip-text">{{ selectedPrompt.paper || selectedPrompt.title || '已选真题' }}</span>
-                    <button type="button" class="composer-asset-chip-close" @click="removeSelectedPrompt">×</button>
-                  </div>
-                  <div v-if="uploadedImage" class="composer-asset-chip">
-                    <span class="composer-asset-chip-label">图片</span>
-                    <span class="composer-asset-chip-text">当前图片附件</span>
-                    <button type="button" class="composer-asset-chip-action" @click="openAttachmentPicker">更换</button>
-                    <button type="button" class="composer-asset-chip-action" :disabled="recognizing" @click="onRecognizeImage">{{ recognizing ? '识别中' : '识别文字' }}</button>
-                    <button type="button" class="composer-asset-chip-close" @click="removeImage">×</button>
-                  </div>
-                  <div v-if="materialAttachmentText" class="composer-asset-chip">
-                    <span class="composer-asset-chip-label">材料</span>
-                    <span class="composer-asset-chip-text">{{ materialAttachmentName || '已加材料' }}</span>
-                    <button type="button" class="composer-asset-chip-close" @click="clearMaterialAttachment">×</button>
-                  </div>
-                </div>
                 <textarea
                   ref="topicInputRef"
                   v-model="topic"
                   class="workbench-input"
-                  rows="2"
+                  rows="6"
                   placeholder="例如：请帮我整理一道考研英语风格的作文题，主题是年轻人与家庭责任的平衡。我还想加一段材料。"
                   @keydown="onWorkbenchInputKeydown"
                 />
@@ -169,8 +142,8 @@
                     :class="{ 'composer-submit--cancel': composerAction === 'cancel' }"
                     type="button"
                     :disabled="composerAction === 'submit' ? !canAssemble : false"
-                    :title="composerAction === 'cancel' ? '停止整理' : '整理题单'"
-                    :aria-label="composerAction === 'cancel' ? '停止整理' : '整理题单'"
+                    :title="composerAction === 'cancel' ? '停止处理' : '发送'"
+                    :aria-label="composerAction === 'cancel' ? '停止处理' : '发送'"
                     @click="onComposerPrimaryAction"
                   >
                     <span v-if="composerAction === 'cancel'" class="composer-stop-icon" aria-hidden="true" />
@@ -199,13 +172,6 @@
           <div class="paper-frame paper-frame--canvas">
             <div class="paper-sheet paper-sheet--canvas">
               <template v-if="previewSheet">
-                <div class="paper-status-bar" :class="previewStatusToneClass">
-                  <span class="paper-status-bar__label">{{ previewStatusText }}</span>
-                  <span v-if="previewMissingFields.length" class="paper-status-bar__meta">
-                    {{ previewMissingFields.join(' · ') }}
-                  </span>
-                </div>
-
                 <div v-if="showExamTaskSelector" class="paper-task-center">
                   <button
                     type="button"
@@ -252,15 +218,27 @@
                       >
                         <div class="paper-comic-visual">
                           <span class="paper-comic-badge">{{ scene.title || `Scene ${index + 1}` }}</span>
-                          <div class="paper-comic-figure-row">
-                            <span class="paper-comic-figure" />
-                            <span class="paper-comic-figure" />
-                            <span class="paper-comic-figure" />
+                          <p v-if="scene.dialogue" class="paper-comic-speech">{{ scene.dialogue }}</p>
+                          <div class="paper-comic-stage" aria-hidden="true">
+                            <span class="paper-comic-prop paper-comic-prop--paper" />
+                            <span class="paper-comic-person paper-comic-person--left">
+                              <span class="paper-comic-head" />
+                              <span class="paper-comic-body-shape" />
+                            </span>
+                            <span class="paper-comic-person paper-comic-person--center">
+                              <span class="paper-comic-head" />
+                              <span class="paper-comic-body-shape" />
+                            </span>
+                            <span class="paper-comic-person paper-comic-person--right">
+                              <span class="paper-comic-head" />
+                              <span class="paper-comic-body-shape" />
+                            </span>
+                            <span class="paper-comic-action-line paper-comic-action-line--one" />
+                            <span class="paper-comic-action-line paper-comic-action-line--two" />
                           </div>
                         </div>
                         <div class="paper-comic-body">
                           <p class="paper-comic-description">{{ scene.description }}</p>
-                          <p v-if="scene.dialogue" class="paper-comic-dialogue">“{{ scene.dialogue }}”</p>
                         </div>
                       </article>
                     </div>
@@ -272,7 +250,60 @@
                       <p v-if="previewVisualAttachment.chartSpec.title" class="paper-chart-title">
                         {{ previewVisualAttachment.chartSpec.title }}
                       </p>
-                      <table class="paper-chart-table">
+                      <div v-if="!shouldRenderChartAsTable(previewVisualAttachment.chartSpec) && previewChartFigure.series.length" class="paper-chart-figure">
+                        <div v-if="previewChartFigure.leftAxisLabel || previewChartFigure.rightAxisLabel" class="paper-chart-axis-labels">
+                          <span>{{ previewChartFigure.leftAxisLabel || '' }}</span>
+                          <span>{{ previewChartFigure.rightAxisLabel || '' }}</span>
+                        </div>
+                        <svg class="paper-chart-svg" viewBox="0 0 100 100" role="img" aria-label="图表预览">
+                          <line x1="8" y1="86" x2="94" y2="86" class="paper-chart-axis" />
+                          <line x1="10" y1="14" x2="10" y2="88" class="paper-chart-axis" />
+                          <line v-if="previewChartFigure.rightAxisLabel" x1="94" y1="14" x2="94" y2="88" class="paper-chart-axis" />
+                          <g v-for="series in previewChartFigure.series.filter((item) => item.kind === 'bar')" :key="`${series.name}-bars`">
+                            <rect
+                              v-for="point in series.points"
+                              :key="`${series.name}-${point.label}-bar`"
+                              class="paper-chart-bar"
+                              :x="point.x - 2.3"
+                              :y="point.y"
+                              width="4.6"
+                              :height="86 - point.y"
+                              :fill="series.color"
+                            />
+                          </g>
+                          <polyline
+                            v-for="series in previewChartFigure.series.filter((item) => item.kind === 'line')"
+                            :key="series.name"
+                            class="paper-chart-line"
+                            :points="series.polyline"
+                            :stroke="series.color"
+                          />
+                          <g v-for="series in previewChartFigure.series.filter((item) => item.kind === 'line')" :key="`${series.name}-points`">
+                            <circle
+                              v-for="point in series.points"
+                              :key="`${series.name}-${point.label}`"
+                              class="paper-chart-point"
+                              :cx="point.x"
+                              :cy="point.y"
+                              r="2.2"
+                              :fill="series.color"
+                            />
+                          </g>
+                        </svg>
+                        <div class="paper-chart-x-labels">
+                          <span v-for="label in previewChartFigure.labels" :key="label">{{ label }}</span>
+                        </div>
+                        <div class="paper-chart-legend">
+                          <span v-for="series in previewChartFigure.series" :key="`${series.name}-legend`">
+                            <i :class="`paper-chart-legend-marker--${series.kind}`" :style="{ backgroundColor: series.color }" />
+                            {{ series.name }}
+                          </span>
+                        </div>
+                      </div>
+                      <table
+                        v-else-if="shouldRenderChartAsTable(previewVisualAttachment.chartSpec) || previewVisualAttachment.chartSpec.rows.length > 0"
+                        class="paper-chart-table"
+                      >
                         <thead>
                           <tr>
                             <th v-for="(column, index) in previewVisualAttachment.chartSpec.columns" :key="`chart-column-${index}`">
@@ -336,8 +367,6 @@
                 </div>
                 <div class="canvas-empty">
                   <p class="canvas-empty-label">Directions:</p>
-                  <p class="canvas-empty-title">等待开始整理</p>
-                  <p class="canvas-empty-text">请在左侧发出第一条命题消息，或插入图片、材料、真题。</p>
                 </div>
               </template>
             </div>
@@ -354,16 +383,6 @@
           <div class="confirm-actions-3">
             <button class="gate-btn" :disabled="saving" @click="saveAndLeave">{{ saving ? '保存中...' : '保存并退出' }}</button>
             <button class="gate-btn gate-btn--danger" :disabled="saving" @click="confirmLeave">不保存退出</button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="showModeSwitchConfirm" class="confirm-overlay">
-        <div class="confirm-card confirm-card--compact">
-          <h3 class="confirm-title">切换模式将更改评分标准</h3>
-          <div class="confirm-actions confirm-actions--split">
-            <button class="btn-back" type="button" @click="cancelModeSwitch">取消</button>
-            <button class="gate-btn" type="button" @click="confirmModeSwitch">继续</button>
           </div>
         </div>
       </div>
@@ -450,48 +469,51 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useLocalStorage, useDebounceFn, onClickOutside, useEventListener, StorageSerializers } from '@vueuse/core'
-import { generateExamDialogueTurn, recognizeTopicImage, startWritingSession, getWritingSessionMetadata, getEssayPrompts } from '@/api/writing'
-import type { EssayPromptItem, GenerateExamPromptResponse, WritingAiProvider } from '@/api/writing'
+import { auditTopic, recognizeTopicImage, startWritingSession, getWritingSessionMetadata, getEssayPrompts, generateExamPrompt, chatPromptSheet } from '@/api/writing'
+import type { EssayPromptItem, GenerateExamPromptResponse, PromptSheetChatResponse, WritingAiProvider } from '@/api/writing'
 import { getStageId } from '@/constants/stage'
 import {
   buildExamResumePreview,
+  buildChartPreviewFigure,
   buildVisualAttachmentPreview,
+  buildPromptDesignSeedRequest,
+  buildPromptSheetFromPastPrompt,
   buildExamTaskPrompt,
+  extractPromptFallback,
+  derivePromptConfigUpdateFromPromptSheet,
   getExamTaskSelectionLabel,
   getExamTaskSelectionOptions,
+  hasPromptDesignSeed,
+  normalizePromptSheet,
   parseWordRange,
+  shouldRenderChartAsTable,
 } from '@/pages/app/examPromptHelpers'
 import type { ExamPromptSheet, ExamPromptType, ExamTaskSelectionValue, ExamTopicInfo } from '@/pages/app/examPromptHelpers'
 import type { WritingSessionMetadataResponse } from '@/api/writing'
 import {
+  canStartWorkbenchFromPreview,
+  commitWorkbenchSubmission,
   isWorkbenchAbortError,
+  persistExamSetupStateSnapshot,
   resolveWorkbenchComposerAction,
   resolveRestoredDraftTopic,
   resolveWorkbenchCanvasState,
-  persistExamSetupStateSnapshot,
   restoreExamSetupStateSnapshot,
-  shouldConfirmModeSwitch,
+  shouldShowWorkbenchRefreshWarning,
   shouldSubmitWorkbenchOnEnter,
   shouldUseInitialTopicSeed,
+  resolveExamSetupSaveAction,
 } from '@/pages/app/examWorkbenchState'
-import {
-  buildDialogueTurnMessages,
-  buildPreviewResultFromDialogue,
-  createAssistantReplyMessages,
-  createStatusMessage,
-  createUserAssetMessage,
-  createUserTextMessage,
-} from '@/pages/app/examWorkbenchConversation.ts'
-import type {
-  ExamWorkbenchConversationMessage,
-  ExamWorkbenchPreviewStatus,
-} from '@/pages/app/examWorkbenchConversation.ts'
 import { loadAiProvider, saveAiProviderNow } from '@/components/writing/editorShellStorage'
+import { renderAssistantMarkdown } from '@/components/assistant/markdown'
 
 const props = defineProps<{
   initialTopic?: string
   studyStage?: string
   resumeMetadata?: WritingSessionMetadataResponse | null
+  initialGenre?: string | null
+  initialWordRange?: string | null
+  initialTab?: 'manual' | 'ai' | 'past' | null
 }>()
 
 const emit = defineEmits<{
@@ -520,20 +542,23 @@ const showPastPromptPicker = ref(false)
 const attachmentInputRef = ref<HTMLInputElement | null>(null)
 const topicInputRef = ref<HTMLTextAreaElement | null>(null)
 const providerMenuRef = ref<HTMLElement | null>(null)
-const conversationLogRef = ref<HTMLElement | null>(null)
 const materialAttachmentText = ref<string | null>(null)
 const materialAttachmentName = ref<string | null>(null)
 const previewSheet = ref<ExamPromptSheet | null>(null)
 const previewTopicInfo = ref<ExamTopicInfo | null>(null)
-const previewStatus = ref<ExamWorkbenchPreviewStatus>('empty')
-const previewMissingFields = ref<string[]>([])
 const previewDirty = ref(false)
 const pendingSubmission = ref(false)
 const selectedMode = ref<'free' | 'exam'>('exam')
 const selectedExamTask = ref<ExamTaskSelectionValue>('task1')
 const selectedAiProvider = ref<WritingAiProvider>(loadAiProvider() ?? 'openai')
 const submittedTopic = ref('')
-const conversationMessages = ref<ExamWorkbenchConversationMessage[]>([])
+interface PromptSheetMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
+const promptSheetMessages = ref<PromptSheetMessage[]>([])
 
 // ── 手动输入表单 ──
 
@@ -542,6 +567,9 @@ const genre = ref<string | null>(null)
 const wordRange = ref<string | null>(null)
 const showCustomWordRange = ref(false)
 const customWordRange = ref('')
+const writingRequirement = ref('')
+type AttachmentDraftMode = 'none' | 'material' | 'image'
+const attachmentDraftMode = ref<AttachmentDraftMode>('none')
 const TOPIC_INPUT_MAX_HEIGHT = 200
 
 function syncTopicInputHeight() {
@@ -564,41 +592,23 @@ function applyImageFile(file: File) {
     recognizeError.value = '图片不能超过 5MB'
     return
   }
-  const isReplacing = !!uploadedImage.value
   recognizeError.value = null
   materialAttachmentText.value = null
   materialAttachmentName.value = null
   const reader = new FileReader()
-  reader.onload = async () => {
+  reader.onload = () => {
     const dataUrl = reader.result as string
     uploadedImage.value = dataUrl
     // 提取纯 base64（去掉 data:image/xxx;base64, 前缀）
     uploadedImageBase64.value = dataUrl.split(',')[1] || null
-    appendConversationMessages([
-      createUserAssetMessage('image', {
-        text: isReplacing ? '我更换了一张题目图片' : '我上传了一张题目图片',
-        assetName: file.name,
-        assetSummary: '图片附件已加入当前命题对话，请优先保留原图题意。',
-        imageUrl: dataUrl,
-      }),
-    ])
-    await refreshDialoguePreview()
   }
   reader.readAsDataURL(file)
 }
 
 function removeImage() {
-  if (!uploadedImage.value) return
   uploadedImage.value = null
   uploadedImageBase64.value = null
   recognizeError.value = null
-  if (attachmentInputRef.value) {
-    attachmentInputRef.value.value = ''
-  }
-  appendConversationMessages([
-    createStatusMessage('已移除当前图片附件，右侧题单会按剩余上下文重新整理。', 'warning'),
-  ])
-  void refreshDialoguePreview()
 }
 
 async function onWorkbenchAttachmentChange(e: Event) {
@@ -626,14 +636,6 @@ async function onWorkbenchAttachmentChange(e: Event) {
     uploadedImage.value = null
     uploadedImageBase64.value = null
     recognizeError.value = null
-    appendConversationMessages([
-      createUserAssetMessage('material', {
-        text: '我补充了一份材料附件',
-        assetName: file.name,
-        assetSummary: trimmed.slice(0, 180),
-      }),
-    ])
-    await refreshDialoguePreview()
   } catch (error) {
     console.warn('[ExamSetup] read attachment failed', error)
     workbenchError.value = '暂不支持该文件，请上传文本类材料或图片'
@@ -644,9 +646,6 @@ async function onWorkbenchAttachmentChange(e: Event) {
 
 function openAttachmentPicker() {
   attachmentMenuOpen.value = false
-  if (attachmentInputRef.value) {
-    attachmentInputRef.value.value = ''
-  }
   attachmentInputRef.value?.click()
 }
 
@@ -659,13 +658,8 @@ function openPastPromptPicker() {
 }
 
 function clearMaterialAttachment() {
-  if (!materialAttachmentText.value) return
   materialAttachmentText.value = null
   materialAttachmentName.value = null
-  appendConversationMessages([
-    createStatusMessage('已移除当前材料附件，右侧题单会按剩余上下文重新整理。', 'warning'),
-  ])
-  void refreshDialoguePreview()
 }
 
 async function onRecognizeImage() {
@@ -673,17 +667,12 @@ async function onRecognizeImage() {
   recognizing.value = true
   recognizeError.value = null
   try {
-    const res = await recognizeTopicImage({
-      imageBase64: uploadedImageBase64.value,
-      aiProvider: selectedAiProvider.value,
-    })
+    const res = await recognizeTopicImage({ imageBase64: uploadedImageBase64.value })
     if (res.text) {
+      // 追加到现有题目文本
       topic.value = topic.value
         ? topic.value.trimEnd() + '\n' + res.text
         : res.text
-      appendConversationMessages([
-        createStatusMessage('图片文字已识别并放入输入框，你可以继续补充要求后发送。', 'info'),
-      ])
     } else {
       recognizeError.value = '未能识别到文字内容，请尝试更清晰的图片'
     }
@@ -696,7 +685,20 @@ async function onRecognizeImage() {
 
 const maxScore = ref(100)
 const customMaxScore = ref<number | null>(null)
-const wordRangeOptions = ['80-100', '100-120', '120-150']
+const wordRangeOptions = ['80-100', '100-120', '120-150', '160-220', '250']
+const genreOptions = [
+  { value: 'argumentative', label: '议论文' },
+  { value: 'material', label: '材料作文' },
+  { value: 'chart', label: '图表作文' },
+  { value: 'picture', label: '图画作文' },
+  { value: 'practical', label: '应用文' },
+  { value: 'letter', label: '书信' },
+]
+const attachmentModeOptions: Array<{ value: AttachmentDraftMode; label: string }> = [
+  { value: 'none', label: '无' },
+  { value: 'material', label: '材料' },
+  { value: 'image', label: '图片' },
+]
 
 // ── 校验 ──
 
@@ -714,12 +716,11 @@ const readyPreview = computed(() => {
     && workbenchStep.value === 'preview'
     && !!previewTopicInfo.value
     && !!previewSheet.value
-    && previewStatus.value === 'ready'
     && !previewDirty.value
 })
 
 const hasSubmittedContext = computed(() => {
-  return conversationMessages.value.length > 0
+  return !!submittedTopic.value.trim()
     || !!selectedPrompt.value
     || !!uploadedImage.value
     || !!materialAttachmentText.value
@@ -737,16 +738,31 @@ const previewVisualAttachment = computed(() =>
   buildVisualAttachmentPreview(previewSheet.value, previewTopicInfo.value),
 )
 
-const hasGeneratedPromptSheet = computed(() => {
-  return workbenchStep.value === 'preview' && !!previewSheet.value
-})
+const previewChartFigure = computed(() =>
+  buildChartPreviewFigure(previewVisualAttachment.value.chartSpec),
+)
 
 const composerAction = computed(() =>
   resolveWorkbenchComposerAction({ workbenchBusy: workbenchBusy.value }),
 )
 
+const showPreviewRefreshWarning = computed(() =>
+  shouldShowWorkbenchRefreshWarning({
+    previewDirty: previewDirty.value,
+    workbenchBusy: workbenchBusy.value,
+    hasSubmittedContext: hasSubmittedContext.value,
+  }),
+)
+
 const hasConversationLog = computed(() => {
-  return conversationMessages.value.length > 0 || workbenchBusy.value
+  return promptSheetMessages.value.length > 0
+    || !!submittedTopic.value.trim()
+    || !!selectedPrompt.value
+    || !!uploadedImage.value
+    || !!materialAttachmentText.value
+    || previewDirty.value
+    || readyPreview.value
+    || workbenchBusy.value
 })
 
 const examTaskSelectionOptions = computed(() => getExamTaskSelectionOptions(props.studyStage ?? null))
@@ -758,12 +774,20 @@ const showExamTaskSelector = computed(() => {
 const selectedExamTaskLabel = computed(() => getExamTaskSelectionLabel(selectedExamTask.value) ?? 'Task 1')
 
 const canAssemble = computed(() => {
-  return !!topic.value.trim()
+  return !!selectedPrompt.value
+    || !!topic.value.trim()
+    || !!uploadedImage.value
+    || !!materialAttachmentText.value
+    || hasPromptDesignSettings.value
 })
 
 const canEnterCurrentMode = computed(() => {
-  if (selectedMode.value === 'exam') return readyPreview.value
-  return workbenchStep.value === 'preview' && !!previewTopicInfo.value
+  return canStartWorkbenchFromPreview({
+    selectedMode: selectedMode.value,
+    workbenchStep: workbenchStep.value,
+    hasPreviewSheet: !!previewSheet.value,
+    hasPreviewInfo: !!previewTopicInfo.value,
+  })
 })
 
 const providerOptions: Array<{ value: WritingAiProvider; label: string }> = [
@@ -776,35 +800,37 @@ const currentProviderLabel = computed(
   () => providerOptions.find((option) => option.value === selectedAiProvider.value)?.label ?? selectedAiProvider.value,
 )
 
-const hasActiveAssets = computed(() =>
-  !!uploadedImage.value || !!materialAttachmentText.value || !!selectedPrompt.value,
+const selectedGenreLabel = computed(() =>
+  genreOptions.find((option) => option.value === genre.value)?.label ?? null,
 )
 
-const previewStatusText = computed(() => {
-  if (previewStatus.value === 'ready') return '已整理完成'
-  if (previewStatus.value === 'draft') return '草稿中'
-  return '等待输入'
-})
+const selectedAttachmentLabel = computed(() =>
+  attachmentModeOptions.find((option) => option.value === attachmentDraftMode.value)?.label ?? '无',
+)
 
-const previewStatusToneClass = computed(() => {
-  if (previewStatus.value === 'ready') return 'paper-status-bar--ready'
-  if (previewStatus.value === 'draft') return 'paper-status-bar--draft'
-  return 'paper-status-bar--empty'
-})
+const promptDesignSeedRequest = computed(() =>
+  buildPromptDesignSeedRequest({
+    studyStage: props.studyStage ?? null,
+    taskLabel: selectedExamTaskLabel.value,
+    genreLabel: selectedGenreLabel.value,
+    wordRange: getEffectiveWordRange(),
+    requirements: writingRequirement.value,
+    attachmentLabel: selectedAttachmentLabel.value,
+    hasMaterial: !!materialAttachmentText.value?.trim(),
+    hasImage: !!uploadedImage.value,
+  }),
+)
 
-function getAssistantReplyLabel(kind: string | null | undefined): string {
-  if (kind === 'understanding') return '理解'
-  if (kind === 'follow_up') return '追问'
-  if (kind === 'action') return '动作'
-  return '回复'
-}
-
-function getAssetMessageTitle(message: ExamWorkbenchConversationMessage): string {
-  if (message.assetType === 'image') return '图片附件'
-  if (message.assetType === 'material') return '材料附件'
-  if (message.assetType === 'past_prompt') return '历年真题'
-  return '附件'
-}
+const hasPromptDesignSettings = computed(() =>
+  hasPromptDesignSeed({
+    genreLabel: selectedGenreLabel.value,
+    wordRange: getEffectiveWordRange(),
+    requirements: writingRequirement.value,
+    attachmentLabel: selectedAttachmentLabel.value,
+    hasMaterial: !!materialAttachmentText.value?.trim(),
+    hasImage: !!uploadedImage.value,
+  }),
+)
 
 // ── AI 确认流程 ──
 
@@ -844,6 +870,26 @@ const aiError = ref<string | null>(null)
 const aiParsedIntent = ref<ParsedAiIntent | null>(null)
 const aiGeneratedPrompt = ref<GenerateExamPromptResponse | null>(null)
 const assembleAbortController = ref<AbortController | null>(null)
+const promptSheetChatAbortController = ref<AbortController | null>(null)
+const assemblyRollbackState = ref<{
+  topic: string
+  submittedTopic: string
+  pendingSubmission: boolean
+} | null>(null)
+
+function createPromptSheetMessageId(role: PromptSheetMessage['role']): string {
+  return `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function appendPromptSheetMessage(role: PromptSheetMessage['role'], content: string) {
+  const normalized = content.trim()
+  if (!normalized) return
+  promptSheetMessages.value.push({
+    id: createPromptSheetMessageId(role),
+    role,
+    content: normalized,
+  })
+}
 
 function getEffectiveWordRange(): string | null {
   return showCustomWordRange.value
@@ -856,6 +902,25 @@ function getEffectiveWorkbenchInput(preferSubmittedTopic = false): string {
   if (draftInput) return draftInput
   if (preferSubmittedTopic) return submittedTopic.value.trim()
   return ''
+}
+
+function buildExamTaskSelectionInstruction(taskType: string | null): string | null {
+  const label = getExamTaskSelectionLabel(taskType)
+  if (!label) return null
+  return `考试任务要求：当前固定为 ${label}。请严格按照 ${label} 的命题方式整理题单，不要切换到其他任务。`
+}
+
+function resolvePromptTopicSource(prompt: EssayPromptItem): string {
+  const materialText = prompt.materialText?.trim()
+  if (materialText) return materialText
+  const imageDescription = prompt.imageDescription?.trim()
+  if (imageDescription) return imageDescription
+  return prompt.promptText.trim()
+}
+
+function resolvePromptRequirements(prompt: EssayPromptItem): string | null {
+  const fallback = extractPromptFallback(prompt.promptText, null, null)
+  return fallback.requirements || prompt.promptText.trim() || null
 }
 
 function startPreview(info: ExamTopicInfo, sheet: ExamPromptSheet) {
@@ -871,132 +936,367 @@ function startPreview(info: ExamTopicInfo, sheet: ExamPromptSheet) {
   workbenchError.value = null
 }
 
-function getActiveAssets() {
-  return {
-    uploadedImage: uploadedImage.value,
-    materialAttachmentText: materialAttachmentText.value,
-    materialAttachmentName: materialAttachmentName.value,
-    selectedPrompt: selectedPrompt.value,
+function startPreviewFromGeneratedPrompt(
+  response: GenerateExamPromptResponse,
+  fallback: { genre?: string | null; wordRange?: string | null; requirements?: string | null } = {},
+) {
+  const parsedWordRange = parseWordRange(response.wordRange ?? fallback.wordRange ?? null)
+  const info: ExamTopicInfo = {
+    paper: response.paper ?? null,
+    promptSheetId: response.promptSheetId ?? null,
+    topic: response.promptText,
+    genre: response.genre ?? fallback.genre ?? genre.value ?? null,
+    wordRange: response.wordRange ?? fallback.wordRange ?? null,
+    requirements: response.requirements ?? fallback.requirements ?? null,
+    imageDescription: uploadedImage.value ? (response.attachmentContent ?? '请结合附件图片完成写作。') : null,
+    materialText: response.materialText ?? materialAttachmentText.value ?? null,
+    attachmentImageUrl: uploadedImage.value ?? response.attachmentImageUrl ?? null,
+    maxScore: response.maxScore ?? maxScore.value,
+    sourceType: response.sourceType ?? 'ai_generated',
+    examType: props.studyStage ?? null,
+    taskType: response.taskType ?? selectedExamTask.value ?? null,
+    minWords: response.minWords ?? parsedWordRange.minWords,
+    recommendedMaxWords: response.recommendedMaxWords ?? parsedWordRange.recommendedMaxWords,
+    promptType: response.promptType,
+    chartSpec: response.chartSpec ?? null,
+    comicScenes: response.comicScenes ?? [],
   }
-}
 
-function scrollConversationToBottom() {
-  const el = conversationLogRef.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
-}
+  syncPromptConfigFromGeneratedPrompt(response, fallback)
 
-function appendConversationMessages(messages: ExamWorkbenchConversationMessage[]) {
-  if (!messages.length) return
-  conversationMessages.value = [...conversationMessages.value, ...messages]
-  void nextTick(() => {
-    scrollConversationToBottom()
+  const sheet = normalizePromptSheet({
+    ...response,
+    attachmentImageUrl: uploadedImage.value ?? response.attachmentImageUrl ?? null,
+    attachmentType: uploadedImage.value && !response.attachmentType ? 'visual' : response.attachmentType ?? undefined,
+    visualKind: uploadedImage.value && !response.visualKind ? 'image' : response.visualKind ?? undefined,
+    attachmentContent: response.attachmentContent ?? (uploadedImage.value ? '请结合附件图片完成写作。' : undefined),
   })
+  startPreview(info, sheet)
 }
 
-function applyDialoguePreviewState(nextStatus: ExamWorkbenchPreviewStatus, missingFields: string[], info: ExamTopicInfo | null, sheet: ExamPromptSheet | null) {
-  previewStatus.value = nextStatus
-  previewMissingFields.value = [...missingFields]
-  if (info && sheet) {
-    startPreview(info, sheet)
-    return
+function syncPromptConfigFromGeneratedPrompt(
+  response: GenerateExamPromptResponse,
+  fallback: { genre?: string | null; wordRange?: string | null; requirements?: string | null } = {},
+) {
+  const update = derivePromptConfigUpdateFromPromptSheet({
+    ...response,
+    genre: response.genre ?? fallback.genre ?? null,
+    wordRange: response.wordRange ?? fallback.wordRange ?? null,
+    requirements: response.requirements ?? fallback.requirements ?? null,
+  })
+
+  if (update.taskType) {
+    selectedExamTask.value = update.taskType
   }
-  previewTopicInfo.value = null
-  previewSheet.value = null
-  workbenchStep.value = 'compose'
-  previewDirty.value = false
-  pendingSubmission.value = false
-  workbenchError.value = null
+  if (update.genre) {
+    genre.value = update.genre
+  }
+  if (update.wordRange) {
+    if (wordRangeOptions.includes(update.wordRange)) {
+      wordRange.value = update.wordRange
+      showCustomWordRange.value = false
+      customWordRange.value = ''
+    } else {
+      wordRange.value = '__custom__'
+      showCustomWordRange.value = true
+      customWordRange.value = update.wordRange
+    }
+  }
+  if (update.requirements !== null) {
+    writingRequirement.value = update.requirements
+  }
 }
 
-async function refreshDialoguePreview() {
-  const taskLabel = getExamTaskSelectionLabel(selectedExamTask.value)
-  const requestMessages = buildDialogueTurnMessages(
-    conversationMessages.value,
-    getActiveAssets(),
-    taskLabel ? `考试任务要求：当前固定为 ${taskLabel}，请严格按照该任务整理题单。` : null,
-  )
-  if (!requestMessages.length) {
-    applyDialoguePreviewState('empty', [], null, null)
-    return
+function buildPastPromptTopicInfo(prompt: EssayPromptItem): ExamTopicInfo {
+  const wordRange = prompt.wordCountMin && prompt.wordCountMax
+    ? `${prompt.wordCountMin}-${prompt.wordCountMax}`
+    : prompt.wordCountMin
+      ? `${prompt.wordCountMin}`
+      : null
+  return {
+    paper: prompt.paper?.trim() || null,
+    promptSheetId: null,
+    topic: prompt.promptText.trim(),
+    genre: genre.value,
+    wordRange,
+    requirements: resolvePromptRequirements(prompt),
+    imageDescription: prompt.imageDescription?.trim() || null,
+    materialText: prompt.materialText?.trim() || null,
+    attachmentImageUrl: prompt.imageUrl?.trim() || null,
+    maxScore: prompt.maxScore ?? maxScore.value,
+    sourceType: 'past_prompt',
+    examType: props.studyStage ?? null,
+    taskType: selectedExamTask.value ?? prompt.task ?? null,
+    minWords: prompt.wordCountMin ?? null,
+    recommendedMaxWords: prompt.wordCountMax ?? null,
+    promptType: prompt.materialText ? 'material' : prompt.imageUrl || prompt.imageDescription ? 'comic' : 'general',
+    chartSpec: null,
+    comicScenes: [],
   }
+}
 
+async function assembleWorkbenchPromptSheet(options: {
+  preferSubmittedTopic?: boolean
+  overrideInput?: string
+  skipCommit?: boolean
+} = {}) {
   workbenchError.value = null
   workbenchBusy.value = true
   const abortController = new AbortController()
   assembleAbortController.value = abortController
-
+  assemblyRollbackState.value = {
+    topic: topic.value,
+    submittedTopic: submittedTopic.value,
+    pendingSubmission: pendingSubmission.value,
+  }
   try {
-    const response = await generateExamDialogueTurn({
+    const selectedPromptTopic = selectedPrompt.value ? resolvePromptTopicSource(selectedPrompt.value) : null
+    const rawInput = options.overrideInput?.trim() || getEffectiveWorkbenchInput(options.preferSubmittedTopic === true)
+    const submission = options.skipCommit === true
+      ? { submittedText: rawInput, nextDraftText: topic.value }
+      : commitWorkbenchSubmission(rawInput)
+    if (options.skipCommit !== true && topic.value.trim() && submission.submittedText) {
+      submittedTopic.value = submission.submittedText
+      topic.value = submission.nextDraftText
+      pendingSubmission.value = true
+      saveLiveStateNow()
+      await nextTick()
+      syncTopicInputHeight()
+    }
+    const hasMaterial = !!materialAttachmentText.value?.trim()
+    const hasImage = !!uploadedImage.value
+    const requirementText = writingRequirement.value.trim() || null
+    const taskSelectionInstruction = buildExamTaskSelectionInstruction(selectedExamTask.value)
+    const designSeedInput = !rawInput && hasPromptDesignSettings.value
+      ? promptDesignSeedRequest.value
+      : ''
+    const shouldUsePastPromptDirectly = !!selectedPrompt.value
+      && rawInput === (selectedPromptTopic ?? '')
+      && !hasMaterial
+      && !hasImage
+      && (!selectedExamTask.value || selectedExamTask.value === selectedPrompt.value.task)
+
+    if (shouldUsePastPromptDirectly && selectedPrompt.value) {
+      startPreview(
+        buildPastPromptTopicInfo(selectedPrompt.value),
+        buildPromptSheetFromPastPrompt(selectedPrompt.value),
+      )
+      showPastPromptPicker.value = false
+      return
+    }
+
+    const effectiveInput = rawInput
+      || designSeedInput
+      || (hasMaterial
+        ? '请根据附件材料整理为标准考试写作题单。'
+        : hasImage
+          ? '请根据附件图片整理为标准考试写作题单。'
+          : '')
+
+    if (!effectiveInput) {
+      pendingSubmission.value = false
+      workbenchError.value = '请先输入题目要求，或通过 “+” 添加图片、文件、历年真题'
+      return
+    }
+    if (!rawInput && designSeedInput) {
+      submittedTopic.value = designSeedInput
+    }
+    pendingSubmission.value = true
+    saveLiveStateNow()
+
+    const originalInputParts = [effectiveInput]
+    if (taskSelectionInstruction) {
+      originalInputParts.push(taskSelectionInstruction)
+    }
+    if (selectedPrompt.value) {
+      originalInputParts.push(`历年真题参考：\n${selectedPrompt.value.promptText.trim()}`)
+    }
+    if (hasMaterial) {
+      originalInputParts.push(`附件材料：\n${materialAttachmentText.value!.trim()}`)
+    }
+    if (hasImage) {
+      originalInputParts.push('已添加图片附件，请保留看图写作场景，并根据输入要求整理成标准题单。')
+    }
+    if (requirementText) {
+      originalInputParts.push(`写作要求：\n${requirementText}`)
+    }
+    const originalInput = originalInputParts.join('\n\n')
+
+    const audit = await auditTopic({
+      topic: originalInput,
+      genre: genre.value,
+      wordRange: getEffectiveWordRange() ?? undefined,
+      requirements: requirementText ?? undefined,
       studyStage: props.studyStage ?? null,
+    }, {
+      signal: abortController.signal,
+    }).catch((error) => {
+      if (isWorkbenchAbortError(error)) throw error
+      console.warn('[ExamSetup] audit before preview failed', error)
+      return null
+    })
+
+    const promptType = audit?.promptType
+      ?? (hasMaterial
+        ? 'material'
+        : hasImage
+          ? 'comic'
+          : 'general')
+    const normalizedWordRange = audit?.wordRange ?? getEffectiveWordRange() ?? null
+    const response = await generateExamPrompt({
+      originalInput,
+      topic: audit?.topic?.trim() || effectiveInput,
+      studyStage: props.studyStage ?? null,
+      promptType,
+      taskType: selectedExamTask.value ?? null,
+      genre: audit?.genre ?? genre.value,
+      wordRange: normalizedWordRange,
+      requirements: audit?.requirements ?? requirementText,
+      maxScore: maxScore.value,
       aiProvider: selectedAiProvider.value,
-      selectedMode: selectedMode.value,
-      messages: requestMessages,
     }, {
       signal: abortController.signal,
     })
 
-    const preview = buildPreviewResultFromDialogue(response, {
-      studyStage: props.studyStage ?? null,
-      selectedMode: selectedMode.value,
-      activeAssets: getActiveAssets(),
+    startPreviewFromGeneratedPrompt(response, {
+      genre: audit?.genre ?? genre.value,
+      wordRange: normalizedWordRange,
+      requirements: audit?.requirements ?? requirementText,
     })
-
-    applyDialoguePreviewState(
-      preview.previewStatus,
-      preview.missingFields,
-      preview.previewTopicInfo,
-      preview.previewSheet,
-    )
-
-    appendConversationMessages([
-      ...createAssistantReplyMessages(response.assistantReplyBlocks, response.assistantReply),
-      createStatusMessage(
-        preview.previewStatus === 'ready'
-          ? '右侧题单已刷新为完成态，可以直接开始写作。'
-          : preview.previewStatus === 'draft'
-            ? '右侧题单已刷新为草稿态，继续补充后我会自动更新。'
-            : '当前信息仍不足以生成题单，请继续补充。',
-        preview.previewStatus === 'ready'
-          ? 'success'
-          : preview.previewStatus === 'draft'
-            ? 'info'
-            : 'warning',
-      ),
-    ])
     saveLiveStateNow()
   } catch (error) {
-    if (isWorkbenchAbortError(error)) return
-    console.warn('[ExamSetup] refresh dialogue preview failed', error)
-    workbenchError.value = '题单整理失败，请补充更明确的要求后重试'
+    if (isWorkbenchAbortError(error)) {
+      const rollback = assemblyRollbackState.value
+      topic.value = rollback?.topic ?? ''
+      submittedTopic.value = rollback?.submittedTopic ?? ''
+      pendingSubmission.value = rollback?.pendingSubmission ?? false
+      workbenchError.value = null
+      saveLiveStateNow()
+      await nextTick()
+      syncTopicInputHeight()
+      return
+    }
+    console.warn('[ExamSetup] assemble prompt sheet failed', error)
+    pendingSubmission.value = false
+    workbenchError.value = '题目整理失败，请补充更明确的写作要求后重试'
   } finally {
     assembleAbortController.value = null
+    assemblyRollbackState.value = null
     workbenchBusy.value = false
   }
 }
 
-async function assembleWorkbenchPromptSheet() {
-  const rawInput = getEffectiveWorkbenchInput()
-  if (!rawInput) {
-    workbenchError.value = '请先输入一条命题需求'
+function cancelWorkbenchPromptAssembly() {
+  promptSheetChatAbortController.value?.abort()
+  assembleAbortController.value?.abort()
+}
+
+function getCurrentPromptType(): ExamPromptType | null {
+  if (materialAttachmentText.value?.trim()) return 'material'
+  if (uploadedImage.value) return 'comic'
+  if (previewTopicInfo.value?.promptType) return previewTopicInfo.value.promptType
+  if (previewSheet.value?.visualKind === 'chart' || previewSheet.value?.visualKind === 'table') return 'chart'
+  if (previewSheet.value?.visualKind === 'comic') return 'comic'
+  return previewSheet.value?.attachmentType === 'material'
+    ? 'material'
+    : null
+}
+
+function buildChatCanvasInstruction(response: PromptSheetChatResponse, fallbackMessage: string): string {
+  const parts = [
+    response.canvasInstruction?.trim() || fallbackMessage.trim(),
+  ]
+  const patch = response.patch
+  if (patch) {
+    const patchLines = [
+      patch.taskType ? `任务类型：${patch.taskType}` : '',
+      patch.promptType ? `题目类型：${patch.promptType}` : '',
+      patch.genre ? `体裁：${patch.genre}` : '',
+      patch.wordRange ? `字数要求：${patch.wordRange}` : '',
+      patch.requirements ? `写作要求：${patch.requirements}` : '',
+      patch.topic ? `主题：${patch.topic}` : '',
+    ].filter(Boolean)
+    if (patchLines.length) {
+      parts.push(`明确修改要求：\n${patchLines.join('\n')}`)
+    }
+  }
+  if (previewSheet.value?.promptText) {
+    parts.push(`当前右侧题单：\n${previewSheet.value.promptText}`)
+  }
+  return parts.join('\n\n')
+}
+
+async function handlePromptSheetAgentMessage() {
+  workbenchError.value = null
+  const userMessage = topic.value.trim()
+  if (!userMessage) {
+    await assembleWorkbenchPromptSheet()
     return
   }
-  submittedTopic.value = rawInput
-  appendConversationMessages([createUserTextMessage(rawInput)])
+
   topic.value = ''
+  submittedTopic.value = userMessage
+  appendPromptSheetMessage('user', userMessage)
   pendingSubmission.value = true
+  workbenchBusy.value = true
   saveLiveStateNow()
   await nextTick()
   syncTopicInputHeight()
-  await refreshDialoguePreview()
-}
 
-function onAssembleWorkbenchPromptSheet() {
-  void assembleWorkbenchPromptSheet()
-}
+  const abortController = new AbortController()
+  promptSheetChatAbortController.value = abortController
+  try {
+    const chatResponse = await chatPromptSheet({
+      message: userMessage,
+      studyStage: props.studyStage ?? null,
+      taskType: selectedExamTask.value ?? null,
+      promptType: getCurrentPromptType(),
+      genre: genre.value,
+      wordRange: getEffectiveWordRange(),
+      requirements: writingRequirement.value.trim() || null,
+      currentTopic: previewTopicInfo.value?.topic ?? null,
+      currentPromptText: previewSheet.value?.promptText ?? null,
+      hasCanvas: !!previewSheet.value,
+      aiProvider: selectedAiProvider.value,
+    }, {
+      signal: abortController.signal,
+    })
 
-function cancelWorkbenchPromptAssembly() {
-  assembleAbortController.value?.abort()
+    appendPromptSheetMessage('assistant', chatResponse.reply)
+    pendingSubmission.value = false
+
+    if (chatResponse.needsCanvasUpdate && !chatResponse.needsConfirmation) {
+      if (chatResponse.promptSheet) {
+        startPreviewFromGeneratedPrompt(chatResponse.promptSheet, {
+          genre: chatResponse.patch?.genre ?? genre.value,
+          wordRange: chatResponse.patch?.wordRange ?? getEffectiveWordRange(),
+          requirements: chatResponse.patch?.requirements ?? (writingRequirement.value.trim() || null),
+        })
+        saveLiveStateNow()
+        return
+      }
+      const canvasInstruction = buildChatCanvasInstruction(chatResponse, userMessage)
+      await assembleWorkbenchPromptSheet({
+        overrideInput: canvasInstruction,
+        skipCommit: true,
+      })
+    } else {
+      saveLiveStateNow()
+    }
+  } catch (error) {
+    if (isWorkbenchAbortError(error)) {
+      pendingSubmission.value = false
+      workbenchError.value = null
+      saveLiveStateNow()
+      return
+    }
+    console.warn('[ExamSetup] prompt sheet chat failed', error)
+    pendingSubmission.value = false
+    workbenchError.value = '题单助教暂时没有响应，请稍后重试'
+  } finally {
+    promptSheetChatAbortController.value = null
+    workbenchBusy.value = false
+  }
 }
 
 function onComposerPrimaryAction() {
@@ -1004,63 +1304,25 @@ function onComposerPrimaryAction() {
     cancelWorkbenchPromptAssembly()
     return
   }
-  onAssembleWorkbenchPromptSheet()
+  void handlePromptSheetAgentMessage()
 }
 
 function onWorkbenchInputKeydown(event: KeyboardEvent) {
   if (!shouldSubmitWorkbenchOnEnter(event)) return
   event.preventDefault()
   if (!canAssemble.value || workbenchBusy.value) return
-  onAssembleWorkbenchPromptSheet()
-}
-
-const showModeSwitchConfirm = ref(false)
-const pendingModeSwitch = ref<'free' | 'exam' | null>(null)
-
-function applyModeSwitch(nextMode: 'free' | 'exam') {
-  if (selectedMode.value === nextMode) return
-  selectedMode.value = nextMode
-  saveLiveStateNow()
-}
-
-function handleModeSwitchRequest(nextMode: 'free' | 'exam') {
-  if (!shouldConfirmModeSwitch({
-    currentMode: selectedMode.value,
-    nextMode,
-    hasPreviewSheet: hasGeneratedPromptSheet.value,
-  })) {
-    applyModeSwitch(nextMode)
-    return
-  }
-
-  pendingModeSwitch.value = nextMode
-  showModeSwitchConfirm.value = true
-}
-
-function cancelModeSwitch() {
-  pendingModeSwitch.value = null
-  showModeSwitchConfirm.value = false
-}
-
-function confirmModeSwitch() {
-  const nextMode = pendingModeSwitch.value
-  cancelModeSwitch()
-  if (!nextMode) return
-  applyModeSwitch(nextMode)
+  void handlePromptSheetAgentMessage()
 }
 
 function handleExamTaskSelection(taskType: ExamTaskSelectionValue) {
   if (selectedExamTask.value === taskType) return
   selectedExamTask.value = taskType
-  const hasWorkbenchInput = conversationMessages.value.length > 0
+  const hasWorkbenchInput = !!getEffectiveWorkbenchInput(true)
     || !!selectedPrompt.value
     || !!uploadedImage.value
     || !!materialAttachmentText.value
   if (!hasWorkbenchInput || selectedMode.value !== 'exam' || workbenchBusy.value) return
-  appendConversationMessages([
-    createStatusMessage(`已切换为 ${getExamTaskSelectionLabel(taskType) ?? taskType}，右侧题单正在同步刷新。`, 'info'),
-  ])
-  void refreshDialoguePreview()
+  void assembleWorkbenchPromptSheet({ preferSubmittedTopic: true })
 }
 
 function toggleExamTaskSelection() {
@@ -1080,15 +1342,6 @@ function startWritingFromPreview() {
   emit('confirm', previewTopicInfo.value)
 }
 
-function removeSelectedPrompt() {
-  if (!selectedPrompt.value) return
-  selectedPrompt.value = null
-  appendConversationMessages([
-    createStatusMessage('已移除当前历年真题参考，右侧题单会按剩余上下文重新整理。', 'warning'),
-  ])
-  void refreshDialoguePreview()
-}
-
 // ── 草稿与页面状态持久化 ──
 
 const DRAFT_KEY = 'peai:examSetup:draft'
@@ -1101,6 +1354,8 @@ interface ExamSetupDraft {
   wordRange: string | null
   customWordRange: string
   showCustomWordRange: boolean
+  writingRequirement: string
+  attachmentDraftMode: AttachmentDraftMode
   maxScore: number
   uploadedImage: string | null
   uploadedImageBase64: string | null
@@ -1116,13 +1371,11 @@ const savedDraft = useLocalStorage<ExamSetupDraft | null>(DRAFT_KEY, null, {
 interface ExamSetupLiveState extends ExamSetupDraft {
   selectedMode: 'free' | 'exam'
   activeTab: TabKey
-  conversationMessages: ExamWorkbenchConversationMessage[]
   workbenchStep: WorkbenchStep
-  previewStatus: ExamWorkbenchPreviewStatus
-  previewMissingFields: string[]
   previewDirty: boolean
   pendingSubmission: boolean
   submittedTopic: string
+  promptSheetMessages?: PromptSheetMessage[]
   customMaxScore: number | null
   workbenchError: string | null
   confirmStep: ConfirmStep
@@ -1159,16 +1412,61 @@ function clearExamSetupState() {
   persistExamSetupStateSnapshot(window.localStorage, LIVE_STATE_KEY, null)
 }
 
+function hasInitialSetupSeed() {
+  return Boolean(
+    props.initialGenre?.trim()
+      || props.initialWordRange?.trim()
+      || props.initialTab,
+  )
+}
+
+function resetStoredExamSetupStateForSeed() {
+  savedDraft.value = null
+  liveState.value = null
+  persistExamSetupStateSnapshot(window.localStorage, DRAFT_KEY, null)
+  persistExamSetupStateSnapshot(window.localStorage, LIVE_STATE_KEY, null)
+}
+
+function applyInitialSetupSeed() {
+  const initialGenre = props.initialGenre?.trim()
+  if (initialGenre) {
+    genre.value = initialGenre
+  }
+
+  const initialWordRange = props.initialWordRange?.trim()
+  if (initialWordRange) {
+    if (wordRangeOptions.includes(initialWordRange)) {
+      wordRange.value = initialWordRange
+      showCustomWordRange.value = false
+      customWordRange.value = ''
+    } else {
+      wordRange.value = '__custom__'
+      showCustomWordRange.value = true
+      customWordRange.value = initialWordRange
+    }
+  }
+
+  const validTabs: Array<'manual' | 'ai' | 'past'> = ['manual', 'ai', 'past']
+  if (props.initialTab && validTabs.includes(props.initialTab)) {
+    activeTab.value = props.initialTab
+  }
+}
+
 const restoringLiveState = ref(false)
 
 onMounted(() => {
   selectedAiProvider.value = loadAiProvider() ?? 'openai'
+  const usingInitialSeed = hasInitialSetupSeed()
 
-  if (!liveState.value) {
+  if (usingInitialSeed) {
+    resetStoredExamSetupStateForSeed()
+  }
+
+  if (!usingInitialSeed && !liveState.value) {
     const legacyLiveState = restoreLegacySessionValue<ExamSetupLiveState>(LIVE_STATE_KEY)
     if (legacyLiveState) liveState.value = legacyLiveState
   }
-  if (!savedDraft.value) {
+  if (!usingInitialSeed && !savedDraft.value) {
     const legacyDraft = restoreLegacySessionValue<ExamSetupDraft>(DRAFT_KEY)
     if (legacyDraft) savedDraft.value = legacyDraft
   }
@@ -1177,7 +1475,7 @@ onMounted(() => {
     restoringLiveState.value = true
     try {
       const state = liveState.value
-      selectedMode.value = state.selectedMode ?? 'exam'
+      selectedMode.value = 'exam'
       selectedExamTask.value = state.selectedExamTask ?? 'task1'
       const validTabs: TabKey[] = ['manual', 'ai', 'past']
       activeTab.value = validTabs.includes(state.activeTab) ? state.activeTab : 'manual'
@@ -1191,19 +1489,31 @@ onMounted(() => {
       wordRange.value = state.wordRange ?? null
       customWordRange.value = state.customWordRange ?? ''
       showCustomWordRange.value = state.showCustomWordRange ?? false
+      writingRequirement.value = state.writingRequirement ?? ''
+      attachmentDraftMode.value = state.attachmentDraftMode ?? (state.materialAttachmentText ? 'material' : state.uploadedImage ? 'image' : 'none')
       maxScore.value = state.maxScore ?? 100
       customMaxScore.value = state.customMaxScore ?? null
       uploadedImage.value = state.uploadedImage ?? null
       uploadedImageBase64.value = state.uploadedImageBase64 ?? null
       materialAttachmentText.value = state.materialAttachmentText ?? null
       materialAttachmentName.value = state.materialAttachmentName ?? null
-      conversationMessages.value = (state.conversationMessages ?? []).map((message) => ({ ...message }))
       workbenchStep.value = state.workbenchStep ?? 'compose'
-      previewStatus.value = state.previewStatus ?? (state.previewSheet ? 'ready' : 'empty')
-      previewMissingFields.value = [...(state.previewMissingFields ?? [])]
       previewDirty.value = state.previewDirty ?? false
       pendingSubmission.value = state.pendingSubmission ?? false
       submittedTopic.value = state.submittedTopic ?? ''
+      promptSheetMessages.value = Array.isArray(state.promptSheetMessages)
+        ? state.promptSheetMessages
+            .filter((message): message is PromptSheetMessage =>
+              !!message
+              && (message.role === 'user' || message.role === 'assistant')
+              && typeof message.content === 'string',
+            )
+            .map((message) => ({
+              id: message.id || createPromptSheetMessageId(message.role),
+              role: message.role,
+              content: message.content,
+            }))
+        : []
       workbenchError.value = state.workbenchError ?? null
       confirmStep.value = 'idle'
       parsedResult.value = state.parsedResult
@@ -1267,8 +1577,6 @@ onMounted(() => {
     const restored = buildExamResumePreview(props.resumeMetadata, props.studyStage ?? null)
     if (restored) {
       startPreview(restored.topicInfo, restored.sheet)
-      previewStatus.value = 'ready'
-      previewMissingFields.value = []
       submittedTopic.value = ''
       topic.value = ''
       if (restored.taskType) {
@@ -1288,6 +1596,8 @@ onMounted(() => {
       wordRange.value = d.wordRange ?? null
       customWordRange.value = d.customWordRange ?? ''
       showCustomWordRange.value = d.showCustomWordRange ?? false
+      writingRequirement.value = d.writingRequirement ?? ''
+      attachmentDraftMode.value = d.attachmentDraftMode ?? (d.materialAttachmentText ? 'material' : d.uploadedImage ? 'image' : 'none')
       maxScore.value = d.maxScore ?? 100
       uploadedImage.value = d.uploadedImage ?? null
       uploadedImageBase64.value = d.uploadedImageBase64 ?? null
@@ -1298,6 +1608,10 @@ onMounted(() => {
       console.warn('[ExamSetup] draft restore failed, clearing', e)
     }
     savedDraft.value = null
+  }
+
+  if (usingInitialSeed) {
+    applyInitialSetupSeed()
   }
 
   void nextTick(() => {
@@ -1324,11 +1638,12 @@ const showBackConfirm = ref(false)
 const isDirty = computed(() => {
   return topic.value.trim().length > 0
     || submittedTopic.value.trim().length > 0
-    || conversationMessages.value.length > 0
     || selectedExamTask.value !== null
     || genre.value !== null
     || wordRange.value !== null
     || (showCustomWordRange.value && customWordRange.value.trim().length > 0)
+    || writingRequirement.value.trim().length > 0
+    || attachmentDraftMode.value !== 'none'
     || uploadedImage.value !== null
     || materialAttachmentText.value !== null
     || selectedPrompt.value !== null
@@ -1371,7 +1686,7 @@ async function saveAndLeave() {
           topic: t,
           genre: genre.value,
           wordRange: getEffectiveWordRange(),
-          requirements: null,
+          requirements: writingRequirement.value.trim() || null,
           imageDescription: uploadedImage.value ? '请结合附件图片完成写作。' : selectedPrompt.value?.imageDescription?.trim() || null,
           materialText: materialAttachmentText.value ?? (selectedPrompt.value?.materialText?.trim() || null),
           attachmentImageUrl: uploadedImage.value ?? selectedPrompt.value?.imageUrl?.trim() ?? null,
@@ -1385,7 +1700,12 @@ async function saveAndLeave() {
       }
     }
 
-    if (draftInfo) {
+    const saveAction = resolveExamSetupSaveAction({
+      hasPromptInfo: !!draftInfo,
+      isDirty: isDirty.value,
+    })
+
+    if (saveAction === 'createDraftDocument' && draftInfo) {
       const taskPrompt = buildExamTaskPrompt(draftInfo)
       const res = await startWritingSession({
         mode: 'exam',
@@ -1413,6 +1733,9 @@ async function saveAndLeave() {
       })
       console.log('[ExamSetup] writing metadata:', metadata)
       clearExamSetupState()
+      savedSuccessfully = true
+    } else if (saveAction === 'saveSetupState') {
+      saveLiveStateNow()
       savedSuccessfully = true
     } else {
       liveStateCleared = false
@@ -1489,6 +1812,7 @@ async function useSelectedPrompt() {
   const prompt = selectedPrompt.value
   showPastPromptPicker.value = false
   attachmentMenuOpen.value = false
+  topic.value = topic.value.trim() || resolvePromptTopicSource(prompt)
   if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
     const range = `${prompt.wordCountMin}-${prompt.wordCountMax}`
     if (wordRangeOptions.includes(range)) {
@@ -1520,34 +1844,31 @@ async function useSelectedPrompt() {
   if (normalizedTask) {
     selectedExamTask.value = normalizedTask
   }
-  appendConversationMessages([
-    createUserAssetMessage('past_prompt', {
-      text: '我插入了一道历年真题作为参考',
-      assetName: prompt.paper || prompt.title,
-      assetSummary: prompt.promptText.slice(0, 180),
-    }),
-  ])
-  await refreshDialoguePreview()
+  if (prompt.materialText?.trim()) {
+    attachmentDraftMode.value = 'material'
+  } else if (prompt.imageUrl?.trim() || prompt.imageDescription?.trim()) {
+    attachmentDraftMode.value = 'image'
+  }
 }
 
 function saveLiveStateNow() {
   if (liveStateCleared) return
   const snapshot: ExamSetupLiveState = {
-    selectedMode: selectedMode.value,
+    selectedMode: 'exam',
     selectedExamTask: selectedExamTask.value,
     activeTab: activeTab.value,
-    conversationMessages: conversationMessages.value.map((message) => ({ ...message })),
     workbenchStep: workbenchStep.value,
-    previewStatus: previewStatus.value,
-    previewMissingFields: [...previewMissingFields.value],
     previewDirty: previewDirty.value,
     pendingSubmission: pendingSubmission.value,
     submittedTopic: submittedTopic.value,
+    promptSheetMessages: promptSheetMessages.value.map((message) => ({ ...message })),
     topic: topic.value,
     genre: genre.value,
     wordRange: wordRange.value,
     customWordRange: customWordRange.value,
     showCustomWordRange: showCustomWordRange.value,
+    writingRequirement: writingRequirement.value,
+    attachmentDraftMode: attachmentDraftMode.value,
     maxScore: maxScore.value,
     uploadedImage: uploadedImage.value,
     uploadedImageBase64: uploadedImageBase64.value,
@@ -1608,18 +1929,18 @@ watch(
     selectedMode,
     selectedExamTask,
     activeTab,
-    conversationMessages,
     workbenchStep,
-    previewStatus,
-    previewMissingFields,
     previewDirty,
     pendingSubmission,
     submittedTopic,
+    promptSheetMessages,
     topic,
     genre,
     wordRange,
     customWordRange,
     showCustomWordRange,
+    writingRequirement,
+    attachmentDraftMode,
     maxScore,
     customMaxScore,
     uploadedImage,
@@ -1656,6 +1977,8 @@ watch(
     wordRange,
     customWordRange,
     showCustomWordRange,
+    writingRequirement,
+    attachmentDraftMode,
     maxScore,
     uploadedImage,
     materialAttachmentText,
@@ -1823,11 +2146,321 @@ watch(activeTab, (tab) => {
   overflow: hidden;
 }
 
+.prompt-config-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fbfdff;
+}
+
+.prompt-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prompt-config-kicker {
+  margin: 0 0 4px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.prompt-config-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.prompt-config-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.prompt-config-stage {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.prompt-config-toggle {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #fff;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.prompt-config-toggle:hover {
+  background: #ecfdf5;
+}
+
+.prompt-config-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prompt-config-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.prompt-config-chip strong {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.prompt-config-grid {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 80;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  width: min(760px, calc(100vw - 56px));
+  max-height: min(78vh, 720px);
+  padding: 26px 30px 24px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.24);
+  transform: translate(-50%, -50%);
+  overflow-y: auto;
+}
+
+.prompt-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(1px);
+}
+
+.prompt-config-modal-head,
+.prompt-config-modal-footer {
+  grid-column: 1 / -1;
+}
+
+.prompt-config-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5edf5;
+}
+
+.prompt-config-modal-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.prompt-config-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.prompt-config-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.prompt-config-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid #e5edf5;
+}
+
+.prompt-config-secondary,
+.prompt-config-apply {
+  min-width: 96px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.prompt-config-secondary {
+  border: 1px solid #dbe3ee;
+  background: #fff;
+  color: #475569;
+}
+
+.prompt-config-apply {
+  border: 1px solid #047857;
+  background: #047857;
+  color: #fff;
+}
+
+.prompt-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prompt-config-field--wide,
+.prompt-config-field--task {
+  grid-column: 1 / -1;
+}
+
+.prompt-config-label {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-segment,
+.attachment-segment {
+  display: grid;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.task-segment {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.attachment-segment {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.task-segment-btn,
+.attachment-segment-btn {
+  min-height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.task-segment-btn.active,
+.attachment-segment-btn.active {
+  background: #fff;
+  color: #047857;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.prompt-config-select,
+.prompt-config-input,
+.prompt-config-textarea {
+  width: 100%;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.prompt-config-select,
+.prompt-config-input {
+  height: 40px;
+  padding: 0 12px;
+}
+
+.prompt-config-textarea {
+  padding: 10px 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.prompt-config-select:focus,
+.prompt-config-input:focus,
+.prompt-config-textarea:focus {
+  outline: none;
+  border-color: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.1);
+}
+
+.word-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 8px;
+}
+
+.image-config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.image-config-btn {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid #047857;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.image-config-hint {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .conversation-log {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  gap: 14px;
+  gap: 22px;
   min-height: 0;
   overflow-y: auto;
   padding-right: 6px;
@@ -1836,94 +2469,50 @@ watch(activeTab, (tab) => {
   scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
 }
 
-.conversation-entry {
-  display: flex;
-}
-
-.conversation-entry--user {
-  justify-content: flex-end;
-}
-
-.conversation-entry--assistant,
-.conversation-entry--status {
-  justify-content: flex-start;
-}
-
 .conversation-bubble {
-  max-width: 92%;
-  padding: 14px 16px;
-  border-radius: 20px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  max-width: min(760px, 92%);
+  padding: 2px 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   user-select: text;
   -webkit-user-select: text;
 }
 
 .conversation-bubble--assistant {
   align-self: flex-start;
-  background: #f8fffb;
-  border-color: #bbf7d0;
 }
 
 .conversation-bubble--user {
   align-self: flex-end;
+  max-width: min(560px, 72%);
+  padding: 10px 14px;
+  border: 1px solid #dbe3ee;
+  border-radius: 16px;
   background: #f8fafc;
-  border-color: #dbe3ee;
 }
 
 .conversation-bubble--warning {
+  max-width: min(560px, 88%);
+  padding: 10px 14px;
+  border: 1px solid #f5d488;
+  border-radius: 14px;
   background: #fff9eb;
-  border-color: #f5d488;
 }
 
 .conversation-bubble--success {
+  max-width: min(560px, 88%);
+  padding: 10px 14px;
+  border: 1px solid #a7f3d0;
+  border-radius: 14px;
   background: #ecfdf5;
-  border-color: #a7f3d0;
-}
-
-.conversation-bubble--muted {
-  background: #f8fafc;
-  border-color: #e2e8f0;
-}
-
-.conversation-empty {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  padding: 18px;
-  border: 1px dashed #d7e2ea;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
-}
-
-.conversation-empty-title {
-  margin: 0;
-  color: #0f172a;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.conversation-empty-text {
-  margin: 0;
-  color: #64748b;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.bubble-label {
-  margin: 0 0 6px;
-  color: #047857;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .bubble-text {
   margin: 0;
-  color: #334155;
-  font-size: 14px;
+  color: #0f172a;
+  font-size: 15px;
   line-height: 1.75;
   user-select: text;
   -webkit-user-select: text;
@@ -1931,6 +2520,82 @@ watch(activeTab, (tab) => {
 
 .bubble-text--pre {
   white-space: pre-wrap;
+}
+
+.bubble-text--markdown :deep(p) {
+  margin: 0 0 14px;
+}
+
+.bubble-text--markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.bubble-text--markdown :deep(h1),
+.bubble-text--markdown :deep(h2),
+.bubble-text--markdown :deep(h3) {
+  margin: 22px 0 10px;
+  color: #0f172a;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.bubble-text--markdown :deep(h1:first-child),
+.bubble-text--markdown :deep(h2:first-child),
+.bubble-text--markdown :deep(h3:first-child) {
+  margin-top: 0;
+}
+
+.bubble-text--markdown :deep(h1) {
+  font-size: 22px;
+}
+
+.bubble-text--markdown :deep(h2) {
+  font-size: 19px;
+}
+
+.bubble-text--markdown :deep(h3) {
+  font-size: 16px;
+}
+
+.bubble-text--markdown :deep(ul),
+.bubble-text--markdown :deep(ol) {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.bubble-text--markdown :deep(li) {
+  margin: 4px 0;
+}
+
+.bubble-text--markdown :deep(blockquote) {
+  margin: 0 0 14px;
+  padding-left: 14px;
+  border-left: 3px solid #cbd5e1;
+  color: #334155;
+}
+
+.bubble-text--markdown :deep(strong) {
+  font-weight: 800;
+}
+
+.bubble-text--markdown :deep(code) {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 0.92em;
+}
+
+.bubble-text--markdown :deep(hr) {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid #e2e8f0;
+}
+
+.asset-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .asset-card,
@@ -1954,56 +2619,6 @@ watch(activeTab, (tab) => {
   display: block;
   flex: none;
   margin-top: auto;
-}
-
-.composer-asset-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.composer-asset-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #dbe7f0;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #334155;
-  font-size: 12px;
-}
-
-.composer-asset-chip-label {
-  color: #047857;
-  font-weight: 700;
-}
-
-.composer-asset-chip-text {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-asset-chip-action,
-.composer-asset-chip-close {
-  border: none;
-  background: transparent;
-  color: #047857;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.composer-asset-chip-close {
-  color: #94a3b8;
-}
-
-.composer-asset-chip-close:hover {
-  color: #475569;
 }
 
 .composer-shell {
@@ -2371,45 +2986,6 @@ watch(activeTab, (tab) => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-.paper-status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 18px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-}
-
-.paper-status-bar--ready {
-  border-color: #a7f3d0;
-  background: #ecfdf5;
-}
-
-.paper-status-bar--draft {
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-
-.paper-status-bar--empty {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-}
-
-.paper-status-bar__label {
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.paper-status-bar__meta {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .paper-sheet--canvas {
   flex: 1;
   min-height: 100%;
@@ -2554,12 +3130,18 @@ watch(activeTab, (tab) => {
 
 .paper-comic-visual {
   position: relative;
-  min-height: 140px;
+  min-height: 230px;
   padding: 16px;
   background:
-    radial-gradient(circle at top left, rgba(254, 240, 138, 0.45), transparent 42%),
-    radial-gradient(circle at bottom right, rgba(191, 219, 254, 0.5), transparent 38%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at top left, rgba(254, 240, 138, 0.5), transparent 38%),
+    linear-gradient(180deg, #fffdf4 0%, #eef6ff 100%);
+  background-size:
+    18px 18px,
+    18px 18px,
+    auto,
+    auto;
   border-bottom: 1px solid #ebe4d8;
 }
 
@@ -2576,33 +3158,174 @@ watch(activeTab, (tab) => {
   text-transform: uppercase;
 }
 
-.paper-comic-figure-row {
+.paper-comic-speech {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  top: 56px;
+  left: 18px;
+  right: 18px;
+  z-index: 2;
+  max-width: 78%;
+  margin: 0;
+  padding: 10px 14px;
+  border: 2px solid #0f172a;
+  border-radius: 18px 18px 18px 6px;
+  background: #fff;
+  color: #0f172a;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  line-height: 1.45;
+  box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.1);
 }
 
-.paper-comic-figure {
-  width: 34px;
+.paper-comic-speech::after {
+  content: "";
+  position: absolute;
+  left: 20px;
+  bottom: -12px;
+  width: 18px;
+  height: 18px;
+  border-right: 2px solid #0f172a;
+  border-bottom: 2px solid #0f172a;
+  background: #fff;
+  transform: rotate(45deg);
+}
+
+.paper-comic-stage {
+  position: absolute;
+  inset: 88px 16px 18px;
+  overflow: hidden;
+  border: 3px solid #0f172a;
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, transparent 0 68%, rgba(15, 23, 42, 0.08) 68% 100%),
+    radial-gradient(circle at 18% 24%, rgba(255, 255, 255, 0.95) 0 5px, transparent 6px),
+    radial-gradient(circle at 78% 22%, rgba(255, 255, 255, 0.8) 0 4px, transparent 5px),
+    linear-gradient(135deg, #fef3c7 0%, #dbeafe 100%);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.7);
+}
+
+.paper-comic-person {
+  position: absolute;
+  bottom: 20px;
+  width: 46px;
+  height: 88px;
+}
+
+.paper-comic-person--left {
+  left: 18%;
+}
+
+.paper-comic-person--center {
+  left: 44%;
+  transform: translateX(-50%) scale(1.08);
+}
+
+.paper-comic-person--right {
+  right: 16%;
+}
+
+.paper-comic-head {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  border: 3px solid #0f172a;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 42%, #0f172a 0 2px, transparent 3px),
+    radial-gradient(circle at 64% 42%, #0f172a 0 2px, transparent 3px),
+    linear-gradient(180deg, #fde68a 0%, #f8c471 100%);
+  transform: translateX(-50%);
+}
+
+.paper-comic-head::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  width: 10px;
+  height: 5px;
+  border-bottom: 2px solid #0f172a;
+  border-radius: 0 0 10px 10px;
+}
+
+.paper-comic-body-shape {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 42px;
   height: 58px;
-  border-radius: 16px 16px 10px 10px;
-  background: linear-gradient(180deg, #475569 0%, #1f2937 100%);
-  box-shadow:
-    inset 0 -8px 0 rgba(255, 255, 255, 0.08),
-    0 6px 12px rgba(15, 23, 42, 0.16);
+  border: 3px solid #0f172a;
+  border-radius: 18px 18px 8px 8px;
+  background: linear-gradient(180deg, #38bdf8 0%, #0f766e 100%);
+  transform: translateX(-50%);
 }
 
-.paper-comic-figure:nth-child(2) {
-  height: 68px;
-  background: linear-gradient(180deg, #0f766e 0%, #155e75 100%);
+.paper-comic-body-shape::before,
+.paper-comic-body-shape::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  width: 24px;
+  height: 5px;
+  border-radius: 999px;
+  background: #0f172a;
 }
 
-.paper-comic-figure:nth-child(3) {
-  height: 50px;
-  background: linear-gradient(180deg, #7c3aed 0%, #4338ca 100%);
+.paper-comic-body-shape::before {
+  left: -18px;
+  transform: rotate(-28deg);
+}
+
+.paper-comic-body-shape::after {
+  right: -18px;
+  transform: rotate(28deg);
+}
+
+.paper-comic-person--left .paper-comic-body-shape {
+  background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%);
+}
+
+.paper-comic-person--right .paper-comic-body-shape {
+  background: linear-gradient(180deg, #a78bfa 0%, #4f46e5 100%);
+}
+
+.paper-comic-prop {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+}
+
+.paper-comic-prop--paper {
+  width: 42px;
+  height: 54px;
+  border: 3px solid #0f172a;
+  border-radius: 4px;
+  background:
+    linear-gradient(#0f172a 0 2px, transparent 2px 12px) 8px 12px / 26px 12px repeat-y,
+    #fff;
+  transform: rotate(6deg);
+}
+
+.paper-comic-action-line {
+  position: absolute;
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: #0f172a;
+}
+
+.paper-comic-action-line--one {
+  top: 40px;
+  right: 42px;
+  transform: rotate(-18deg);
+}
+
+.paper-comic-action-line--two {
+  top: 56px;
+  right: 56px;
+  transform: rotate(10deg);
 }
 
 .paper-comic-body {
@@ -2612,8 +3335,7 @@ watch(activeTab, (tab) => {
   padding: 16px 18px 18px;
 }
 
-.paper-comic-description,
-.paper-comic-dialogue {
+.paper-comic-description {
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;
   color: #0f172a;
@@ -2622,14 +3344,6 @@ watch(activeTab, (tab) => {
 
 .paper-comic-description {
   font-size: 18px;
-}
-
-.paper-comic-dialogue {
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: #f8fafc;
-  color: #475569;
-  font-size: 16px;
 }
 
 .paper-chart-wrap {
@@ -2653,6 +3367,86 @@ watch(activeTab, (tab) => {
 .paper-chart-summary {
   font-size: 18px;
   line-height: 1.7;
+}
+
+.paper-chart-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.paper-chart-svg {
+  width: 100%;
+  height: 220px;
+  overflow: visible;
+}
+
+.paper-chart-axis-labels {
+  display: flex;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 12px;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.paper-chart-axis {
+  stroke: #cbd5e1;
+  stroke-width: 0.8;
+}
+
+.paper-chart-bar {
+  opacity: 0.82;
+  rx: 0.7;
+}
+
+.paper-chart-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.paper-chart-point {
+  stroke: #fff;
+  stroke-width: 0.8;
+}
+
+.paper-chart-x-labels,
+.paper-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: #475569;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.paper-chart-x-labels {
+  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
+  gap: 8px;
+}
+
+.paper-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paper-chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.paper-chart-legend i.paper-chart-legend-marker--bar {
+  border-radius: 3px;
 }
 
 .paper-chart-table {
@@ -3486,6 +4280,16 @@ watch(activeTab, (tab) => {
   }
   .workbench-input {
     min-height: 180px;
+  }
+  .prompt-config-grid {
+    grid-template-columns: 1fr;
+  }
+  .word-range-row {
+    grid-template-columns: 1fr;
+  }
+  .image-config-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .paper-directions {
     font-size: 24px;

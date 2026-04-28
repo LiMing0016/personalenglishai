@@ -53,296 +53,50 @@
       </div>
     </div>
 
-    <!-- Analytics panel -->
-    <div class="analytics-panel">
-      <div class="analytics-panel-header">
-        <div class="analytics-tab-group">
-          <button
-            class="analytics-tab"
-            :class="{ active: analyticsView === 'growth' }"
-            @click="analyticsView = 'growth'"
-          >成长趋势</button>
-          <button
-            class="analytics-tab"
-            :class="{ active: analyticsView === 'habit' }"
-            @click="analyticsView = 'habit'"
-          >写作习惯</button>
-        </div>
-
-        <div v-if="analyticsView === 'growth'" class="analytics-segmented">
-          <button
-            v-for="option in analyticsModeOptions"
-            :key="option.value"
-            class="analytics-chip"
-            :class="{ active: growthMode === option.value }"
-            @click="growthMode = option.value"
-          >{{ option.label }}</button>
-        </div>
-
-        <div v-else class="analytics-segmented">
-          <button
-            v-for="option in habitWindowOptions"
-            :key="option.value"
-            class="analytics-chip"
-            :class="{ active: habitWindow === option.value }"
-            @click="habitWindow = option.value"
-          >{{ option.label }}</button>
-        </div>
-      </div>
-
-      <template v-if="analyticsView === 'growth'">
-        <template v-if="growthScreen === 'assets'">
-          <div class="analytics-subheader">
-            <div>
-              <h3 class="analytics-title">写作资产</h3>
-              <p class="analytics-subtitle">累计看我写了多少，主图看当期词数和句子产出</p>
-            </div>
-
-            <div class="analytics-range-controls">
-              <button
-                v-for="option in assetGranularityOptions"
-                :key="option.value"
-                class="analytics-chip"
-                :class="{ active: assetGranularity === option.value }"
-                @click="assetGranularity = option.value"
-              >{{ option.label }}</button>
-            </div>
-          </div>
-
-          <div class="analytics-metrics analytics-metrics--asset">
-            <div class="analytics-metric-card analytics-metric-card--asset">
-              <span class="analytics-metric-label">累计作文</span>
-              <span class="analytics-metric-value">{{ formatAssetMetric(assetSummary.totalEssays) }}</span>
-            </div>
-            <div class="analytics-metric-card analytics-metric-card--asset">
-              <span class="analytics-metric-label">累计词数</span>
-              <span class="analytics-metric-value">{{ formatAssetMetric(assetSummary.totalWords) }}</span>
-            </div>
-            <div class="analytics-metric-card analytics-metric-card--asset">
-              <span class="analytics-metric-label">累计句子</span>
-              <span class="analytics-metric-value">{{ formatAssetMetric(assetSummary.totalSentences) }}</span>
-            </div>
-            <div class="analytics-metric-card analytics-metric-card--asset">
-              <span class="analytics-metric-label">篇均语法错误</span>
-              <span class="analytics-metric-value">{{ formatAssetAverage(assetSummary.avgGrammarErrorsPerEssay) }}</span>
-            </div>
-          </div>
-
-          <div v-if="assetSeries.length > 0" class="asset-board">
-            <div class="asset-board-header">
-              <div>
-                <h4 class="asset-board-title">{{ assetPrimaryTitle }}</h4>
-              </div>
-            </div>
-
-            <div class="asset-board-summary">
-              <div class="asset-hero-card">
-                <div class="asset-hero-top">
-                  <div>
-                    <span class="asset-card-label">{{ assetCurrentLabel }}</span>
-                    <div class="asset-hero-value">{{ formatAssetMetric(assetCurrentPeriod?.wordCount) }}</div>
-                    <div class="asset-hero-unit">词数</div>
-                  </div>
-                  <span class="asset-hero-period">{{ assetCurrentPeriod?.periodLabel ?? '--' }}</span>
-                </div>
-
-                <div class="asset-hero-meta">
-                  <div class="asset-hero-meta-item">
-                    <span class="asset-meta-label">句子</span>
-                    <strong>{{ formatAssetMetric(assetCurrentPeriod?.sentenceCount) }}</strong>
-                  </div>
-                  <div class="asset-hero-meta-item">
-                    <span class="asset-meta-label">作文</span>
-                    <strong>{{ formatAssetMetric(assetCurrentPeriod?.essayCount) }}</strong>
-                  </div>
-                  <div class="asset-hero-meta-item">
-                    <span class="asset-meta-label">篇均词数</span>
-                    <strong>{{ formatAssetMetric(assetCurrentAverageWords) }}</strong>
-                  </div>
-                </div>
-              </div>
-
-              <div class="asset-side-cards">
-                <div class="asset-side-card">
-                  <span class="asset-card-label">较上一{{ assetGranularityUnit }}变化</span>
-                  <div class="asset-side-value-row">
-                    <strong>{{ formatSignedAssetMetric(assetWordDelta) }}</strong>
-                    <span class="asset-side-trend" :class="{ down: (assetWordDeltaPercent ?? 0) < 0 }">
-                      {{ formatSignedPercent(assetWordDeltaPercent) }}
-                    </span>
-                  </div>
-                  <p class="asset-side-note">{{ assetDeltaDescription }}</p>
-                </div>
-
-                <div class="asset-side-card">
-                  <span class="asset-card-label">最高产{{ assetGranularityUnit }}</span>
-                  <div class="asset-side-value-row">
-                    <strong>{{ assetPeakPeriod?.periodLabel ?? '--' }}</strong>
-                    <span class="asset-side-trend neutral">词数峰值</span>
-                  </div>
-                  <p class="asset-side-note">
-                    {{ assetPeakDescription }}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div class="asset-periods-section">
-              <div class="asset-periods-head">
-                <div>
-                  <h5 class="asset-periods-title">{{ assetRecentSectionTitle }}</h5>
-                  <p class="asset-periods-subtitle">当前{{ assetGranularityUnit }}高亮，保留最近几个周期的连续感</p>
-                </div>
-              </div>
-
-              <div class="asset-period-grid">
-                <article
-                  v-for="period in assetVisiblePeriods"
-                  :key="period.periodStart"
-                  class="asset-period-card"
-                  :class="{ active: assetCurrentPeriod?.periodStart === period.periodStart }"
-                >
-                  <div class="asset-period-top">
-                    <strong class="asset-period-name">{{ period.periodLabel }}</strong>
-                    <span
-                      class="asset-period-tag"
-                      :class="{ active: assetCurrentPeriod?.periodStart === period.periodStart }"
-                    >
-                      {{ assetCurrentPeriod?.periodStart === period.periodStart ? '当前重点' : '历史产出' }}
-                    </span>
-                  </div>
-
-                  <div class="asset-period-value">{{ formatAssetMetric(period.wordCount) }}</div>
-                  <div class="asset-period-label">词数</div>
-
-                  <div class="asset-period-progress">
-                    <div class="asset-period-progress-row">
-                      <span>句子 {{ formatAssetMetric(period.sentenceCount) }}</span>
-                      <span>作文 {{ formatAssetMetric(period.essayCount) }}</span>
-                    </div>
-                    <div class="asset-progress-track">
-                      <span :style="{ width: `${assetWordWidth(period.wordCount)}%` }" />
-                    </div>
-                  </div>
-
-                  <div class="asset-period-footer">
-                    <div class="asset-mini-bars">
-                      <span
-                        v-for="(height, index) in assetMiniHeights(period)"
-                        :key="`${period.periodStart}-${index}`"
-                        :style="{ height: `${height}px` }"
-                      />
-                    </div>
-                    <span class="asset-period-footnote">{{ assetPeriodFootnote(period) }}</span>
-                  </div>
-                </article>
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="analytics-placeholder analytics-placeholder--large">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><path d="M4 19V5"/><path d="M20 19V5"/><path d="M8 16V9"/><path d="M12 16V7"/><path d="M16 16V11"/></svg>
-            <span>{{ assetEmptyText }}</span>
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="analytics-subheader">
-            <div>
-              <h3 class="analytics-title">首次得分 vs 最新得分</h3>
-              <p class="analytics-subtitle">按最近已评分作文对比前后变化</p>
-            </div>
-
-            <div class="analytics-range-controls">
-              <button
-                v-for="option in growthRangeOptions"
-                :key="option.value"
-                class="analytics-chip"
-                :class="{ active: growthRange === option.value }"
-                @click="growthRange = option.value"
-              >{{ option.label }}</button>
-
-              <label v-if="growthRange === 'custom'" class="analytics-custom-input">
-                <input
-                  v-model.number="growthCustomCount"
-                  type="number"
-                  min="1"
-                  max="200"
-                  inputmode="numeric"
-                />
-                <span>篇</span>
-              </label>
-            </div>
-          </div>
-
-          <div v-if="growthTrendDocs.length >= 2" ref="growthChartRef" class="analytics-chart" />
-          <div v-else class="analytics-placeholder analytics-placeholder--large">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            <span>{{ growthEmptyText }}</span>
-          </div>
-
-          <div class="analytics-metrics">
-            <div class="analytics-metric-card">
-              <span class="analytics-metric-label">首次均分</span>
-              <span class="analytics-metric-value">{{ formatTrendMetric(growthInitialAverage) }}</span>
-            </div>
-            <div class="analytics-metric-card">
-              <span class="analytics-metric-label">最新均分</span>
-              <span class="analytics-metric-value">{{ formatTrendMetric(growthLatestAverage) }}</span>
-            </div>
-            <div class="analytics-metric-card">
-              <span class="analytics-metric-label">平均提分</span>
-              <span class="analytics-metric-value" :class="{ up: growthAverageDelta != null && growthAverageDelta > 0 }">
-                {{ formatTrendDelta(growthAverageDelta) }}
-              </span>
-            </div>
-          </div>
-        </template>
-      </template>
-
-      <template v-else>
-        <div class="analytics-subheader">
-          <div>
-            <h3 class="analytics-title">评分提交习惯</h3>
-            <p class="analytics-subtitle">按评分提交记录展示活跃天数与热力分布</p>
-          </div>
-        </div>
-
-        <div class="analytics-placeholder analytics-placeholder--large">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><path d="M3 5h18"/><path d="M8 3v4"/><path d="M16 3v4"/><rect x="3" y="5" width="18" height="16" rx="2"/></svg>
-          <span>{{ habitPlaceholderText }}</span>
-        </div>
-      </template>
-
-      <div v-if="analyticsView === 'growth'" class="analytics-footer-nav">
-        <div class="analytics-dots">
-          <button
-            v-for="item in growthPagerItems"
-            :key="item.value"
-            class="analytics-dot"
-            :class="{ active: growthScreen === item.value }"
-            :aria-label="`切换到${item.label}`"
-            @click="growthScreen = item.value"
-          />
-        </div>
-        <div class="analytics-footer-actions">
-          <button
-            class="analytics-arrow"
-            :disabled="growthPagerIndex <= 0"
-            aria-label="上一个成长趋势屏"
-            @click="goPrevGrowthScreen"
-          >
+    <!-- Analytics carousel -->
+    <div class="analytics-carousel">
+      <div class="carousel-header">
+        <span class="carousel-title">{{ ['得分趋势', '能力雷达', '错误分析'][carouselIndex] }}</span>
+        <div class="carousel-nav">
+          <button class="carousel-arrow" :disabled="carouselIndex <= 0" @click="carouselIndex--">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
-          <button
-            class="analytics-arrow"
-            :disabled="growthPagerIndex >= growthPagerItems.length - 1"
-            aria-label="下一个成长趋势屏"
-            @click="goNextGrowthScreen"
-          >
+          <span class="carousel-indicator">{{ carouselIndex + 1 }} / 3</span>
+          <button class="carousel-arrow" :disabled="carouselIndex >= 2" @click="carouselIndex++">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
+      </div>
+      <div class="carousel-viewport">
+        <div class="carousel-track" :style="{ transform: `translateX(-${carouselIndex * 100}%)` }">
+          <!-- Panel 1: 得分趋势 -->
+          <div class="carousel-slide">
+            <div v-if="scoredDocs.length >= 3" ref="chartRef" class="carousel-chart" />
+            <div v-else class="carousel-placeholder">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              <span>完成 3 次以上评分后展示趋势图</span>
+            </div>
+          </div>
+          <!-- Panel 2: 能力雷达 -->
+          <div class="carousel-slide">
+            <div v-if="hasRadarData" ref="radarRef" class="carousel-chart" />
+            <div v-else class="carousel-placeholder">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
+              <span>完成评分后展示六维能力雷达图</span>
+            </div>
+          </div>
+          <!-- Panel 3: 错误分析 -->
+          <div class="carousel-slide">
+            <div v-if="hasErrorData" ref="errorRef" class="carousel-chart" />
+            <div v-else class="carousel-placeholder">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+              <span>完成评分后展示错误类型分布</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="carousel-dots">
+        <button v-for="i in 3" :key="i" class="carousel-dot" :class="{ active: carouselIndex === i - 1 }" @click="carouselIndex = i - 1" />
       </div>
     </div>
 
@@ -501,25 +255,189 @@
     </div>
   </div>
 
-  <!-- Mode select -->
-  <div v-else-if="phase === 'mode-select'" class="gate-center">
-    <h2 class="gate-title">选择写作模式</h2>
-    <p class="gate-desc">
-      当前学段：<strong>{{ getStageLabel(currentStage) }}</strong>
-    </p>
-    <div class="mode-grid">
-      <button class="mode-card" @click="createBlankFreeDoc">
-        <span class="mode-icon">&#9997;&#65039;</span>
-        <span class="mode-name">自由模式</span>
-        <span class="mode-desc">自由写作，AI 实时辅助与反馈</span>
-      </button>
-      <button class="mode-card" @click="openExamSetupFromModeSelect">
-        <span class="mode-icon">&#9200;</span>
-        <span class="mode-name">考试模式</span>
-        <span class="mode-desc">模拟考试环境，限时写作与评分</span>
+  <!-- New writing task modal -->
+  <div v-else-if="phase === 'mode-select'" class="task-modal-page">
+    <div class="task-modal-backdrop" />
+    <section class="task-modal" aria-label="新建写作任务">
+      <button class="task-modal-close" type="button" title="退出" @click="navigateToPhase('doc-list')">&times;</button>
+      <p class="task-modal-kicker">写作设置</p>
+      <h2 class="task-modal-title">新建写作任务</h2>
+
+      <div class="task-modal-section">
+        <p class="task-modal-label">写作模式</p>
+        <div class="task-option-grid task-option-grid--two">
+          <button
+            class="task-option"
+            :class="{ active: newTaskMode === 'free' }"
+            type="button"
+            @click="newTaskMode = 'free'"
+          >
+            <span class="task-option-title">自由写作</span>
+            <span class="task-option-desc">直接进入空白写作页</span>
+          </button>
+          <button
+            class="task-option"
+            :class="{ active: newTaskMode === 'exam' }"
+            type="button"
+            @click="newTaskMode = 'exam'"
+          >
+            <span class="task-option-title">考试写作</span>
+            <span class="task-option-desc">先确定题目来源</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="newTaskMode === 'exam'" class="task-modal-section">
+        <p class="task-modal-label">题目来源</p>
+        <div class="task-option-grid task-option-grid--two">
+          <button
+            class="task-option"
+            :class="{ active: newTaskSource === 'past_prompt' }"
+            type="button"
+            @click="newTaskSource = 'past_prompt'"
+          >
+            <span class="task-option-title">历年真题</span>
+            <span class="task-option-desc">进入真题选择页，忠实复现原题</span>
+          </button>
+          <button
+            class="task-option"
+            :class="{ active: newTaskSource === 'ai_design' }"
+            type="button"
+            @click="newTaskSource = 'ai_design'"
+          >
+            <span class="task-option-title">AI 题目设计</span>
+            <span class="task-option-desc">按要求生成原创练习题</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="newTaskMode === 'exam' && newTaskSource === 'ai_design'" class="task-modal-section">
+        <p class="task-modal-label">AI 题目设计要求</p>
+        <div class="task-field-grid">
+          <label class="task-field">
+            <span>体裁</span>
+            <select v-model="newTaskGenre" class="task-select">
+              <option :value="null">请选择体裁</option>
+              <option v-for="option in newTaskGenreOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="task-field">
+            <span>字数</span>
+            <div class="task-word-row">
+              <select
+                v-model="newTaskWordRange"
+                class="task-select"
+                @change="newTaskCustomWordRange = newTaskWordRange === '__custom__' ? newTaskCustomWordRange : ''"
+              >
+                <option :value="null">请选择字数</option>
+                <option v-for="option in newTaskWordRangeOptions" :key="option" :value="option">{{ option }} 词</option>
+                <option value="__custom__">自定义</option>
+              </select>
+              <input
+                v-if="newTaskWordRange === '__custom__'"
+                v-model="newTaskCustomWordRange"
+                class="task-input"
+                type="text"
+                inputmode="numeric"
+                placeholder="160-200"
+              />
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="task-modal-actions">
+        <button class="task-btn task-btn--secondary" type="button" @click="navigateToPhase('doc-list')">退出</button>
+        <button class="task-btn task-btn--primary" type="button" @click="continueNewWritingTask">继续</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Past prompt select -->
+  <div v-else-if="phase === 'past-prompt-select'" class="past-prompt-page">
+    <button class="setup-back-link" type="button" @click="navigateToPhase('mode-select')">
+      &larr; 返回新建任务
+    </button>
+    <div class="past-prompt-header">
+      <div>
+        <p class="past-prompt-kicker">历年真题</p>
+        <h2 class="past-prompt-title">选择一套真题开始写作</h2>
+      </div>
+      <button class="task-btn task-btn--primary" type="button" :disabled="!selectedPastPrompt" @click="startWritingFromPastPrompt">
+        使用该真题
       </button>
     </div>
-    <button class="back-link" @click="navigateToPhase('doc-list')">&#8592; 返回文档列表</button>
+
+    <div class="past-prompt-toolbar">
+      <input
+        v-model="pastPromptKeyword"
+        class="past-prompt-search"
+        type="text"
+        placeholder="搜索题目、试卷或关键词"
+        @keyup.enter="loadPastPrompts(1)"
+      />
+      <select v-model="pastPromptYearSelect" class="past-prompt-select" @change="onPastPromptYearChange">
+        <option :value="0">全部年份</option>
+        <option v-for="year in pastPromptYears" :key="year" :value="year">{{ year }}</option>
+      </select>
+      <button class="task-btn task-btn--secondary" type="button" @click="loadPastPrompts(1)">搜索</button>
+    </div>
+
+    <div v-if="pastPromptLoading" class="past-prompt-empty">
+      <div class="gate-spinner" />
+      <span>加载真题中...</span>
+    </div>
+    <div v-else-if="pastPromptItems.length === 0" class="past-prompt-empty">
+      <span>暂未找到匹配的真题</span>
+    </div>
+    <div v-else class="past-prompt-layout">
+      <div class="past-prompt-list">
+        <button
+          v-for="prompt in pastPromptItems"
+          :key="prompt.id"
+          class="past-prompt-item"
+          :class="{ active: selectedPastPrompt?.id === prompt.id }"
+          type="button"
+          @click="selectedPastPrompt = prompt"
+        >
+          <span class="past-prompt-item-title">{{ prompt.title || prompt.paper || '未命名真题' }}</span>
+          <span class="past-prompt-item-meta">
+            {{ prompt.examYear || '年份未知' }} · {{ prompt.paper || '试卷未知' }} · {{ prompt.task || 'Task 未标注' }}
+          </span>
+          <span class="past-prompt-item-text">{{ prompt.promptText }}</span>
+        </button>
+      </div>
+
+      <aside class="past-prompt-preview">
+        <template v-if="selectedPastPrompt">
+          <p class="past-prompt-preview-kicker">{{ selectedPastPrompt.paper || '历年真题' }}</p>
+          <h3>{{ selectedPastPrompt.title || '真题预览' }}</h3>
+          <div class="past-prompt-preview-meta">
+            <span>{{ selectedPastPrompt.examYear || '年份未知' }}</span>
+            <span>{{ selectedPastPrompt.task || 'Task 未标注' }}</span>
+            <span>{{ formatPastPromptWordRange(selectedPastPrompt) || '字数未标注' }}</span>
+          </div>
+          <p class="past-prompt-preview-text">{{ selectedPastPrompt.promptText }}</p>
+          <div v-if="selectedPastPrompt.imageDescription" class="past-prompt-preview-block">
+            <strong>图片/图表信息</strong>
+            <p>{{ selectedPastPrompt.imageDescription }}</p>
+          </div>
+          <div v-if="selectedPastPrompt.materialText" class="past-prompt-preview-block">
+            <strong>材料内容</strong>
+            <p>{{ selectedPastPrompt.materialText }}</p>
+          </div>
+          <img
+            v-if="selectedPastPrompt.imageUrl"
+            class="past-prompt-preview-image"
+            :src="selectedPastPrompt.imageUrl"
+            alt="真题图片"
+          />
+        </template>
+        <p v-else class="past-prompt-preview-placeholder">从左侧选择一套真题查看题面。</p>
+      </aside>
+    </div>
   </div>
 
   <!-- Exam setup -->
@@ -528,6 +446,9 @@
     :initial-topic="resumeTopicForSetup"
     :resume-metadata="resumeMetadataForSetup"
     :study-stage="currentStage ?? ''"
+    :initial-genre="examSetupInitialGenre"
+    :initial-word-range="examSetupInitialWordRange"
+    :initial-tab="examSetupInitialTab"
     @confirm="onExamConfirm"
     @back="onExamSetupBack"
     @save-draft="onExamSaveDraft"
@@ -553,37 +474,36 @@ import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount, inject } fr
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStorage, useEventListener } from '@vueuse/core'
 import * as echarts from 'echarts/core'
-import { LineChart } from 'echarts/charts'
+import { LineChart, RadarChart, PieChart } from 'echarts/charts'
 import {
   GridComponent,
   TooltipComponent,
+  RadarComponent,
   LegendComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
-  LineChart,
-  GridComponent, TooltipComponent, LegendComponent,
+  LineChart, RadarChart, PieChart,
+  GridComponent, TooltipComponent, RadarComponent, LegendComponent,
   CanvasRenderer,
 ])
 import EditorShell from '@/components/writing/EditorShell.vue'
 import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
-import type { ExamTopicInfo } from '@/pages/app/examPromptHelpers'
+import type { ExamPromptType, ExamTopicInfo } from '@/pages/app/examPromptHelpers'
 import { buildExamTaskPrompt } from '@/pages/app/examPromptHelpers'
 import { stageCache } from '@/stores/stageCache'
-import { getStageLabel } from '@/constants/stage'
-import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingDashboardAssets } from '@/api/writing'
-import type {
-  WritingDashboardAssetsResponse,
-  WritingDashboardAssetSummary,
-  WritingDocumentItem,
-  WritingSessionMetadataResponse,
-} from '@/api/writing'
+import { getStageId } from '@/constants/stage'
+import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats, getEssayPrompts } from '@/api/writing'
+import type { EssayPromptItem, WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 
-type Phase = 'loading' | 'doc-list' | 'mode-select' | 'exam-setup' | 'editor'
+type Phase = 'loading' | 'doc-list' | 'mode-select' | 'past-prompt-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
+type NewTaskMode = 'free' | 'exam'
+type NewTaskSource = 'past_prompt' | 'ai_design'
+type ExamSetupInitialTab = 'manual' | 'ai' | 'past'
 
 const router = useRouter()
 const route = useRoute()
@@ -599,11 +519,31 @@ const examMaxScore = useSessionStorage<number | null>('peai:writing:examMaxScore
 const initialSubmitCount = ref(0)
 const resumeTopicForSetup = ref<string | undefined>(undefined)
 const resumeMetadataForSetup = ref<WritingSessionMetadataResponse | null>(null)
+const newTaskMode = ref<NewTaskMode>('free')
+const newTaskSource = ref<NewTaskSource>('ai_design')
+const newTaskGenre = ref<string | null>(null)
+const newTaskWordRange = ref<string | null>(null)
+const newTaskCustomWordRange = ref('')
+const examSetupInitialGenre = ref<string | null>(null)
+const examSetupInitialWordRange = ref<string | null>(null)
+const examSetupInitialTab = ref<ExamSetupInitialTab | null>(null)
+
+const newTaskGenreOptions = [
+  { value: 'argumentative', label: '议论文' },
+  { value: 'material', label: '材料作文' },
+  { value: 'chart', label: '图表作文' },
+  { value: 'picture', label: '图画作文' },
+  { value: 'practical', label: '应用文' },
+  { value: 'letter', label: '书信' },
+]
+const newTaskWordRangeOptions = ['80-100', '100-120', '120-150', '160-200', '160-220', '250']
 
 function resolveRoutePhase(): RoutePhase {
   switch (route.name) {
     case 'WritingModeSelect':
       return 'mode-select'
+    case 'WritingPastPromptSelect':
+      return 'past-prompt-select'
     case 'WritingExamSetup':
       return 'exam-setup'
     case 'WritingEditor':
@@ -622,6 +562,8 @@ function routeNameForPhase(nextPhase: RoutePhase) {
   switch (nextPhase) {
     case 'mode-select':
       return 'WritingModeSelect'
+    case 'past-prompt-select':
+      return 'WritingPastPromptSelect'
     case 'exam-setup':
       return 'WritingExamSetup'
     case 'editor':
@@ -658,51 +600,6 @@ const filterOptions = [
   { value: 'free' as const, label: '自由' },
   { value: 'exam' as const, label: '考试' },
 ]
-
-type AnalyticsView = 'growth' | 'habit'
-type GrowthScreen = 'assets' | 'scores'
-type GrowthRange = '10' | '20' | 'custom'
-type HabitWindow = '7d' | '30d'
-type AssetGranularity = 'week' | 'month'
-
-const analyticsView = useSessionStorage<AnalyticsView>('peai:writing:analytics:view', 'growth')
-const growthScreen = useSessionStorage<GrowthScreen>('peai:writing:analytics:growth-screen', 'assets')
-const growthMode = useSessionStorage<'all' | 'free' | 'exam'>('peai:writing:analytics:growth-mode', 'all')
-const growthRange = useSessionStorage<GrowthRange>('peai:writing:analytics:growth-range', '10')
-const growthCustomCount = useSessionStorage<number>('peai:writing:analytics:growth-custom-count', 30)
-const habitWindow = useSessionStorage<HabitWindow>('peai:writing:analytics:habit-window', '7d')
-const assetGranularity = useSessionStorage<AssetGranularity>('peai:writing:analytics:asset-granularity', 'month')
-
-const analyticsModeOptions = [
-  { value: 'all' as const, label: '全部' },
-  { value: 'free' as const, label: '自由' },
-  { value: 'exam' as const, label: '考试' },
-]
-
-const assetGranularityOptions = [
-  { value: 'month' as const, label: '按月' },
-  { value: 'week' as const, label: '按周' },
-]
-
-const growthRangeOptions = [
-  { value: '10' as const, label: '最近 10 篇' },
-  { value: '20' as const, label: '最近 20 篇' },
-  { value: 'custom' as const, label: '自定义' },
-]
-
-const habitWindowOptions = [
-  { value: '7d' as const, label: '近 7 天' },
-  { value: '30d' as const, label: '近 30 天' },
-]
-
-const growthPagerItems = [
-  { value: 'assets' as const, label: '写作资产' },
-  { value: 'scores' as const, label: '分数成长' },
-]
-
-const growthPagerIndex = computed(() =>
-  growthPagerItems.findIndex((item) => item.value === growthScreen.value),
-)
 
 // Computed stats
 const scoredDocs = computed(() => docList.value.filter(d => d.latestScore != null))
@@ -767,234 +664,71 @@ watch(phase, (p, prev) => {
   if (!booting.value && p === 'doc-list' && prev && prev !== 'doc-list') {
     void loadDocList()
   }
+  if (!booting.value && p === 'past-prompt-select' && pastPromptItems.value.length === 0 && !pastPromptLoading.value) {
+    void loadPastPrompts(1)
+  }
 }, { immediate: true })
 
 onBeforeUnmount(() => {
   setImmersive(null)
 })
 
-const growthChartRef = ref<HTMLElement | null>(null)
-let growthChartInstance: echarts.ECharts | null = null
-const assetDashboard = ref<WritingDashboardAssetsResponse | null>(null)
-const emptyAssetSummary: WritingDashboardAssetSummary = {
-  totalEssays: 0,
-  totalWords: 0,
-  totalSentences: 0,
-  avgGrammarErrorsPerEssay: 0,
-}
+// Carousel
+const carouselIndex = ref(0)
 
-function isExamDoc(doc: WritingDocumentItem) {
-  return Boolean(doc.taskPrompt)
-}
+// Charts
+const chartRef = ref<HTMLElement | null>(null)
+const radarRef = ref<HTMLElement | null>(null)
+const errorRef = ref<HTMLElement | null>(null)
+let chartInstance: echarts.ECharts | null = null
+let radarInstance: echarts.ECharts | null = null
+let errorInstance: echarts.ECharts | null = null
 
-function resolveInitialScore(doc: WritingDocumentItem) {
-  return doc.initialScore ?? doc.latestScore
-}
+// Stats data
+const writingStats = ref<WritingStatsResponse | null>(null)
 
-function normalizeGrowthCount(value: number) {
-  if (!Number.isFinite(value)) return 30
-  return Math.min(200, Math.max(1, Math.round(value)))
-}
-
-const growthSelectedCount = computed(() => {
-  if (growthRange.value === '10') return 10
-  if (growthRange.value === '20') return 20
-  return normalizeGrowthCount(Number(growthCustomCount.value))
+const hasRadarData = computed(() => {
+  const s = writingStats.value
+  return s && (s.avgContentQuality != null || s.avgTaskAchievement != null || s.avgStructureScore != null || s.avgVocabularyScore != null || s.avgGrammarScore != null || s.avgExpressionScore != null)
 })
 
-const growthSourceDocs = computed(() => {
-  let list = [...scoredDocs.value]
-  if (growthMode.value === 'exam') {
-    list = list.filter(isExamDoc)
-  } else if (growthMode.value === 'free') {
-    list = list.filter((doc) => !isExamDoc(doc))
-  }
-  list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  return list
+const hasErrorData = computed(() => {
+  const s = writingStats.value
+  return s && (s.totalGrammarErrors > 0 || s.totalSpellingErrors > 0 || s.totalVocabularyErrors > 0)
 })
 
-const growthTrendDocs = computed(() => {
-  const recent = growthSourceDocs.value.slice(0, growthSelectedCount.value)
-  return [...recent].sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
-})
-
-const growthInitialAverage = computed(() => {
-  if (growthTrendDocs.value.length === 0) return null
-  const total = growthTrendDocs.value.reduce((sum, doc) => sum + (resolveInitialScore(doc) ?? 0), 0)
-  return total / growthTrendDocs.value.length
-})
-
-const growthLatestAverage = computed(() => {
-  if (growthTrendDocs.value.length === 0) return null
-  const total = growthTrendDocs.value.reduce((sum, doc) => sum + (doc.latestScore ?? 0), 0)
-  return total / growthTrendDocs.value.length
-})
-
-const growthAverageDelta = computed(() => {
-  if (growthTrendDocs.value.length === 0) return null
-  const total = growthTrendDocs.value.reduce((sum, doc) => {
-    const baseline = resolveInitialScore(doc) ?? 0
-    return sum + ((doc.latestScore ?? baseline) - baseline)
-  }, 0)
-  return total / growthTrendDocs.value.length
-})
-
-const growthEmptyText = computed(() => {
-  if (growthSourceDocs.value.length === 0) {
-    if (growthMode.value === 'exam') return '当前还没有已评分的考试作文'
-    if (growthMode.value === 'free') return '当前还没有已评分的自由写作'
-    return '完成评分后，这里会显示首次得分和最新得分的变化'
-  }
-  return '至少需要 2 篇已评分作文，才能更稳定地展示趋势'
-})
-
-const habitPlaceholderText = computed(() => {
-  return habitWindow.value === '7d'
-    ? '近 7 天评分提交热力图将在评分聚合接口接入后显示'
-    : '近 30 天评分提交热力图将在评分聚合接口接入后显示'
-})
-
-const assetSummary = computed(() => assetDashboard.value?.summary ?? emptyAssetSummary)
-const assetSeries = computed(() => assetDashboard.value?.series ?? [])
-const assetCurrentPeriod = computed(() =>
-  assetSeries.value.length > 0 ? assetSeries.value[assetSeries.value.length - 1] : null,
-)
-const assetPreviousPeriod = computed(() =>
-  assetSeries.value.length > 1 ? assetSeries.value[assetSeries.value.length - 2] : null,
-)
-const assetPeakPeriod = computed(() => {
-  if (assetSeries.value.length === 0) return null
-  return assetSeries.value.reduce((peak, period) =>
-    period.wordCount > peak.wordCount ? period : peak,
-  )
-})
-const assetVisiblePeriods = computed(() => assetSeries.value.slice(-3))
-const assetCurrentAverageWords = computed(() => {
-  if (!assetCurrentPeriod.value || assetCurrentPeriod.value.essayCount <= 0) return null
-  return assetCurrentPeriod.value.wordCount / assetCurrentPeriod.value.essayCount
-})
-const assetWordDelta = computed(() => {
-  if (!assetCurrentPeriod.value || !assetPreviousPeriod.value) return null
-  return assetCurrentPeriod.value.wordCount - assetPreviousPeriod.value.wordCount
-})
-const assetWordDeltaPercent = computed(() => {
-  if (!assetPreviousPeriod.value || assetPreviousPeriod.value.wordCount <= 0 || assetWordDelta.value == null) {
-    return null
-  }
-  return (assetWordDelta.value / assetPreviousPeriod.value.wordCount) * 100
-})
-const assetMaxWordCount = computed(() => {
-  if (assetSeries.value.length === 0) return 0
-  return Math.max(...assetSeries.value.map((period) => period.wordCount))
-})
-const assetGranularityUnit = computed(() => (assetGranularity.value === 'month' ? '月' : '周'))
-const assetPrimaryTitle = computed(() => (assetGranularity.value === 'month' ? '本月写作产出' : '本周写作产出'))
-const assetCurrentLabel = computed(() => (assetGranularity.value === 'month' ? '当前月份' : '当前周次'))
-const assetRecentSectionTitle = computed(() => (assetGranularity.value === 'month' ? '最近月份' : '最近周次'))
-const assetDeltaDescription = computed(() => {
-  if (!assetCurrentPeriod.value || !assetPreviousPeriod.value || assetWordDelta.value == null) {
-    return `还需要上一${assetGranularityUnit.value}数据，才能显示环比变化`
-  }
-  if (assetWordDelta.value === 0) {
-    return `和上一${assetGranularityUnit.value}持平，当前产出比较稳定`
-  }
-  return assetWordDelta.value > 0
-    ? `比上一${assetGranularityUnit.value}多写了 ${formatAssetMetric(assetWordDelta.value)} 词`
-    : `比上一${assetGranularityUnit.value}少写了 ${formatAssetMetric(Math.abs(assetWordDelta.value))} 词`
-})
-const assetPeakDescription = computed(() => {
-  if (!assetPeakPeriod.value) return `还没有可统计的${assetGranularityUnit.value}度产出`
-  return `${assetPeakPeriod.value.periodLabel}共写了 ${formatAssetMetric(assetPeakPeriod.value.wordCount)} 词、${formatAssetMetric(assetPeakPeriod.value.sentenceCount)} 句`
-})
-
-const assetEmptyText = computed(() => {
-  if (growthMode.value === 'exam') return '当前还没有已评分的考试作文资产数据'
-  if (growthMode.value === 'free') return '当前还没有已评分的自由写作资产数据'
-  return '完成评分后，这里会显示累计资产和当期产出'
-})
-
-function goPrevGrowthScreen() {
-  const nextIndex = Math.max(0, growthPagerIndex.value - 1)
-  growthScreen.value = growthPagerItems[nextIndex]?.value ?? 'assets'
-}
-
-function goNextGrowthScreen() {
-  const nextIndex = Math.min(growthPagerItems.length - 1, growthPagerIndex.value + 1)
-  growthScreen.value = growthPagerItems[nextIndex]?.value ?? 'scores'
-}
-
-watch([growthTrendDocs, growthChartRef, analyticsView, growthScreen], async () => {
+watch([() => scoredDocs.value, chartRef, carouselIndex], async () => {
   await nextTick()
-  if (
-    analyticsView.value === 'growth'
-    && growthScreen.value === 'scores'
-    && growthTrendDocs.value.length >= 2
-    && growthChartRef.value
-  ) {
-    renderGrowthChart()
-    return
-  }
-  if (growthChartInstance) {
-    growthChartInstance.dispose()
-    growthChartInstance = null
+  if (carouselIndex.value === 0 && scoredDocs.value.length >= 3 && chartRef.value) {
+    renderChart()
   }
 }, { immediate: true })
 
-watch(growthCustomCount, (value) => {
-  const normalized = normalizeGrowthCount(Number(value))
-  if (normalized !== value) {
-    growthCustomCount.value = normalized
+watch([hasRadarData, radarRef, carouselIndex], async () => {
+  await nextTick()
+  if (carouselIndex.value === 1 && hasRadarData.value && radarRef.value) {
+    renderRadarChart()
   }
-})
+}, { immediate: true })
 
-useEventListener(window, 'resize', () => {
-  growthChartInstance?.resize()
-})
+watch([hasErrorData, errorRef, carouselIndex], async () => {
+  await nextTick()
+  if (carouselIndex.value === 2 && hasErrorData.value && errorRef.value) {
+    renderErrorChart()
+  }
+}, { immediate: true })
 
-function renderGrowthChart() {
-  if (!growthChartRef.value) return
-  if (growthChartInstance) growthChartInstance.dispose()
-  growthChartInstance = echarts.init(growthChartRef.value)
-
-  const docs = growthTrendDocs.value
-  growthChartInstance.setOption({
-    animationDuration: 300,
-    grid: { top: 42, right: 18, bottom: 26, left: 40 },
-    legend: {
-      top: 0,
-      right: 0,
-      itemWidth: 12,
-      itemHeight: 12,
-      textStyle: { color: '#6b7280', fontSize: 12 },
-      data: ['首次得分', '最新得分'],
-    },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: '#111827',
-      borderWidth: 0,
-      textStyle: { color: '#f9fafb' },
-      formatter: (params: Array<{ dataIndex: number; seriesName: string; value: number }>) => {
-        const index = params[0]?.dataIndex ?? 0
-        const doc = docs[index]
-        if (!doc) return ''
-        const baseline = resolveInitialScore(doc)
-        const latest = doc.latestScore
-        const delta = baseline != null && latest != null ? latest - baseline : 0
-        return [
-          `<div style="font-weight:600;margin-bottom:6px;">${doc.title || `作文 #${index + 1}`}</div>`,
-          `<div style="color:#9ca3af;margin-bottom:6px;">${formatTime(doc.updatedAt)}</div>`,
-          `<div>首次得分：${baseline ?? '--'}</div>`,
-          `<div>最新得分：${latest ?? '--'}</div>`,
-          `<div>提分：${delta >= 0 ? '+' : ''}${delta}</div>`,
-        ].join('')
-      },
-    },
+function renderChart() {
+  if (!chartRef.value) return
+  if (chartInstance) chartInstance.dispose()
+  chartInstance = echarts.init(chartRef.value)
+  const sorted = [...scoredDocs.value].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  chartInstance.setOption({
+    grid: { top: 10, right: 16, bottom: 24, left: 36 },
     xAxis: {
       type: 'category',
-      data: docs.map((_, index) => `#${index + 1}`),
-      boundaryGap: false,
+      data: sorted.map((_, i) => `#${i + 1}`),
       axisLine: { lineStyle: { color: '#e5e7eb' } },
-      axisTick: { show: false },
       axisLabel: { color: '#9ca3af', fontSize: 11 },
     },
     yAxis: {
@@ -1002,38 +736,110 @@ function renderGrowthChart() {
       min: 0,
       max: 100,
       axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f1f5f9' } },
+      splitLine: { lineStyle: { color: '#f3f4f6' } },
       axisLabel: { color: '#9ca3af', fontSize: 11 },
     },
-    series: [
-      {
-        name: '首次得分',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        data: docs.map((doc) => resolveInitialScore(doc)),
-        lineStyle: { color: '#94a3b8', width: 2 },
-        itemStyle: { color: '#94a3b8' },
-      },
-      {
-        name: '最新得分',
-        type: 'line',
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 7,
-        data: docs.map((doc) => doc.latestScore),
-        lineStyle: { color: '#047857', width: 3 },
+    series: [{
+      type: 'line',
+      data: sorted.map(d => d.latestScore),
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#047857', width: 2 },
+      itemStyle: { color: '#047857' },
+      areaStyle: { color: 'rgba(4, 120, 87, 0.08)' },
+    }],
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => `第${params[0].dataIndex + 1}篇：${params[0].value}分`,
+    },
+  })
+}
+
+function renderRadarChart() {
+  if (!radarRef.value) return
+  if (radarInstance) radarInstance.dispose()
+  radarInstance = echarts.init(radarRef.value)
+  const s = writingStats.value!
+  radarInstance.setOption({
+    radar: {
+      indicator: [
+        { name: '内容质量', max: 100 },
+        { name: '任务完成', max: 100 },
+        { name: '篇章结构', max: 100 },
+        { name: '词汇运用', max: 100 },
+        { name: '语法准确', max: 100 },
+        { name: '语言表达', max: 100 },
+      ],
+      shape: 'polygon',
+      splitNumber: 4,
+      axisName: { color: '#6b7280', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#e5e7eb' } },
+      splitArea: { areaStyle: { color: ['#fff', '#f9fafb', '#f3f4f6', '#e5e7eb'] } },
+      axisLine: { lineStyle: { color: '#e5e7eb' } },
+    },
+    series: [{
+      type: 'radar',
+      data: [{
+        value: [
+          s.avgContentQuality ?? 0,
+          s.avgTaskAchievement ?? 0,
+          s.avgStructureScore ?? 0,
+          s.avgVocabularyScore ?? 0,
+          s.avgGrammarScore ?? 0,
+          s.avgExpressionScore ?? 0,
+        ],
+        areaStyle: { color: 'rgba(4, 120, 87, 0.15)' },
+        lineStyle: { color: '#047857', width: 2 },
         itemStyle: { color: '#047857' },
-        areaStyle: { color: 'rgba(4, 120, 87, 0.10)' },
+        symbol: 'circle',
+        symbolSize: 5,
+      }],
+    }],
+    tooltip: {
+      trigger: 'item',
+    },
+  })
+}
+
+function renderErrorChart() {
+  if (!errorRef.value) return
+  if (errorInstance) errorInstance.dispose()
+  errorInstance = echarts.init(errorRef.value)
+  const s = writingStats.value!
+  const data = [
+    { value: s.totalGrammarErrors, name: '语法错误', itemStyle: { color: '#ef4444' } },
+    { value: s.totalSpellingErrors, name: '拼写错误', itemStyle: { color: '#f59e0b' } },
+    { value: s.totalVocabularyErrors, name: '词汇错误', itemStyle: { color: '#6366f1' } },
+  ].filter(d => d.value > 0)
+  errorInstance.setOption({
+    series: [{
+      type: 'pie',
+      radius: ['40%', '65%'],
+      center: ['50%', '55%'],
+      avoidLabelOverlap: true,
+      label: {
+        formatter: '{b}\n{c}次 ({d}%)',
+        fontSize: 11,
+        color: '#374151',
+        lineHeight: 16,
       },
-    ],
+      emphasis: {
+        label: { fontSize: 13, fontWeight: 'bold' },
+      },
+      data,
+    }],
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b}: {c}次 ({d}%)',
+    },
   })
 }
 
 onBeforeUnmount(() => {
-  if (growthChartInstance) { growthChartInstance.dispose(); growthChartInstance = null }
+  if (chartInstance) { chartInstance.dispose(); chartInstance = null }
+  if (radarInstance) { radarInstance.dispose(); radarInstance = null }
+  if (errorInstance) { errorInstance.dispose(); errorInstance = null }
 })
 
 // Lifecycle
@@ -1065,34 +871,19 @@ onMounted(async () => {
   booting.value = false
 })
 
-watch([growthMode, assetGranularity, phase], async () => {
-  if (phase.value !== 'doc-list') return
-  if (booting.value) return
-  await loadDashboardAssets()
-})
-
 async function loadDocList() {
   docListLoading.value = true
   try {
-    const docRes = await getWritingDocuments(0, 200)
+    const [docRes, statsRes] = await Promise.all([
+      getWritingDocuments(0, 200),
+      getWritingStats().catch(() => null),
+    ])
     docList.value = docRes.items ?? []
-    await loadDashboardAssets()
+    writingStats.value = statsRes
   } catch (e) {
     console.warn('[WritingPage] loadDocList failed', e)
   } finally {
     docListLoading.value = false
-  }
-}
-
-async function loadDashboardAssets() {
-  try {
-    assetDashboard.value = await getWritingDashboardAssets({
-      mode: growthMode.value,
-      granularity: assetGranularity.value,
-    })
-  } catch (e) {
-    console.warn('[WritingPage] loadDashboardAssets failed', e)
-    assetDashboard.value = null
   }
 }
 
@@ -1137,10 +928,134 @@ async function createBlankFreeDoc() {
   await createFreeDoc()
 }
 
+function getNewTaskEffectiveWordRange() {
+  if (newTaskWordRange.value === '__custom__') {
+    return newTaskCustomWordRange.value.trim() || null
+  }
+  return newTaskWordRange.value?.trim() || null
+}
+
+async function continueNewWritingTask() {
+  if (newTaskMode.value === 'free') {
+    examSetupInitialGenre.value = null
+    examSetupInitialWordRange.value = null
+    examSetupInitialTab.value = null
+    await createBlankFreeDoc()
+    return
+  }
+  if (newTaskSource.value === 'past_prompt') {
+    examSetupInitialGenre.value = null
+    examSetupInitialWordRange.value = null
+    examSetupInitialTab.value = null
+    await navigateToPhase('past-prompt-select')
+    return
+  }
+  const effectiveWordRange = getNewTaskEffectiveWordRange()
+  if (!newTaskGenre.value) {
+    showToast('请先选择体裁', 'error')
+    return
+  }
+  if (!effectiveWordRange) {
+    showToast('请先选择字数', 'error')
+    return
+  }
+  examSetupInitialGenre.value = newTaskGenre.value
+  examSetupInitialWordRange.value = effectiveWordRange
+  examSetupInitialTab.value = 'ai'
+  await openExamSetupFromModeSelect()
+}
+
 async function openExamSetupFromModeSelect() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
   await navigateToPhase('exam-setup')
+}
+
+const pastPromptKeyword = ref('')
+const pastPromptYear = ref<number | null>(null)
+const pastPromptYearSelect = ref(0)
+const pastPromptItems = ref<EssayPromptItem[]>([])
+const pastPromptYears = ref<number[]>([])
+const pastPromptLoading = ref(false)
+const selectedPastPrompt = ref<EssayPromptItem | null>(null)
+
+function onPastPromptYearChange() {
+  pastPromptYear.value = pastPromptYearSelect.value === 0 ? null : pastPromptYearSelect.value
+  selectedPastPrompt.value = null
+  void loadPastPrompts(1)
+}
+
+async function loadPastPrompts(page = 1) {
+  pastPromptLoading.value = true
+  try {
+    const res = await getEssayPrompts({
+      stageId: getStageId(currentStage.value),
+      keyword: pastPromptKeyword.value.trim() || undefined,
+      year: pastPromptYear.value ?? undefined,
+      page,
+      size: 12,
+    })
+    pastPromptItems.value = res.items
+    if (res.years.length > 0) {
+      pastPromptYears.value = res.years
+    }
+    if (selectedPastPrompt.value && !res.items.some((item) => item.id === selectedPastPrompt.value?.id)) {
+      selectedPastPrompt.value = null
+    }
+  } catch (e) {
+    console.warn('[WritingPage] load past prompts failed', e)
+    showToast('加载历年真题失败，请稍后重试', 'error')
+  } finally {
+    pastPromptLoading.value = false
+  }
+}
+
+function formatPastPromptWordRange(prompt: EssayPromptItem) {
+  if (prompt.wordCountMin != null && prompt.wordCountMax != null) {
+    return `${prompt.wordCountMin}-${prompt.wordCountMax} 词`
+  }
+  if (prompt.wordCountMin != null) {
+    return `${prompt.wordCountMin}+ 词`
+  }
+  return ''
+}
+
+function buildPastPromptTopicInfo(prompt: EssayPromptItem): ExamTopicInfo {
+  const wordRange = formatPastPromptWordRange(prompt).replace(/\s*词$/, '') || null
+  const promptType: ExamPromptType = prompt.materialText?.trim()
+    ? 'material'
+    : prompt.imageUrl?.trim() || prompt.imageDescription?.trim()
+      ? 'comic'
+      : 'general'
+  const promptTitle = prompt.title?.trim() || prompt.paper?.trim() || prompt.promptText.trim()
+  return {
+    paper: prompt.paper?.trim() || null,
+    promptSheetId: null,
+    topic: promptTitle,
+    genre: null,
+    wordRange,
+    requirements: prompt.promptText.trim(),
+    imageDescription: prompt.imageDescription?.trim() || null,
+    materialText: prompt.materialText?.trim() || null,
+    attachmentImageUrl: prompt.imageUrl?.trim() || null,
+    maxScore: prompt.maxScore ?? 100,
+    sourceType: 'past_prompt',
+    examType: currentStage.value,
+    taskType: prompt.task ?? null,
+    minWords: prompt.wordCountMin ?? null,
+    recommendedMaxWords: prompt.wordCountMax ?? null,
+    promptType,
+    chartSpec: null,
+    comicScenes: [],
+  }
+}
+
+async function startWritingFromPastPrompt() {
+  if (!selectedPastPrompt.value) {
+    showToast('请先选择一套历年真题', 'error')
+    return
+  }
+  await onExamConfirm(buildPastPromptTopicInfo(selectedPastPrompt.value))
 }
 
 async function onExamConfirm(info: ExamTopicInfo) {
@@ -1216,6 +1131,9 @@ async function openDocument(doc: WritingDocumentItem) {
 async function onExamSetupBack() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
+  examSetupInitialGenre.value = null
+  examSetupInitialWordRange.value = null
+  examSetupInitialTab.value = null
   await navigateToPhase('doc-list')
 }
 
@@ -1242,6 +1160,9 @@ async function onEditorBack() {
 async function onExamSaveDraft() {
   resumeTopicForSetup.value = undefined
   resumeMetadataForSetup.value = null
+  examSetupInitialGenre.value = null
+  examSetupInitialWordRange.value = null
+  examSetupInitialTab.value = null
   await navigateToPhase('doc-list')
 }
 
@@ -1299,59 +1220,6 @@ function scoreColor(score: number) {
   if (score >= 80) return 'high'
   if (score >= 60) return 'mid'
   return 'low'
-}
-
-function formatTrendMetric(value: number | null) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  return Math.round(value).toString()
-}
-
-function formatAssetMetric(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  return Math.round(value).toLocaleString('zh-CN')
-}
-
-function formatAssetAverage(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
-}
-
-function formatSignedAssetMetric(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  const rounded = Math.round(value)
-  const sign = rounded > 0 ? '+' : ''
-  return `${sign}${rounded.toLocaleString('zh-CN')}`
-}
-
-function formatSignedPercent(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  const rounded = Math.round(value)
-  const sign = rounded > 0 ? '+' : ''
-  return `${sign}${rounded}%`
-}
-
-function assetWordWidth(wordCount: number) {
-  if (!Number.isFinite(wordCount) || wordCount <= 0) return 10
-  if (!assetMaxWordCount.value || assetMaxWordCount.value <= 0) return 10
-  return Math.max(10, Math.round((wordCount / assetMaxWordCount.value) * 100))
-}
-
-function assetMiniHeights(period: { wordCount: number; sentenceCount: number; essayCount: number }) {
-  const values = [period.essayCount, period.sentenceCount, period.wordCount / 40, period.wordCount / 24]
-  const max = Math.max(...values, 1)
-  return values.map((value) => Math.max(8, Math.round((value / max) * 28)))
-}
-
-function assetPeriodFootnote(period: { wordCount: number; essayCount: number }) {
-  if (!period.essayCount) return '本期暂无作文'
-  const average = period.wordCount / period.essayCount
-  return `篇均 ${formatAssetMetric(average)} 词`
-}
-
-function formatTrendDelta(value: number | null) {
-  if (value == null || !Number.isFinite(value)) return '--'
-  const rounded = Math.round(value * 10) / 10
-  return `${rounded > 0 ? '+' : ''}${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}`
 }
 
 function formatTime(dateStr: string) {
@@ -1454,531 +1322,116 @@ function formatTime(dateStr: string) {
   margin-top: 2px;
 }
 
-/* ── Analytics panel ── */
-.analytics-panel {
+/* ── Analytics carousel ── */
+.analytics-carousel {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 14px;
-  padding: 18px 20px 18px;
+  padding: 18px 20px 14px;
   margin-bottom: 24px;
 }
 
-.analytics-panel-header {
+.carousel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 4px;
 }
 
-.analytics-tab-group,
-.analytics-segmented,
-.analytics-range-controls {
+.carousel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.carousel-nav {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
-.analytics-tab,
-.analytics-chip {
-  height: 36px;
-  padding: 0 14px;
-  border: 1px solid #dbe3ea;
-  border-radius: 999px;
-  background: #fff;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.analytics-tab.active,
-.analytics-chip.active {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-  color: #047857;
-  font-weight: 600;
-}
-
-.analytics-tab:hover,
-.analytics-chip:hover {
-  border-color: #047857;
-  color: #047857;
-}
-
-.analytics-subheader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.analytics-title {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.2;
-  color: #0f172a;
-}
-
-.analytics-subtitle {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.analytics-chart-title {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.2;
-  color: #0f172a;
-}
-
-.analytics-subheader--chart {
-  margin-top: 8px;
-}
-
-.analytics-custom-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #dbe3ea;
-  border-radius: 999px;
-  background: #fff;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.analytics-custom-input input {
-  width: 56px;
-  border: none;
-  outline: none;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-  background: transparent;
-}
-
-.analytics-chart {
-  width: 100%;
-  height: 320px;
-  border: 1px solid #eef2f7;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  padding: 8px;
-}
-
-.analytics-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid #eef2f7;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+.carousel-indicator {
+  font-size: 12px;
   color: #9ca3af;
-  font-size: 13px;
+  min-width: 28px;
   text-align: center;
-  padding: 20px;
 }
 
-.analytics-placeholder--large {
-  min-height: 320px;
-}
-
-.analytics-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.analytics-metrics--asset {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 0;
-  margin-bottom: 18px;
-}
-
-.analytics-footer-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 18px;
-}
-
-.analytics-dots {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.analytics-dot {
-  width: 8px;
-  height: 8px;
-  border: none;
-  border-radius: 999px;
-  padding: 0;
-  background: #d1d5db;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.analytics-dot.active {
-  width: 22px;
-  background: #047857;
-}
-
-.analytics-footer-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.analytics-arrow {
-  width: 34px;
-  height: 34px;
+.carousel-arrow {
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dbe3ea;
-  border-radius: 10px;
-  background: #fff;
-  color: #475569;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #374151;
   cursor: pointer;
   transition: all 0.15s;
 }
-
-.analytics-arrow:hover:not(:disabled) {
+.carousel-arrow:hover:not(:disabled) {
   border-color: #047857;
   color: #047857;
   background: #ecfdf5;
 }
-
-.analytics-arrow:disabled {
-  opacity: 0.4;
+.carousel-arrow:disabled {
+  opacity: 0.25;
   cursor: default;
 }
 
-.analytics-metric-card {
+.carousel-viewport {
+  overflow: hidden;
+  width: 100%;
+}
+
+.carousel-track {
+  display: flex;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.carousel-slide {
+  min-width: 100%;
+  flex-shrink: 0;
+}
+
+.carousel-chart {
+  width: 100%;
+  height: 170px;
+}
+
+.carousel-placeholder {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-height: 108px;
-  padding: 18px;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.analytics-metric-card--asset {
-  min-height: 96px;
-  background: linear-gradient(180deg, #f0fdf9 0%, #ffffff 100%);
-}
-
-.analytics-metric-label {
+  height: 140px;
+  color: #9ca3af;
   font-size: 13px;
-  color: #64748b;
 }
 
-.analytics-metric-value {
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  color: #0f172a;
-}
-
-.analytics-metric-value.up {
-  color: #047857;
-}
-
-.asset-board {
-  border: 1px solid #eef2f7;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  overflow: hidden;
-}
-
-.asset-board-header {
+.carousel-dots {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-  border-bottom: 1px solid #eef2f7;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 8px;
 }
 
-.asset-board-title {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.2;
-  color: #0f172a;
+.carousel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  background: #d1d5db;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
 }
-
-.asset-board-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);
-  gap: 16px;
-  padding: 18px 20px;
-  border-bottom: 1px solid #eef2f7;
-}
-
-.asset-hero-card {
-  border: 1px solid #dff3ea;
-  border-radius: 20px;
-  background: linear-gradient(135deg, #f0fdf9 0%, #ffffff 100%);
-  padding: 18px 18px 16px;
-}
-
-.asset-hero-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.asset-card-label,
-.asset-meta-label,
-.asset-period-label,
-.asset-period-footnote,
-.asset-side-note,
-.asset-periods-subtitle {
-  color: #64748b;
-}
-
-.asset-card-label,
-.asset-meta-label {
-  font-size: 12px;
-}
-
-.asset-hero-value {
-  margin-top: 12px;
-  font-size: 44px;
-  line-height: 0.95;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.asset-hero-unit {
-  margin-top: 10px;
-  font-size: 15px;
-  color: #64748b;
-}
-
-.asset-hero-period {
-  display: inline-flex;
-  align-items: center;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: #ecfdf5;
-  color: #047857;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.asset-hero-meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid #d1fae5;
-}
-
-.asset-hero-meta-item strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 24px;
-  line-height: 1;
-  color: #0f172a;
-}
-
-.asset-side-cards {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
-
-.asset-side-card {
-  border: 1px solid #eef2f7;
-  border-radius: 18px;
-  padding: 18px;
-  background: #fff;
-}
-
-.asset-side-value-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.asset-side-value-row strong {
-  font-size: 30px;
-  line-height: 1;
-  color: #0f172a;
-}
-
-.asset-side-trend {
-  font-size: 14px;
-  font-weight: 700;
-  color: #047857;
-}
-
-.asset-side-trend.down {
-  color: #b45309;
-}
-
-.asset-side-trend.neutral {
-  color: #2563eb;
-}
-
-.asset-side-note {
-  margin: 12px 0 0;
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.asset-periods-section {
-  padding: 18px 20px 20px;
-}
-
-.asset-periods-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-
-.asset-periods-title {
-  margin: 0;
-  font-size: 17px;
-  line-height: 1.2;
-  color: #0f172a;
-}
-
-.asset-period-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.asset-period-card {
-  border: 1px solid #eef2f7;
-  border-radius: 18px;
-  background: #fff;
-  padding: 16px;
-}
-
-.asset-period-card.active {
-  border-color: #a7f3d0;
-  box-shadow: 0 10px 24px rgba(16, 185, 129, 0.08);
-  background: linear-gradient(180deg, #f0fdf9 0%, #ffffff 100%);
-}
-
-.asset-period-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.asset-period-name {
-  font-size: 16px;
-  line-height: 1.1;
-  color: #0f172a;
-}
-
-.asset-period-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
-  font-size: 12px;
-}
-
-.asset-period-tag.active {
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.asset-period-value {
-  font-size: 38px;
-  line-height: 1;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.asset-period-label {
-  margin-top: 8px;
-  font-size: 14px;
-}
-
-.asset-period-progress {
-  margin-top: 16px;
-}
-
-.asset-period-progress-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.asset-progress-track {
-  height: 10px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #ecfdf5;
-}
-
-.asset-progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #34d399 0%, #10b981 100%);
-}
-
-.asset-period-footer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.asset-mini-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  height: 34px;
-}
-
-.asset-mini-bars span {
-  width: 8px;
-  border-radius: 6px 6px 3px 3px;
-  background: #86efac;
-}
-
-.asset-period-footnote {
-  font-size: 12px;
+.carousel-dot.active {
+  background: #047857;
+  width: 16px;
+  border-radius: 3px;
 }
 
 /* ── Search bar ── */
@@ -2463,33 +1916,425 @@ function formatTime(dateStr: string) {
 }
 .back-link:hover { color: #047857; }
 
+/* ── New task setup ── */
+.task-modal-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: #f3f4f6;
+}
+
+.task-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.task-modal {
+  position: relative;
+  z-index: 1;
+  width: min(880px, calc(100vw - 32px));
+  padding: 32px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.20);
+}
+
+.task-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 22px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+}
+.task-modal-close:hover { color: #334155; }
+
+.task-modal-kicker {
+  margin: 0 0 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-modal-title {
+  margin: 0 0 28px;
+  color: #0f172a;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.task-modal-section {
+  padding: 22px 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.task-modal-label {
+  margin: 0 0 12px;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.task-option-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.task-option-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.task-option {
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.task-option:hover {
+  border-color: #10b981;
+}
+.task-option.active {
+  border-color: #10b981;
+  background: #ecfdf5;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.20);
+}
+
+.task-option-title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.task-option-desc {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.task-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.task-select,
+.task-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.task-word-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 10px;
+}
+
+.task-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 26px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.task-btn {
+  min-width: 116px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.task-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.task-btn--secondary {
+  background: #fff;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.task-btn--secondary:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+.task-btn--primary {
+  background: #047857;
+  color: #fff;
+}
+.task-btn--primary:hover:not(:disabled) {
+  background: #065f46;
+}
+
+/* ── Past prompts ── */
+.past-prompt-page {
+  min-height: 100vh;
+  padding: 32px min(5vw, 72px);
+  background: #f8fafc;
+}
+
+.setup-back-link {
+  border: none;
+  background: transparent;
+  color: #047857;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.past-prompt-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 28px;
+  margin-bottom: 20px;
+}
+
+.past-prompt-kicker {
+  margin: 0 0 6px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.past-prompt-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.past-prompt-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 180px auto;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.past-prompt-search,
+.past-prompt-select {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.past-prompt-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.past-prompt-list,
+.past-prompt-preview,
+.past-prompt-empty {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.past-prompt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.past-prompt-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.past-prompt-item:hover {
+  border-color: #10b981;
+}
+.past-prompt-item.active {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.past-prompt-item-title {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.past-prompt-item-meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.past-prompt-item-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.past-prompt-preview {
+  position: sticky;
+  top: 24px;
+  padding: 22px;
+}
+
+.past-prompt-preview h3 {
+  margin: 0 0 12px;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.past-prompt-preview-kicker {
+  margin: 0 0 8px;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.past-prompt-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.past-prompt-preview-meta span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.past-prompt-preview-text,
+.past-prompt-preview-block p {
+  color: #334155;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.past-prompt-preview-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.past-prompt-preview-block strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f172a;
+}
+
+.past-prompt-preview-image {
+  width: 100%;
+  margin-top: 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.past-prompt-preview-placeholder {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.past-prompt-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  color: #64748b;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .analytics-panel-header,
-  .analytics-subheader { flex-direction: column; align-items: flex-start; }
-  .analytics-chart,
-  .analytics-placeholder--large { min-height: 280px; height: 280px; }
-  .analytics-metrics--asset { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .asset-board-summary,
-  .asset-period-grid { grid-template-columns: 1fr; }
-  .asset-hero-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .task-modal { padding: 26px 20px; }
+  .task-option-grid--two,
+  .task-field-grid,
+  .past-prompt-layout,
+  .past-prompt-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .task-word-row {
+    grid-template-columns: 1fr;
+  }
+  .past-prompt-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .past-prompt-preview {
+    position: static;
+  }
 }
 
 @media (max-width: 560px) {
   .hub-header { flex-direction: column; align-items: flex-start; gap: 12px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .analytics-metrics { grid-template-columns: 1fr; }
-  .analytics-metrics--asset { grid-template-columns: 1fr; }
-  .analytics-footer-nav { width: 100%; }
-  .asset-board-header,
-  .asset-period-top,
-  .asset-side-value-row,
-  .asset-period-footer { flex-direction: column; align-items: flex-start; }
-  .asset-hero-meta { grid-template-columns: 1fr; }
   .mode-grid { grid-template-columns: 1fr; }
   .doc-grid { grid-template-columns: 1fr; }
   .doc-section-header { flex-direction: column; align-items: flex-start; }
+  .task-modal-page { align-items: flex-start; }
+  .task-modal-actions {
+    flex-direction: column-reverse;
+  }
+  .task-btn {
+    width: 100%;
+  }
 }
 </style>
 

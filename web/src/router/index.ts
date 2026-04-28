@@ -94,14 +94,25 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
-        path: 'writing/exam-setup',
+        path: 'writing/setup',
+        alias: 'writing/exam-setup',
         name: 'WritingExamSetup',
+        component: () => import('@/pages/app/WritingPage.vue'),
+      },
+      {
+        path: 'writing/past-prompts',
+        name: 'WritingPastPromptSelect',
         component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
         path: 'writing/editor',
         name: 'WritingEditor',
         component: () => import('@/pages/app/WritingPage.vue'),
+      },
+      {
+        path: 'assistant',
+        name: 'LearningAssistant',
+        component: () => import('@/pages/app/AssistantPage.vue'),
       },
       {
         path: 'vocabulary',

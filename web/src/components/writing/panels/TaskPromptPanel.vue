@@ -20,7 +20,13 @@
             </p>
           </div>
 
-          <div v-if="panelState.sheet.attachmentType !== 'none'" class="paper-block paper-attachment">
+          <div
+            v-if="panelState.sheet.attachmentType !== 'none'"
+            class="paper-block paper-attachment"
+            :class="{
+              'paper-attachment--image': panelState.visualPreview.mode === 'image' && Boolean(panelState.visualPreview.imageUrl),
+            }"
+          >
             <p class="paper-attachment-heading">
               {{ panelState.visualPreview.title || (panelState.sheet.attachmentType === 'material' ? 'Material' : 'Visual Attachment') }}
             </p>
@@ -39,7 +45,47 @@
               "
               class="paper-chart"
             >
-              <div class="paper-chart-table-wrap">
+              <div
+                v-if="!shouldRenderChartAsTable(panelState.visualPreview.chartSpec) && panelChartFigure.series.length"
+                class="paper-chart-figure"
+              >
+                <svg class="paper-chart-svg" viewBox="0 0 100 100" role="img" aria-label="图表预览">
+                  <line x1="8" y1="86" x2="94" y2="86" class="paper-chart-axis" />
+                  <line x1="10" y1="14" x2="10" y2="88" class="paper-chart-axis" />
+                  <polyline
+                    v-for="series in panelChartFigure.series"
+                    :key="series.name"
+                    class="paper-chart-line"
+                    :points="series.polyline"
+                    :stroke="series.color"
+                  />
+                  <g v-for="series in panelChartFigure.series" :key="`${series.name}-points`">
+                    <circle
+                      v-for="point in series.points"
+                      :key="`${series.name}-${point.label}`"
+                      class="paper-chart-point"
+                      :cx="point.x"
+                      :cy="point.y"
+                      r="2.2"
+                      :fill="series.color"
+                    />
+                  </g>
+                </svg>
+                <div class="paper-chart-x-labels">
+                  <span v-for="label in panelChartFigure.labels" :key="label">{{ label }}</span>
+                </div>
+                <div class="paper-chart-legend">
+                  <span v-for="series in panelChartFigure.series" :key="`${series.name}-legend`">
+                    <i :style="{ backgroundColor: series.color }" />
+                    {{ series.name }}
+                  </span>
+                </div>
+              </div>
+
+              <div
+                v-else-if="shouldRenderChartAsTable(panelState.visualPreview.chartSpec) || panelState.visualPreview.chartSpec.rows.length > 0"
+                class="paper-chart-table-wrap"
+              >
                 <table class="paper-chart-table">
                   <thead>
                     <tr>
@@ -89,6 +135,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { buildTaskPromptPanelState } from '../taskPromptPanelState'
+import { buildChartPreviewFigure, shouldRenderChartAsTable } from '../../../pages/app/examPromptHelpers'
 
 const props = defineProps<{
   writingMode: 'free' | 'exam'
@@ -112,6 +159,10 @@ const panelState = computed(() =>
     maxScore: props.maxScore,
     studyStage: props.studyStage,
   }),
+)
+
+const panelChartFigure = computed(() =>
+  buildChartPreviewFigure(panelState.value.visualPreview.chartSpec),
 )
 </script>
 
@@ -238,8 +289,9 @@ const panelState = computed(() =>
 }
 
 .paper-attachment-image {
+  display: block;
   width: 100%;
-  max-height: 420px;
+  height: auto;
   object-fit: contain;
   border-radius: 12px;
   border: 1px solid #ebe4d8;
@@ -247,10 +299,77 @@ const panelState = computed(() =>
   margin-bottom: 14px;
 }
 
+.paper-attachment--image .paper-attachment-image {
+  width: calc(100% + 60px);
+  max-width: none;
+  margin-left: -30px;
+  margin-right: -30px;
+}
+
 .paper-chart {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.paper-chart-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 14px;
+  border: 1px solid #ebe4d8;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.paper-chart-svg {
+  width: 100%;
+  height: 220px;
+  overflow: visible;
+}
+
+.paper-chart-axis {
+  stroke: #cbd5e1;
+  stroke-width: 0.8;
+}
+
+.paper-chart-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.paper-chart-point {
+  stroke: #fff;
+  stroke-width: 0.8;
+}
+
+.paper-chart-x-labels,
+.paper-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: #475569;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.paper-chart-x-labels {
+  justify-content: space-between;
+}
+
+.paper-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paper-chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
 }
 
 .paper-chart-table-wrap {

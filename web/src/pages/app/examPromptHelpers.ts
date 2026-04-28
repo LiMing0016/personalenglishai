@@ -16,6 +16,30 @@ export interface ExamChartSpec {
   summary?: string | null
 }
 
+export interface ExamChartPreviewPoint {
+  x: number
+  y: number
+  label: string
+  value: string
+}
+
+export interface ExamChartPreviewSeries {
+  name: string
+  color: string
+  kind: 'bar' | 'line'
+  axis: 'left' | 'right'
+  points: ExamChartPreviewPoint[]
+  polyline: string
+}
+
+export interface ExamChartPreviewFigure {
+  labels: string[]
+  series: ExamChartPreviewSeries[]
+  leftAxisLabel: string | null
+  rightAxisLabel: string | null
+  isComboChart: boolean
+}
+
 export interface ExamComicScene {
   title?: string | null
   description: string
@@ -68,11 +92,24 @@ export interface VisualAttachmentPreview {
   chartSpec: ExamChartSpec | null
 }
 
+export interface PromptDesignSeedInput {
+  studyStage?: string | null
+  taskLabel?: string | null
+  genreLabel?: string | null
+  wordRange?: string | null
+  requirements?: string | null
+  attachmentLabel?: string | null
+  hasMaterial?: boolean
+  hasImage?: boolean
+}
+
 export interface PromptSheetLike {
   promptType?: ExamPromptType | null
+  taskType?: string | null
   topic?: string | null
   promptText?: string | null
   requirements?: string | null
+  genre?: string | null
   wordRange?: string | null
   maxScore?: number | null
   materialText?: string | null
@@ -88,6 +125,54 @@ export interface PromptSheetLike {
   attachmentContent?: string | null
   attachmentImageUrl?: string | null
   visualKind?: ExamPromptVisualKind | null
+}
+
+export interface PromptConfigUpdate {
+  taskType: ExamTaskSelectionValue | null
+  promptType: ExamPromptType | null
+  genre: string | null
+  wordRange: string | null
+  requirements: string | null
+}
+
+export function hasPromptDesignSeed(input: PromptDesignSeedInput): boolean {
+  return Boolean(
+    input.genreLabel?.trim()
+      || input.wordRange?.trim()
+      || input.requirements?.trim()
+      || input.hasMaterial
+      || input.hasImage,
+  )
+}
+
+export function buildPromptDesignSeedRequest(input: PromptDesignSeedInput): string {
+  const lines = ['请根据以下配置，生成一份可以直接用于写作练习的英语考试作文题单。']
+
+  if (input.studyStage?.trim()) {
+    lines.push(`学段/考试：${input.studyStage.trim()}`)
+  }
+  if (input.taskLabel?.trim()) {
+    lines.push(`任务类型：${input.taskLabel.trim()}`)
+  }
+  if (input.genreLabel?.trim()) {
+    lines.push(`体裁：${input.genreLabel.trim()}`)
+  }
+  if (input.wordRange?.trim()) {
+    lines.push(`字数要求：${input.wordRange.trim()}词`)
+  }
+  if (input.requirements?.trim()) {
+    lines.push(`写作要求：${input.requirements.trim()}`)
+  }
+  if (input.hasMaterial) {
+    lines.push('附件要求：已提供材料，请把材料内容整理进题面。')
+  } else if (input.hasImage) {
+    lines.push('附件要求：已提供图片，请生成看图/图表/图画写作题面。')
+  } else if (input.attachmentLabel?.trim() && input.attachmentLabel.trim() !== '无') {
+    lines.push(`附件要求：${input.attachmentLabel.trim()}`)
+  }
+
+  lines.push('请补全清晰的主题、题目情境和写作任务要求；不要生成范文或答案。')
+  return lines.join('\n')
 }
 
 export interface PastPromptLike {
@@ -137,6 +222,47 @@ export function parseWordRange(value: string | null): { minWords: number | null;
     }
   }
   return { minWords: null, recommendedMaxWords: null }
+}
+
+function normalizeWordRangeLabel(value: string | null | undefined): string | null {
+  const source = value?.trim()
+  if (!source) return null
+  return source
+    .replace(/\s*(words?|词)\s*$/i, '')
+    .replace(/\s+/g, '')
+    .trim() || null
+}
+
+function normalizeGenreForPromptType(input: PromptSheetLike): string | null {
+  const promptType = input.promptType ?? null
+  if (promptType === 'chart' || input.visualKind === 'chart' || input.visualKind === 'table' || input.chartSpec) {
+    return 'chart'
+  }
+  if (promptType === 'comic' || input.visualKind === 'comic' || (input.comicScenes?.length ?? 0) > 0) {
+    return 'picture'
+  }
+  if (promptType === 'material' || input.materialText?.trim()) {
+    return 'material'
+  }
+  return input.genre?.trim() || null
+}
+
+export function derivePromptConfigUpdateFromPromptSheet(input: PromptSheetLike): PromptConfigUpdate {
+  const taskType = getExamTaskSelectionLabel(input.taskType) ? (input.taskType as ExamTaskSelectionValue) : null
+  const promptType: ExamPromptType | null =
+    input.promptType
+      ?? (input.chartSpec ? 'chart'
+        : (input.comicScenes?.length ?? 0) > 0 ? 'comic'
+          : input.materialText?.trim() ? 'material'
+            : null)
+
+  return {
+    taskType,
+    promptType,
+    genre: normalizeGenreForPromptType({ ...input, promptType }),
+    wordRange: normalizeWordRangeLabel(input.wordRange),
+    requirements: input.requirements?.trim() || null,
+  }
 }
 
 export function extractPromptFallback(text: string, currentWordRange?: string | null, currentRequirements?: string | null) {
@@ -208,6 +334,162 @@ export function summarizeChartSpec(chartSpec?: ExamChartSpec | null): string | n
     lines.push(`概括：${chartSpec.summary.trim()}`)
   }
   return lines.length > 0 ? lines.join('\n') : null
+}
+
+const CHART_PREVIEW_COLORS = ['#0f766e', '#b45309', '#2563eb', '#7c3aed']
+
+function parseChartNumericValue(value: string | null | undefined): number | null {
+  const source = value?.trim()
+  if (!source) return null
+  const match = source.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function shouldRenderChartAsTable(chartSpec?: ExamChartSpec | null): boolean {
+  return (chartSpec?.displayType ?? '').trim().toLowerCase() === 'table'
+}
+
+export function buildChartPreviewFigure(chartSpec?: ExamChartSpec | null): ExamChartPreviewFigure {
+  const rows = chartSpec?.rows ?? []
+  const columns = chartSpec?.columns ?? []
+  const labels = rows.map((row, index) => row[0]?.trim() || `${index + 1}`)
+
+  if (columns.length < 2 || rows.length < 2) {
+    return { labels, series: [], leftAxisLabel: null, rightAxisLabel: null, isComboChart: false }
+  }
+
+  const rawSeries = columns.slice(1).flatMap((column, seriesIndex) => {
+    const numericRows = rows
+      .map((row, rowIndex) => ({
+        rowIndex,
+        label: labels[rowIndex],
+        rawValue: row[seriesIndex + 1]?.trim() || '',
+        value: parseChartNumericValue(row[seriesIndex + 1]),
+      }))
+      .filter((item): item is { rowIndex: number; label: string; rawValue: string; value: number } => item.value !== null)
+
+    if (numericRows.length < 2) return []
+
+    const lowerName = column.toLowerCase()
+    const isRateSeries = /%|rate|ratio|coefficient|growth|增速|增长率|增长|比例|率|系数/.test(lowerName)
+    return [{
+      name: column,
+      color: CHART_PREVIEW_COLORS[seriesIndex % CHART_PREVIEW_COLORS.length],
+      axis: isRateSeries ? 'right' as const : 'left' as const,
+      numericRows,
+      sourceIndex: seriesIndex,
+    }]
+  })
+
+  if (rawSeries.length === 0) {
+    return { labels, series: [], leftAxisLabel: null, rightAxisLabel: null, isComboChart: false }
+  }
+
+  const hasRightAxis = rawSeries.some((series) => series.axis === 'right')
+  const hasLeftAxis = rawSeries.some((series) => series.axis === 'left')
+  const isComboChart = hasLeftAxis && hasRightAxis
+
+  const axisRanges = {
+    left: getChartAxisRange(rawSeries.filter((series) => series.axis === 'left').flatMap((series) => series.numericRows.map((item) => item.value)), true),
+    right: getChartAxisRange(rawSeries.filter((series) => series.axis === 'right').flatMap((series) => series.numericRows.map((item) => item.value)), true),
+  }
+
+  const series = rawSeries.map((raw) => {
+    const rangeInfo = axisRanges[raw.axis]
+    const points = raw.numericRows.map((item) => {
+      const normalized = rangeInfo.range === 0 ? 0.5 : (item.value - rangeInfo.min) / rangeInfo.range
+      const x = rows.length === 1 ? 50 : 10 + (item.rowIndex / (rows.length - 1)) * 80
+      const y = 86 - normalized * 68
+      return {
+        x,
+        y,
+        label: item.label,
+        value: item.rawValue,
+      }
+    })
+
+    const shouldUseBar = isComboChart && raw.axis === 'left' && raw.sourceIndex === 0
+    return {
+      name: raw.name,
+      color: raw.color,
+      kind: shouldUseBar ? 'bar' as const : 'line' as const,
+      axis: raw.axis,
+      points,
+      polyline: points.map((point) => `${point.x},${point.y}`).join(' '),
+    }
+  })
+
+  return {
+    labels,
+    series,
+    leftAxisLabel: rawSeries.find((series) => series.axis === 'left')?.name ?? null,
+    rightAxisLabel: rawSeries.find((series) => series.axis === 'right')?.name ?? null,
+    isComboChart,
+  }
+}
+
+function getChartAxisRange(values: number[], includeZero: boolean): { min: number; max: number; range: number } {
+  if (values.length === 0) {
+    return { min: 0, max: 1, range: 1 }
+  }
+
+  const minValue = Math.min(...values)
+  const maxValue = Math.max(...values)
+  const min = includeZero && minValue > 0 ? 0 : minValue
+  const max = maxValue === min ? maxValue + 1 : maxValue
+  return { min, max, range: max - min }
+}
+
+export function buildLegacyLineChartPreviewFigure(chartSpec?: ExamChartSpec | null): ExamChartPreviewFigure {
+  const rows = chartSpec?.rows ?? []
+  const columns = chartSpec?.columns ?? []
+  const labels = rows.map((row, index) => row[0]?.trim() || `${index + 1}`)
+
+  if (columns.length < 2 || rows.length < 2) {
+    return { labels, series: [], leftAxisLabel: null, rightAxisLabel: null, isComboChart: false }
+  }
+
+  const series = columns.slice(1).flatMap((column, seriesIndex) => {
+    const numericRows = rows
+      .map((row, rowIndex) => ({
+        rowIndex,
+        label: labels[rowIndex],
+        rawValue: row[seriesIndex + 1]?.trim() || '',
+        value: parseChartNumericValue(row[seriesIndex + 1]),
+      }))
+      .filter((item): item is { rowIndex: number; label: string; rawValue: string; value: number } => item.value !== null)
+
+    if (numericRows.length < 2) return []
+
+    const values = numericRows.map((item) => item.value)
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const range = max - min
+    const points = numericRows.map((item) => {
+      const normalized = range === 0 ? 0.5 : (item.value - min) / range
+      const x = rows.length === 1 ? 50 : 10 + (item.rowIndex / (rows.length - 1)) * 80
+      const y = 86 - normalized * 68
+      return {
+        x,
+        y,
+        label: item.label,
+        value: item.rawValue,
+      }
+    })
+
+    return [{
+      name: column,
+      color: CHART_PREVIEW_COLORS[seriesIndex % CHART_PREVIEW_COLORS.length],
+      kind: 'line' as const,
+      axis: 'left' as const,
+      points,
+      polyline: points.map((point) => `${point.x},${point.y}`).join(' '),
+    }]
+  })
+
+  return { labels, series, leftAxisLabel: columns[1] ?? null, rightAxisLabel: null, isComboChart: false }
 }
 
 export function summarizeComicScenes(comicScenes?: ExamComicScene[] | null): string | null {
@@ -399,6 +681,36 @@ function normalizeWordRangeFromMetadata(metadata: ExamResumeMetadataLike, prompt
   return match?.[1]?.replace(/\s+/g, '') ?? null
 }
 
+function inferPostgradEnglishOneTask2ImageUrl(
+  metadata: ExamResumeMetadataLike,
+  fallbackStage?: string | null,
+): string | null {
+  if (metadata.sourceType !== 'past_prompt') return null
+
+  const stage = `${metadata.examType ?? fallbackStage ?? ''}`.trim().toLowerCase()
+  const searchableText = [
+    metadata.titleSnapshot,
+    metadata.topicTitle,
+    metadata.promptText,
+  ]
+    .filter((item): item is string => Boolean(item?.trim()))
+    .join('\n')
+
+  const isPostgradEnglishOne =
+    stage === 'postgrad'
+      || /考研英语一|考研英语\(一\)|postgrad[-_\s]?en1/i.test(searchableText)
+  const isTask2 =
+    metadata.taskType?.trim().toLowerCase() === 'task2'
+      || /大作文|task\s*2/i.test(searchableText)
+
+  if (!isPostgradEnglishOne || !isTask2) return null
+
+  const yearMatch = searchableText.match(/\b(20(?:0[5-9]|1[0-9]|2[0-5]))\b/)
+  if (!yearMatch) return null
+
+  return `/uploads/past-prompts/postgrad/en1/${yearMatch[1]}-task2.png`
+}
+
 function parseResumePromptSections(promptText: string | null | undefined) {
   const lines = (promptText ?? '')
     .split(/\n+/)
@@ -455,11 +767,16 @@ export function buildExamResumePreview(
   if (!topic) return null
 
   const chartSpec = parseChartSpecFromText(blockMap.get('图表信息：') || null)
+  const drawingInfo = blockMap.get('图画信息：') || null
+  const comicInfo = blockMap.get('漫画信息：') || null
+  const materialInfo = blockMap.get('材料信息：') || null
+  const attachmentImageUrl = metadata.attachmentImageUrl?.trim()
+    || inferPostgradEnglishOneTask2ImageUrl(metadata, fallbackStage)
 
   const promptType: ExamPromptType =
     chartSpec ? 'chart'
-      : blockMap.get('漫画信息：') ? 'comic'
-        : blockMap.get('材料信息：') ? 'material'
+      : comicInfo || drawingInfo || attachmentImageUrl ? 'comic'
+        : materialInfo ? 'material'
           : 'general'
 
   const genre = metadata.genre?.trim() || singleLineMap.get('体裁：') || null
@@ -477,9 +794,9 @@ export function buildExamResumePreview(
     genre,
     wordRange,
     requirements,
-    imageDescription: null,
-    materialText: blockMap.get('材料信息：') || null,
-    attachmentImageUrl: metadata.attachmentImageUrl?.trim() || null,
+    imageDescription: drawingInfo || comicInfo,
+    materialText: materialInfo,
+    attachmentImageUrl,
     maxScore,
     sourceType: metadata.sourceType ?? 'ai_generated',
     examType: metadata.examType ?? fallbackStage ?? null,
@@ -500,11 +817,11 @@ export function buildExamResumePreview(
     sourceType: topicInfo.sourceType,
     attachmentType: promptType === 'material' ? 'material' : promptType === 'chart' || promptType === 'comic' ? 'visual' : 'none',
     attachmentContent:
-      promptType === 'material' ? blockMap.get('材料信息：') || null
+      promptType === 'material' ? materialInfo
         : promptType === 'chart' ? blockMap.get('图表信息：') || null
-          : promptType === 'comic' ? blockMap.get('漫画信息：') || null
+          : promptType === 'comic' ? drawingInfo || comicInfo
             : null,
-    attachmentImageUrl: metadata.attachmentImageUrl?.trim() || null,
+    attachmentImageUrl,
     chartSpec,
     visualKind: promptType === 'chart'
       ? chartSpec?.displayType === 'table' ? 'table' : 'chart'

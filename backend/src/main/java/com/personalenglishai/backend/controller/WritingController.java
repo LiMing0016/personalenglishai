@@ -11,6 +11,8 @@ import com.personalenglishai.backend.dto.writing.PolishEssayRequest;
 import com.personalenglishai.backend.dto.writing.PolishEssayResponse;
 import com.personalenglishai.backend.dto.writing.PolishRequest;
 import com.personalenglishai.backend.dto.writing.PolishResponse;
+import com.personalenglishai.backend.dto.writing.PromptSheetChatRequest;
+import com.personalenglishai.backend.dto.writing.PromptSheetChatResponse;
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
 import com.personalenglishai.backend.dto.writing.WritingTemplateResponse;
 import com.personalenglishai.backend.dto.writing.AuditTopicRequest;
@@ -58,6 +60,7 @@ import com.personalenglishai.backend.dto.writing.StartWritingSessionRequest;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.HandwritingRecognitionService;
+import com.personalenglishai.backend.service.writing.PromptSheetChatService;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.service.writing.WritingExamDialogueService;
 import com.personalenglishai.backend.service.writing.WritingDashboardService;
@@ -93,6 +96,7 @@ public class WritingController {
     private final WritingMaterialService writingMaterialService;
     private final WritingModelEssayService writingModelEssayService;
     private final WritingExamPromptService writingExamPromptService;
+    private final PromptSheetChatService promptSheetChatService;
     private final GrammarCheckService grammarCheckService;
     private final WritingSuggestionsService writingSuggestionsService;
     private final AuditTopicService auditTopicService;
@@ -113,10 +117,11 @@ public class WritingController {
                              WritingPolishService writingPolishService,
                              WritingTranslateService writingTranslateService,
                              WritingTemplateService writingTemplateService,
-                             WritingMaterialService writingMaterialService,
-                             WritingModelEssayService writingModelEssayService,
-                             WritingExamPromptService writingExamPromptService,
-                             GrammarCheckService grammarCheckService,
+                              WritingMaterialService writingMaterialService,
+                              WritingModelEssayService writingModelEssayService,
+                              WritingExamPromptService writingExamPromptService,
+                              PromptSheetChatService promptSheetChatService,
+                              GrammarCheckService grammarCheckService,
                              WritingSuggestionsService writingSuggestionsService,
                              AuditTopicService auditTopicService,
                              DocumentService documentService,
@@ -138,6 +143,7 @@ public class WritingController {
         this.writingMaterialService = writingMaterialService;
         this.writingModelEssayService = writingModelEssayService;
         this.writingExamPromptService = writingExamPromptService;
+        this.promptSheetChatService = promptSheetChatService;
         this.grammarCheckService = grammarCheckService;
         this.writingSuggestionsService = writingSuggestionsService;
         this.auditTopicService = auditTopicService;
@@ -277,6 +283,15 @@ public class WritingController {
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
         GenerateExamPromptResponse response = writingExamPromptService.generate(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/prompt-sheet/chat")
+    public ResponseEntity<PromptSheetChatResponse> promptSheetChat(
+            @Valid @RequestBody PromptSheetChatRequest request,
+            HttpServletRequest httpRequest) {
+        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        PromptSheetChatResponse response = promptSheetChatService.chat(request);
         return ResponseEntity.ok(response);
     }
 

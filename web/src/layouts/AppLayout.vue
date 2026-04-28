@@ -39,6 +39,7 @@ const immersive = computed(() =>
 
 const navLinks = [
   { to: '/app/writing', label: '写作' },
+  { to: '/app/assistant', label: '学习助手' },
   { to: '/app/vocabulary', label: '单词' },
   { to: '/app/listening', label: '听力' },
   { to: '/app/speaking', label: '口语' },
