@@ -28,21 +28,37 @@
       </div>
     </div>
 
+    <form class="redeem-panel" @submit.prevent="redeem">
+      <label class="redeem-label" for="subscription-code">兑换会员码</label>
+      <div class="redeem-row">
+        <input
+          id="subscription-code"
+          v-model="redeemCode"
+          class="redeem-input"
+          type="text"
+          autocomplete="off"
+          placeholder="XXXX-XXXX-XXXX-XXXX"
+          :disabled="redeeming"
+        />
+        <button class="redeem-btn" type="submit" :disabled="redeeming || !redeemCode.trim()">
+          {{ redeeming ? '兑换中...' : '兑换' }}
+        </button>
+      </div>
+    </form>
+
     <div class="plans-grid">
-      <button
+      <div
         v-for="plan in paidPlans"
         :key="plan.planCode"
         class="plan-card"
         :class="{ active: plan.planCode === status?.planCode }"
-        :disabled="purchasing === plan.planCode"
-        @click="purchase(plan.planCode)"
       >
         <span class="plan-title">{{ plan.name }}</span>
         <span class="plan-limit">{{ formatTokens(plan.monthlyTokenLimit) }} / 月</span>
         <span class="plan-action">
-          {{ plan.planCode === status?.planCode ? '续购 30 天' : purchasing === plan.planCode ? '开通中...' : '模拟开通' }}
+          {{ plan.planCode === status?.planCode ? '当前档位' : '使用兑换码开通' }}
         </span>
-      </button>
+      </div>
     </div>
   </div>
 </template>
@@ -54,7 +70,8 @@ import { showToast } from '@/utils/toast'
 
 const plans = ref<SubscriptionPlan[]>([])
 const status = ref<SubscriptionStatus | null>(null)
-const purchasing = ref<string | null>(null)
+const redeemCode = ref('')
+const redeeming = ref(false)
 
 type PaidPlanCode = 'basic' | 'pro' | 'premium'
 
@@ -91,16 +108,19 @@ async function loadSubscription() {
   status.value = statusRes.data ?? null
 }
 
-async function purchase(planCode: PaidPlanCode) {
-  purchasing.value = planCode
+async function redeem() {
+  const code = redeemCode.value.trim()
+  if (!code) return
+  redeeming.value = true
   try {
-    const res = await userApi.mockPurchaseSubscription(planCode)
+    const res = await userApi.redeemSubscriptionCode(code)
     status.value = res.data ?? status.value
-    showToast('会员已开通', 'success')
+    redeemCode.value = ''
+    showToast('会员码兑换成功', 'success')
   } catch {
-    showToast('开通失败，请稍后重试', 'error')
+    showToast('会员码无效或不可用', 'error')
   } finally {
-    purchasing.value = null
+    redeeming.value = false
   }
 }
 
@@ -126,7 +146,8 @@ onMounted(async () => {
 }
 
 .status-panel,
-.usage-panel {
+.usage-panel,
+.redeem-panel {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -204,6 +225,52 @@ onMounted(async () => {
   color: #64748b;
 }
 
+.redeem-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 10px;
+}
+
+.redeem-row {
+  display: flex;
+  gap: 10px;
+}
+
+.redeem-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.redeem-input:focus {
+  border-color: #047857;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.12);
+}
+
+.redeem-btn {
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  padding: 0 18px;
+  background: #047857;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.redeem-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
 .plans-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -219,20 +286,13 @@ onMounted(async () => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 18px;
-  cursor: pointer;
   text-align: left;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.plan-card:hover,
 .plan-card.active {
   border-color: #047857;
   box-shadow: 0 2px 10px rgba(4, 120, 87, 0.12);
-}
-
-.plan-card:disabled {
-  opacity: 0.7;
-  cursor: progress;
 }
 
 .plan-title {
@@ -265,6 +325,14 @@ onMounted(async () => {
 
   .plans-grid {
     grid-template-columns: 1fr;
+  }
+
+  .redeem-row {
+    flex-direction: column;
+  }
+
+  .redeem-btn {
+    width: 100%;
   }
 }
 </style>

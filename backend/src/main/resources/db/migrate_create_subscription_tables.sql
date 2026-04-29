@@ -76,3 +76,54 @@ CREATE TABLE IF NOT EXISTS user_ai_token_usage_monthly (
         ON DELETE CASCADE
         ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='monthly AI token usage aggregate';
+
+CREATE TABLE IF NOT EXISTS subscription_redeem_code (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    code_hash CHAR(64) NOT NULL,
+    plan_code VARCHAR(32) NOT NULL,
+    duration_days INT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'unused',
+    expires_at DATETIME NULL,
+    batch_name VARCHAR(128) NULL,
+    created_by_user_id BIGINT NULL,
+    redeemed_by_user_id BIGINT NULL,
+    redeemed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_subscription_redeem_code_hash (code_hash),
+    INDEX idx_subscription_redeem_code_status (status),
+    INDEX idx_subscription_redeem_code_batch (batch_name),
+    INDEX idx_subscription_redeem_code_redeemed_by (redeemed_by_user_id),
+    CONSTRAINT fk_subscription_redeem_code_created_by
+        FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_subscription_redeem_code_redeemed_by
+        FOREIGN KEY (redeemed_by_user_id) REFERENCES users(id)
+        ON DELETE SET NULL
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='subscription redeem codes';
+
+CREATE TABLE IF NOT EXISTS subscription_redeem_event (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    redeem_code_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    plan_code VARCHAR(32) NOT NULL,
+    duration_days INT NOT NULL,
+    before_plan_code VARCHAR(32) NULL,
+    before_period_end DATETIME NULL,
+    after_plan_code VARCHAR(32) NOT NULL,
+    after_period_end DATETIME NULL,
+    redeem_ip VARCHAR(64) NULL,
+    redeemed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_subscription_redeem_event_user_time (user_id, redeemed_at),
+    INDEX idx_subscription_redeem_event_code (redeem_code_id),
+    CONSTRAINT fk_subscription_redeem_event_code
+        FOREIGN KEY (redeem_code_id) REFERENCES subscription_redeem_code(id)
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_subscription_redeem_event_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='subscription redeem audit events';

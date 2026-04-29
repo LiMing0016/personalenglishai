@@ -3,20 +3,32 @@ package com.personalenglishai.backend.service.subscription;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.entity.subscription.AiTokenUsageEvent;
+import com.personalenglishai.backend.entity.subscription.SubscriptionRedeemCode;
+import com.personalenglishai.backend.entity.subscription.SubscriptionRedeemEvent;
 import com.personalenglishai.backend.entity.subscription.SubscriptionPlan;
 import com.personalenglishai.backend.entity.subscription.UserSubscription;
 import com.personalenglishai.backend.mapper.subscription.AiTokenUsageMapper;
+import com.personalenglishai.backend.mapper.subscription.SubscriptionRedeemCodeMapper;
 import com.personalenglishai.backend.mapper.subscription.SubscriptionPlanMapper;
 import com.personalenglishai.backend.mapper.subscription.UserSubscriptionMapper;
+import com.personalenglishai.backend.service.subscription.dto.CreateRedeemCodesRequest;
+import com.personalenglishai.backend.service.subscription.dto.CreateRedeemCodesResponse;
 import com.personalenglishai.backend.service.subscription.dto.SubscriptionPlanResponse;
 import com.personalenglishai.backend.service.subscription.dto.SubscriptionStatusResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -26,28 +38,41 @@ import java.util.Map;
 public class SubscriptionService {
     private static final String PLAN_FREE = "free";
     private static final String STATUS_ACTIVE = "active";
+    private static final String REDEEM_STATUS_UNUSED = "unused";
+    private static final String REDEEM_STATUS_REDEEMED = "redeemed";
+    private static final String REDEEM_STATUS_REVOKED = "revoked";
+    private static final String REDEEM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Map<String, SubscriptionPlan> DEFAULT_PLANS = defaultPlans();
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SubscriptionPlanMapper planMapper;
     private final UserSubscriptionMapper subscriptionMapper;
     private final AiTokenUsageMapper usageMapper;
+    private final SubscriptionRedeemCodeMapper redeemCodeMapper;
     private final Clock clock;
+    private final String redeemHmacSecret;
 
     @Autowired
     public SubscriptionService(SubscriptionPlanMapper planMapper,
                                UserSubscriptionMapper subscriptionMapper,
-                               AiTokenUsageMapper usageMapper) {
-        this(planMapper, subscriptionMapper, usageMapper, Clock.systemDefaultZone());
+                               AiTokenUsageMapper usageMapper,
+                               SubscriptionRedeemCodeMapper redeemCodeMapper,
+                               @Value("${subscription.redeem.hmac-secret:${JWT_SECRET:}}") String redeemHmacSecret) {
+        this(planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, Clock.systemDefaultZone(), redeemHmacSecret);
     }
 
     SubscriptionService(SubscriptionPlanMapper planMapper,
                         UserSubscriptionMapper subscriptionMapper,
                         AiTokenUsageMapper usageMapper,
-                        Clock clock) {
+                        SubscriptionRedeemCodeMapper redeemCodeMapper,
+                        Clock clock,
+                        String redeemHmacSecret) {
         this.planMapper = planMapper;
         this.subscriptionMapper = subscriptionMapper;
         this.usageMapper = usageMapper;
+        this.redeemCodeMapper = redeemCodeMapper;
         this.clock = clock;
+        this.redeemHmacSecret = redeemHmacSecret == null ? "" : redeemHmacSecret;
     }
 
     public List<SubscriptionPlanResponse> listPlans() {
@@ -92,22 +117,85 @@ public class SubscriptionService {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "无效的会员档位");
         }
 
+        return applySubscription(userId, planCode, 30);
+    }
+
+    @Transactional
+    public CreateRedeemCodesResponse createRedeemCodes(Long adminUserId, CreateRedeemCodesRequest request) {
+        if (request == null) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码参数不能为空");
+        }
+        String planCode = normalizePlanCode(request.getPlanCode());
+        int durationDays = request.getDurationDays() == null ? 0 : request.getDurationDays();
+        int count = request.getCount() == null ? 0 : request.getCount();
         LocalDateTime now = LocalDateTime.now(clock);
-        UserSubscription current = resolveActiveSubscription(userId, now);
-        LocalDateTime start = now;
-        LocalDateTime end = now.plusDays(30);
-        if (current != null && planCode.equalsIgnoreCase(current.getPlanCode())) {
-            end = current.getCurrentPeriodEnd().plusDays(30);
+        if (PLAN_FREE.equals(planCode) || planByCode(planCode) == null) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "无效的会员档位");
+        }
+        if (durationDays <= 0 || count <= 0 || count > 500) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "无效的兑换码数量或有效天数");
+        }
+        if (request.getExpiresAt() != null && !request.getExpiresAt().isAfter(now)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码过期时间必须晚于当前时间");
         }
 
-        UserSubscription next = new UserSubscription();
-        next.setUserId(userId);
-        next.setPlanCode(planCode);
-        next.setStatus(STATUS_ACTIVE);
-        next.setCurrentPeriodStart(start);
-        next.setCurrentPeriodEnd(end);
-        subscriptionMapper.upsert(next);
-        return getCurrentSubscription(userId);
+        CreateRedeemCodesResponse response = new CreateRedeemCodesResponse();
+        response.setPlanCode(planCode);
+        response.setDurationDays(durationDays);
+        response.setExpiresAt(request.getExpiresAt());
+        response.setBatchName(trimToNull(request.getBatchName()));
+        List<CreateRedeemCodesResponse.RedeemCodeItem> codes = new ArrayList<>();
+
+        for (int i = 0; i < count; i++) {
+            String plainCode = uniquePlainCode();
+            SubscriptionRedeemCode row = new SubscriptionRedeemCode();
+            row.setCodeHash(hashRedeemCode(plainCode));
+            row.setPlanCode(planCode);
+            row.setDurationDays(durationDays);
+            row.setStatus(REDEEM_STATUS_UNUSED);
+            row.setExpiresAt(request.getExpiresAt());
+            row.setBatchName(trimToNull(request.getBatchName()));
+            row.setCreatedByUserId(adminUserId);
+            redeemCodeMapper.insertCode(row);
+            codes.add(new CreateRedeemCodesResponse.RedeemCodeItem(plainCode));
+        }
+        response.setCodes(codes);
+        return response;
+    }
+
+    @Transactional
+    public SubscriptionStatusResponse redeemCode(Long userId, String rawCode, String redeemIp) {
+        if (userId == null) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "请先登录后兑换会员码");
+        }
+        String codeHash = hashRedeemCode(rawCode);
+        SubscriptionRedeemCode code = redeemCodeMapper.findByCodeHash(codeHash);
+        if (code == null) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码无效");
+        }
+        validateRedeemCodeUsable(code);
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        SubscriptionStatusResponse before = getCurrentSubscription(userId);
+        int marked = redeemCodeMapper.markRedeemed(code.getId(), userId, now);
+        if (marked <= 0) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码已使用");
+        }
+
+        SubscriptionStatusResponse after = applySubscription(userId, code.getPlanCode(), code.getDurationDays());
+        SubscriptionRedeemEvent event = new SubscriptionRedeemEvent();
+        event.setRedeemCodeId(code.getId());
+        event.setUserId(userId);
+        event.setPlanCode(code.getPlanCode());
+        event.setDurationDays(code.getDurationDays());
+        event.setBeforePlanCode(before.getPlanCode());
+        event.setBeforePeriodEnd(before.getCurrentPeriodEnd());
+        event.setAfterPlanCode(after.getPlanCode());
+        event.setAfterPeriodEnd(after.getCurrentPeriodEnd());
+        event.setRedeemIp(trimToNull(redeemIp));
+        event.setRedeemedAt(now);
+        redeemCodeMapper.insertEvent(event);
+        return after;
     }
 
     public void assertAiTokenQuotaAvailable(Long userId) {
@@ -164,6 +252,47 @@ public class SubscriptionService {
         return plan == null ? DEFAULT_PLANS.get(PLAN_FREE) : plan;
     }
 
+    private SubscriptionStatusResponse applySubscription(Long userId, String planCode, int durationDays) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        UserSubscription current = resolveActiveSubscription(userId, now);
+        LocalDateTime end = now.plusDays(durationDays);
+        if (current != null && planCode.equalsIgnoreCase(current.getPlanCode())) {
+            end = current.getCurrentPeriodEnd().plusDays(durationDays);
+        }
+
+        UserSubscription next = new UserSubscription();
+        next.setUserId(userId);
+        next.setPlanCode(planCode);
+        next.setStatus(STATUS_ACTIVE);
+        next.setCurrentPeriodStart(now);
+        next.setCurrentPeriodEnd(end);
+        subscriptionMapper.upsert(next);
+        return getCurrentSubscription(userId);
+    }
+
+    private void validateRedeemCodeUsable(SubscriptionRedeemCode code) {
+        String status = code.getStatus() == null ? "" : code.getStatus().toLowerCase(Locale.ROOT);
+        if (REDEEM_STATUS_REDEEMED.equals(status)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码已使用");
+        }
+        if (REDEEM_STATUS_REVOKED.equals(status)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码已撤销");
+        }
+        if (!REDEEM_STATUS_UNUSED.equals(status)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码无效");
+        }
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (code.getExpiresAt() != null && !code.getExpiresAt().isAfter(now)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码已过期");
+        }
+        if (PLAN_FREE.equals(normalizePlanCode(code.getPlanCode())) || planByCode(code.getPlanCode()) == null) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码档位无效");
+        }
+        if (code.getDurationDays() == null || code.getDurationDays() <= 0) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码有效天数无效");
+        }
+    }
+
     private UserSubscription resolveActiveSubscription(Long userId, LocalDateTime now) {
         if (userId == null) {
             return null;
@@ -217,6 +346,59 @@ public class SubscriptionService {
 
     private static String normalizePlanCode(String planCode) {
         return planCode == null ? "" : planCode.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String uniquePlainCode() {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String code = generatePlainCode();
+            if (redeemCodeMapper.findByCodeHash(hashRedeemCode(code)) == null) {
+                return code;
+            }
+        }
+        throw new BizException(ErrorCode.COMMON_SYSTEM_ERROR, "生成兑换码失败");
+    }
+
+    private static String generatePlainCode() {
+        StringBuilder raw = new StringBuilder(16);
+        for (int i = 0; i < 16; i++) {
+            raw.append(REDEEM_CODE_ALPHABET.charAt(RANDOM.nextInt(REDEEM_CODE_ALPHABET.length())));
+        }
+        return raw.substring(0, 4) + "-" + raw.substring(4, 8) + "-" + raw.substring(8, 12) + "-" + raw.substring(12, 16);
+    }
+
+    private String hashRedeemCode(String rawCode) {
+        String normalized = normalizeRedeemCode(rawCode);
+        if (normalized.isEmpty()) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "兑换码不能为空");
+        }
+        if (redeemHmacSecret.isBlank()) {
+            throw new BizException(ErrorCode.COMMON_SYSTEM_ERROR, "兑换码密钥未配置");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(redeemHmacSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(normalized.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.COMMON_SYSTEM_ERROR, "兑换码校验失败");
+        }
+    }
+
+    String hashRedeemCodeForTest(String rawCode) {
+        return hashRedeemCode(rawCode);
+    }
+
+    private static String normalizeRedeemCode(String rawCode) {
+        if (rawCode == null) {
+            return "";
+        }
+        return rawCode.replace("-", "").replace(" ", "").trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private static boolean isBlank(String value) {

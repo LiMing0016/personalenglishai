@@ -18,7 +18,8 @@ public final class AdminRoles {
                     AdminPermissions.PROMPTS_WRITE,
                     AdminPermissions.RUBRICS_READ,
                     AdminPermissions.RUBRICS_WRITE,
-                    AdminPermissions.AUDIT_READ
+                    AdminPermissions.AUDIT_READ,
+                    AdminPermissions.SUBSCRIPTION_WRITE
             ),
             SUPPORT_ADMIN, Set.of(
                     AdminPermissions.USERS_READ,

@@ -52,11 +52,37 @@ erDiagram
     datetime updated_at "更新时间"
   }
 
+  subscription_redeem_code {
+    bigint id PK "自增主键"
+    string code_hash UK "兑换码 HMAC hash"
+    string plan_code "会员档位编码"
+    int duration_days "订阅天数"
+    string status "unused/redeemed/revoked"
+    datetime expires_at "过期时间"
+    bigint redeemed_by_user_id "兑换用户"
+    datetime redeemed_at "兑换时间"
+  }
+
+  subscription_redeem_event {
+    bigint id PK "自增主键"
+    bigint redeem_code_id FK "兑换码 ID"
+    bigint user_id FK "兑换用户"
+    string plan_code "兑换档位"
+    int duration_days "兑换天数"
+    string before_plan_code "兑换前档位"
+    string after_plan_code "兑换后档位"
+    string redeem_ip "兑换 IP"
+    datetime redeemed_at "兑换时间"
+  }
+
   users ||--o| user_subscription : "has current subscription"
   subscription_plan ||--o{ user_subscription : "selected by plan_code"
   users ||--o{ ai_token_usage_event : "produces usage events"
   users ||--o{ user_ai_token_usage_monthly : "has monthly aggregate"
   ai_token_usage_event }o..o{ user_ai_token_usage_monthly : "aggregated by user/month"
+  users ||--o{ subscription_redeem_code : "redeems"
+  subscription_redeem_code ||--o| subscription_redeem_event : "creates audit event"
+  users ||--o{ subscription_redeem_event : "performs redemption"
 ```
 
 ## 2. 表关系说明
@@ -72,6 +98,8 @@ flowchart TD
 
 - `subscription_plan` 是套餐配置表，定义 Free、Basic、Pro、Premium 的 token 上限。
 - `user_subscription` 是用户当前订阅表，一个用户最多一条当前订阅记录。
+- `subscription_redeem_code` 是会员码表，只保存兑换码 hash 和权益配置。
+- `subscription_redeem_event` 是兑换流水表，便于审计谁在何时兑换了哪个权益。
 - `ai_token_usage_event` 是 AI token 用量明细表，每一次可统计 usage 的 AI 调用写一条事件。
 - `user_ai_token_usage_monthly` 是月度聚合表，用于快速判断用户本月是否已经超额。
 - `users` 是已有用户表，本订阅模块通过 `user_id` 关联它。

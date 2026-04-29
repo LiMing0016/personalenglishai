@@ -3,12 +3,16 @@ package com.personalenglishai.backend.service.subscription;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.entity.subscription.AiTokenUsageEvent;
+import com.personalenglishai.backend.entity.subscription.SubscriptionRedeemCode;
+import com.personalenglishai.backend.entity.subscription.SubscriptionRedeemEvent;
 import com.personalenglishai.backend.entity.subscription.SubscriptionPlan;
 import com.personalenglishai.backend.entity.subscription.UserAiTokenUsageMonthly;
 import com.personalenglishai.backend.entity.subscription.UserSubscription;
 import com.personalenglishai.backend.mapper.subscription.AiTokenUsageMapper;
+import com.personalenglishai.backend.mapper.subscription.SubscriptionRedeemCodeMapper;
 import com.personalenglishai.backend.mapper.subscription.SubscriptionPlanMapper;
 import com.personalenglishai.backend.mapper.subscription.UserSubscriptionMapper;
+import com.personalenglishai.backend.service.subscription.dto.CreateRedeemCodesRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +38,7 @@ class SubscriptionServiceTest {
     private FakeSubscriptionPlanMapper planMapper;
     private FakeUserSubscriptionMapper subscriptionMapper;
     private FakeAiTokenUsageMapper usageMapper;
+    private FakeSubscriptionRedeemCodeMapper redeemCodeMapper;
     private SubscriptionService service;
 
     @BeforeEach
@@ -41,7 +46,8 @@ class SubscriptionServiceTest {
         planMapper = new FakeSubscriptionPlanMapper();
         subscriptionMapper = new FakeUserSubscriptionMapper();
         usageMapper = new FakeAiTokenUsageMapper();
-        service = new SubscriptionService(planMapper, subscriptionMapper, usageMapper, FIXED_CLOCK);
+        redeemCodeMapper = new FakeSubscriptionRedeemCodeMapper();
+        service = new SubscriptionService(planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, FIXED_CLOCK, "test-secret");
     }
 
     @Test
@@ -85,6 +91,95 @@ class SubscriptionServiceTest {
     }
 
     @Test
+    void generatedRedeemCodeStoresHashOnlyAndCanBeRedeemed() {
+        var generated = service.createRedeemCodes(99L, new CreateRedeemCodesRequest(
+                "pro", 30, 1, LocalDateTime.now(FIXED_CLOCK).plusDays(7), "beta"
+        ));
+
+        String plainCode = generated.getCodes().get(0).getCode();
+        assertThat(plainCode).matches("[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}");
+        assertThat(redeemCodeMapper.codes.values()).singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getCodeHash()).isNotEqualTo(plainCode);
+                    assertThat(row.getCodeHash()).hasSize(64);
+                    assertThat(row.getPlanCode()).isEqualTo("pro");
+                    assertThat(row.getDurationDays()).isEqualTo(30);
+                    assertThat(row.getStatus()).isEqualTo("unused");
+                });
+
+        var status = service.redeemCode(1L, plainCode, "127.0.0.1");
+
+        assertThat(status.getPlanCode()).isEqualTo("pro");
+        assertThat(status.getCurrentPeriodEnd()).isEqualTo(LocalDateTime.now(FIXED_CLOCK).plusDays(30));
+        assertThat(redeemCodeMapper.events).singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getUserId()).isEqualTo(1L);
+                    assertThat(event.getPlanCode()).isEqualTo("pro");
+                    assertThat(event.getBeforePlanCode()).isEqualTo("free");
+                    assertThat(event.getAfterPlanCode()).isEqualTo("pro");
+                    assertThat(event.getRedeemIp()).isEqualTo("127.0.0.1");
+                });
+    }
+
+    @Test
+    void redeemingSamePlanExtendsFromCurrentPeriodEnd() {
+        service.mockPurchase(1L, "basic");
+        String code = issueCode("basic", 90, "unused", LocalDateTime.now(FIXED_CLOCK).plusDays(7));
+
+        var status = service.redeemCode(1L, code, null);
+
+        assertThat(status.getPlanCode()).isEqualTo("basic");
+        assertThat(status.getCurrentPeriodEnd()).isEqualTo(LocalDateTime.now(FIXED_CLOCK).plusDays(120));
+    }
+
+    @Test
+    void redeemingDifferentPlanSwitchesImmediately() {
+        service.mockPurchase(1L, "basic");
+        String code = issueCode("premium", 30, "unused", LocalDateTime.now(FIXED_CLOCK).plusDays(7));
+
+        var status = service.redeemCode(1L, code, null);
+
+        assertThat(status.getPlanCode()).isEqualTo("premium");
+        assertThat(status.getCurrentPeriodStart()).isEqualTo(LocalDateTime.now(FIXED_CLOCK));
+        assertThat(status.getCurrentPeriodEnd()).isEqualTo(LocalDateTime.now(FIXED_CLOCK).plusDays(30));
+    }
+
+    @Test
+    void redeemCodeRejectsInvalidExpiredRevokedAndUsedCodes() {
+        assertThatThrownBy(() -> service.redeemCode(1L, "NOPE-NOPE-NOPE-NOPE", null))
+                .isInstanceOf(BizException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.COMMON_VALIDATION_ERROR);
+
+        String expired = issueCode("basic", 30, "unused", LocalDateTime.now(FIXED_CLOCK).minusSeconds(1));
+        assertThatThrownBy(() -> service.redeemCode(1L, expired, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已过期");
+
+        String revoked = issueCode("basic", 30, "revoked", LocalDateTime.now(FIXED_CLOCK).plusDays(7));
+        assertThatThrownBy(() -> service.redeemCode(1L, revoked, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已撤销");
+
+        String used = issueCode("basic", 30, "redeemed", LocalDateTime.now(FIXED_CLOCK).plusDays(7));
+        assertThatThrownBy(() -> service.redeemCode(1L, used, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已使用");
+    }
+
+    @Test
+    void redeemCodeCanOnlyBeConsumedOnce() {
+        String code = issueCode("pro", 30, "unused", LocalDateTime.now(FIXED_CLOCK).plusDays(7));
+
+        service.redeemCode(1L, code, null);
+
+        assertThatThrownBy(() -> service.redeemCode(2L, code, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("已使用");
+        assertThat(redeemCodeMapper.events).hasSize(1);
+    }
+
+    @Test
     void recordsUsageIntoMonthlyAggregateIdempotently() {
         var usage = new AiTokenUsageRecord(
                 "usage-1",
@@ -124,6 +219,17 @@ class SubscriptionServiceTest {
                 .isInstanceOf(BizException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED);
+    }
+
+    private String issueCode(String planCode, int durationDays, String status, LocalDateTime expiresAt) {
+        var generated = service.createRedeemCodes(99L, new CreateRedeemCodesRequest(
+                planCode, durationDays, 1, LocalDateTime.now(FIXED_CLOCK).plusDays(7), "test"
+        ));
+        String plainCode = generated.getCodes().get(0).getCode();
+        SubscriptionRedeemCode row = redeemCodeMapper.findByCodeHash(service.hashRedeemCodeForTest(plainCode));
+        row.setStatus(status);
+        row.setExpiresAt(expiresAt);
+        return plainCode;
     }
 
     private static final class FakeSubscriptionPlanMapper implements SubscriptionPlanMapper {
@@ -202,6 +308,44 @@ class SubscriptionServiceTest {
         public Long selectMonthlyTokenUsed(Long userId, String usageMonth) {
             UserAiTokenUsageMonthly row = monthly.get(userId + ":" + usageMonth);
             return row == null ? null : row.getTokenUsed();
+        }
+    }
+
+    private static final class FakeSubscriptionRedeemCodeMapper implements SubscriptionRedeemCodeMapper {
+        private final Map<Long, SubscriptionRedeemCode> codes = new LinkedHashMap<>();
+        private final Map<String, SubscriptionRedeemCode> codesByHash = new LinkedHashMap<>();
+        private final List<SubscriptionRedeemEvent> events = new ArrayList<>();
+        private long nextId = 1L;
+
+        @Override
+        public int insertCode(SubscriptionRedeemCode code) {
+            code.setId(nextId++);
+            codes.put(code.getId(), code);
+            codesByHash.put(code.getCodeHash(), code);
+            return 1;
+        }
+
+        @Override
+        public SubscriptionRedeemCode findByCodeHash(String codeHash) {
+            return codesByHash.get(codeHash);
+        }
+
+        @Override
+        public int markRedeemed(Long id, Long redeemedByUserId, LocalDateTime redeemedAt) {
+            SubscriptionRedeemCode code = codes.get(id);
+            if (code == null || !"unused".equals(code.getStatus())) {
+                return 0;
+            }
+            code.setStatus("redeemed");
+            code.setRedeemedByUserId(redeemedByUserId);
+            code.setRedeemedAt(redeemedAt);
+            return 1;
+        }
+
+        @Override
+        public int insertEvent(SubscriptionRedeemEvent event) {
+            events.add(event);
+            return 1;
         }
     }
 }

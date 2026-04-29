@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.subscription.SubscriptionRedeemCodeMapper">
+
+    <resultMap id="SubscriptionRedeemCodeResultMap" type="com.personalenglishai.backend.entity.subscription.SubscriptionRedeemCode">
+        <id column="id" property="id"/>
+        <result column="code_hash" property="codeHash"/>
+        <result column="plan_code" property="planCode"/>
+        <result column="duration_days" property="durationDays"/>
+        <result column="status" property="status"/>
+        <result column="expires_at" property="expiresAt"/>
+        <result column="batch_name" property="batchName"/>
+        <result column="created_by_user_id" property="createdByUserId"/>
+        <result column="redeemed_by_user_id" property="redeemedByUserId"/>
+        <result column="redeemed_at" property="redeemedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insertCode" parameterType="com.personalenglishai.backend.entity.subscription.SubscriptionRedeemCode"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO subscription_redeem_code (
+            code_hash,
+            plan_code,
+            duration_days,
+            status,
+            expires_at,
+            batch_name,
+            created_by_user_id
+        )
+        VALUES (
+            #{codeHash},
+            #{planCode},
+            #{durationDays},
+            #{status},
+            #{expiresAt},
+            #{batchName},
+            #{createdByUserId}
+        )
+    </insert>
+
+    <select id="findByCodeHash" resultMap="SubscriptionRedeemCodeResultMap">
+        SELECT id,
+               code_hash,
+               plan_code,
+               duration_days,
+               status,
+               expires_at,
+               batch_name,
+               created_by_user_id,
+               redeemed_by_user_id,
+               redeemed_at,
+               created_at,
+               updated_at
+        FROM subscription_redeem_code
+        WHERE code_hash = #{codeHash}
+        LIMIT 1
+    </select>
+
+    <update id="markRedeemed">
+        UPDATE subscription_redeem_code
+        SET status = 'redeemed',
+            redeemed_by_user_id = #{redeemedByUserId},
+            redeemed_at = #{redeemedAt},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{id}
+          AND status = 'unused'
+    </update>
+
+    <insert id="insertEvent" parameterType="com.personalenglishai.backend.entity.subscription.SubscriptionRedeemEvent"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO subscription_redeem_event (
+            redeem_code_id,
+            user_id,
+            plan_code,
+            duration_days,
+            before_plan_code,
+            before_period_end,
+            after_plan_code,
+            after_period_end,
+            redeem_ip,
+            redeemed_at
+        )
+        VALUES (
+            #{redeemCodeId},
+            #{userId},
+            #{planCode},
+            #{durationDays},
+            #{beforePlanCode},
+            #{beforePeriodEnd},
+            #{afterPlanCode},
+            #{afterPeriodEnd},
+            #{redeemIp},
+            #{redeemedAt}
+        )
+    </insert>
+
+</mapper>

@@ -2,14 +2,19 @@
 
 ## 1. 当前定位
 
-第一版会员系统只做一件事：按用户每月 AI token 总额度限制 AI 请求。
+第一版会员系统只做两件事：
 
-不做真实支付、订单、退款、自动续费、模型单价、人民币成本估算，也不做功能次数限制。
+1. 按用户每月 AI token 总额度限制 AI 请求。
+2. 通过“兑换会员码”发放 Basic / Pro / Premium 的订阅权益。
+
+不做真实支付、订单、退款、自动续费、模型单价、人民币成本估算，也不做储值礼品卡或功能次数限制。
 
 ```mermaid
 flowchart TD
   User["用户"] --> FE["前端个人中心 / AI 功能"]
   FE --> API["Java 后端 API"]
+  API --> Redeem["兑换会员码"]
+  Redeem --> Sub["用户订阅"]
   API --> Quota["订阅额度校验"]
   Quota --> DB["订阅与 token 用量表"]
   API --> AI["OpenAI / Qwen / Python Agents"]
@@ -78,6 +83,8 @@ erDiagram
 
 - `subscription_plan`：会员档位配置。
 - `user_subscription`：用户当前会员档位和有效期。
+- `subscription_redeem_code`：兑换码表，只保存 HMAC hash，不保存明文码。
+- `subscription_redeem_event`：兑换流水表，记录用户、IP、兑换前后订阅状态。
 - `ai_token_usage_event`：单次 AI 调用 token 事件，使用 `usage_event_id` 幂等去重。
 - `user_ai_token_usage_monthly`：用户自然月聚合 token 用量，用于快速额度判断。
 
@@ -118,6 +125,15 @@ sequenceDiagram
 ## 5. 超额规则
 
 本次调用导致超额时，不回滚、不阻止本次结果返回。
+
+## 6. 兑换码规则
+
+- 管理员通过 `POST /api/admin/subscription/redeem-codes` 生成兑换码。
+- 用户通过 `POST /api/subscription/redeem` 兑换会员码。
+- 兑换码携带 `planCode + durationDays`，例如 Pro 30 天。
+- 同档位兑换从当前有效期末尾续期；不同档位兑换从当前时间切换到新档位。
+- 明文码只在生成接口响应中返回一次，数据库只保存 HMAC-SHA256 hash。
+- 兑换过程使用事务和条件更新保证单个码只能成功兑换一次。
 
 ```mermaid
 flowchart LR
