@@ -3,6 +3,7 @@ package com.personalenglishai.backend.service.writing.impl;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptRequest;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.entity.WritingPromptSheet;
+import com.personalenglishai.backend.service.subscription.AiUsageRecorder;
 import com.personalenglishai.backend.service.writing.WritingExamPromptService;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.slf4j.Logger;
@@ -26,6 +27,8 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
     private final WritingPromptSheetAssembler promptSheetAssembler;
     private final WritingPromptSheetService writingPromptSheetService;
     private final PromptSheetChartImageService chartImageService;
+    @Autowired(required = false)
+    private AiUsageRecorder aiUsageRecorder;
 
     @Autowired
     public WritingExamPromptServiceImpl(
@@ -75,12 +78,30 @@ public class WritingExamPromptServiceImpl implements WritingExamPromptService {
         if (response == null) {
             throw new IllegalStateException("Python orchestrator returned empty prompt sheet response");
         }
+        recordAgentUsage(response);
 
         normalizeResponse(request, response);
         WritingPromptSheet promptSheet = writingPromptSheetService.createGeneratedPromptSheet(request, response);
         response.setPromptSheetId(promptSheet.getId());
         response.setPaper(promptSheet.getPaper());
         return response;
+    }
+
+    private void recordAgentUsage(GenerateExamPromptResponse response) {
+        if (aiUsageRecorder == null || response == null || response.getAgentUsage() == null) {
+            return;
+        }
+        var usage = response.getAgentUsage();
+        aiUsageRecorder.recordCurrentContext(
+                usage.getProvider() == null ? "openai_agents" : usage.getProvider(),
+                usage.getModel(),
+                usage.getResponseId(),
+                usage.getInputTokens(),
+                usage.getCachedInputTokens(),
+                usage.getOutputTokens(),
+                usage.getReasoningTokens(),
+                usage.getTotalTokens()
+        );
     }
 
     private void normalizeResponse(GenerateExamPromptRequest request, GenerateExamPromptResponse response) {

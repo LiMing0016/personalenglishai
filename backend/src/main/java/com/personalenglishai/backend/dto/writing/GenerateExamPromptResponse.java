@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.dto.writing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,8 @@ public class GenerateExamPromptResponse {
     private String materialText;
     private ChartSpec chartSpec;
     private List<ComicScene> comicScenes = new ArrayList<>();
+    @JsonProperty(value = "_usage", access = JsonProperty.Access.WRITE_ONLY)
+    private AiAgentUsage agentUsage;
 
     public String getPromptType() {
         return promptType;
@@ -40,6 +43,14 @@ public class GenerateExamPromptResponse {
 
     public void setPromptType(String promptType) {
         this.promptType = promptType;
+    }
+
+    public AiAgentUsage getAgentUsage() {
+        return agentUsage;
+    }
+
+    public void setAgentUsage(AiAgentUsage agentUsage) {
+        this.agentUsage = agentUsage;
     }
 
     public String getPaper() {

@@ -4,8 +4,12 @@ import com.personalenglishai.backend.ai.context.RequestContext;
 import com.personalenglishai.backend.ai.dto.AICommandRequest;
 import com.personalenglishai.backend.ai.dto.AICommandResponse;
 import com.personalenglishai.backend.ai.orchestrator.AIOrchestrator;
+import com.personalenglishai.backend.service.subscription.AiUsageContext;
+import com.personalenglishai.backend.service.subscription.AiUsageContextHolder;
+import com.personalenglishai.backend.service.subscription.SubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.slf4j.MDC;
 import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,10 +25,14 @@ public class AICommandController {
 
     private final AIOrchestrator orchestrator;
     private final Environment environment;
+    private final SubscriptionService subscriptionService;
 
-    public AICommandController(AIOrchestrator orchestrator, Environment environment) {
+    public AICommandController(AIOrchestrator orchestrator,
+                               Environment environment,
+                               SubscriptionService subscriptionService) {
         this.orchestrator = orchestrator;
         this.environment = environment;
+        this.subscriptionService = subscriptionService;
     }
 
     @PostMapping("/command")
@@ -33,7 +41,11 @@ public class AICommandController {
             HttpServletRequest httpRequest) {
 
         RequestContext ctx = buildRequestContext(httpRequest);
-        AICommandResponse response = orchestrator.execute(request, ctx);
+        subscriptionService.assertAiTokenQuotaAvailable(ctx.getUserId());
+        AICommandResponse response = AiUsageContextHolder.call(
+                new AiUsageContext(ctx.getUserId(), "ai.command." + request.getIntent(), MDC.get("traceId")),
+                () -> orchestrator.execute(request, ctx)
+        );
         return ResponseEntity.ok(response);
     }
 

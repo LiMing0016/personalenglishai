@@ -69,14 +69,19 @@ import com.personalenglishai.backend.dto.writing.TranslateResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnRequest;
 import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnResponse;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
+import com.personalenglishai.backend.service.subscription.AiUsageContext;
+import com.personalenglishai.backend.service.subscription.AiUsageContextHolder;
+import com.personalenglishai.backend.service.subscription.SubscriptionService;
 import com.personalenglishai.backend.dto.writing.EssayPromptResponse;
 import com.personalenglishai.backend.dto.writing.EssayPromptListResponse;
 import com.personalenglishai.backend.entity.EssayPrompt;
+import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.function.Supplier;
 
 /**
  * 写作接口：evaluate（评分）、chat（改写指令，先 mock 后接 GPT）
@@ -109,6 +114,7 @@ public class WritingController {
     private final HandwritingRecognitionService handwritingRecognitionService;
     private final GrammarSuppressService grammarSuppressService;
     private final TrustedRewriteService trustedRewriteService;
+    private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -133,6 +139,7 @@ public class WritingController {
                              HandwritingRecognitionService handwritingRecognitionService,
                              GrammarSuppressService grammarSuppressService,
                              TrustedRewriteService trustedRewriteService,
+                             SubscriptionService subscriptionService,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
@@ -156,6 +163,7 @@ public class WritingController {
         this.handwritingRecognitionService = handwritingRecognitionService;
         this.grammarSuppressService = grammarSuppressService;
         this.trustedRewriteService = trustedRewriteService;
+        this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
     }
 
@@ -171,7 +179,7 @@ public class WritingController {
         normalizeEvaluateRequest(request);
         Long userId = (Long) httpRequest.getAttribute("userId");
         request.setUserId(userId);
-        WritingEvaluateResponse response = writingEvaluateService.evaluate(request);
+        WritingEvaluateResponse response = runQuotaCheckedAi(userId, "writing.evaluate", () -> writingEvaluateService.evaluate(request));
         filterEvaluateErrors(response, userId, request.getDocumentId(), request.getEssay());
         return ResponseEntity.ok(response);
     }
@@ -181,7 +189,9 @@ public class WritingController {
             @Valid @RequestBody WritingEvaluateRequest request,
             HttpServletRequest httpRequest) {
         normalizeEvaluateRequest(request);
-        request.setUserId((Long) httpRequest.getAttribute("userId"));
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        subscriptionService.assertAiTokenQuotaAvailable(userId);
+        request.setUserId(userId);
         WritingEvaluateTaskResponse response = writingEvaluateTaskService.submit(request);
         return ResponseEntity.accepted().body(response);
     }
@@ -211,14 +221,16 @@ public class WritingController {
      */
     @PostMapping("/chat")
     public ResponseEntity<WritingChatResponse> chat(
-            @Valid @RequestBody WritingChatRequest request) {
+            @Valid @RequestBody WritingChatRequest request,
+            HttpServletRequest httpRequest) {
         if (request.getLang() == null || request.getLang().isBlank()) {
             request.setLang("en");
         }
         if (request.getMode() == null || request.getMode().isBlank()) {
             request.setMode("free");
         }
-        WritingChatResponse response = writingChatService.chat(request);
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        WritingChatResponse response = runQuotaCheckedAi(userId, "writing.chat", () -> writingChatService.chat(request));
         return ResponseEntity.ok(response);
     }
 
@@ -230,7 +242,7 @@ public class WritingController {
             @Valid @RequestBody PolishRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        PolishResponse response = writingPolishService.polish(request);
+        PolishResponse response = runQuotaCheckedAi(request.getUserId(), "writing.polish", () -> writingPolishService.polish(request));
         return ResponseEntity.ok(response);
     }
 
@@ -242,7 +254,7 @@ public class WritingController {
             @Valid @RequestBody PolishEssayRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        PolishEssayResponse response = writingPolishService.polishEssay(request);
+        PolishEssayResponse response = runQuotaCheckedAi(request.getUserId(), "writing.polish_essay", () -> writingPolishService.polishEssay(request));
         return ResponseEntity.ok(response);
     }
 
@@ -253,7 +265,7 @@ public class WritingController {
             @Valid @RequestBody WritingTemplateRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        WritingTemplateResponse response = writingTemplateService.extract(request);
+        WritingTemplateResponse response = runQuotaCheckedAi(request.getUserId(), "writing.template", () -> writingTemplateService.extract(request));
         return ResponseEntity.ok(response);
     }
 
@@ -263,7 +275,7 @@ public class WritingController {
             @Valid @RequestBody WritingMaterialRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        WritingMaterialResponse response = writingMaterialService.generate(request);
+        WritingMaterialResponse response = runQuotaCheckedAi(request.getUserId(), "writing.material", () -> writingMaterialService.generate(request));
         return ResponseEntity.ok(response);
     }
 
@@ -273,7 +285,7 @@ public class WritingController {
             @Valid @RequestBody WritingModelEssayRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        WritingModelEssayResponse response = writingModelEssayService.generate(request);
+        WritingModelEssayResponse response = runQuotaCheckedAi(request.getUserId(), "writing.model_essay", () -> writingModelEssayService.generate(request));
         return ResponseEntity.ok(response);
     }
 
@@ -282,7 +294,7 @@ public class WritingController {
             @Valid @RequestBody GenerateExamPromptRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        GenerateExamPromptResponse response = writingExamPromptService.generate(request);
+        GenerateExamPromptResponse response = runQuotaCheckedAi(request.getUserId(), "writing.generate_exam_prompt", () -> writingExamPromptService.generate(request));
         return ResponseEntity.ok(response);
     }
 
@@ -291,7 +303,7 @@ public class WritingController {
             @Valid @RequestBody PromptSheetChatRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        PromptSheetChatResponse response = promptSheetChatService.chat(request);
+        PromptSheetChatResponse response = runQuotaCheckedAi(request.getUserId(), "writing.prompt_sheet_chat", () -> promptSheetChatService.chat(request));
         return ResponseEntity.ok(response);
     }
 
@@ -303,7 +315,7 @@ public class WritingController {
             @Valid @RequestBody TranslateRequest request,
             HttpServletRequest httpRequest) {
         request.setUserId((Long) httpRequest.getAttribute("userId"));
-        TranslateResponse response = writingTranslateService.translate(request);
+        TranslateResponse response = runQuotaCheckedAi(request.getUserId(), "writing.translate", () -> writingTranslateService.translate(request));
         return ResponseEntity.ok(response);
     }
 
@@ -375,8 +387,10 @@ public class WritingController {
      */
     @PostMapping("/suggestions")
     public ResponseEntity<SuggestionsResponse> suggestions(
-            @Valid @RequestBody SuggestionsRequest request) {
-        SuggestionsResponse response = writingSuggestionsService.analyze(request.getText(), request.getAiProvider());
+            @Valid @RequestBody SuggestionsRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        SuggestionsResponse response = runQuotaCheckedAi(userId, "writing.suggestions", () -> writingSuggestionsService.analyze(request.getText(), request.getAiProvider()));
         return ResponseEntity.ok(response);
     }
 
@@ -711,8 +725,10 @@ public class WritingController {
     /** 题目智能解析 */
     @PostMapping("/audit-topic")
     public ResponseEntity<AuditTopicResponse> auditTopic(
-            @Valid @RequestBody AuditTopicRequest request) {
-        AuditTopicResponse response = auditTopicService.audit(request, request.getAiProvider());
+            @Valid @RequestBody AuditTopicRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        AuditTopicResponse response = runQuotaCheckedAi(userId, "writing.audit_topic", () -> auditTopicService.audit(request, request.getAiProvider()));
         return ResponseEntity.ok(response);
     }
 
@@ -724,22 +740,26 @@ public class WritingController {
         if (userId == null) {
             return ResponseEntity.status(401).build();
         }
-        return ResponseEntity.ok(writingExamDialogueService.generateTurn(userId, request));
+        return ResponseEntity.ok(runQuotaCheckedAi(userId, "writing.exam_dialogue_turn", () -> writingExamDialogueService.generateTurn(userId, request)));
     }
 
     /** 图片题目识别 */
     @PostMapping("/recognize-topic-image")
     public ResponseEntity<RecognizeTopicImageResponse> recognizeTopicImage(
-            @Valid @RequestBody RecognizeTopicImageRequest request) {
-        RecognizeTopicImageResponse response = auditTopicService.recognizeImage(request.getImageBase64(), request.getAiProvider());
+            @Valid @RequestBody RecognizeTopicImageRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        RecognizeTopicImageResponse response = runQuotaCheckedAi(userId, "writing.recognize_topic_image", () -> auditTopicService.recognizeImage(request.getImageBase64(), request.getAiProvider()));
         return ResponseEntity.ok(response);
     }
 
     /** 手写作文识别（当前 AI provider） */
     @PostMapping("/recognize-handwriting-image")
     public ResponseEntity<RecognizeHandwritingImageResponse> recognizeHandwritingImage(
-            @Valid @RequestBody RecognizeHandwritingImageRequest request) {
-        return ResponseEntity.ok(handwritingRecognitionService.recognize(request));
+            @Valid @RequestBody RecognizeHandwritingImageRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        return ResponseEntity.ok(runQuotaCheckedAi(userId, "writing.recognize_handwriting_image", () -> handwritingRecognitionService.recognize(request)));
     }
 
     /** 绑定手写导入结果到当前文档元数据 */
@@ -801,6 +821,11 @@ public class WritingController {
         dto.setMaxScore(entity.getMaxScore());
         dto.setSource(entity.getSource());
         return dto;
+    }
+
+    private <T> T runQuotaCheckedAi(Long userId, String featureKey, Supplier<T> supplier) {
+        subscriptionService.assertAiTokenQuotaAvailable(userId);
+        return AiUsageContextHolder.call(new AiUsageContext(userId, featureKey, MDC.get("traceId")), supplier);
     }
 
     /**

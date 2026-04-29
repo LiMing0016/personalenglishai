@@ -5,6 +5,7 @@ import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.PromptSheetChatRequest;
 import com.personalenglishai.backend.dto.writing.PromptSheetChatResponse;
 import com.personalenglishai.backend.entity.WritingPromptSheet;
+import com.personalenglishai.backend.service.subscription.AiUsageRecorder;
 import com.personalenglishai.backend.service.writing.PromptSheetChatService;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.slf4j.Logger;
@@ -27,6 +28,8 @@ public class PromptSheetChatServiceImpl implements PromptSheetChatService {
     private final WritingPromptSheetAssembler promptSheetAssembler;
     private final WritingPromptSheetService writingPromptSheetService;
     private final PromptSheetChartImageService chartImageService;
+    @Autowired(required = false)
+    private AiUsageRecorder aiUsageRecorder;
 
     @Autowired
     public PromptSheetChatServiceImpl(
@@ -70,6 +73,7 @@ public class PromptSheetChatServiceImpl implements PromptSheetChatService {
             if (response == null) {
                 return fallbackResponse();
             }
+            recordAgentUsage(response);
             persistEmbeddedPromptSheet(request, response);
             return response;
         } catch (Exception e) {
@@ -77,6 +81,23 @@ public class PromptSheetChatServiceImpl implements PromptSheetChatService {
                     request.getUserId(), e.getMessage());
             return fallbackResponse();
         }
+    }
+
+    private void recordAgentUsage(PromptSheetChatResponse response) {
+        if (aiUsageRecorder == null || response == null || response.getAgentUsage() == null) {
+            return;
+        }
+        var usage = response.getAgentUsage();
+        aiUsageRecorder.recordCurrentContext(
+                usage.getProvider() == null ? "openai_agents" : usage.getProvider(),
+                usage.getModel(),
+                usage.getResponseId(),
+                usage.getInputTokens(),
+                usage.getCachedInputTokens(),
+                usage.getOutputTokens(),
+                usage.getReasoningTokens(),
+                usage.getTotalTokens()
+        );
     }
 
     private void persistEmbeddedPromptSheet(PromptSheetChatRequest chatRequest, PromptSheetChatResponse chatResponse) {

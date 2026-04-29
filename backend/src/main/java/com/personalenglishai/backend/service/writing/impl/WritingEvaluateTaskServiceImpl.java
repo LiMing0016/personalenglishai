@@ -6,6 +6,8 @@ import com.personalenglishai.backend.dto.writing.WritingEvaluateResponse;
 import com.personalenglishai.backend.dto.writing.WritingEvaluateTaskResponse;
 import com.personalenglishai.backend.entity.EvaluateTask;
 import com.personalenglishai.backend.mapper.EvaluateTaskMapper;
+import com.personalenglishai.backend.service.subscription.AiUsageContext;
+import com.personalenglishai.backend.service.subscription.AiUsageContextHolder;
 import com.personalenglishai.backend.service.writing.WritingEvaluateService;
 import com.personalenglishai.backend.service.writing.WritingEvaluateTaskService;
 import jakarta.annotation.PreDestroy;
@@ -64,7 +66,10 @@ public class WritingEvaluateTaskServiceImpl implements WritingEvaluateTaskServic
         evaluateTaskMapper.insert(task);
 
         CompletableFuture
-                .supplyAsync(() -> writingEvaluateService.evaluate(request), executor)
+                .supplyAsync(() -> AiUsageContextHolder.call(
+                        new AiUsageContext(request.getUserId(), "writing.evaluate", requestId),
+                        () -> writingEvaluateService.evaluate(request)
+                ), executor)
                 .orTimeout(TASK_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .whenComplete((result, throwable) -> {
                     try {

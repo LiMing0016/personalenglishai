@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.dto.writing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class PromptSheetChatResponse {
@@ -12,6 +13,8 @@ public class PromptSheetChatResponse {
     private String canvasInstruction;
     private Patch patch;
     private GenerateExamPromptResponse promptSheet;
+    @JsonProperty(value = "_usage", access = JsonProperty.Access.WRITE_ONLY)
+    private AiAgentUsage agentUsage;
 
     public String getReply() {
         return reply;
@@ -67,6 +70,14 @@ public class PromptSheetChatResponse {
 
     public void setPromptSheet(GenerateExamPromptResponse promptSheet) {
         this.promptSheet = promptSheet;
+    }
+
+    public AiAgentUsage getAgentUsage() {
+        return agentUsage;
+    }
+
+    public void setAgentUsage(AiAgentUsage agentUsage) {
+        this.agentUsage = agentUsage;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

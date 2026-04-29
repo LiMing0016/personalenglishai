@@ -65,6 +65,7 @@ http.interceptors.response.use(
   (res) => res,
   async (err: AxiosError) => {
     const status = err.response?.status
+    const responseCode = (err.response?.data as { code?: string } | undefined)?.code
     const originalConfig = err.config as InternalAxiosRequestConfig & { _retried?: boolean }
 
     // 401 且不是 refresh 请求本身 → 尝试静默续签
@@ -118,6 +119,11 @@ http.interceptors.response.use(
 
     if (status === 403) {
       showToast('无权限访问', 'error')
+    }
+
+    if (status === 429 && (responseCode === '429010' || responseCode === 'SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED')) {
+      showToast('本月 AI token 额度已用完，请前往个人中心升级', 'error')
+      window.dispatchEvent(new CustomEvent('subscription-quota-exceeded'))
     }
 
     return Promise.reject(err)

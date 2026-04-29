@@ -2,6 +2,8 @@ package com.personalenglishai.backend.ai.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personalenglishai.backend.service.subscription.AiUsageRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,6 +38,8 @@ public class QwenService {
     private final int promptRawLogMaxChars;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final boolean enabled;
+    @Autowired(required = false)
+    private AiUsageRecorder aiUsageRecorder;
 
     public QwenService(
             @Value("${qwen.api-key:}") String apiKey,
@@ -253,10 +257,23 @@ public class QwenService {
         int inputTokens = intOrDefault(usage.path("prompt_tokens"), intOrDefault(usage.path("input_tokens"), -1));
         int outputTokens = intOrDefault(usage.path("completion_tokens"), intOrDefault(usage.path("output_tokens"), -1));
         int totalTokens = intOrDefault(usage.path("total_tokens"), -1);
+        int reasoningTokens = intOrDefault(usage.path("completion_tokens_details").path("reasoning_tokens"), -1);
         long latencyMs = System.currentTimeMillis() - startTime;
         int contentLength = content == null ? 0 : content.length();
+        if (aiUsageRecorder != null && (inputTokens >= 0 || outputTokens >= 0 || reasoningTokens >= 0 || totalTokens >= 0)) {
+            aiUsageRecorder.recordCurrentContext(
+                    "qwen",
+                    targetModel,
+                    requestId,
+                    nullableToken(inputTokens),
+                    null,
+                    nullableToken(outputTokens),
+                    nullableToken(reasoningTokens),
+                    nullableToken(totalTokens)
+            );
+        }
 
-        log.info("[QWEN] response traceId={} endpoint={} model={} requestId={} latencyMs={} inputTokens={} outputTokens={} totalTokens={} contentLength={}",
+        log.info("[QWEN] response traceId={} endpoint={} model={} requestId={} latencyMs={} inputTokens={} outputTokens={} reasoningTokens={} totalTokens={} contentLength={}",
                 traceId,
                 endpoint,
                 targetModel,
@@ -264,6 +281,7 @@ public class QwenService {
                 latencyMs,
                 inputTokens,
                 outputTokens,
+                reasoningTokens,
                 totalTokens,
                 contentLength);
         if (promptDebugEnabled && content != null) {
@@ -285,6 +303,10 @@ public class QwenService {
 
     private int intOrDefault(JsonNode node, int defaultValue) {
         return node != null && node.isNumber() ? node.asInt() : defaultValue;
+    }
+
+    private Integer nullableToken(int value) {
+        return value < 0 ? null : value;
     }
 
     private String previewForLog(String content, int maxLen) {

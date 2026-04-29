@@ -14,7 +14,9 @@ import com.personalenglishai.backend.ai.assistant.AssistantToolDefinition;
 import com.personalenglishai.backend.ai.assistant.AssistantToolOutput;
 import com.personalenglishai.backend.ai.config.AiProviderSelection;
 import com.personalenglishai.backend.ai.config.OpenAiClientConfig;
+import com.personalenglishai.backend.service.subscription.AiUsageRecorder;
 import io.netty.channel.ChannelOption;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -85,6 +87,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private final long effectiveOverallTimeoutMs;
     private final ReactorClientHttpConnector clientConnector;
     private final ConcurrentMap<String, WebClient> providerWebClients = new ConcurrentHashMap<>();
+    @Autowired(required = false)
+    private AiUsageRecorder aiUsageRecorder;
 
     // Per-call overrides (thread-local would be safer but this is simpler for single-threaded use)
     private volatile Double overrideTemperature;
@@ -643,7 +647,12 @@ public class OpenAiClient implements AssistantOpenAiClient {
         Integer inputTokens = usage.path("input_tokens").isInt() ? usage.path("input_tokens").asInt() : null;
         Integer cachedTokens = usage.path("input_tokens_details").path("cached_tokens").isInt()
                 ? usage.path("input_tokens_details").path("cached_tokens").asInt() : null;
-        log.info("OpenAI text response parsed provider={} baseUrl={} model={} payloadBytes={} responseId={} inputTokens={} cachedTokens={} outputLength={}",
+        Integer outputTokens = usage.path("output_tokens").isInt() ? usage.path("output_tokens").asInt() : null;
+        Integer reasoningTokens = usage.path("output_tokens_details").path("reasoning_tokens").isInt()
+                ? usage.path("output_tokens_details").path("reasoning_tokens").asInt() : null;
+        Integer totalTokens = sumTokens(inputTokens, outputTokens, reasoningTokens);
+        recordUsage(selectedProvider.provider(), targetModel, responseId, inputTokens, cachedTokens, outputTokens, reasoningTokens, totalTokens);
+        log.info("OpenAI text response parsed provider={} baseUrl={} model={} payloadBytes={} responseId={} inputTokens={} cachedTokens={} outputTokens={} reasoningTokens={} outputLength={}",
                 selectedProvider.provider(),
                 selectedProvider.baseUrl(),
                 targetModel,
@@ -651,8 +660,10 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 responseId,
                 inputTokens,
                 cachedTokens,
+                outputTokens,
+                reasoningTokens,
                 outputText.length());
-        return new OpenAiResponsesTextResult(responseId, outputText, inputTokens, cachedTokens, payloadBytes);
+        return new OpenAiResponsesTextResult(responseId, outputText, inputTokens, cachedTokens, outputTokens, reasoningTokens, totalTokens, payloadBytes);
     }
 
     private OpenAiCallResult callChatCompletionsForText(AiProviderSelection.SelectedProvider selectedProvider,
@@ -702,6 +713,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (isBlank(content)) {
             throw new RuntimeException("Empty content in OpenAI-compatible chat completions response");
         }
+        recordUsage(selectedProvider.provider(), model, response.getId(), responseInputTokens(response), responseCachedInputTokens(response),
+                responseOutputTokens(response), responseReasoningTokens(response), responseTotalTokens(response));
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
@@ -766,6 +779,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (content == null || content.isBlank()) {
             throw new RuntimeException("Empty content in OpenAI response");
         }
+        recordUsage(selectedProvider.provider(), model, response.getId(), responseInputTokens(response), responseCachedInputTokens(response),
+                responseOutputTokens(response), responseReasoningTokens(response), responseTotalTokens(response));
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
@@ -806,6 +821,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (isBlank(content)) {
             throw new RuntimeException("Empty content in OpenAI vision response");
         }
+        recordUsage(selectedProvider.provider(), model, response.getId(), responseInputTokens(response), responseCachedInputTokens(response),
+                responseOutputTokens(response), responseReasoningTokens(response), responseTotalTokens(response));
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
@@ -837,6 +854,13 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (isBlank(content)) {
             throw new RuntimeException("Empty content in OpenAI responses API response");
         }
+        JsonNode usage = responseNode.path("usage");
+        Integer inputTokens = intOrNull(usage.path("input_tokens"));
+        Integer cachedTokens = intOrNull(usage.path("input_tokens_details").path("cached_tokens"));
+        Integer outputTokens = intOrNull(usage.path("output_tokens"));
+        Integer reasoningTokens = intOrNull(usage.path("output_tokens_details").path("reasoning_tokens"));
+        Integer totalTokens = sumTokens(inputTokens, outputTokens, reasoningTokens);
+        recordUsage("openai", model, responseNode.path("id").asText(null), inputTokens, cachedTokens, outputTokens, reasoningTokens, totalTokens);
         return new OpenAiCallResult(content, payloadBytes, true);
     }
 
@@ -1827,6 +1851,74 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return errorBody.replaceAll("sk-[a-zA-Z0-9]+", "sk-***");
     }
 
+    private void recordUsage(String provider,
+                             String model,
+                             String providerRequestId,
+                             Integer inputTokens,
+                             Integer cachedInputTokens,
+                             Integer outputTokens,
+                             Integer reasoningTokens,
+                             Integer totalTokens) {
+        if (aiUsageRecorder == null || (inputTokens == null && outputTokens == null && reasoningTokens == null && totalTokens == null)) {
+            return;
+        }
+        aiUsageRecorder.recordCurrentContext(
+                provider,
+                model,
+                providerRequestId,
+                inputTokens,
+                cachedInputTokens,
+                outputTokens,
+                reasoningTokens,
+                totalTokens
+        );
+    }
+
+    private static Integer responseInputTokens(ChatResponse response) {
+        return response == null || response.getUsage() == null ? null : firstNonNull(response.getUsage().getPromptTokens(), response.getUsage().getInputTokens());
+    }
+
+    private static Integer responseCachedInputTokens(ChatResponse response) {
+        return response == null || response.getUsage() == null || response.getUsage().getPromptTokensDetails() == null
+                ? null : response.getUsage().getPromptTokensDetails().getCachedTokens();
+    }
+
+    private static Integer responseOutputTokens(ChatResponse response) {
+        return response == null || response.getUsage() == null ? null : firstNonNull(response.getUsage().getCompletionTokens(), response.getUsage().getOutputTokens());
+    }
+
+    private static Integer responseReasoningTokens(ChatResponse response) {
+        return response == null || response.getUsage() == null || response.getUsage().getCompletionTokensDetails() == null
+                ? null : response.getUsage().getCompletionTokensDetails().getReasoningTokens();
+    }
+
+    private static Integer responseTotalTokens(ChatResponse response) {
+        if (response == null || response.getUsage() == null) {
+            return null;
+        }
+        Integer total = response.getUsage().getTotalTokens();
+        return total != null ? total : sumTokens(responseInputTokens(response), responseOutputTokens(response), responseReasoningTokens(response));
+    }
+
+    private static Integer intOrNull(JsonNode node) {
+        return node != null && node.isNumber() ? node.asInt() : null;
+    }
+
+    private static Integer sumTokens(Integer inputTokens, Integer outputTokens, Integer reasoningTokens) {
+        if (inputTokens == null && outputTokens == null && reasoningTokens == null) {
+            return null;
+        }
+        return defaultInt(inputTokens) + defaultInt(outputTokens) + defaultInt(reasoningTokens);
+    }
+
+    private static Integer firstNonNull(Integer first, Integer second) {
+        return first != null ? first : second;
+    }
+
+    private static int defaultInt(Integer value) {
+        return value == null ? 0 : Math.max(0, value);
+    }
+
     private boolean isConnectTimeout(Throwable t) {
         if (t == null) return false;
         String cls = t.getClass().getName();
@@ -1895,11 +1987,21 @@ public class OpenAiClient implements AssistantOpenAiClient {
     }
 
     private static class ChatResponse {
+        private String id;
         private List<Choice> choices;
+        private Usage usage;
+
+        @JsonProperty("id")
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
 
         @JsonProperty("choices")
         public List<Choice> getChoices() { return choices; }
         public void setChoices(List<Choice> choices) { this.choices = choices; }
+
+        @JsonProperty("usage")
+        public Usage getUsage() { return usage; }
+        public void setUsage(Usage usage) { this.usage = usage; }
     }
 
     private static class Choice {
@@ -1908,6 +2010,57 @@ public class OpenAiClient implements AssistantOpenAiClient {
         @JsonProperty("message")
         public Message getMessage() { return message; }
         public void setMessage(Message message) { this.message = message; }
+    }
+
+    private static class Usage {
+        private Integer promptTokens;
+        private Integer inputTokens;
+        private Integer completionTokens;
+        private Integer outputTokens;
+        private Integer totalTokens;
+        private TokenDetails promptTokensDetails;
+        private TokenDetails completionTokensDetails;
+
+        @JsonProperty("prompt_tokens")
+        public Integer getPromptTokens() { return promptTokens; }
+        public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+
+        @JsonProperty("input_tokens")
+        public Integer getInputTokens() { return inputTokens; }
+        public void setInputTokens(Integer inputTokens) { this.inputTokens = inputTokens; }
+
+        @JsonProperty("completion_tokens")
+        public Integer getCompletionTokens() { return completionTokens; }
+        public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+
+        @JsonProperty("output_tokens")
+        public Integer getOutputTokens() { return outputTokens; }
+        public void setOutputTokens(Integer outputTokens) { this.outputTokens = outputTokens; }
+
+        @JsonProperty("total_tokens")
+        public Integer getTotalTokens() { return totalTokens; }
+        public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+
+        @JsonProperty("prompt_tokens_details")
+        public TokenDetails getPromptTokensDetails() { return promptTokensDetails; }
+        public void setPromptTokensDetails(TokenDetails promptTokensDetails) { this.promptTokensDetails = promptTokensDetails; }
+
+        @JsonProperty("completion_tokens_details")
+        public TokenDetails getCompletionTokensDetails() { return completionTokensDetails; }
+        public void setCompletionTokensDetails(TokenDetails completionTokensDetails) { this.completionTokensDetails = completionTokensDetails; }
+    }
+
+    private static class TokenDetails {
+        private Integer cachedTokens;
+        private Integer reasoningTokens;
+
+        @JsonProperty("cached_tokens")
+        public Integer getCachedTokens() { return cachedTokens; }
+        public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
+
+        @JsonProperty("reasoning_tokens")
+        public Integer getReasoningTokens() { return reasoningTokens; }
+        public void setReasoningTokens(Integer reasoningTokens) { this.reasoningTokens = reasoningTokens; }
     }
 
     private static class ResponsesRequest {
