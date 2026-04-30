@@ -19,6 +19,12 @@
         :groups="groups"
         :active-conversation-id="activeConversationId"
         @select="$emit('selectConversation', $event)"
+        @rename="$emit('renameConversation', $event)"
+        @archive="$emit('archiveConversation', $event)"
+        @delete="$emit('deleteConversation', $event)"
+        @share="$emit('shareConversation', $event)"
+        @pin="(id, pinned) => $emit('pinConversation', id, pinned)"
+        @move="$emit('moveConversation', $event)"
       />
     </div>
 
@@ -48,6 +54,12 @@ defineEmits<{
   newConversation: []
   'update:searchValue': [value: string]
   selectConversation: [id: string]
+  renameConversation: [id: string]
+  archiveConversation: [id: string]
+  deleteConversation: [id: string]
+  shareConversation: [id: string]
+  pinConversation: [id: string, pinned: boolean]
+  moveConversation: [id: string]
 }>()
 </script>
 

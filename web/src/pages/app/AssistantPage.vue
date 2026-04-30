@@ -7,11 +7,18 @@
       @new-conversation="createConversation"
       @update:search-value="searchText = $event"
       @select-conversation="selectConversation"
+      @rename-conversation="handleRenameConversation"
+      @archive-conversation="handleArchiveConversation"
+      @delete-conversation="handleDeleteConversation"
+      @share-conversation="handleShareConversation"
+      @pin-conversation="setConversationPinned"
+      @move-conversation="handleMoveConversation"
     />
 
     <div class="assistant-main">
       <header class="main-header">
         <span class="main-title">{{ pageTitle }}</span>
+        <span v-if="isLoadingConversations" class="loading-label">同步中</span>
       </header>
 
       <AssistantChatView
@@ -42,17 +49,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
+import { showToast } from '@/utils/toast'
 import { createAssistantState } from './assistantState.ts'
 
 const {
   conversations,
+  projects,
   activeConversationId,
   activeConversation,
+  isLoadingConversations,
   composerText,
   composerAttachments,
   assistantMode,
@@ -64,11 +74,19 @@ const {
   addAttachments,
   removeAttachment,
   setAssistantMode,
+  loadRemoteState,
   createConversation,
   selectConversation,
+  renameConversation,
+  setConversationPinned,
+  archiveConversation,
+  deleteConversation,
+  moveConversation,
+  shareConversation,
+  createProject,
   sendMessage,
   retryLastMessage,
-} = createAssistantState()
+} = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
 const emptyTitle = '今天想练什么？'
@@ -77,6 +95,75 @@ const composerDocked = true
 
 function handleFileSelect(files: File[]) {
   addAttachments(files)
+}
+
+onMounted(() => {
+  void loadRemoteState()
+})
+
+async function handleRenameConversation(id: string) {
+  const conversation = conversations.value.find((item) => item.id === id)
+  const nextTitle = window.prompt('重命名对话', conversation?.title ?? '')
+  if (nextTitle === null) return
+  try {
+    await renameConversation(id, nextTitle)
+    showToast('已重命名', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '重命名失败', 'error')
+  }
+}
+
+async function handleArchiveConversation(id: string) {
+  try {
+    await archiveConversation(id)
+    showToast('已归档', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '归档失败', 'error')
+  }
+}
+
+async function handleDeleteConversation(id: string) {
+  if (!window.confirm('删除后当前列表将不再显示这个对话。确定删除吗？')) return
+  try {
+    await deleteConversation(id)
+    showToast('已删除', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '删除失败', 'error')
+  }
+}
+
+async function handleShareConversation(id: string) {
+  try {
+    const share = await shareConversation(id)
+    const url = `${window.location.origin}${share.sharePath}`
+    await navigator.clipboard?.writeText(url)
+    showToast('分享链接已复制', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '分享失败', 'error')
+  }
+}
+
+async function handleMoveConversation(id: string) {
+  const projectNames = projects.value.map((project) => project.name).join('、')
+  const input = window.prompt(
+    projectNames ? `输入项目名称，留空移出项目。现有项目：${projectNames}` : '输入新项目名称，留空移出项目。',
+    '',
+  )
+  if (input === null) return
+  const name = input.trim()
+  try {
+    if (!name) {
+      await moveConversation(id, null)
+      showToast('已移出项目', 'success')
+      return
+    }
+    const existing = projects.value.find((project) => project.name === name)
+    const project = existing ?? await createProject(name)
+    await moveConversation(id, project.id)
+    showToast('已移动到项目', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '移动失败', 'error')
+  }
 }
 
 const conversationGroups = computed(() => {
@@ -137,9 +224,19 @@ const conversationGroups = computed(() => {
 .main-header {
   display: flex;
   align-items: center;
+  gap: 10px;
   flex: 0 0 56px;
   min-height: 56px;
   padding: 0 24px 0 28px;
+}
+
+.loading-label {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .main-title {

@@ -50,6 +50,12 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/assistant/share/:shareToken',
+    name: 'AssistantShare',
+    component: () => import('@/pages/AssistantSharePage.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/verify-email',
     name: 'VerifyEmail',
     component: () => import('@/pages/VerifyEmail.vue'),

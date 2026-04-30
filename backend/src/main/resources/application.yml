@@ -89,6 +89,11 @@ writing:
   evaluate:
     thread-pool-size: ${WRITING_EVALUATE_THREAD_POOL_SIZE:4}
 
+assistant:
+  orchestrator:
+    base-url: ${ASSISTANT_ORCHESTRATOR_BASE_URL:${VITE_ASSISTANT_API_BASE_URL:http://127.0.0.1:8002}}
+    timeout-ms: ${ASSISTANT_ORCHESTRATOR_TIMEOUT_MS:60000}
+
 ai:
   provider:
     active: ${AI_PROVIDER_ACTIVE:openai}

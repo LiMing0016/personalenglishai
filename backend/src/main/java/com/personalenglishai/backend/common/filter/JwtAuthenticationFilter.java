@@ -83,6 +83,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private boolean isWhitelisted(String path) {
         if (path.startsWith("/api/v1/auth/")
+                || path.startsWith("/api/public/")
                 || path.startsWith("/uploads/")
                 || path.equals("/health")
                 || path.equals("/api/ping")) {
