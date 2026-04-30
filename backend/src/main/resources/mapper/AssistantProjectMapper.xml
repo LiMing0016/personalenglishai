@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.assistant.AssistantProjectMapper">
+
+    <resultMap id="AssistantProjectResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantProject">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="archived_at" property="archivedAt"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectActiveByUserId" resultMap="AssistantProjectResultMap">
+        SELECT id, user_id, name, description, archived_at, deleted_at, created_at, updated_at
+        FROM assistant_project
+        WHERE user_id = #{userId}
+          AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <select id="findOwnedActiveById" resultMap="AssistantProjectResultMap">
+        SELECT id, user_id, name, description, archived_at, deleted_at, created_at, updated_at
+        FROM assistant_project
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.assistant.AssistantProject"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO assistant_project (user_id, name, description, created_at, updated_at)
+        VALUES (#{userId}, #{name}, #{description}, NOW(), NOW())
+    </insert>
+
+    <update id="updateOwned" parameterType="com.personalenglishai.backend.entity.assistant.AssistantProject">
+        UPDATE assistant_project
+        SET name = #{name},
+            description = #{description},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteOwned">
+        UPDATE assistant_project
+        SET deleted_at = #{deletedAt},
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+</mapper>

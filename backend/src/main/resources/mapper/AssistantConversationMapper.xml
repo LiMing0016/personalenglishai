@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.assistant.AssistantConversationMapper">
+
+    <resultMap id="AssistantConversationResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantConversation">
+        <id column="id" property="id"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="project_id" property="projectId"/>
+        <result column="title" property="title"/>
+        <result column="summary" property="summary"/>
+        <result column="pinned" property="pinned"/>
+        <result column="archived_at" property="archivedAt"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="ConversationColumns">
+        id, conversation_uid, user_id, project_id, title, summary, pinned, archived_at, deleted_at, created_at, updated_at
+    </sql>
+
+    <select id="selectByUser" resultMap="AssistantConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM assistant_conversation
+        WHERE user_id = #{userId}
+          AND deleted_at IS NULL
+        <if test="archived != null and archived">
+          AND archived_at IS NOT NULL
+        </if>
+        <if test="archived != null and !archived">
+          AND archived_at IS NULL
+        </if>
+        <if test="projectId != null">
+          AND project_id = #{projectId}
+        </if>
+        ORDER BY pinned DESC, updated_at DESC, id DESC
+    </select>
+
+    <select id="findOwnedActiveByUid" resultMap="AssistantConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM assistant_conversation
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <select id="findActiveByUid" resultMap="AssistantConversationResultMap">
+        SELECT <include refid="ConversationColumns"/>
+        FROM assistant_conversation
+        WHERE conversation_uid = #{conversationUid}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.assistant.AssistantConversation"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO assistant_conversation (
+            conversation_uid, user_id, project_id, title, summary, pinned, created_at, updated_at
+        )
+        VALUES (
+            #{conversationUid}, #{userId}, #{projectId}, #{title}, #{summary}, #{pinned}, NOW(), NOW()
+        )
+    </insert>
+
+    <update id="updateTitleSummaryOwned">
+        UPDATE assistant_conversation
+        SET title = #{title},
+            summary = #{summary},
+            updated_at = NOW()
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="setArchivedAtOwned">
+        UPDATE assistant_conversation
+        SET archived_at = #{archivedAt},
+            updated_at = NOW()
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="setPinnedOwned">
+        UPDATE assistant_conversation
+        SET pinned = #{pinned},
+            updated_at = NOW()
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="moveOwned">
+        UPDATE assistant_conversation
+        SET project_id = #{projectId},
+            updated_at = NOW()
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDeleteOwned">
+        UPDATE assistant_conversation
+        SET deleted_at = #{deletedAt},
+            updated_at = NOW()
+        WHERE conversation_uid = #{conversationUid}
+          AND user_id = #{userId}
+          AND deleted_at IS NULL
+    </update>
+</mapper>

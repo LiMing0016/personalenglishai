@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.assistant.AssistantMessageMapper">
+
+    <resultMap id="AssistantMessageResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantMessage">
+        <id column="id" property="id"/>
+        <result column="message_uid" property="messageUid"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="role" property="role"/>
+        <result column="content" property="content"/>
+        <result column="status" property="status"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <select id="selectByConversationUid" resultMap="AssistantMessageResultMap">
+        SELECT id, message_uid, conversation_uid, user_id, role, content, status, sort_order, created_at
+        FROM assistant_message
+        WHERE conversation_uid = #{conversationUid}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="selectMaxSortOrder" resultType="java.lang.Integer">
+        SELECT MAX(sort_order)
+        FROM assistant_message
+        WHERE conversation_uid = #{conversationUid}
+    </select>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.assistant.AssistantMessage"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO assistant_message (
+            message_uid, conversation_uid, user_id, role, content, status, sort_order, created_at
+        )
+        VALUES (
+            #{messageUid}, #{conversationUid}, #{userId}, #{role}, #{content}, #{status}, #{sortOrder}, NOW()
+        )
+    </insert>
+</mapper>

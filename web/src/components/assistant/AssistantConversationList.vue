@@ -14,7 +14,27 @@
         :class="{ 'conversation-item--active': conversation.id === activeConversationId }"
         @click="$emit('select', conversation.id)"
       >
-        <span class="conversation-title">{{ conversation.title }}</span>
+        <span class="conversation-row">
+          <span class="conversation-title">
+            <span v-if="conversation.pinned" class="pin-marker" aria-label="已置顶">⌖</span>
+            {{ conversation.title }}
+          </span>
+          <span class="conversation-actions" @click.stop>
+            <button
+              type="button"
+              class="action-button"
+              :title="conversation.pinned ? '取消置顶' : '置顶'"
+              @click="$emit('pin', conversation.id, !conversation.pinned)"
+            >
+              ⌖
+            </button>
+            <button type="button" class="action-button" title="分享" @click="$emit('share', conversation.id)">⇧</button>
+            <button type="button" class="action-button" title="重命名" @click="$emit('rename', conversation.id)">✎</button>
+            <button type="button" class="action-button" title="移动到项目" @click="$emit('move', conversation.id)">□</button>
+            <button type="button" class="action-button" title="归档" @click="$emit('archive', conversation.id)">▤</button>
+            <button type="button" class="action-button action-button--danger" title="删除" @click="$emit('delete', conversation.id)">⌫</button>
+          </span>
+        </span>
         <span v-if="conversation.summary" class="conversation-summary">{{ conversation.summary }}</span>
         <span class="conversation-time">{{ formatUpdatedAt(conversation.updatedAt) }}</span>
       </button>
@@ -37,6 +57,12 @@ defineProps<{
 
 defineEmits<{
   select: [id: string]
+  rename: [id: string]
+  archive: [id: string]
+  delete: [id: string]
+  share: [id: string]
+  pin: [id: string, pinned: boolean]
+  move: [id: string]
 }>()
 
 function formatUpdatedAt(updatedAt: number) {
@@ -95,9 +121,63 @@ function formatUpdatedAt(updatedAt: number) {
 }
 
 .conversation-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
+}
+
+.conversation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.conversation-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.conversation-item:hover .conversation-actions,
+.conversation-item--active .conversation-actions {
+  display: flex;
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.action-button:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.action-button--danger {
+  color: #dc2626;
+}
+
+.pin-marker {
+  margin-right: 4px;
+  color: #059669;
 }
 
 .conversation-summary {

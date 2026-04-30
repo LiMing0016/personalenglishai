@@ -22,9 +22,12 @@ export interface AssistantMessage {
 
 export interface AssistantConversation {
   id: string
+  projectId?: number | null
   title: string
   summary: string
   updatedAt: number
+  pinned?: boolean
+  archived?: boolean
   messages: AssistantMessage[]
 }
 

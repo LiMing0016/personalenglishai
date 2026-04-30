@@ -98,6 +98,7 @@ public class GlobalExceptionHandler {
             case "404" -> HttpStatus.NOT_FOUND;
             case "409" -> HttpStatus.CONFLICT;
             case "429" -> HttpStatus.TOO_MANY_REQUESTS;
+            case "503" -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }
