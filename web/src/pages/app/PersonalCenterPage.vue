@@ -81,6 +81,7 @@
       <OverviewSection v-if="activeSection === 'overview'" />
       <MyEssaysSection v-else-if="activeSection === 'essays'" />
       <AbilityRadarSection v-else-if="activeSection === 'radar'" />
+      <SubscriptionSection v-else-if="activeSection === 'subscription'" />
       <ReferralSection v-else-if="activeSection === 'referral'" />
       <AccountSettingsSection
         v-else-if="activeSection === 'settings'"
@@ -104,8 +105,10 @@ import MyEssaysSection from '@/components/personal-center/MyEssaysSection.vue'
 import AbilityRadarSection from '@/components/personal-center/AbilityRadarSection.vue'
 import AccountSettingsSection from '@/components/personal-center/AccountSettingsSection.vue'
 import ReferralSection from '@/components/personal-center/ReferralSection.vue'
+import SubscriptionSection from '@/components/personal-center/SubscriptionSection.vue'
 
-type SectionKey = 'overview' | 'essays' | 'radar' | 'referral' | 'settings'
+type SectionKey = 'overview' | 'essays' | 'radar' | 'subscription' | 'referral' | 'settings'
+const SECTION_KEYS: SectionKey[] = ['overview', 'essays', 'radar', 'subscription', 'referral', 'settings']
 
 const router = useRouter()
 const route = useRoute()
@@ -133,6 +136,9 @@ const IconStar = () =>
 const IconGift = () =>
   h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<rect x="1.5" y="7" width="15" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M9 7v9M1.5 10h15" stroke="currentColor" stroke-width="1.3"/><path d="M9 7C9 7 9 4 6.5 3s-4 1-3 2.5S9 7 9 7zM9 7c0 0 0-3 2.5-4s4 1 3 2.5S9 7 9 7z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' })
 
+const IconCard = () =>
+  h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<rect x="2" y="4" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M2 7h14M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' })
+
 const IconGear = () =>
   h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<circle cx="9" cy="9" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M14.7 11.1a1.2 1.2 0 00.24 1.32l.04.04a1.45 1.45 0 11-2.06 2.06l-.04-.04a1.2 1.2 0 00-1.32-.24 1.2 1.2 0 00-.73 1.1v.12a1.45 1.45 0 01-2.9 0v-.06a1.2 1.2 0 00-.79-1.1 1.2 1.2 0 00-1.32.24l-.04.04a1.45 1.45 0 11-2.06-2.06l.04-.04a1.2 1.2 0 00.24-1.32 1.2 1.2 0 00-1.1-.73H3.45a1.45 1.45 0 010-2.9h.06a1.2 1.2 0 001.1-.79 1.2 1.2 0 00-.24-1.32l-.04-.04a1.45 1.45 0 112.06-2.06l.04.04a1.2 1.2 0 001.32.24h.06a1.2 1.2 0 00.73-1.1V3.45a1.45 1.45 0 012.9 0v.06a1.2 1.2 0 00.73 1.1 1.2 1.2 0 001.32-.24l.04-.04a1.45 1.45 0 112.06 2.06l-.04.04a1.2 1.2 0 00-.24 1.32v.06a1.2 1.2 0 001.1.73h.12a1.45 1.45 0 010 2.9h-.06a1.2 1.2 0 00-1.1.73z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' })
 
@@ -140,6 +146,7 @@ const navItems = [
   { key: 'overview' as SectionKey, label: '综合能力', icon: IconGrid },
   { key: 'essays' as SectionKey, label: '我的作文', icon: IconFile },
   { key: 'radar' as SectionKey, label: '能力雷达', icon: IconStar },
+  { key: 'subscription' as SectionKey, label: '会员订阅', icon: IconCard },
   { key: 'referral' as SectionKey, label: '邀请激励', icon: IconGift },
   { key: 'settings' as SectionKey, label: '账号设置', icon: IconGear },
 ]
@@ -211,7 +218,7 @@ async function refreshProfile() {
 onMounted(async () => {
   // Read tab from query
   const tab = route.query.tab as string | undefined
-  if (tab && ['overview', 'essays', 'radar', 'referral', 'settings'].includes(tab)) {
+  if (tab && SECTION_KEYS.includes(tab as SectionKey)) {
     activeSection.value = tab as SectionKey
   }
 
@@ -228,7 +235,7 @@ onMounted(async () => {
 
 
 watch(() => route.query.tab, (val) => {
-  if (val && ['overview', 'essays', 'radar', 'referral', 'settings'].includes(val as string)) {
+  if (val && SECTION_KEYS.includes(val as SectionKey)) {
     activeSection.value = val as SectionKey
   }
 })

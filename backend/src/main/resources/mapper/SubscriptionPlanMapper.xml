@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.subscription.SubscriptionPlanMapper">
+
+    <resultMap id="SubscriptionPlanResultMap" type="com.personalenglishai.backend.entity.subscription.SubscriptionPlan">
+        <id column="id" property="id"/>
+        <result column="plan_code" property="planCode"/>
+        <result column="name" property="name"/>
+        <result column="monthly_token_limit" property="monthlyTokenLimit"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="active" property="active"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="selectActivePlans" resultMap="SubscriptionPlanResultMap">
+        SELECT id,
+               plan_code,
+               name,
+               monthly_token_limit,
+               sort_order,
+               active,
+               created_at,
+               updated_at
+        FROM subscription_plan
+        WHERE active = 1
+        ORDER BY sort_order ASC
+    </select>
+
+    <select id="findByPlanCode" resultMap="SubscriptionPlanResultMap">
+        SELECT id,
+               plan_code,
+               name,
+               monthly_token_limit,
+               sort_order,
+               active,
+               created_at,
+               updated_at
+        FROM subscription_plan
+        WHERE plan_code = #{planCode}
+          AND active = 1
+        LIMIT 1
+    </select>
+
+</mapper>

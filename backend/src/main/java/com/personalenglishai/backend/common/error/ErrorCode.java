@@ -25,6 +25,7 @@ public enum ErrorCode {
     ADMIN_FORBIDDEN("403010", "无管理员权限"),
     ADMIN_ROLE_INVALID("400050", "无效的管理员角色"),
     ADMIN_ACTIVE_RUBRIC_EDIT_FORBIDDEN("409010", "激活中的 Rubric 不允许直接编辑"),
+    SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED("429010", "本月 AI token 额度已用完"),
     ESSAY_TOO_SHORT("400010", "作文太短，至少需要 20 个词"),
     ESSAY_TOO_LONG("400011", "作文太长，最多支持 500 个词"),
     ;

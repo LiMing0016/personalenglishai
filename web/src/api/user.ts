@@ -40,6 +40,24 @@ export interface UserStats {
   memberSince: string | null
 }
 
+export interface SubscriptionPlan {
+  planCode: 'free' | 'basic' | 'pro' | 'premium'
+  name: string
+  monthlyTokenLimit: number
+}
+
+export interface SubscriptionStatus {
+  planCode: 'free' | 'basic' | 'pro' | 'premium'
+  planName: string
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  usageMonth: string
+  monthlyTokenLimit: number
+  tokenUsed: number
+  tokenRemaining: number
+  overLimit: boolean
+}
+
 export const userApi = {
   async getMyProfile(): Promise<MeProfileResponse> {
     const res = await http.get<MeProfileResponse>('/users/me/profile')
@@ -65,6 +83,26 @@ export const userApi = {
 
   async getStats(): Promise<{ data?: UserStats }> {
     const res = await http.get<{ data?: UserStats }>('/users/me/profile/stats')
+    return res.data
+  },
+
+  async getSubscriptionPlans(): Promise<{ data?: SubscriptionPlan[] }> {
+    const res = await http.get<{ data?: SubscriptionPlan[] }>('/subscription/plans')
+    return res.data
+  },
+
+  async getMySubscription(): Promise<{ data?: SubscriptionStatus }> {
+    const res = await http.get<{ data?: SubscriptionStatus }>('/subscription/me')
+    return res.data
+  },
+
+  async mockPurchaseSubscription(planCode: 'basic' | 'pro' | 'premium'): Promise<{ data?: SubscriptionStatus }> {
+    const res = await http.post<{ data?: SubscriptionStatus }>('/subscription/mock-purchase', { planCode })
+    return res.data
+  },
+
+  async redeemSubscriptionCode(code: string): Promise<{ data?: SubscriptionStatus }> {
+    const res = await http.post<{ data?: SubscriptionStatus }>('/subscription/redeem', { code })
     return res.data
   },
 }

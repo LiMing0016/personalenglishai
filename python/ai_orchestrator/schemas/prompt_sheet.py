@@ -73,6 +73,20 @@ class GenerateExamPromptRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AgentUsage(BaseModel):
+    requests: int = 0
+    input_tokens: int = Field(default=0, alias="inputTokens")
+    cached_input_tokens: int = Field(default=0, alias="cachedInputTokens")
+    output_tokens: int = Field(default=0, alias="outputTokens")
+    reasoning_tokens: int = Field(default=0, alias="reasoningTokens")
+    total_tokens: int = Field(default=0, alias="totalTokens")
+    response_id: str | None = Field(default=None, alias="responseId")
+    model: str | None = None
+    provider: str = "openai_agents"
+
+    model_config = {"populate_by_name": True}
+
+
 class ChartSpec(BaseModel):
     title: str | None = None
     display_type: Literal["table", "chart"] | None = Field(default=None, alias="displayType")
@@ -114,6 +128,7 @@ class GenerateExamPromptResponse(BaseModel):
     material_text: str | None = Field(default=None, alias="materialText")
     chart_spec: ChartSpec | None = Field(default=None, alias="chartSpec")
     comic_scenes: list[ComicScene] = Field(default_factory=list, alias="comicScenes")
+    usage: AgentUsage | None = Field(default=None, alias="_usage")
 
     model_config = {"populate_by_name": True}
 
@@ -126,5 +141,6 @@ class PromptSheetChatResponse(BaseModel):
     canvas_instruction: str | None = Field(default=None, alias="canvasInstruction")
     patch: PromptSheetPatch | None = None
     prompt_sheet: GenerateExamPromptResponse | None = Field(default=None, alias="promptSheet")
+    usage: AgentUsage | None = Field(default=None, alias="_usage")
 
     model_config = {"populate_by_name": True}

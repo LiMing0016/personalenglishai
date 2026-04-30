@@ -14,6 +14,7 @@ from ..services.agent_session_runner import extract_run_items
 from ..services.agent_session_runner import extract_usage
 from ..schemas.prompt_sheet import GenerateExamPromptRequest
 from ..schemas.prompt_sheet import GenerateExamPromptResponse
+from ..schemas.prompt_sheet import AgentUsage
 from ..schemas.prompt_sheet import ChartSpec
 from ..schemas.prompt_sheet import PromptSheetChatRequest
 from ..schemas.prompt_sheet import PromptSheetChatResponse
@@ -186,6 +187,7 @@ class PromptSheetWorkflowService:
         )
         response = self._coerce_chat_response(getattr(result, "final_output", None))
         response = self._normalize_chat_response(response)
+        response = response.model_copy(update={"usage": self._build_agent_usage(result)})
         log.info(
             "[PROMPT_SHEET_CHAT] action=%s canvas_update=%s has_prompt_sheet=%s",
             response.action,
@@ -210,6 +212,7 @@ class PromptSheetWorkflowService:
         )
         response = self._coerce_generate_response(getattr(result, "final_output", None))
         response = self._normalize_generate_response(response, request)
+        response = response.model_copy(update={"usage": self._build_agent_usage(result)})
         log.info(
             "[PROMPT_SHEET_GENERATE] prompt_type=%s task_type=%s topic_chars=%s",
             response.prompt_type,
@@ -420,6 +423,22 @@ class PromptSheetWorkflowService:
             run_items.response_models,
             run_items.last_response_id,
             request_context,
+        )
+
+    def _build_agent_usage(self, result: object) -> AgentUsage:
+        usage = extract_usage(result)
+        run_items = extract_run_items(result)
+        model = run_items.response_models[-1] if run_items.response_models else self.model
+        response_id = run_items.last_response_id
+        return AgentUsage(
+            requests=usage.requests,
+            inputTokens=usage.input_tokens,
+            cachedInputTokens=usage.cached_input_tokens,
+            outputTokens=usage.output_tokens,
+            reasoningTokens=usage.reasoning_tokens,
+            totalTokens=usage.total_tokens,
+            responseId=response_id,
+            model=model,
         )
 
     def _coerce_chat_response(self, raw: object) -> PromptSheetChatResponse:
