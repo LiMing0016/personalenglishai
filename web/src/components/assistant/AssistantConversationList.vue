@@ -6,43 +6,76 @@
       class="conversation-group"
     >
       <h3 class="group-label">{{ group.label }}</h3>
-      <button
+      <article
         v-for="conversation in group.conversations"
         :key="conversation.id"
-        type="button"
         class="conversation-item"
         :class="{ 'conversation-item--active': conversation.id === activeConversationId }"
-        @click="$emit('select', conversation.id)"
+        role="button"
+        tabindex="0"
+        @click="selectConversation(conversation.id)"
+        @keydown.enter.prevent="selectConversation(conversation.id)"
+        @keydown.space.prevent="selectConversation(conversation.id)"
       >
         <span class="conversation-row">
           <span class="conversation-title">
             <span v-if="conversation.pinned" class="pin-marker" aria-label="已置顶">⌖</span>
             {{ conversation.title }}
           </span>
-          <span class="conversation-actions" @click.stop>
+          <span class="conversation-menu-wrap" @click.stop>
             <button
               type="button"
-              class="action-button"
-              :title="conversation.pinned ? '取消置顶' : '置顶'"
-              @click="$emit('pin', conversation.id, !conversation.pinned)"
+              class="conversation-menu-button"
+              title="更多操作"
+              :aria-expanded="openMenuId === conversation.id"
+              aria-haspopup="menu"
+              @click="toggleMenu(conversation.id)"
             >
-              ⌖
+              ...
             </button>
-            <button type="button" class="action-button" title="分享" @click="$emit('share', conversation.id)">⇧</button>
-            <button type="button" class="action-button" title="重命名" @click="$emit('rename', conversation.id)">✎</button>
-            <button type="button" class="action-button" title="移动到项目" @click="$emit('move', conversation.id)">□</button>
-            <button type="button" class="action-button" title="归档" @click="$emit('archive', conversation.id)">▤</button>
-            <button type="button" class="action-button action-button--danger" title="删除" @click="$emit('delete', conversation.id)">⌫</button>
+            <span
+              v-if="openMenuId === conversation.id"
+              class="conversation-action-menu"
+              role="menu"
+            >
+              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('share', conversation.id)">
+                <span class="conversation-menu-icon">⇧</span>
+                <span>分享</span>
+              </button>
+              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('rename', conversation.id)">
+                <span class="conversation-menu-icon">✎</span>
+                <span>重命名</span>
+              </button>
+              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('move', conversation.id)">
+                <span class="conversation-menu-icon">□</span>
+                <span>移动到项目</span>
+              </button>
+              <span class="conversation-menu-separator" aria-hidden="true" />
+              <button type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(conversation.id, !conversation.pinned)">
+                <span class="conversation-menu-icon">⌖</span>
+                <span>{{ conversation.pinned ? '取消置顶' : '置顶聊天' }}</span>
+              </button>
+              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('archive', conversation.id)">
+                <span class="conversation-menu-icon">▤</span>
+                <span>归档</span>
+              </button>
+              <button type="button" class="conversation-menu-item conversation-menu-item--danger" role="menuitem" @click="runMenuAction('delete', conversation.id)">
+                <span class="conversation-menu-icon">⌫</span>
+                <span>删除</span>
+              </button>
+            </span>
           </span>
         </span>
         <span v-if="conversation.summary" class="conversation-summary">{{ conversation.summary }}</span>
         <span class="conversation-time">{{ formatUpdatedAt(conversation.updatedAt) }}</span>
-      </button>
+      </article>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+
 import type { AssistantConversation } from '@/pages/app/assistantMock.ts'
 
 interface ConversationGroup {
@@ -55,7 +88,7 @@ defineProps<{
   activeConversationId: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: string]
   rename: [id: string]
   archive: [id: string]
@@ -65,12 +98,63 @@ defineEmits<{
   move: [id: string]
 }>()
 
+type MenuAction = 'share' | 'rename' | 'move' | 'archive' | 'delete'
+
+const openMenuId = ref<string | null>(null)
+
+function selectConversation(id: string) {
+  openMenuId.value = null
+  emit('select', id)
+}
+
+function toggleMenu(id: string) {
+  openMenuId.value = openMenuId.value === id ? null : id
+}
+
+function closeMenu() {
+  openMenuId.value = null
+}
+
+function runMenuAction(action: MenuAction, id: string) {
+  switch (action) {
+    case 'share':
+      emit('share', id)
+      break
+    case 'rename':
+      emit('rename', id)
+      break
+    case 'move':
+      emit('move', id)
+      break
+    case 'archive':
+      emit('archive', id)
+      break
+    case 'delete':
+      emit('delete', id)
+      break
+  }
+  closeMenu()
+}
+
+function runPinAction(id: string, pinned: boolean) {
+  emit('pin', id, pinned)
+  closeMenu()
+}
+
 function formatUpdatedAt(updatedAt: number) {
   return new Intl.DateTimeFormat('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
   }).format(updatedAt)
 }
+
+onMounted(() => {
+  document.addEventListener('click', closeMenu)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeMenu)
+})
 </script>
 
 <style scoped>
@@ -107,12 +191,19 @@ function formatUpdatedAt(updatedAt: number) {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  position: relative;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  box-sizing: border-box;
 }
 
 .conversation-item:hover {
   background: #f8fafc;
   border-color: #dbe3ea;
+}
+
+.conversation-item:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
 }
 
 .conversation-item--active {
@@ -139,40 +230,97 @@ function formatUpdatedAt(updatedAt: number) {
   min-width: 0;
 }
 
-.conversation-actions {
+.conversation-menu-wrap {
   display: none;
-  align-items: center;
-  gap: 2px;
+  position: relative;
   flex: 0 0 auto;
 }
 
-.conversation-item:hover .conversation-actions,
-.conversation-item--active .conversation-actions {
+.conversation-item:hover .conversation-menu-wrap,
+.conversation-item--active .conversation-menu-wrap,
+.conversation-menu-wrap:focus-within {
   display: flex;
 }
 
-.action-button {
+.conversation-menu-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: #64748b;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 700;
   line-height: 1;
 }
 
-.action-button:hover {
+.conversation-menu-button:hover,
+.conversation-menu-button[aria-expanded='true'] {
   background: #e2e8f0;
   color: #0f172a;
 }
 
-.action-button--danger {
+.conversation-action-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  width: 190px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid #dbe3ea;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+}
+
+.conversation-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0f172a;
+  padding: 10px 11px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-menu-item:hover {
+  background: #f1f5f9;
+}
+
+.conversation-menu-icon {
+  width: 18px;
+  color: currentColor;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.conversation-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: #e2e8f0;
+}
+
+.conversation-menu-item--danger {
   color: #dc2626;
+}
+
+.conversation-menu-item--danger:hover {
+  background: #fef2f2;
 }
 
 .pin-marker {
