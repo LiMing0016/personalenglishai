@@ -39,7 +39,7 @@ start "PEAI Python %PYTHON_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Co
 echo.
 echo [PEAI] Startup windows opened.
 echo [PEAI] Frontend: http://localhost:%WEB_PORT%
-echo [PEAI] If backend fails, check backend/.env or .env for datasource and JWT settings.
+echo [PEAI] If backend fails, check backend/.env for datasource and JWT settings.
 call :wait_for_enter
 exit /b 0
 
@@ -80,8 +80,8 @@ if not exist "%PYTHON_EXE%" (
   exit /b 1
 )
 
-if not exist "%ROOT%.env" if not exist "%BACKEND_DIR%\.env" (
-  echo [WARN] No .env or backend/.env found. Backend may fail until datasource and JWT settings are configured.
+if not exist "%BACKEND_DIR%\.env" (
+  echo [WARN] No backend/.env found. Backend may fail until datasource and JWT settings are configured.
 )
 
 exit /b 0

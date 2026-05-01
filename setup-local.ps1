@@ -126,17 +126,11 @@ function Ensure-LocalConfig {
         -Template (Join-Path $RepoRoot "local-ports.env.example") `
         -Description "local port config"
 
-    $rootEnv = Join-Path $RepoRoot ".env"
     $backendEnv = Join-Path $RepoRoot "backend\.env"
-    if ((Test-Path -LiteralPath $rootEnv) -or (Test-Path -LiteralPath $backendEnv)) {
-        Write-Host "[OK] env config exists: .env or backend\.env"
-        return
-    }
-
     Ensure-TemplateFile `
-        -Target $rootEnv `
-        -Template (Join-Path $RepoRoot ".env.example") `
-        -Description "root env config"
+        -Target $backendEnv `
+        -Template (Join-Path $RepoRoot "backend\.env.example") `
+        -Description "backend env config"
 }
 
 function Ensure-WebDependencies {
