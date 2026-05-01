@@ -27,6 +27,7 @@ apps/
 
 # Local temp/debug artifacts
 .tmp-*/
+.tmp-peai/
 .tmp-*.log
 
 # Claude Code local settings
@@ -36,6 +37,7 @@ apps/
 .env
 .env.local
 .env.*.local
+local-ports.env
 
 # Beta deploy env
 deploy/beta/.env.beta
