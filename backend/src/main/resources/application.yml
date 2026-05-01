@@ -158,6 +158,13 @@ textgears:
   language: ${TEXTGEARS_LANGUAGE:en-US}
   ai: ${TEXTGEARS_AI:true}
 
+oxford:
+  app-id: ${OXFORD_APP_ID:}
+  app-key: ${OXFORD_APP_KEY:}
+  base-url: ${OXFORD_BASE_URL:https://od-api-sandbox.oxforddictionaries.com/api/v2}
+  language: ${OXFORD_LANGUAGE:en-gb}
+  timeout-ms: ${OXFORD_TIMEOUT_MS:8000}
+
 qwen:
   api-key: ${QWEN_API_KEY:}
   base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
