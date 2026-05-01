@@ -89,8 +89,8 @@ public class OxfordDictionaryService implements DictionaryLookupService {
         String baseUrl = properties.getBaseUrl();
         String normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         String encodedLanguage = UriUtils.encodePathSegment(language, StandardCharsets.UTF_8);
-        String encodedWord = UriUtils.encodePathSegment(word, StandardCharsets.UTF_8);
-        return URI.create(normalizedBaseUrl + "/words/" + encodedLanguage + "/" + encodedWord);
+        String encodedWord = UriUtils.encodeQueryParam(word, StandardCharsets.UTF_8);
+        return URI.create(normalizedBaseUrl + "/words/" + encodedLanguage + "?q=" + encodedWord);
     }
 
     private DictionaryLookupResponse throwException(DictionaryLookupException.Kind kind) {
