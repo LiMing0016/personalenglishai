@@ -1,5 +1,5 @@
 param(
-    [string]$BaseUrl = "http://127.0.0.1:18080",
+    [string]$BaseUrl,
     [string]$DocumentId,
     [string]$EssayText,
     [string]$EssayFile,
@@ -35,6 +35,41 @@ function Read-JwtSecret {
         throw "JWT_SECRET not found in $EnvPath"
     }
     return ($line -replace '^JWT_SECRET=', '').Trim()
+}
+
+function Read-LocalPorts {
+    param([string]$RepoRoot)
+    $path = Join-Path $RepoRoot "local-ports.env"
+    $values = @{}
+    if (-not (Test-Path -LiteralPath $path)) {
+        return $values
+    }
+    Get-Content -LiteralPath $path | ForEach-Object {
+        $line = $_.Trim()
+        if (-not $line -or $line.StartsWith("#")) {
+            return
+        }
+        $parts = $line.Split("=", 2)
+        if ($parts.Count -eq 2 -and $parts[0].Trim()) {
+            $values[$parts[0].Trim()] = $parts[1].Trim()
+        }
+    }
+    return $values
+}
+
+function Resolve-BaseUrl {
+    param(
+        [string]$RequestedBaseUrl,
+        [hashtable]$LocalPorts
+    )
+    if ($RequestedBaseUrl) {
+        return $RequestedBaseUrl.TrimEnd("/")
+    }
+    $backendPort = $LocalPorts["BACKEND_PORT"]
+    if ($backendPort) {
+        return "http://127.0.0.1:$backendPort"
+    }
+    return "http://127.0.0.1:18080"
 }
 
 function ConvertTo-Base64Url {
@@ -141,6 +176,8 @@ function Wait-EvaluateTask {
 }
 
 $repoRoot = Get-RepoRoot
+$localPorts = Read-LocalPorts -RepoRoot $repoRoot
+$BaseUrl = Resolve-BaseUrl -RequestedBaseUrl $BaseUrl -LocalPorts $localPorts
 $envPath = Join-Path $repoRoot "backend\.env"
 $secret = Read-JwtSecret -EnvPath $envPath
 $essay = Resolve-EssayText -InlineText $EssayText -FilePath $EssayFile
