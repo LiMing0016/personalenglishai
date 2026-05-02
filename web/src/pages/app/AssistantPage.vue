@@ -1,18 +1,27 @@
 <template>
-  <div class="assistant-page">
+  <div
+    class="assistant-page"
+    :class="{ 'assistant-page--drawer-open': assistantDrawerOpen }"
+  >
     <AssistantSidebar
+      v-if="assistantDrawerOpen"
       :search-value="searchText"
       :groups="conversationGroups"
+      :folder-groups="folderConversationGroups"
       :active-conversation-id="activeConversationId"
+      :folders="projects"
       @new-conversation="createConversation"
       @update:search-value="searchText = $event"
+      @close-sidebar="closeAssistantDrawer"
       @select-conversation="selectConversation"
       @rename-conversation="handleRenameConversation"
       @archive-conversation="handleArchiveConversation"
       @delete-conversation="handleDeleteConversation"
       @share-conversation="handleShareConversation"
       @pin-conversation="setConversationPinned"
-      @move-conversation="handleMoveConversation"
+      @move-conversation-to-folder="handleMoveConversationToFolder"
+      @create-folder="openCreateFolderOnlyDialog"
+      @create-folder-and-move="openCreateFolderDialog"
     />
 
     <div class="assistant-main">
@@ -45,11 +54,33 @@
         />
       </div>
     </div>
+
+    <div v-if="folderDialogMode" class="folder-dialog-backdrop" role="presentation">
+      <form class="folder-dialog" @submit.prevent="handleSubmitFolderDialog">
+        <h2 class="folder-dialog-title">创建文件夹</h2>
+        <p class="folder-dialog-copy">{{ folderDialogCopy }}</p>
+        <input
+          v-model="newFolderName"
+          class="folder-dialog-input"
+          type="text"
+          placeholder="文件夹名称"
+          autofocus
+        />
+        <div class="folder-dialog-actions">
+          <button type="button" class="folder-dialog-button" @click="closeCreateFolderDialog">
+            取消
+          </button>
+          <button type="submit" class="folder-dialog-button folder-dialog-button--primary">
+            {{ folderDialogMode === 'move' ? '创建并移动' : '创建文件夹' }}
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, inject, onMounted, ref, type Ref } from 'vue'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
@@ -92,9 +123,25 @@ const pageTitle = '学习助手'
 const emptyTitle = '今天想练什么？'
 const emptySubtitle = '我可以陪你做英语评价、表达润色、题目设计和词句讲解。'
 const composerDocked = true
+const fallbackAssistantDrawerOpen = ref(false)
+const injectedAssistantDrawerOpen = inject<Ref<boolean> | null>('assistantDrawerOpen', null)
+const assistantDrawerOpen = injectedAssistantDrawerOpen ?? fallbackAssistantDrawerOpen
+const folderDialogMode = ref<'create' | 'move' | null>(null)
+const pendingMoveConversationId = ref<string | null>(null)
+const newFolderName = ref('')
+
+const folderDialogCopy = computed(() =>
+  folderDialogMode.value === 'move'
+    ? '输入文件夹名称，当前对话会移动到这个文件夹。'
+    : '文件夹可以用来整理对话，让相关学习内容更容易找回。',
+)
 
 function handleFileSelect(files: File[]) {
   addAttachments(files)
+}
+
+function closeAssistantDrawer() {
+  assistantDrawerOpen.value = false
 }
 
 onMounted(() => {
@@ -143,70 +190,125 @@ async function handleShareConversation(id: string) {
   }
 }
 
-async function handleMoveConversation(id: string) {
-  const projectNames = projects.value.map((project) => project.name).join('、')
-  const input = window.prompt(
-    projectNames ? `输入项目名称，留空移出项目。现有项目：${projectNames}` : '输入新项目名称，留空移出项目。',
-    '',
-  )
-  if (input === null) return
-  const name = input.trim()
+async function handleMoveConversationToFolder(id: string, folderId: number | null) {
   try {
-    if (!name) {
-      await moveConversation(id, null)
-      showToast('已移出项目', 'success')
-      return
-    }
-    const existing = projects.value.find((project) => project.name === name)
-    const project = existing ?? await createProject(name)
-    await moveConversation(id, project.id)
-    showToast('已移动到项目', 'success')
+    await moveConversation(id, folderId)
+    showToast(folderId === null ? '已移出文件夹' : '已移动到文件夹', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '移动失败', 'error')
   }
 }
 
-const conversationGroups = computed(() => {
-  const keyword = searchText.value.trim()
-  const filtered = keyword
-    ? conversations.value.filter((conversation) =>
-        `${conversation.title} ${conversation.summary}`.includes(keyword),
-      )
-    : conversations.value
+function openCreateFolderOnlyDialog() {
+  folderDialogMode.value = 'create'
+  pendingMoveConversationId.value = null
+  newFolderName.value = ''
+}
 
+function openCreateFolderDialog(id: string) {
+  folderDialogMode.value = 'move'
+  pendingMoveConversationId.value = id
+  newFolderName.value = ''
+}
+
+function closeCreateFolderDialog() {
+  folderDialogMode.value = null
+  pendingMoveConversationId.value = null
+  newFolderName.value = ''
+}
+
+async function handleSubmitFolderDialog() {
+  const name = newFolderName.value.trim()
+  if (!folderDialogMode.value || !name) return
+
+  try {
+    const existing = projects.value.find((project) => project.name === name)
+    const folder = existing ?? await createProject(name)
+
+    if (folderDialogMode.value === 'move') {
+      const conversationId = pendingMoveConversationId.value
+      if (!conversationId) return
+      await moveConversation(conversationId, folder.id)
+      showToast('已移动到文件夹', 'success')
+    } else {
+      showToast('已创建文件夹', 'success')
+    }
+
+    closeCreateFolderDialog()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '创建文件夹失败', 'error')
+  }
+}
+
+function buildConversationGroups(items: typeof conversations.value) {
   const now = Date.now()
   const dayMs = 24 * 60 * 60 * 1000
 
   const groups = [
     {
       label: '今天',
-      conversations: filtered.filter((conversation) => now - conversation.updatedAt < dayMs),
+      conversations: items.filter((conversation) => now - conversation.updatedAt < dayMs),
     },
     {
       label: '最近 7 天',
-      conversations: filtered.filter(
+      conversations: items.filter(
         (conversation) => now - conversation.updatedAt >= dayMs && now - conversation.updatedAt < dayMs * 7,
       ),
     },
     {
       label: '更早',
-      conversations: filtered.filter((conversation) => now - conversation.updatedAt >= dayMs * 7),
+      conversations: items.filter((conversation) => now - conversation.updatedAt >= dayMs * 7),
     },
   ]
 
   return groups.filter((group) => group.conversations.length > 0)
+}
+
+const filteredConversations = computed(() => {
+  const keyword = searchText.value.trim()
+  return keyword
+    ? conversations.value.filter((conversation) =>
+        `${conversation.title} ${conversation.summary}`.includes(keyword),
+      )
+    : conversations.value
 })
+
+const conversationGroups = computed(() =>
+  buildConversationGroups(filteredConversations.value.filter((conversation) => (
+    conversation.projectId === null || conversation.projectId === undefined
+  ))),
+)
+
+const folderConversationGroups = computed(() =>
+  projects.value.map((folder) => {
+    const folderConversations = filteredConversations.value.filter(
+      (conversation) => conversation.projectId === folder.id,
+    )
+    return {
+      id: folder.id,
+      name: folder.name,
+      conversationCount: folderConversations.length,
+      groups: buildConversationGroups(folderConversations),
+    }
+  }),
+)
 </script>
 
 <style scoped>
 .assistant-page {
+  --app-rail-width: 64px;
   --assistant-sidebar-width: 280px;
+  --assistant-sidebar-current-width: 0px;
   display: flex;
   flex: 1;
-  height: calc(100vh - 48px);
-  min-height: calc(100vh - 48px);
+  height: 100vh;
+  min-height: 100vh;
   overflow: hidden;
   background: #f8fafc;
+}
+
+.assistant-page--drawer-open {
+  --assistant-sidebar-current-width: var(--assistant-sidebar-width);
 }
 
 .assistant-main {
@@ -249,7 +351,7 @@ const conversationGroups = computed(() => {
 
 .composer-dock {
   position: fixed;
-  left: calc(var(--assistant-sidebar-width) + 1px);
+  left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
   right: 0;
   bottom: 0;
   z-index: 40;
@@ -259,9 +361,8 @@ const conversationGroups = computed(() => {
 
 @media (max-width: 960px) {
   .assistant-page {
-    flex-direction: column;
-    height: calc(100vh - 48px);
-    min-height: calc(100vh - 48px);
+    height: 100vh;
+    min-height: 100vh;
   }
 
   .main-header {
@@ -269,8 +370,83 @@ const conversationGroups = computed(() => {
   }
 
   .composer-dock {
-    left: 0;
+    left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
     padding: 14px 12px max(4px, env(safe-area-inset-bottom));
   }
+}
+
+.folder-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.folder-dialog {
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid #dbe3ea;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  box-sizing: border-box;
+}
+
+.folder-dialog-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.folder-dialog-copy {
+  margin: 8px 0 16px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.folder-dialog-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #dbe3ea;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.folder-dialog-input:focus {
+  border-color: #10b981;
+  background: #ffffff;
+}
+
+.folder-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.folder-dialog-button {
+  border: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.folder-dialog-button--primary {
+  background: #047857;
+  color: #ffffff;
 }
 </style>

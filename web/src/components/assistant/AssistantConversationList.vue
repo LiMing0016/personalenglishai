@@ -40,6 +40,7 @@
       </article>
     </section>
   </div>
+
   <Teleport to="body">
     <span
       v-if="openConversation"
@@ -57,10 +58,55 @@
         <span class="conversation-menu-icon">✎</span>
         <span>重命名</span>
       </button>
-      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('move', openConversation.id)">
-        <span class="conversation-menu-icon">□</span>
-        <span>移动到项目</span>
-      </button>
+      <span class="conversation-menu-nested">
+        <button
+          type="button"
+          class="conversation-menu-item"
+          role="menuitem"
+          :aria-expanded="openFolderMenuId === openConversation.id"
+          @click.stop="toggleFolderMenu(openConversation.id)"
+        >
+          <span class="conversation-menu-icon">□</span>
+          <span>移动到文件夹</span>
+          <span class="conversation-menu-arrow">›</span>
+        </button>
+        <span
+          v-if="openFolderMenuId === openConversation.id"
+          class="move-folder-submenu"
+          role="menu"
+        >
+          <button
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runCreateFolderAndMove(openConversation.id)"
+          >
+            <span class="conversation-menu-icon">＋</span>
+            <span>新文件夹</span>
+          </button>
+          <button
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runMoveToFolder(openConversation.id, null)"
+          >
+            <span class="conversation-menu-icon">□</span>
+            <span>移出文件夹</span>
+          </button>
+          <span v-if="folders.length" class="conversation-menu-separator" aria-hidden="true" />
+          <button
+            v-for="folder in folders"
+            :key="folder.id"
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runMoveToFolder(openConversation.id, folder.id)"
+          >
+            <span class="conversation-menu-icon">□</span>
+            <span>{{ folder.name }}</span>
+          </button>
+        </span>
+      </span>
       <span class="conversation-menu-separator" aria-hidden="true" />
       <button type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(openConversation.id, !openConversation.pinned)">
         <span class="conversation-menu-icon">⌖</span>
@@ -88,9 +134,15 @@ interface ConversationGroup {
   conversations: AssistantConversation[]
 }
 
+interface FolderOption {
+  id: number
+  name: string
+}
+
 const props = defineProps<{
   groups: ConversationGroup[]
   activeConversationId: string
+  folders: FolderOption[]
 }>()
 
 const emit = defineEmits<{
@@ -100,10 +152,11 @@ const emit = defineEmits<{
   delete: [id: string]
   share: [id: string]
   pin: [id: string, pinned: boolean]
-  move: [id: string]
+  moveToFolder: [id: string, folderId: number | null]
+  createFolderAndMove: [id: string]
 }>()
 
-type MenuAction = 'share' | 'rename' | 'move' | 'archive' | 'delete'
+type MenuAction = 'share' | 'rename' | 'archive' | 'delete'
 
 const MENU_GAP = 8
 const VIEWPORT_MARGIN = 8
@@ -111,6 +164,7 @@ const MENU_WIDTH = 206
 const MENU_HEIGHT = 288
 
 const openMenuId = ref<string | null>(null)
+const openFolderMenuId = ref<string | null>(null)
 const menuRef = ref<HTMLElement | null>(null)
 const menuTrigger = ref<HTMLElement | null>(null)
 const menuPosition = ref({ top: VIEWPORT_MARGIN, left: VIEWPORT_MARGIN })
@@ -131,6 +185,7 @@ const menuStyle = computed(() => ({
 
 function selectConversation(id: string) {
   openMenuId.value = null
+  openFolderMenuId.value = null
   emit('select', id)
 }
 
@@ -140,13 +195,19 @@ function toggleMenu(id: string, event: MouseEvent) {
     return
   }
   openMenuId.value = id
+  openFolderMenuId.value = null
   menuTrigger.value = event.currentTarget as HTMLElement
   positionMenu()
   void nextTick(() => positionMenu())
 }
 
+function toggleFolderMenu(id: string) {
+  openFolderMenuId.value = openFolderMenuId.value === id ? null : id
+}
+
 function closeMenu() {
   openMenuId.value = null
+  openFolderMenuId.value = null
   menuTrigger.value = null
 }
 
@@ -192,9 +253,6 @@ function runMenuAction(action: MenuAction, id: string) {
     case 'rename':
       emit('rename', id)
       break
-    case 'move':
-      emit('move', id)
-      break
     case 'archive':
       emit('archive', id)
       break
@@ -202,6 +260,16 @@ function runMenuAction(action: MenuAction, id: string) {
       emit('delete', id)
       break
   }
+  closeMenu()
+}
+
+function runMoveToFolder(id: string, folderId: number | null) {
+  emit('moveToFolder', id, folderId)
+  closeMenu()
+}
+
+function runCreateFolderAndMove(id: string) {
+  emit('createFolderAndMove', id)
   closeMenu()
 }
 
@@ -360,6 +428,11 @@ watch(openConversation, (conversation) => {
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
 }
 
+.conversation-menu-nested {
+  position: relative;
+  display: flex;
+}
+
 .conversation-menu-item {
   display: flex;
   align-items: center;
@@ -375,6 +448,13 @@ watch(openConversation, (conversation) => {
   line-height: 1.2;
   text-align: left;
   cursor: pointer;
+}
+
+.conversation-menu-arrow {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .conversation-menu-item:hover {
@@ -393,6 +473,24 @@ watch(openConversation, (conversation) => {
   height: 1px;
   margin: 6px 4px;
   background: #e2e8f0;
+}
+
+.move-folder-submenu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  z-index: 1001;
+  display: flex;
+  width: 210px;
+  max-height: 320px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #dbe3ea;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
 }
 
 .conversation-menu-item--danger {

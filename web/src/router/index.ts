@@ -119,6 +119,7 @@ const routes: RouteRecordRaw[] = [
         path: 'assistant',
         name: 'LearningAssistant',
         component: () => import('@/pages/app/AssistantPage.vue'),
+        meta: { immersive: true },
       },
       {
         path: 'vocabulary',
