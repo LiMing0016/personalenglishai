@@ -3,6 +3,9 @@ package com.personalenglishai.backend.service.assistant;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -12,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.Duration;
+import java.util.List;
 
 @Component
 public class PythonAssistantClient {
@@ -35,6 +39,13 @@ public class PythonAssistantClient {
         }
         if (request.assistantMode() != null && !request.assistantMode().isBlank()) {
             body.add("assistant_mode", request.assistantMode().trim());
+        }
+        for (PythonAssistantFile file : request.files()) {
+            HttpHeaders fileHeaders = new HttpHeaders();
+            fileHeaders.setContentType(parseMediaType(file.contentType()));
+            body.add("files", new HttpEntity<>(
+                    new NamedByteArrayResource(file.content(), file.filename()),
+                    fileHeaders));
         }
 
         try {
@@ -71,7 +82,41 @@ public class PythonAssistantClient {
             String message,
             String conversationId,
             String studyStage,
-            String assistantMode) {
+            String assistantMode,
+            List<PythonAssistantFile> files) {
+        public PythonAssistantChatRequest(
+                String message,
+                String conversationId,
+                String studyStage,
+                String assistantMode) {
+            this(message, conversationId, studyStage, assistantMode, List.of());
+        }
+    }
+
+    public record PythonAssistantFile(String filename, String contentType, byte[] content) {
+    }
+
+    private static MediaType parseMediaType(String contentType) {
+        try {
+            return MediaType.parseMediaType(contentType);
+        } catch (Exception ignored) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private static final class NamedByteArrayResource extends ByteArrayResource {
+        private final String filename;
+
+        private NamedByteArrayResource(byte[] byteArray, String filename) {
+            super(byteArray);
+            this.filename = filename;
+        }
+
+        @Override
+        public String getFilename() {
+            return filename;
+        }
+
     }
 
     public static class PythonAssistantReply {

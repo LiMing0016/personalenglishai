@@ -7,6 +7,7 @@ from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 _PROMPT_FILES = {
     "ability_profile": "agent_instructions/ability_profile.md",
+    "attachment": "agent_instructions/attachment.md",
     "evaluation": "agent_instructions/evaluation.md",
     "learning_planner": "agent_instructions/learning_planner.md",
     "polish": "agent_instructions/polish.md",

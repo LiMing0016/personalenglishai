@@ -10,6 +10,7 @@ from uuid import uuid4
 
 try:
     from .adapters.openai_input_items import build_input_items
+    from .agents.attachment import create_attachment_agent
     from .agents.router import create_router_agent
     from .prompts.user_context import build_contextual_user_message
     from .schemas.chat import AssistantReply
@@ -26,6 +27,7 @@ try:
     from .services.continuation_classifier import ContinuationClassifier
 except ImportError:  # pragma: no cover - script mode fallback
     from adapters.openai_input_items import build_input_items
+    from agents.attachment import create_attachment_agent
     from agents.router import create_router_agent
     from prompts.user_context import build_contextual_user_message
     from schemas.chat import AssistantReply
@@ -122,6 +124,7 @@ class AssistantAgentService:
         self.model = model
         self.session_db_path = session_db_path
         self._router_agent = None
+        self._attachment_agent = None
         self._active_task_store = active_task_store or InMemoryActiveTaskStateStore()
         self._continuation_classifier = continuation_classifier or ContinuationClassifier(
             AgentsSdkContinuationClassifierClient(model)
@@ -153,6 +156,16 @@ class AssistantAgentService:
         self._router_agent = create_router_agent(self.model)
         return self._router_agent
 
+    def _get_attachment_agent(self):
+        if self._attachment_agent is not None:
+            return self._attachment_agent
+
+        if not self.is_configured():
+            raise AssistantConfigError("OPENAI_API_KEY 未配置，学习助手暂时不可用。")
+
+        self._attachment_agent = create_attachment_agent(self.model)
+        return self._attachment_agent
+
     async def chat(
         self,
         *,
@@ -181,7 +194,7 @@ class AssistantAgentService:
         )
 
         try:
-            router_agent = self._get_router_agent()
+            agent = self._get_attachment_agent() if has_attachments else self._get_router_agent()
             active_task_state = self._active_task_store.get(conversation_id) if use_session else None
             continuation_decision = None
             routed_message = message
@@ -222,7 +235,7 @@ class AssistantAgentService:
             )
             agent_input = build_input_items(contextual_message, attachments) if has_attachments else contextual_message
             result = await run_agent_session(
-                agent=router_agent,
+                agent=agent,
                 agent_input=agent_input,
                 conversation_id=conversation_id,
                 session_db_path=self.session_db_path,

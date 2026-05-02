@@ -86,6 +86,7 @@ import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { showToast } from '@/utils/toast'
+import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
 import { createAssistantState } from './assistantState.ts'
 
 const {
@@ -136,8 +137,8 @@ const folderDialogCopy = computed(() =>
     : '文件夹可以用来整理对话，让相关学习内容更容易找回。',
 )
 
-function handleFileSelect(files: File[]) {
-  addAttachments(files)
+function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
+  addAttachments(files, source)
 }
 
 function closeAssistantDrawer() {

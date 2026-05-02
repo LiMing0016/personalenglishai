@@ -14,6 +14,7 @@ import com.personalenglishai.backend.controller.dto.assistant.UpdateAssistantCon
 import com.personalenglishai.backend.service.assistant.AssistantConversationService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +27,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -96,13 +99,34 @@ public class AssistantController {
         return ok(assistantConversationService.updateConversation(userId, conversationUid, request));
     }
 
-    @PostMapping("/conversations/{conversationUid}/messages")
+    @PostMapping(value = "/conversations/{conversationUid}/messages", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<AssistantConversationDetailResponse>> sendMessage(
             @RequestAttribute("userId") Long userId,
             @PathVariable String conversationUid,
             @Valid @RequestBody SendAssistantMessageRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         return ok(assistantConversationService.sendMessage(userId, conversationUid, request, authorization));
+    }
+
+    @PostMapping(value = "/conversations/{conversationUid}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<AssistantConversationDetailResponse>> sendMessageWithFiles(
+            @RequestAttribute("userId") Long userId,
+            @PathVariable String conversationUid,
+            @RequestParam(defaultValue = "") String message,
+            @RequestParam(required = false) String studyStage,
+            @RequestParam(required = false) String assistantMode,
+            @RequestParam(value = "files", required = false) List<MultipartFile> files,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        SendAssistantMessageRequest request = new SendAssistantMessageRequest();
+        request.setMessage(message);
+        request.setStudyStage(studyStage);
+        request.setAssistantMode(assistantMode);
+        return ok(assistantConversationService.sendMessageWithFiles(
+                userId,
+                conversationUid,
+                request,
+                files == null ? Collections.emptyList() : files,
+                authorization));
     }
 
     @PostMapping("/conversations/{conversationUid}/archive")

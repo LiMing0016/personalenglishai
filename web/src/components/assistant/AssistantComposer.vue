@@ -1,9 +1,19 @@
 <template>
-  <div class="assistant-composer">
+  <div
+    class="assistant-composer"
+    :class="{ 'assistant-composer--dragging': draggingOver }"
+    @click="focusInput"
+    @dragenter.prevent="handleDragEnter"
+    @dragover.prevent="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop.prevent="handleDrop"
+    @paste="handlePaste"
+  >
     <input
       ref="fileInputRef"
       type="file"
       class="file-input"
+      :accept="assistantAttachmentAccept"
       multiple
       @change="onFileChange"
     />
@@ -52,7 +62,7 @@
           <div v-if="menuOpen" class="action-menu" role="menu">
             <button type="button" class="action-menu-item" role="menuitem" @click="chooseFiles">
               <span class="menu-icon">↥</span>
-              <span>上传照片和文件</span>
+              <span>添加照片和文件</span>
             </button>
             <button
               type="button"
@@ -76,6 +86,7 @@
           <button type="button" class="mode-clear" @click="$emit('setAssistantMode', 'default')">取消</button>
         </div>
         <textarea
+          ref="textareaRef"
           :value="modelValue"
           class="composer-input"
           placeholder="有问题，尽管问。你也可以上传文件或照片再一起发送。"
@@ -100,7 +111,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
+import { assistantAttachmentAccept, type AssistantAttachmentSource } from '@/pages/app/assistantAttachmentRules.ts'
 import type { AssistantAttachment, AssistantMode } from '@/pages/app/assistantMock.ts'
+import { extractImageFilesFromClipboardData } from './assistantClipboardFiles.ts'
 
 const props = defineProps<{
   modelValue: string
@@ -111,14 +124,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  addFiles: [files: File[]]
+  addFiles: [files: File[], source: AssistantAttachmentSource]
   removeAttachment: [id: string]
   setAssistantMode: [mode: AssistantMode]
   send: []
 }>()
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const menuOpen = ref(false)
+const draggingOver = ref(false)
 const previewUrls = new Map<string, string>()
 
 const previewAttachments = computed(() =>
@@ -165,9 +180,52 @@ function toggleExamMode() {
 function onFileChange(event: Event) {
   const files = Array.from((event.target as HTMLInputElement).files ?? [])
   if (files.length > 0) {
-    emit('addFiles', files)
+    emit('addFiles', files, 'picker')
   }
   ;(event.target as HTMLInputElement).value = ''
+}
+
+function focusInput(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button, input, textarea, [role="menu"], .attachment-remove')) {
+    return
+  }
+  textareaRef.value?.focus()
+}
+
+function handlePaste(event: ClipboardEvent) {
+  const files = extractImageFilesFromClipboardData(event.clipboardData)
+  if (files.length === 0) {
+    return
+  }
+
+  event.preventDefault()
+  emit('addFiles', files, 'paste')
+}
+
+function handleDragEnter() {
+  draggingOver.value = true
+}
+
+function handleDragOver() {
+  draggingOver.value = true
+}
+
+function handleDragLeave(event: DragEvent) {
+  const currentTarget = event.currentTarget as HTMLElement | null
+  const relatedTarget = event.relatedTarget as Node | null
+  if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+    return
+  }
+  draggingOver.value = false
+}
+
+function handleDrop(event: DragEvent) {
+  draggingOver.value = false
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length > 0) {
+    emit('addFiles', files, 'drop')
+  }
 }
 
 function formatAttachmentMeta(size: number, kind: AssistantAttachment['kind']) {
@@ -190,6 +248,12 @@ function formatAttachmentMeta(size: number, kind: AssistantAttachment['kind']) {
   box-shadow: 0 24px 50px rgba(15, 23, 42, 0.12);
   backdrop-filter: blur(18px);
   box-sizing: border-box;
+}
+
+.assistant-composer--dragging {
+  border-color: #10b981;
+  background: #f0fdf4;
+  box-shadow: 0 24px 54px rgba(4, 120, 87, 0.18);
 }
 
 .file-input {

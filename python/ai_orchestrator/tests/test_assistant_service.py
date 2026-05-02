@@ -1,6 +1,7 @@
 import inspect
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
@@ -297,6 +298,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_chat_disables_session_for_attachment_input_items(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
 
         with patch(
             "python.ai_orchestrator.assistant_service.run_agent_session",
@@ -318,9 +320,38 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
         self.assertEqual(run_agent_session.await_args.kwargs["agent_input"][0]["role"], "user")
 
+    async def test_chat_uses_attachment_agent_for_multimodal_inputs(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="The image says hello.", agent_name="Attachment Agent"),
+        ) as run_agent_session:
+            await service.chat(
+                message="翻译成中文。",
+                conversation_id="conv-image-1",
+                attachments=[
+                    {
+                        "filename": "screenshot.png",
+                        "content_type": "image/png",
+                        "content": b"fake-image",
+                    }
+                ],
+            )
+
+        agent = run_agent_session.await_args.kwargs["agent"]
+        self.assertIsNot(agent, service._router_agent)
+        self.assertIs(agent, service._attachment_agent)
+        self.assertEqual(agent.name, "Attachment Agent")
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
+
     async def test_chat_injects_study_stage_context_into_attachment_text_item(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
 
         with patch(
             "python.ai_orchestrator.assistant_service.run_agent_session",

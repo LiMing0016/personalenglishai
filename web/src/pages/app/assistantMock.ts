@@ -3,12 +3,15 @@ export type AssistantMessageStatus = 'done' | 'loading'
 export type AssistantAttachmentKind = 'image' | 'file'
 export type AssistantMode = 'default' | 'exam'
 
-export interface AssistantAttachment {
+export interface AssistantAttachmentMetadata {
   id: string
   name: string
   size: number
   type: string
   kind: AssistantAttachmentKind
+}
+
+export interface AssistantAttachment extends AssistantAttachmentMetadata {
   file: File
 }
 
@@ -18,6 +21,7 @@ export interface AssistantMessage {
   content: string
   status: AssistantMessageStatus
   attachments?: AssistantAttachment[]
+  attachmentMetadata?: AssistantAttachmentMetadata[]
 }
 
 export interface AssistantConversation {

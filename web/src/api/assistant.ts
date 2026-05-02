@@ -160,10 +160,6 @@ export const assistantApi = {
 }
 
 export async function assistantChat(payload: AssistantChatPayload): Promise<AssistantChatResult> {
-  if (payload.attachments.length > 0) {
-    throw new Error('当前版本暂不支持通过后端保存附件对话，请先发送纯文本。')
-  }
-
   const conversation = await sendAssistantMessage(payload)
   const reply = latestAssistantReply(conversation)
   if (!reply.trim()) {
@@ -173,6 +169,27 @@ export async function assistantChat(payload: AssistantChatPayload): Promise<Assi
 }
 
 export async function sendAssistantMessage(payload: AssistantChatPayload): Promise<AssistantConversationDto> {
+  if (payload.attachments.length > 0) {
+    const formData = new FormData()
+    formData.append('message', payload.input)
+    if (payload.studyStage) {
+      formData.append('studyStage', payload.studyStage)
+    }
+    if (payload.assistantMode) {
+      formData.append('assistantMode', payload.assistantMode)
+    }
+    for (const attachment of payload.attachments) {
+      formData.append('files', attachment.file, attachment.name)
+    }
+
+    const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
+      `/assistant/conversations/${payload.conversationId}/messages`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return unwrap(res.data)
+  }
+
   const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
     `/assistant/conversations/${payload.conversationId}/messages`,
     {

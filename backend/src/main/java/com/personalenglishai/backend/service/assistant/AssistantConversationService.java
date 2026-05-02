@@ -26,17 +26,37 @@ import com.personalenglishai.backend.mapper.assistant.AssistantProjectMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantShareMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class AssistantConversationService {
     private static final String DEFAULT_TITLE = "新对话";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int MAX_ATTACHMENT_COUNT = 5;
+    private static final long MAX_ATTACHMENT_BYTES = 10L * 1024 * 1024;
+    private static final Set<String> ALLOWED_ATTACHMENT_TYPES = Set.of(
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    private static final Set<String> ALLOWED_ATTACHMENT_EXTENSIONS = Set.of(
+            ".pdf",
+            ".txt",
+            ".doc",
+            ".docx");
 
     private final AssistantProjectMapper projectMapper;
     private final AssistantConversationMapper conversationMapper;
@@ -146,8 +166,33 @@ public class AssistantConversationService {
             String conversationUid,
             SendAssistantMessageRequest request,
             String authorization) {
+        return sendMessageInternal(userId, conversationUid, request, Collections.emptyList(), authorization);
+    }
+
+    @Transactional
+    public AssistantConversationDetailResponse sendMessageWithFiles(
+            Long userId,
+            String conversationUid,
+            SendAssistantMessageRequest request,
+            List<MultipartFile> files,
+            String authorization) {
+        return sendMessageInternal(userId, conversationUid, request, toPythonFiles(files), authorization);
+    }
+
+    private AssistantConversationDetailResponse sendMessageInternal(
+            Long userId,
+            String conversationUid,
+            SendAssistantMessageRequest request,
+            List<PythonAssistantClient.PythonAssistantFile> files,
+            String authorization) {
         AssistantConversation conversation = ensureConversation(userId, conversationUid);
         String prompt = cleanRequired(request.getMessage());
+        if (prompt.isBlank()) {
+            if (files.isEmpty()) {
+                throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "message 或 files 至少要提供一个");
+            }
+            prompt = "请查看我上传的 " + files.size() + " 个文件，并结合它回答。";
+        }
         int nextOrder = nextSortOrder(conversationUid);
 
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
@@ -158,7 +203,8 @@ public class AssistantConversationService {
                         prompt,
                         conversationUid,
                         request.getStudyStage(),
-                        request.getAssistantMode()),
+                        request.getAssistantMode(),
+                        files),
                 authorization);
         String replyText = reply == null ? "" : reply.text();
         if (replyText.isBlank()) {
@@ -169,6 +215,59 @@ public class AssistantConversationService {
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
         conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         return getConversation(userId, conversationUid);
+    }
+
+    private List<PythonAssistantClient.PythonAssistantFile> toPythonFiles(List<MultipartFile> files) {
+        List<MultipartFile> nonEmptyFiles = files == null
+                ? List.of()
+                : files.stream().filter(file -> file != null && !file.isEmpty()).toList();
+        if (nonEmptyFiles.size() > MAX_ATTACHMENT_COUNT) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "最多只能添加 5 个项目");
+        }
+
+        return nonEmptyFiles.stream().map(this::toPythonFile).toList();
+    }
+
+    private PythonAssistantClient.PythonAssistantFile toPythonFile(MultipartFile file) {
+        if (file.getSize() > MAX_ATTACHMENT_BYTES) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "单个文件最大支持 10MB");
+        }
+
+        String filename = cleanFilename(file.getOriginalFilename());
+        String contentType = cleanContentType(file.getContentType());
+        if (!isAllowedAttachment(filename, contentType)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "仅支持 PNG、JPG、WebP、PDF、TXT、DOC、DOCX");
+        }
+
+        try {
+            return new PythonAssistantClient.PythonAssistantFile(filename, contentType, file.getBytes());
+        } catch (IOException e) {
+            throw new BizException(ErrorCode.COMMON_SYSTEM_ERROR);
+        }
+    }
+
+    private boolean isAllowedAttachment(String filename, String contentType) {
+        return ALLOWED_ATTACHMENT_TYPES.contains(contentType) ||
+                ALLOWED_ATTACHMENT_EXTENSIONS.contains(fileExtension(filename));
+    }
+
+    private String cleanFilename(String filename) {
+        if (filename == null || filename.trim().isEmpty()) {
+            return "attachment";
+        }
+        return filename.trim();
+    }
+
+    private String cleanContentType(String contentType) {
+        if (contentType == null || contentType.trim().isEmpty()) {
+            return "application/octet-stream";
+        }
+        return contentType.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String fileExtension(String filename) {
+        int index = filename.lastIndexOf('.');
+        return index >= 0 ? filename.substring(index).toLowerCase(Locale.ROOT) : "";
     }
 
     @Transactional
