@@ -14,6 +14,26 @@ assert.ok(
   conversationListSource.includes('conversation-action-menu'),
   'conversation list should render a popover menu for actions',
 )
+assert.ok(
+  conversationListSource.includes('<Teleport to="body">'),
+  'conversation action menu should be teleported to document.body so sidebar overflow cannot clip it',
+)
+assert.ok(
+  conversationListSource.includes('getBoundingClientRect'),
+  'conversation action menu should be positioned from the trigger button rect',
+)
+assert.ok(
+  conversationListSource.includes('position: fixed'),
+  'conversation action menu should use viewport-fixed positioning',
+)
+assert.ok(
+  conversationListSource.includes("document.addEventListener('keydown'"),
+  'conversation action menu should close on Esc',
+)
+assert.ok(
+  conversationListSource.includes("window.addEventListener('scroll'"),
+  'conversation action menu should close on page/sidebar scroll',
+)
 assert.ok(conversationListSource.includes('分享'), 'menu should keep the share action')
 assert.ok(conversationListSource.includes('重命名'), 'menu should keep the rename action')
 assert.ok(conversationListSource.includes('移动到文件夹'), 'menu should keep the move-to-folder action')

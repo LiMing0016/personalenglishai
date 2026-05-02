@@ -130,7 +130,7 @@ AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL=http://${PYTHON_HOST}:${PYTHON_PORT}
 - `web/package.json` 是否存在
 - `web/node_modules/` 是否存在
 - `python/ai_orchestrator/.venv/Scripts/python.exe` 是否存在
-- 根目录 `.env` 或 `backend/.env` 是否存在
+- `backend/.env` 是否存在
 
 如果缺少 `web/node_modules/`，需要先运行：
 
@@ -382,23 +382,23 @@ http://127.0.0.1:18080
 
 普通用户或普通前端开发一般不需要运行它。
 
-## 7. `.env.example`
+## 7. `backend/.env.example`
 
 路径：
 
 ```text
-.env.example
+backend/.env.example
 ```
 
-这不是启动脚本，而是环境变量模板。
+这不是启动脚本，而是后端环境变量模板。
 
 首次配置项目时，通常复制它：
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item .\backend\.env.example .\backend\.env
 ```
 
-然后在 `.env` 里填写真实配置，例如：
+然后在 `backend/.env` 里填写真实配置，例如：
 
 - 数据库地址
 - 数据库用户名和密码
@@ -406,7 +406,7 @@ Copy-Item .env.example .env
 - JWT_SECRET
 - OpenAI / Kimi / Qwen API Key
 
-`.env` 不应该提交到 Git，因为里面可能有密钥。
+`backend/.env` 不应该提交到 Git，因为里面可能有密钥。
 
 ## 8. `docker-compose.yml`
 
@@ -450,7 +450,7 @@ docker-compose.local.yml
 2. 安装 Node.js。
 3. 安装 Python。
 4. 配置 MySQL 和 Redis。
-5. 复制 `.env.example` 为 `.env` 并填写配置。
+5. 复制 `backend/.env.example` 为 `backend/.env` 并填写配置。
 6. 复制 `local-ports.env.example` 为 `local-ports.env`，按本机端口占用情况修改。
 7. 进入 `web` 执行 `npm install`。
 8. 创建 Python venv 并安装 requirements。
@@ -472,7 +472,7 @@ setup-local.ps1
 
 1. 检查本机是否能找到 Java、Node.js、npm、Python。
 2. 如果缺少 `local-ports.env`，从 `local-ports.env.example` 复制一份。
-3. 如果根目录 `.env` 和 `backend/.env` 都不存在，就从 `.env.example` 复制一份 `.env`。
+3. 如果缺少 `backend/.env`，就从 `backend/.env.example` 复制一份。
 4. 如果 `web/node_modules` 不存在，就在 `web` 目录执行 `npm install`。
 5. 如果 Python venv 不完整，就创建 `python/ai_orchestrator/.venv`。
 6. 安装 `python/ai_orchestrator/requirements.txt`。
@@ -506,7 +506,7 @@ setup-local.ps1
 注意：
 
 - 它不会安装 Java、Node.js、Python 本体，只检查这些命令是否已经在本机可用。
-- 它不会覆盖已有 `.env`、`backend/.env` 或 `local-ports.env`。
+- 它不会覆盖已有 `backend/.env` 或 `local-ports.env`。
 - Java 和 Python 本体是系统级安装，可以被多个项目文件夹共用。
 - Python venv 是项目级目录，每个项目文件夹一份，避免不同项目依赖版本互相污染。
 - 如果你在同一台电脑里跑 3 个项目，先分别修改各自的 `local-ports.env`，再启动。
@@ -523,5 +523,5 @@ setup-local.ps1
 | `stop.nginx.bat` | 停止本机 Nginx | 部署/代理调试 |
 | `scripts/check-encoding.ps1` | 检查编码和中文乱码 | 提交前检查 |
 | `scripts/score-cache-diagnose.ps1` | 诊断评分 cache 命中 | 后端/AI 调试 |
-| `.env.example` | 环境变量模板 | 首次配置 |
+| `backend/.env.example` | 后端环境变量模板 | 首次配置 |
 | `docker-compose.yml` | Docker 服务编排 | 部署/容器环境 |

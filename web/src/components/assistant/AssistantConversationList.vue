@@ -29,86 +29,10 @@
               title="更多操作"
               :aria-expanded="openMenuId === conversation.id"
               aria-haspopup="menu"
-              @click="toggleMenu(conversation.id)"
+              @click.stop="toggleMenu(conversation.id, $event)"
             >
               ...
             </button>
-            <span
-              v-if="openMenuId === conversation.id"
-              class="conversation-action-menu"
-              role="menu"
-            >
-              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('share', conversation.id)">
-                <span class="conversation-menu-icon">⇧</span>
-                <span>分享</span>
-              </button>
-              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('rename', conversation.id)">
-                <span class="conversation-menu-icon">✎</span>
-                <span>重命名</span>
-              </button>
-              <span class="conversation-menu-nested">
-                <button
-                  type="button"
-                  class="conversation-menu-item"
-                  role="menuitem"
-                  :aria-expanded="openFolderMenuId === conversation.id"
-                  @click="toggleFolderMenu(conversation.id)"
-                >
-                  <span class="conversation-menu-icon">□</span>
-                  <span>移动到文件夹</span>
-                  <span class="conversation-menu-arrow">›</span>
-                </button>
-                <span
-                  v-if="openFolderMenuId === conversation.id"
-                  class="move-folder-submenu"
-                  role="menu"
-                >
-                  <button
-                    type="button"
-                    class="conversation-menu-item"
-                    role="menuitem"
-                    @click="runCreateFolderAndMove(conversation.id)"
-                  >
-                    <span class="conversation-menu-icon">＋</span>
-                    <span>新文件夹</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="conversation-menu-item"
-                    role="menuitem"
-                    @click="runMoveToFolder(conversation.id, null)"
-                  >
-                    <span class="conversation-menu-icon">□</span>
-                    <span>移出文件夹</span>
-                  </button>
-                  <span v-if="folders.length" class="conversation-menu-separator" aria-hidden="true" />
-                  <button
-                    v-for="folder in folders"
-                    :key="folder.id"
-                    type="button"
-                    class="conversation-menu-item"
-                    role="menuitem"
-                    @click="runMoveToFolder(conversation.id, folder.id)"
-                  >
-                    <span class="conversation-menu-icon">□</span>
-                    <span>{{ folder.name }}</span>
-                  </button>
-                </span>
-              </span>
-              <span class="conversation-menu-separator" aria-hidden="true" />
-              <button type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(conversation.id, !conversation.pinned)">
-                <span class="conversation-menu-icon">⌖</span>
-                <span>{{ conversation.pinned ? '取消置顶' : '置顶聊天' }}</span>
-              </button>
-              <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('archive', conversation.id)">
-                <span class="conversation-menu-icon">▤</span>
-                <span>归档</span>
-              </button>
-              <button type="button" class="conversation-menu-item conversation-menu-item--danger" role="menuitem" @click="runMenuAction('delete', conversation.id)">
-                <span class="conversation-menu-icon">⌫</span>
-                <span>删除</span>
-              </button>
-            </span>
           </span>
         </span>
         <span v-if="conversation.summary" class="conversation-summary">{{ conversation.summary }}</span>
@@ -116,10 +40,92 @@
       </article>
     </section>
   </div>
+
+  <Teleport to="body">
+    <span
+      v-if="openConversation"
+      ref="menuRef"
+      class="conversation-action-menu"
+      :style="menuStyle"
+      role="menu"
+      @click.stop
+    >
+      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('share', openConversation.id)">
+        <span class="conversation-menu-icon">⇧</span>
+        <span>分享</span>
+      </button>
+      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('rename', openConversation.id)">
+        <span class="conversation-menu-icon">✎</span>
+        <span>重命名</span>
+      </button>
+      <span class="conversation-menu-nested">
+        <button
+          type="button"
+          class="conversation-menu-item"
+          role="menuitem"
+          :aria-expanded="openFolderMenuId === openConversation.id"
+          @click.stop="toggleFolderMenu(openConversation.id)"
+        >
+          <span class="conversation-menu-icon">□</span>
+          <span>移动到文件夹</span>
+          <span class="conversation-menu-arrow">›</span>
+        </button>
+        <span
+          v-if="openFolderMenuId === openConversation.id"
+          class="move-folder-submenu"
+          role="menu"
+        >
+          <button
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runCreateFolderAndMove(openConversation.id)"
+          >
+            <span class="conversation-menu-icon">＋</span>
+            <span>新文件夹</span>
+          </button>
+          <button
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runMoveToFolder(openConversation.id, null)"
+          >
+            <span class="conversation-menu-icon">□</span>
+            <span>移出文件夹</span>
+          </button>
+          <span v-if="folders.length" class="conversation-menu-separator" aria-hidden="true" />
+          <button
+            v-for="folder in folders"
+            :key="folder.id"
+            type="button"
+            class="conversation-menu-item"
+            role="menuitem"
+            @click="runMoveToFolder(openConversation.id, folder.id)"
+          >
+            <span class="conversation-menu-icon">□</span>
+            <span>{{ folder.name }}</span>
+          </button>
+        </span>
+      </span>
+      <span class="conversation-menu-separator" aria-hidden="true" />
+      <button type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(openConversation.id, !openConversation.pinned)">
+        <span class="conversation-menu-icon">⌖</span>
+        <span>{{ openConversation.pinned ? '取消置顶' : '置顶聊天' }}</span>
+      </button>
+      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('archive', openConversation.id)">
+        <span class="conversation-menu-icon">▤</span>
+        <span>归档</span>
+      </button>
+      <button type="button" class="conversation-menu-item conversation-menu-item--danger" role="menuitem" @click="runMenuAction('delete', openConversation.id)">
+        <span class="conversation-menu-icon">⌫</span>
+        <span>删除</span>
+      </button>
+    </span>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { AssistantConversation } from '@/pages/app/assistantMock.ts'
 
@@ -133,7 +139,7 @@ interface FolderOption {
   name: string
 }
 
-defineProps<{
+const props = defineProps<{
   groups: ConversationGroup[]
   activeConversationId: string
   folders: FolderOption[]
@@ -152,8 +158,30 @@ const emit = defineEmits<{
 
 type MenuAction = 'share' | 'rename' | 'archive' | 'delete'
 
+const MENU_GAP = 8
+const VIEWPORT_MARGIN = 8
+const MENU_WIDTH = 206
+const MENU_HEIGHT = 288
+
 const openMenuId = ref<string | null>(null)
 const openFolderMenuId = ref<string | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
+const menuTrigger = ref<HTMLElement | null>(null)
+const menuPosition = ref({ top: VIEWPORT_MARGIN, left: VIEWPORT_MARGIN })
+
+const openConversation = computed(() => {
+  if (!openMenuId.value) {
+    return null
+  }
+  return props.groups
+    .flatMap((group) => group.conversations)
+    .find((conversation) => conversation.id === openMenuId.value) ?? null
+})
+
+const menuStyle = computed(() => ({
+  top: `${menuPosition.value.top}px`,
+  left: `${menuPosition.value.left}px`,
+}))
 
 function selectConversation(id: string) {
   openMenuId.value = null
@@ -161,9 +189,16 @@ function selectConversation(id: string) {
   emit('select', id)
 }
 
-function toggleMenu(id: string) {
-  openMenuId.value = openMenuId.value === id ? null : id
+function toggleMenu(id: string, event: MouseEvent) {
+  if (openMenuId.value === id) {
+    closeMenu()
+    return
+  }
+  openMenuId.value = id
   openFolderMenuId.value = null
+  menuTrigger.value = event.currentTarget as HTMLElement
+  positionMenu()
+  void nextTick(() => positionMenu())
 }
 
 function toggleFolderMenu(id: string) {
@@ -173,6 +208,41 @@ function toggleFolderMenu(id: string) {
 function closeMenu() {
   openMenuId.value = null
   openFolderMenuId.value = null
+  menuTrigger.value = null
+}
+
+function positionMenu() {
+  const trigger = menuTrigger.value
+  if (!trigger) {
+    return
+  }
+  const triggerRect = trigger.getBoundingClientRect()
+  const menuWidth = menuRef.value?.offsetWidth || MENU_WIDTH
+  const menuHeight = menuRef.value?.offsetHeight || MENU_HEIGHT
+  const maxLeft = window.innerWidth - menuWidth - VIEWPORT_MARGIN
+  const preferredRight = triggerRect.right + MENU_GAP
+  const preferredLeft = triggerRect.left - menuWidth - MENU_GAP
+  let left = preferredRight
+
+  if (preferredRight > maxLeft && preferredLeft >= VIEWPORT_MARGIN) {
+    left = preferredLeft
+  }
+  left = Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft))
+
+  const maxTop = window.innerHeight - menuHeight - VIEWPORT_MARGIN
+  let top = triggerRect.top
+  if (top > maxTop) {
+    top = maxTop
+  }
+  top = Math.max(VIEWPORT_MARGIN, top)
+
+  menuPosition.value = { top, left }
+}
+
+function closeMenuOnEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeMenu()
+  }
 }
 
 function runMenuAction(action: MenuAction, id: string) {
@@ -217,10 +287,23 @@ function formatUpdatedAt(updatedAt: number) {
 
 onMounted(() => {
   document.addEventListener('click', closeMenu)
+  document.addEventListener('keydown', closeMenuOnEscape)
+  window.addEventListener('scroll', closeMenu, true)
+  window.addEventListener('resize', closeMenu)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeMenu)
+  document.removeEventListener('keydown', closeMenuOnEscape)
+  window.removeEventListener('scroll', closeMenu, true)
+  window.removeEventListener('resize', closeMenu)
+})
+
+watch(() => props.activeConversationId, closeMenu)
+watch(openConversation, (conversation) => {
+  if (!conversation) {
+    closeMenu()
+  }
 })
 </script>
 
@@ -332,19 +415,17 @@ onBeforeUnmount(() => {
 }
 
 .conversation-action-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 1000;
   display: flex;
-  width: 190px;
+  width: min(206px, calc(100vw - 16px));
   flex-direction: column;
   gap: 2px;
   padding: 8px;
   border: 1px solid #dbe3ea;
-  border-radius: 16px;
+  border-radius: 12px;
   background: #ffffff;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
 }
 
 .conversation-menu-nested {
@@ -398,7 +479,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 0;
   left: calc(100% + 8px);
-  z-index: 32;
+  z-index: 1001;
   display: flex;
   width: 210px;
   max-height: 320px;
