@@ -1,6 +1,7 @@
 import { http } from './http'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
+import type { AssistantRequest as AssistantAgentRequest, LearningMode } from '../types/assistantRequest'
 export type {
   AssistantAttachmentRef,
   AssistantErrorPayload,
@@ -70,6 +71,44 @@ export interface AssistantChatPayload {
 export interface AssistantChatResult {
   reply: string
   conversation?: AssistantConversationDto
+}
+
+function createClientMessageId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+  return `client-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function mapLearningMode(mode?: AssistantChatPayload['assistantMode']): LearningMode {
+  return mode === 'exam' ? 'exam_boost' : 'daily_explain'
+}
+
+type AssistantStudyStage = NonNullable<AssistantAgentRequest['studyContext']>['studyStage']
+
+function normalizeStudyStage(stage?: string): AssistantStudyStage | undefined {
+  if (stage === 'beginner' || stage === 'intermediate' || stage === 'advanced') {
+    return stage
+  }
+  return undefined
+}
+
+function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentRequest {
+  return {
+    appConversationId: payload.conversationId,
+    clientMessageId: createClientMessageId(),
+    mode: mapLearningMode(payload.assistantMode),
+    intent: 'free_chat',
+    scope: 'message_only',
+    message: {
+      text: payload.input,
+    },
+    studyContext: {
+      studyStage: normalizeStudyStage(payload.studyStage),
+      locale: 'zh-CN',
+      responseLanguage: 'zh-CN',
+    },
+  }
 }
 
 function unwrap<T>(body: ApiEnvelope<T>): T {
@@ -201,13 +240,19 @@ export async function sendAssistantMessage(payload: AssistantChatPayload): Promi
     return unwrap(res.data)
   }
 
+  const agentRequest = toAssistantAgentRequest(payload)
+  const agentConversation = await sendAssistantAgentMessage(agentRequest)
+  return agentConversation
+}
+
+export async function sendAssistantAgentMessage(payload: AssistantAgentRequest): Promise<AssistantConversationDto> {
+  const appConversationId = payload.appConversationId
+  if (!appConversationId) {
+    throw new Error('学习助手会话 ID 不能为空')
+  }
   const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
-    `/assistant/conversations/${payload.conversationId}/messages`,
-    {
-      message: payload.input,
-      studyStage: payload.studyStage,
-      assistantMode: payload.assistantMode,
-    },
+    `/assistant/conversations/${appConversationId}/messages/run`,
+    payload,
   )
   return unwrap(res.data)
 }
