@@ -719,3 +719,27 @@ Prompt 负责让内容结构正确。
 Markdown 主题负责让内容视觉专业。
 Streaming 负责让等待过程更自然。
 ```
+
+## 11. 当前实现状态
+
+已在 `codex/assistant-markdown-streaming` 分支完成第一轮实现：
+
+- 前端 Markdown renderer 支持 GFM table，并补充表格单测。
+- 学习助手页面支持 `MarkText` / `Milkdown` 输出风格切换，使用 `peai:assistant:markdown-theme` 持久化。
+- Python orchestrator 新增 `/assistant/run/stream` SSE 入口，基于 OpenAI Agents SDK `Runner.run_streamed()` 输出 `message.delta`。
+- Java 后端新增 `/api/assistant/conversations/{conversationUid}/messages/run/stream` 代理入口，负责透传 SSE，并在 `message.completed` 后保存助手完整回复。
+- 前端 API 与 `assistantState` 支持消费流式事件，持续更新同一条 assistant loading message。
+- Agent 指令统一追加 Markdown 学习讲义输出规范，约束对比、讲解、翻译、润色、批改类回复结构。
+
+已验证：
+
+- 前端 Markdown / stream parser / theme helper 单测通过。
+- 前端 `npm run build` 通过。
+- Python streaming endpoint、service、runner、prompt 相关单测通过。
+- 后端 `AssistantControllerTest` 通过。
+
+已知边界：
+
+- 附件上传消息第一版仍走非流式 fallback。
+- `handoff` 事件暂不在前端展示。
+- 复杂 Mermaid、数学公式等流式 Markdown 渲染不在第一版范围内。

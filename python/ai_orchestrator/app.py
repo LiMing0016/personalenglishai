@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 try:
     from .assistant_service import AssistantAgentService, AssistantConfigError
@@ -128,6 +130,28 @@ async def assistant_run(
         agentName=result.agent_name,
         run=result.run,
     )
+
+
+@app.post("/assistant/run/stream")
+async def assistant_run_stream(
+    request: AssistantRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    async def event_stream():
+        try:
+            async for event in service.stream_assistant_request(request, authorization=authorization):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except AssistantRequestValidationError as exc:
+            payload = {"type": "run.failed", "error": {"code": exc.code, "message": exc.message}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except AssistantConfigError as exc:
+            payload = {"type": "run.failed", "error": {"code": "OPENAI_RUN_FAILED", "message": str(exc)}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # pragma: no cover - runtime safety
+            payload = {"type": "run.failed", "error": {"code": "OPENAI_RUN_FAILED", "message": f"assistant run failed: {exc}"}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/prompt-sheet/chat", response_model=PromptSheetChatResponse)

@@ -15,6 +15,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
@@ -115,6 +116,24 @@ public class PythonAssistantClient {
         } catch (Exception e) {
             throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
         }
+    }
+
+    public Flux<String> streamRun(AssistantRequest request, String authorization) {
+        return webClient.post()
+                .uri("/assistant/run/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(headers -> {
+                    if (authorization != null && !authorization.isBlank()) {
+                        headers.set("Authorization", authorization);
+                    }
+                })
+                .bodyValue(request)
+                .retrieve()
+                .bodyToFlux(String.class)
+                .timeout(timeout)
+                .onErrorMap(WebClientResponseException.class, e ->
+                        new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE, resolveUpstreamMessage(e)));
     }
 
     public record PythonAssistantFile(String filename, String contentType, byte[] content) {

@@ -1,4 +1,5 @@
 import { http } from './http'
+import { streamAssistantEvents } from './assistantStream.ts'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
 import type {
@@ -80,6 +81,11 @@ export interface AssistantChatPayload {
 export interface AssistantChatResult {
   reply: string
   conversation?: AssistantConversationDto
+}
+
+export interface AssistantChatStreamHandlers {
+  onDelta?: (delta: string) => void
+  onCompleted?: (content: string) => void
 }
 
 function createClientMessageId() {
@@ -228,6 +234,60 @@ export async function assistantChat(payload: AssistantChatPayload): Promise<Assi
     throw new Error('学习助手没有返回内容')
   }
   return { reply, conversation }
+}
+
+export async function assistantChatStream(
+  payload: AssistantChatPayload,
+  handlers: AssistantChatStreamHandlers = {},
+): Promise<AssistantChatResult> {
+  if (payload.attachments.length > 0) {
+    return assistantChat(payload)
+  }
+
+  const agentRequest = toAssistantAgentRequest(payload)
+  let seenEvent = false
+  let failedMessage = ''
+  let completedContent = ''
+  let accumulatedContent = ''
+
+  try {
+    await streamAssistantEvents(
+      `/api/assistant/conversations/${payload.conversationId}/messages/run/stream`,
+      agentRequest,
+      (event) => {
+        seenEvent = true
+        if (event.type === 'message.delta' && 'delta' in event && typeof event.delta === 'string') {
+          accumulatedContent += event.delta
+          handlers.onDelta?.(event.delta)
+          return
+        }
+        if (event.type === 'message.completed' && 'content' in event && typeof event.content === 'string') {
+          completedContent = event.content
+          handlers.onCompleted?.(event.content)
+          return
+        }
+        if (event.type === 'run.failed' && 'error' in event) {
+          const error = event.error as { message?: string }
+          failedMessage = error.message || '学习助手暂时不可用'
+        }
+      },
+    )
+  } catch (error) {
+    if (!seenEvent) {
+      return assistantChat(payload)
+    }
+    throw error
+  }
+
+  if (failedMessage) {
+    throw new Error(failedMessage)
+  }
+
+  const reply = completedContent || accumulatedContent
+  if (!reply.trim()) {
+    throw new Error('学习助手没有返回内容')
+  }
+  return { reply }
 }
 
 export async function sendAssistantMessage(payload: AssistantChatPayload): Promise<AssistantConversationDto> {

@@ -29,6 +29,7 @@ try:
     from .services.active_task_state import ActiveTaskStateStore
     from .services.active_task_state import InMemoryActiveTaskStateStore
     from .services.agent_session_runner import run_agent_session
+    from .services.agent_session_runner import stream_agent_session
     from .services.assistant_request_validator import validate_assistant_request
     from .services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from .services.continuation_classifier import ContinuationClassifier
@@ -53,6 +54,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.active_task_state import ActiveTaskStateStore
     from services.active_task_state import InMemoryActiveTaskStateStore
     from services.agent_session_runner import run_agent_session
+    from services.agent_session_runner import stream_agent_session
     from services.assistant_request_validator import validate_assistant_request
     from services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from services.continuation_classifier import ContinuationClassifier
@@ -276,6 +278,126 @@ class AssistantAgentService:
                 scope=validated.scope,
             ),
         )
+
+    async def stream_assistant_request(
+        self,
+        request: AssistantRequest,
+        authorization: str | None = None,
+    ):
+        started_at = time.perf_counter()
+        validated = validate_assistant_request(request)
+        route = route_assistant_agent(request)
+        conversation_id = request.app_conversation_id or request.client_message_id
+        run_id = f"run_{uuid4().hex}"
+        trace_id = f"trace_{uuid4().hex}"
+        message_id = f"msg_{uuid4().hex}"
+
+        log.info(
+            "[ASSISTANT_STREAM_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
+            "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
+            run_id,
+            trace_id,
+            conversation_id,
+            self.model,
+            request.mode,
+            request.intent,
+            validated.scope,
+            route.agent_name,
+            len(request.attachments),
+            bool(authorization),
+        )
+
+        yield {
+            "type": "run.started",
+            "runId": run_id,
+            "traceId": trace_id,
+            "agentName": route.agent_name,
+            "model": self.model,
+        }
+        yield {
+            "type": "message.created",
+            "runId": run_id,
+            "messageId": message_id,
+            "role": "assistant",
+        }
+
+        content_parts: list[str] = []
+        try:
+            agent = self._get_agent_by_name(route.agent_name)
+            agent_input = build_assistant_input_items(request)
+            final_result = None
+            async for event in stream_agent_session(
+                agent=agent,
+                agent_input=agent_input,
+                conversation_id=conversation_id,
+                session_db_path=self.session_db_path,
+                use_session=False,
+                run_context=AssistantRunContext(conversation_id=conversation_id),
+            ):
+                if event.type == "delta":
+                    content_parts.append(event.delta)
+                    yield {
+                        "type": "message.delta",
+                        "runId": run_id,
+                        "messageId": message_id,
+                        "delta": event.delta,
+                    }
+                    continue
+                final_result = event.result
+
+            if final_result is None or not final_result.final_output:
+                raise AssistantConfigError("学习助手没有返回内容。")
+
+            final_agent_name = final_result.agent_name or route.agent_name
+            run_metadata = AssistantRunMetadata(
+                runId=run_id,
+                traceId=trace_id,
+                agentName=final_agent_name,
+                model=self.model,
+                mode=request.mode,
+                intent=request.intent,
+                scope=validated.scope,
+            )
+            yield {
+                "type": "message.completed",
+                "runId": run_id,
+                "messageId": message_id,
+                "content": final_result.final_output or "".join(content_parts),
+            }
+            yield {
+                "type": "run.completed",
+                "runId": run_id,
+                "run": run_metadata.model_dump(by_alias=True),
+            }
+
+            duration_ms = (time.perf_counter() - started_at) * 1000
+            log.info(
+                "[ASSISTANT_STREAM_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f total_tokens=%s",
+                run_id,
+                trace_id,
+                conversation_id,
+                final_agent_name,
+                duration_ms,
+                final_result.usage.total_tokens,
+            )
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started_at) * 1000
+            log.error(
+                "[ASSISTANT_STREAM_ERROR] run_id=%s trace_id=%s conversation_id=%s duration_ms=%.1f",
+                run_id,
+                trace_id,
+                conversation_id,
+                duration_ms,
+                exc_info=True,
+            )
+            yield {
+                "type": "run.failed",
+                "runId": run_id,
+                "error": {
+                    "code": "OPENAI_RUN_FAILED",
+                    "message": str(exc),
+                },
+            }
 
     async def chat(
         self,

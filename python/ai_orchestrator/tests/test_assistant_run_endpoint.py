@@ -31,6 +31,15 @@ class CapturingRunService:
             ),
         )
 
+    async def stream_assistant_request(self, request, authorization=None):
+        self.received = {"request": request, "authorization": authorization}
+        yield {"type": "run.started", "runId": "run-1", "traceId": "trace-1", "agentName": "Translation Agent", "model": "test-model"}
+        yield {"type": "message.created", "runId": "run-1", "messageId": "msg-1", "role": "assistant"}
+        yield {"type": "message.delta", "runId": "run-1", "messageId": "msg-1", "delta": "he"}
+        yield {"type": "message.delta", "runId": "run-1", "messageId": "msg-1", "delta": "llo"}
+        yield {"type": "message.completed", "runId": "run-1", "messageId": "msg-1", "content": "hello"}
+        yield {"type": "run.completed", "runId": "run-1"}
+
 
 class AssistantRunEndpointTest(unittest.TestCase):
     def test_assistant_run_accepts_json_request_and_returns_metadata(self) -> None:
@@ -75,6 +84,34 @@ class AssistantRunEndpointTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_assistant_run_stream_returns_sse_events(self) -> None:
+        client = TestClient(app)
+        fake_service = CapturingRunService()
+
+        with patch("python.ai_orchestrator.app.service", fake_service):
+            with client.stream(
+                "POST",
+                "/assistant/run/stream",
+                json={
+                    "appConversationId": "conv-1",
+                    "clientMessageId": "client-1",
+                    "mode": "daily_explain",
+                    "intent": "translate",
+                    "scope": "message_only",
+                    "message": {"text": "翻译 hello"},
+                },
+                headers={"Authorization": "Bearer token"},
+            ) as response:
+                body = "".join(response.iter_text())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("data: {", body)
+        self.assertIn('"type": "run.started"', body)
+        self.assertIn('"type": "message.delta"', body)
+        self.assertIn('"delta": "he"', body)
+        self.assertIn('"type": "message.completed"', body)
+        self.assertEqual(fake_service.received["authorization"], "Bearer token")
 
 
 if __name__ == "__main__":

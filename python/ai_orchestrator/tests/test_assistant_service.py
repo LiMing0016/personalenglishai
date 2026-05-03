@@ -405,6 +405,42 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.reply, "pong")
         self.assertEqual(reply.run.scope, "message_only")
 
+    async def test_stream_assistant_request_emits_delta_and_completion_events(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+
+        request = AssistantRequest.model_validate(
+            {
+                "appConversationId": "conv-stream-1",
+                "clientMessageId": "client-stream-1",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "message_only",
+                "message": {"text": "ping"},
+            }
+        )
+
+        async def fake_stream_agent_session(**kwargs):
+            yield SimpleNamespace(type="delta", delta="po", result=None)
+            yield SimpleNamespace(type="delta", delta="ng", result=None)
+            yield SimpleNamespace(
+                type="completed",
+                delta="",
+                result=AgentSessionResult(final_output="pong", agent_name="Router Agent"),
+            )
+
+        with patch("python.ai_orchestrator.assistant_service.stream_agent_session", fake_stream_agent_session):
+            events = [event async for event in service.stream_assistant_request(request)]
+
+        self.assertEqual(events[0]["type"], "run.started")
+        self.assertEqual(events[1]["type"], "message.created")
+        self.assertEqual(events[2]["type"], "message.delta")
+        self.assertEqual(events[2]["delta"], "po")
+        self.assertEqual(events[3]["delta"], "ng")
+        self.assertEqual(events[4]["type"], "message.completed")
+        self.assertEqual(events[4]["content"], "pong")
+        self.assertEqual(events[5]["type"], "run.completed")
+        self.assertEqual(events[5]["run"]["agentName"], "Router Agent")
 
     async def test_chat_rejects_empty_model_output(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")

@@ -30,6 +30,10 @@ _USER_CONTEXT_POLICY = """
 """.strip()
 
 
+def _load_shared_markdown_output_policy() -> str:
+    return files(__package__).joinpath("shared/assistant_markdown_output.md").read_text(encoding="utf-8").strip()
+
+
 def load_agent_instructions(agent_key: str) -> str:
     try:
         prompt_path = _PROMPT_FILES[agent_key]
@@ -37,4 +41,4 @@ def load_agent_instructions(agent_key: str) -> str:
         raise ValueError(f"unknown agent prompt: {agent_key}") from exc
 
     prompt_body = files(__package__).joinpath(prompt_path).read_text(encoding="utf-8").strip()
-    return f"{RECOMMENDED_PROMPT_PREFIX}\n{_USER_CONTEXT_POLICY}\n\n{prompt_body}"
+    return f"{RECOMMENDED_PROMPT_PREFIX}\n{_USER_CONTEXT_POLICY}\n\n{_load_shared_markdown_output_policy()}\n\n{prompt_body}"

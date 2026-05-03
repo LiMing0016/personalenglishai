@@ -22,14 +22,19 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AssistantController.class)
@@ -156,5 +161,44 @@ class AssistantControllerTest {
         assertThat(requestCaptor.getValue().getIntent()).isEqualTo("explain");
         assertThat(requestCaptor.getValue().getMessage().getText()).isEqualTo("请解释");
         assertThat(requestCaptor.getValue().getSelection().getText()).isEqualTo("The rapid development of AI.");
+    }
+
+    @Test
+    void streamAgentMessage_returnsServerSentEvents() throws Exception {
+        doAnswer(invocation -> {
+            java.io.OutputStream outputStream = invocation.getArgument(4);
+            outputStream.write("data: {\"type\":\"message.delta\",\"delta\":\"he\"}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            outputStream.write("data: {\"type\":\"message.completed\",\"content\":\"hello\"}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            outputStream.flush();
+            return null;
+        }).when(assistantConversationService).writeAgentMessageStream(
+                eq(1L),
+                eq("conv-1"),
+                any(AssistantRequest.class),
+                eq("Bearer token"),
+                any(java.io.OutputStream.class));
+
+        var result = mockMvc.perform(post("/api/assistant/conversations/conv-1/messages/run/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "appConversationId": "conv-1",
+                                  "clientMessageId": "client-1",
+                                  "mode": "daily_explain",
+                                  "intent": "translate",
+                                  "scope": "message_only",
+                                  "message": { "text": "翻译 hello" }
+                                }
+                                """)
+                        .header("Authorization", "Bearer token")
+                        .requestAttr("userId", 1L))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(content().string(containsString("\"type\":\"message.delta\"")))
+                .andExpect(content().string(containsString("\"content\":\"hello\"")));
     }
 }

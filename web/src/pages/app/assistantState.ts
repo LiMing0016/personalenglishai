@@ -1,6 +1,12 @@
 import { computed, ref } from 'vue'
 
-import { assistantApi, assistantChat, type AssistantConversationDto, type AssistantProjectDto } from '../../api/assistant.ts'
+import {
+  assistantApi,
+  assistantChatStream,
+  type AssistantChatStreamHandlers,
+  type AssistantConversationDto,
+  type AssistantProjectDto,
+} from '../../api/assistant.ts'
 import { stageCache } from '../../stores/stageCache.ts'
 import { showToast } from '../../utils/toast.ts'
 import {
@@ -27,7 +33,7 @@ import {
 } from './assistantMock.ts'
 
 interface CreateAssistantStateOptions {
-  buildReply?: (request: AssistantReplyRequest) => Promise<string>
+  buildReply?: (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => Promise<string>
   storage?: Storage
   storageKey?: string
   remote?: boolean
@@ -266,8 +272,8 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const errorMessage = ref('')
   const lastFailedPrompt = ref('')
   const lastFailedAttachments = ref<AssistantAttachment[]>([])
-  const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest) => {
-    const response = await assistantChat(request)
+  const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => {
+    const response = await assistantChatStream(request, stream)
     return response.reply
   })
 
@@ -490,6 +496,17 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     }
 
     try {
+      let streamedReply = ''
+      const updateLoadingMessage = (content: string) => {
+        const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
+        if (loadingIndex >= 0) {
+          conversation.messages.splice(loadingIndex, 1, {
+            ...conversation.messages[loadingIndex]!,
+            content,
+          })
+        }
+      }
+
       const reply = await buildReply({
         input: trimmed || `请查看我上传的 ${attachments.length} 个附件`,
         conversationId: conversation.id,
@@ -501,6 +518,15 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           : 'message_only',
         selection: selectionForRequest ?? undefined,
         attachments,
+      }, {
+        onDelta: (delta) => {
+          streamedReply += delta
+          updateLoadingMessage(streamedReply)
+        },
+        onCompleted: (content) => {
+          streamedReply = content
+          updateLoadingMessage(content)
+        },
       })
       const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
       if (loadingIndex >= 0) {

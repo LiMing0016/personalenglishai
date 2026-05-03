@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.Collections;
 import java.util.List;
@@ -116,6 +117,27 @@ public class AssistantController {
             @Valid @RequestBody AssistantRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         return ok(assistantConversationService.sendAgentMessage(userId, conversationUid, request, authorization));
+    }
+
+    @PostMapping(
+            value = "/conversations/{conversationUid}/messages/run/stream",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<StreamingResponseBody> streamAgentMessage(
+            @RequestAttribute("userId") Long userId,
+            @PathVariable String conversationUid,
+            @Valid @RequestBody AssistantRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        StreamingResponseBody body = outputStream ->
+                assistantConversationService.writeAgentMessageStream(
+                        userId,
+                        conversationUid,
+                        request,
+                        authorization,
+                        outputStream);
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(body);
     }
 
     @PostMapping(value = "/conversations/{conversationUid}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
