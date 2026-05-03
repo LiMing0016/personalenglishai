@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
+from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
 from python.ai_orchestrator.schemas.routing_state import ActiveTaskState
 from python.ai_orchestrator.schemas.routing_state import ContinuationDecision
 from python.ai_orchestrator.services.active_task_state import InMemoryActiveTaskStateStore
@@ -375,6 +376,34 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[用户画像上下文]", content[0]["text"])
         self.assertIn("- 学段: 雅思", content[0]["text"])
         self.assertEqual(content[1]["type"], "input_image")
+
+    async def test_run_assistant_request_disables_session_for_structured_input_items(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+
+        request = AssistantRequest.model_validate(
+            {
+                "appConversationId": "conv-p0-1",
+                "clientMessageId": "client-p0-1",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "message_only",
+                "message": {"text": "ping"},
+            }
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="pong", agent_name="Router Agent"),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        run_agent_session.assert_awaited_once()
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
+        self.assertIsInstance(run_agent_session.await_args.kwargs["agent_input"], list)
+        self.assertEqual(reply.reply, "pong")
+        self.assertEqual(reply.run.scope, "message_only")
 
 
     async def test_chat_rejects_empty_model_output(self) -> None:

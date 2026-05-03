@@ -227,13 +227,12 @@ class AssistantAgentService:
         try:
             agent = self._get_agent_by_name(route.agent_name)
             agent_input = build_assistant_input_items(request)
-            use_session = not request.attachments
             result = await run_agent_session(
                 agent=agent,
                 agent_input=agent_input,
                 conversation_id=conversation_id,
                 session_db_path=self.session_db_path,
-                use_session=use_session,
+                use_session=False,
                 run_context=AssistantRunContext(conversation_id=conversation_id),
             )
             if not result.final_output:
