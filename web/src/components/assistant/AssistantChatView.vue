@@ -34,6 +34,7 @@
           <div
             v-if="message.role === 'assistant'"
             class="message-content message-content--markdown"
+            :class="`message-content--markdown-${markdownTheme}`"
             v-html="renderAssistantMarkdown(message.content)"
           ></div>
           <p v-else class="message-content message-content--plain">{{ message.content }}</p>
@@ -99,6 +100,7 @@ defineProps<{
   canRetry: boolean
   emptyTitle: string
   emptySubtitle: string
+  markdownTheme: 'marktext' | 'milkdown'
 }>()
 
 const emit = defineEmits<{
@@ -292,6 +294,98 @@ onBeforeUnmount(() => {
   margin: 20px 0;
   border: none;
   border-top: 1px solid #e2e8f0;
+}
+
+.message-content--markdown :deep(.markdown-table-scroll) {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 14px 0 18px;
+}
+
+.message-content--markdown :deep(table) {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.message-content--markdown :deep(th),
+.message-content--markdown :deep(td) {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 11px 13px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.message-content--markdown :deep(th) {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.message-content--markdown :deep(td:first-child),
+.message-content--markdown :deep(th:first-child) {
+  font-weight: 800;
+}
+
+.message-content--markdown-marktext :deep(h1),
+.message-content--markdown-marktext :deep(h2) {
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.message-content--markdown-marktext :deep(table) {
+  background: #ffffff;
+}
+
+.message-content--markdown-marktext :deep(th) {
+  background: #f8fafc;
+}
+
+.message-content--markdown-milkdown {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-content--markdown-milkdown :deep(p),
+.message-content--markdown-milkdown :deep(ul),
+.message-content--markdown-milkdown :deep(ol),
+.message-content--markdown-milkdown :deep(blockquote),
+.message-content--markdown-milkdown :deep(.markdown-table-scroll) {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.message-content--markdown-milkdown :deep(ul),
+.message-content--markdown-milkdown :deep(ol) {
+  padding-left: 34px;
+}
+
+.message-content--markdown-milkdown :deep(blockquote) {
+  border-left: 4px solid #14b8a6;
+  color: #0f172a;
+}
+
+.message-content--markdown-milkdown :deep(h1),
+.message-content--markdown-milkdown :deep(h2),
+.message-content--markdown-milkdown :deep(h3) {
+  margin: 12px 0 0;
+  padding: 0 2px;
+}
+
+.message-content--markdown-milkdown :deep(h1:first-child),
+.message-content--markdown-milkdown :deep(h2:first-child),
+.message-content--markdown-milkdown :deep(h3:first-child) {
+  margin-top: 0;
+}
+
+.message-content--markdown-milkdown :deep(th) {
+  background: #ecfdf5;
 }
 
 .message-actions {

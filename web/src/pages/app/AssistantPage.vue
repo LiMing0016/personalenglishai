@@ -28,6 +28,25 @@
       <header class="main-header">
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
+        <div class="header-spacer"></div>
+        <div class="markdown-theme-control" aria-label="助手输出风格">
+          <button
+            type="button"
+            class="markdown-theme-button"
+            :class="{ 'markdown-theme-button--active': markdownTheme === 'marktext' }"
+            @click="setMarkdownTheme('marktext')"
+          >
+            MarkText
+          </button>
+          <button
+            type="button"
+            class="markdown-theme-button"
+            :class="{ 'markdown-theme-button--active': markdownTheme === 'milkdown' }"
+            @click="setMarkdownTheme('milkdown')"
+          >
+            Milkdown
+          </button>
+        </div>
       </header>
 
       <AssistantChatView
@@ -36,6 +55,7 @@
         :can-retry="canRetry"
         :empty-title="emptyTitle"
         :empty-subtitle="emptySubtitle"
+        :markdown-theme="markdownTheme"
         @choose-starter="applyStarter"
         @copy-message="handleCopyMessage"
         @retry-message="handleRetryAssistantMessage"
@@ -95,6 +115,11 @@ import {
   type PendingAssistantSelection,
   parsePendingAssistantSelection,
 } from './assistantMessageActions.ts'
+import {
+  readAssistantMarkdownTheme,
+  writeAssistantMarkdownTheme,
+  type AssistantMarkdownTheme,
+} from './assistantMarkdownTheme.ts'
 import { createAssistantState } from './assistantState.ts'
 
 const {
@@ -140,6 +165,7 @@ const assistantDrawerOpen = injectedAssistantDrawerOpen ?? fallbackAssistantDraw
 const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
+const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
 
 const folderDialogCopy = computed(() =>
   folderDialogMode.value === 'move'
@@ -149,6 +175,11 @@ const folderDialogCopy = computed(() =>
 
 function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
   addAttachments(files, source)
+}
+
+function setMarkdownTheme(theme: AssistantMarkdownTheme) {
+  markdownTheme.value = theme
+  writeAssistantMarkdownTheme(theme)
 }
 
 function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
@@ -411,6 +442,43 @@ const folderConversationGroups = computed(() =>
   text-transform: uppercase;
 }
 
+.header-spacer {
+  flex: 1;
+}
+
+.markdown-theme-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dbe3ea;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.markdown-theme-button {
+  min-width: 78px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.markdown-theme-button:hover,
+.markdown-theme-button:focus-visible {
+  color: #0f172a;
+  outline: none;
+}
+
+.markdown-theme-button--active {
+  background: #dcfce7;
+  color: #047857;
+}
+
 .composer-dock {
   position: fixed;
   left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
@@ -429,6 +497,15 @@ const folderConversationGroups = computed(() =>
 
   .main-header {
     padding: 0 18px;
+  }
+
+  .markdown-theme-control {
+    gap: 2px;
+  }
+
+  .markdown-theme-button {
+    min-width: auto;
+    padding: 7px 9px;
   }
 
   .composer-dock {

@@ -36,6 +36,62 @@ function renderBlockquote(lines: string[]): string {
   return `<blockquote>${renderParagraph(quoteLines)}</blockquote>`
 }
 
+function splitTableRow(line: string): string[] {
+  let normalized = line.trim()
+  if (normalized.startsWith('|')) normalized = normalized.slice(1)
+  if (normalized.endsWith('|')) normalized = normalized.slice(0, -1)
+
+  const cells: string[] = []
+  let cell = ''
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index]
+    const previous = normalized[index - 1]
+    if (character === '|' && previous !== '\\') {
+      cells.push(cell.trim().replace(/\\\|/g, '|'))
+      cell = ''
+      continue
+    }
+    cell += character
+  }
+  cells.push(cell.trim().replace(/\\\|/g, '|'))
+  return cells
+}
+
+function isTableRowLine(line: string): boolean {
+  return line.includes('|') && splitTableRow(line).length >= 2
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  if (!isTableRowLine(line)) return false
+  return splitTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function isTableStart(lines: string[], index: number): boolean {
+  const header = lines[index]?.trimEnd()
+  const separator = lines[index + 1]?.trimEnd()
+  return Boolean(
+    header &&
+      separator &&
+      isTableRowLine(header) &&
+      isTableSeparatorLine(separator) &&
+      splitTableRow(header).length === splitTableRow(separator).length,
+  )
+}
+
+function normalizeTableCells(cells: string[], columnCount: number): string[] {
+  return Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
+}
+
+function renderTable(lines: string[]): string {
+  const headers = splitTableRow(lines[0]!)
+  const rows = lines.slice(2).map((line) => normalizeTableCells(splitTableRow(line), headers.length))
+  const headerHtml = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join('')
+  const rowHtml = rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join('')}</tr>`)
+    .join('')
+  return `<div class="markdown-table-scroll"><table><thead><tr>${headerHtml}</tr></thead><tbody>${rowHtml}</tbody></table></div>`
+}
+
 export function renderAssistantMarkdown(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
   const blocks: string[] = []
@@ -75,12 +131,26 @@ export function renderAssistantMarkdown(markdown: string): string {
     flushQuote()
   }
 
-  for (const rawLine of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index]!
     const line = rawLine.trimEnd()
     const trimmed = line.trim()
 
     if (!trimmed) {
       flushAll()
+      continue
+    }
+
+    if (isTableStart(lines, index)) {
+      flushAll()
+      const tableLines = [line, lines[index + 1]!.trimEnd()]
+      index += 2
+      while (index < lines.length && isTableRowLine(lines[index]!.trimEnd())) {
+        tableLines.push(lines[index]!.trimEnd())
+        index += 1
+      }
+      index -= 1
+      blocks.push(renderTable(tableLines))
       continue
     }
 
