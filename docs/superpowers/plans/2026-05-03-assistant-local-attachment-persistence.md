@@ -35,7 +35,7 @@
 ### Task 3: Docs and Verification
 
 **Files:**
-- Modify: `docs/assistant-inline-upload-trae-tasks.md`
+- Modify: `docs/题目/assistant-inline-upload-trae-tasks.md`
 - Modify: `docs/agent/learning-assistant-architecture.md`
 
 - [ ] Document local-only persistence boundaries.
