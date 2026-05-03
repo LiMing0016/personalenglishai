@@ -1,0 +1,205 @@
+export type LearningMode = 'daily_explain' | 'exam_boost'
+
+export type AssistantIntent =
+  | 'free_chat'
+  | 'explain'
+  | 'translate'
+  | 'polish'
+  | 'summarize'
+  | 'grade_writing'
+  | 'generate_examples'
+  | 'analyze_question'
+
+export type InputScope =
+  | 'message_only'
+  | 'selection'
+  | 'attachments'
+  | 'selection_and_message'
+  | 'attachments_and_message'
+  | 'selection_attachments_and_message'
+
+export type SelectionSource =
+  | 'assistant_message'
+  | 'writing_editor'
+  | 'page_selection'
+  | 'uploaded_image_ocr'
+
+export type AttachmentProvider = 'app_storage' | 'openai_files' | 'external_url'
+
+export type AttachmentKind = 'image' | 'pdf' | 'txt' | 'docx' | 'doc' | 'other'
+
+export type AttachmentProcessingStatus = 'uploaded' | 'processing' | 'ready' | 'failed'
+
+export type PreferredModelInputPart = 'input_image' | 'input_file' | 'input_text'
+
+export type ImageDetail = 'low' | 'high' | 'auto'
+
+export type ResponseLanguage = 'zh-CN' | 'en-US' | 'mixed'
+
+export type StudyStage = 'beginner' | 'intermediate' | 'advanced'
+
+export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
+
+export type TargetExam = 'ielts' | 'toefl' | 'cet4' | 'cet6' | 'gaokao'
+
+export interface AssistantAttachmentRef {
+  attachmentId: string
+  provider: AttachmentProvider
+  openaiFileId?: string
+  storageKey?: string
+  url?: string
+  name: string
+  mimeType: string
+  sizeBytes: number
+  kind: AttachmentKind
+  processing: {
+    status: AttachmentProcessingStatus
+    errorCode?: string
+    extractedTextAvailable?: boolean
+    extractedText?: string
+    pageCount?: number
+    checksum?: string
+  }
+  modelInput?: {
+    preferredPart?: PreferredModelInputPart
+    imageDetail?: ImageDetail
+  }
+}
+
+export interface AssistantSelection {
+  text: string
+  source: SelectionSource
+  sourceId?: string
+  messageId?: string
+  documentId?: string
+  range?: {
+    start?: number
+    end?: number
+  }
+}
+
+export interface AssistantRequest {
+  appConversationId?: string
+  clientMessageId: string
+  idempotencyKey?: string
+  mode: LearningMode
+  intent: AssistantIntent
+  scope?: InputScope
+  message: {
+    text?: string
+  }
+  selection?: AssistantSelection
+  attachments?: AssistantAttachmentRef[]
+  studyContext?: {
+    studyStage?: StudyStage
+    cefrLevel?: CefrLevel
+    targetExam?: TargetExam
+    locale?: 'zh-CN' | 'en-US'
+    responseLanguage?: ResponseLanguage
+  }
+  clientMeta?: {
+    sourcePage?: string
+    timezone?: string
+    userAgent?: string
+  }
+}
+
+export interface AssistantRunMetadata {
+  runId: string
+  traceId?: string
+  agentName: string
+  model: string
+  mode: LearningMode
+  intent: AssistantIntent
+  scope: InputScope
+  finishReason?: string
+}
+
+export interface AssistantUsage {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  requests?: number
+}
+
+export interface AssistantOpenAiState {
+  responseId?: string
+  conversationId?: string
+  previousResponseId?: string
+}
+
+export interface AssistantMessageResponse {
+  appConversationId: string
+  messageId: string
+  role: 'assistant'
+  content: string
+  run: AssistantRunMetadata
+  usage?: AssistantUsage
+  openai?: AssistantOpenAiState
+  createdAt: string
+}
+
+export interface AssistantErrorPayload {
+  code:
+    | 'INVALID_REQUEST'
+    | 'IDEMPOTENCY_CONFLICT'
+    | 'MISSING_INPUT'
+    | 'UNSUPPORTED_INTENT'
+    | 'UNSUPPORTED_MODE'
+    | 'ATTACHMENT_NOT_READY'
+    | 'ATTACHMENT_TOO_LARGE'
+    | 'ATTACHMENT_KIND_UNSUPPORTED'
+    | 'ATTACHMENT_IMAGE_NOT_READABLE'
+    | 'ATTACHMENT_FILE_NOT_READABLE'
+    | 'MODEL_CAPABILITY_UNSUPPORTED'
+    | 'GUARDRAIL_BLOCKED'
+    | 'OPENAI_RUN_FAILED'
+    | 'STREAM_CANCELLED'
+    | 'TIMEOUT'
+  message: string
+  details?: unknown
+}
+
+export type AssistantStreamEvent =
+  | {
+      type: 'run.started'
+      runId: string
+      traceId?: string
+      agentName: string
+      model: string
+    }
+  | {
+      type: 'handoff'
+      runId: string
+      fromAgent: string
+      toAgent: string
+    }
+  | {
+      type: 'message.created'
+      runId: string
+      messageId: string
+      role: 'assistant'
+    }
+  | {
+      type: 'message.delta'
+      runId: string
+      messageId: string
+      delta: string
+    }
+  | {
+      type: 'message.completed'
+      runId: string
+      messageId: string
+      content: string
+    }
+  | {
+      type: 'run.completed'
+      runId: string
+      usage?: AssistantUsage
+      openai?: AssistantOpenAiState
+    }
+  | {
+      type: 'run.failed'
+      runId: string
+      error: AssistantErrorPayload
+    }

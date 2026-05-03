@@ -1,6 +1,17 @@
 import { http } from './http'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
+export type {
+  AssistantAttachmentRef,
+  AssistantErrorPayload,
+  AssistantIntent,
+  AssistantMessageResponse as AssistantAgentMessageResponse,
+  AssistantRequest,
+  AssistantRunMetadata,
+  AssistantStreamEvent,
+  InputScope,
+  LearningMode,
+} from '../types/assistantRequest'
 
 interface ApiEnvelope<T> {
   code?: string
