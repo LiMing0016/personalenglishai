@@ -10,6 +10,7 @@ import com.personalenglishai.backend.controller.dto.assistant.AssistantConversat
 import com.personalenglishai.backend.controller.dto.assistant.AssistantMessageResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectResponse;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantShareResponse;
 import com.personalenglishai.backend.controller.dto.assistant.CreateAssistantConversationRequest;
 import com.personalenglishai.backend.controller.dto.assistant.MoveAssistantConversationRequest;
@@ -63,6 +64,7 @@ public class AssistantConversationService {
     private final AssistantMessageMapper messageMapper;
     private final AssistantShareMapper shareMapper;
     private final PythonAssistantClient pythonAssistantClient;
+    private final AssistantRequestValidator assistantRequestValidator;
     private final ObjectMapper objectMapper;
 
     public AssistantConversationService(
@@ -71,12 +73,14 @@ public class AssistantConversationService {
             AssistantMessageMapper messageMapper,
             AssistantShareMapper shareMapper,
             PythonAssistantClient pythonAssistantClient,
+            AssistantRequestValidator assistantRequestValidator,
             ObjectMapper objectMapper) {
         this.projectMapper = projectMapper;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
         this.shareMapper = shareMapper;
         this.pythonAssistantClient = pythonAssistantClient;
+        this.assistantRequestValidator = assistantRequestValidator;
         this.objectMapper = objectMapper;
     }
 
@@ -177,6 +181,33 @@ public class AssistantConversationService {
             List<MultipartFile> files,
             String authorization) {
         return sendMessageInternal(userId, conversationUid, request, toPythonFiles(files), authorization);
+    }
+
+    @Transactional
+    public AssistantConversationDetailResponse sendAgentMessage(
+            Long userId,
+            String conversationUid,
+            AssistantRequest request,
+            String authorization) {
+        AssistantConversation conversation = ensureConversation(userId, conversationUid);
+        request.setAppConversationId(conversationUid);
+        assistantRequestValidator.validateForAgentRun(request);
+
+        String prompt = displayPrompt(request);
+        int nextOrder = nextSortOrder(conversationUid);
+        AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
+        messageMapper.insert(userMessage);
+
+        PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.run(request, authorization);
+        String replyText = reply == null ? "" : reply.text();
+        if (replyText.isBlank()) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
+        }
+
+        messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+        String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
+        conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
+        return getConversation(userId, conversationUid);
     }
 
     private AssistantConversationDetailResponse sendMessageInternal(
@@ -389,6 +420,21 @@ public class AssistantConversationService {
     private String buildSummary(String input) {
         String trimmed = input.trim();
         return trimmed.length() > 120 ? trimmed.substring(0, 120) + "..." : trimmed;
+    }
+
+    private String displayPrompt(AssistantRequest request) {
+        String text = request.getMessage() == null ? null : request.getMessage().getText();
+        if (text != null && !text.trim().isEmpty()) {
+            return text.trim();
+        }
+        if (request.getSelection() != null && request.getSelection().getText() != null &&
+                !request.getSelection().getText().trim().isEmpty()) {
+            return "请帮我解释这段内容";
+        }
+        if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+            return "请查看我上传的 " + request.getAttachments().size() + " 个文件，并结合它回答。";
+        }
+        return "";
     }
 
     private String generateShareToken() {

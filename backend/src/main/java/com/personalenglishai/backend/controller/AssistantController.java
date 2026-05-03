@@ -3,6 +3,7 @@ package com.personalenglishai.backend.controller;
 import com.personalenglishai.backend.common.response.ApiResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantConversationDetailResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantConversationSummaryResponse;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantShareResponse;
@@ -106,6 +107,15 @@ public class AssistantController {
             @Valid @RequestBody SendAssistantMessageRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
         return ok(assistantConversationService.sendMessage(userId, conversationUid, request, authorization));
+    }
+
+    @PostMapping(value = "/conversations/{conversationUid}/messages/run", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<AssistantConversationDetailResponse>> sendAgentMessage(
+            @RequestAttribute("userId") Long userId,
+            @PathVariable String conversationUid,
+            @Valid @RequestBody AssistantRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        return ok(assistantConversationService.sendAgentMessage(userId, conversationUid, request, authorization));
     }
 
     @PostMapping(value = "/conversations/{conversationUid}/messages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

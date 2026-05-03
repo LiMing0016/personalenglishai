@@ -3,6 +3,7 @@ package com.personalenglishai.backend.controller;
 import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantConversationDetailResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantMessageResponse;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.SendAssistantMessageRequest;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.assistant.AssistantConversationService;
@@ -27,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -100,5 +102,59 @@ class AssistantControllerTest {
         assertThat(requestCaptor.getValue().getAssistantMode()).isEqualTo("exam");
         assertThat(filesCaptor.getValue()).hasSize(1);
         assertThat(filesCaptor.getValue().get(0).getOriginalFilename()).isEqualTo("draft.png");
+    }
+
+    @Test
+    void sendAgentMessage_acceptsP0JsonRequestAndPassesItToService() throws Exception {
+        AssistantConversationDetailResponse response = new AssistantConversationDetailResponse(
+                "conv-1",
+                null,
+                "解释选中文本",
+                "请解释",
+                false,
+                false,
+                LocalDateTime.of(2026, 5, 3, 10, 0),
+                LocalDateTime.of(2026, 5, 3, 10, 1),
+                List.of(new AssistantMessageResponse("msg-1", "assistant", "解释结果", "done", null)));
+
+        when(assistantConversationService.sendAgentMessage(
+                eq(1L),
+                eq("conv-1"),
+                any(AssistantRequest.class),
+                eq("Bearer token")))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/assistant/conversations/conv-1/messages/run")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "appConversationId": "conv-1",
+                                  "clientMessageId": "client-1",
+                                  "mode": "daily_explain",
+                                  "intent": "explain",
+                                  "scope": "selection_and_message",
+                                  "message": { "text": "请解释" },
+                                  "selection": {
+                                    "text": "The rapid development of AI.",
+                                    "source": "page_selection"
+                                  }
+                                }
+                                """)
+                        .header("Authorization", "Bearer token")
+                        .requestAttr("userId", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messages[0].content").value("解释结果"));
+
+        ArgumentCaptor<AssistantRequest> requestCaptor = ArgumentCaptor.forClass(AssistantRequest.class);
+        verify(assistantConversationService).sendAgentMessage(
+                eq(1L),
+                eq("conv-1"),
+                requestCaptor.capture(),
+                eq("Bearer token"));
+
+        assertThat(requestCaptor.getValue().getClientMessageId()).isEqualTo("client-1");
+        assertThat(requestCaptor.getValue().getIntent()).isEqualTo("explain");
+        assertThat(requestCaptor.getValue().getMessage().getText()).isEqualTo("请解释");
+        assertThat(requestCaptor.getValue().getSelection().getText()).isEqualTo("The rapid development of AI.");
     }
 }

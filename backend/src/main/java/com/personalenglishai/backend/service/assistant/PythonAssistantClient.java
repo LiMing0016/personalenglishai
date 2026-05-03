@@ -2,6 +2,8 @@ package com.personalenglishai.backend.service.assistant;
 
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -93,6 +95,28 @@ public class PythonAssistantClient {
         }
     }
 
+    public PythonAssistantReply run(AssistantRequest request, String authorization) {
+        try {
+            return webClient.post()
+                    .uri("/assistant/run")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .headers(headers -> {
+                        if (authorization != null && !authorization.isBlank()) {
+                            headers.set("Authorization", authorization);
+                        }
+                    })
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(PythonAssistantReply.class)
+                    .timeout(timeout)
+                    .block();
+        } catch (WebClientResponseException e) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE, resolveUpstreamMessage(e));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
+        }
+    }
+
     public record PythonAssistantFile(String filename, String contentType, byte[] content) {
     }
 
@@ -124,6 +148,7 @@ public class PythonAssistantClient {
         private String outputText;
         private String agentName;
         private String agent_name;
+        private AssistantRunMetadataResponse run;
 
         public String getReply() {
             return reply;
@@ -155,6 +180,14 @@ public class PythonAssistantClient {
 
         public void setAgent_name(String agent_name) {
             this.agent_name = agent_name;
+        }
+
+        public AssistantRunMetadataResponse getRun() {
+            return run;
+        }
+
+        public void setRun(AssistantRunMetadataResponse run) {
+            this.run = run;
         }
 
         public String text() {
