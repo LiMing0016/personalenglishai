@@ -37,6 +37,8 @@
         :empty-title="emptyTitle"
         :empty-subtitle="emptySubtitle"
         @choose-starter="applyStarter"
+        @copy-message="handleCopyMessage"
+        @retry-message="handleRetryAssistantMessage"
         @retry="retryLastMessage"
       />
 
@@ -80,13 +82,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { showToast } from '@/utils/toast'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
+import {
+  PENDING_ASSISTANT_PROMPT_KEY,
+  PENDING_ASSISTANT_SELECTION_KEY,
+  type PendingAssistantSelection,
+  parsePendingAssistantSelection,
+} from './assistantMessageActions.ts'
 import { createAssistantState } from './assistantState.ts'
 
 const {
@@ -118,6 +126,8 @@ const {
   createProject,
   sendMessage,
   retryLastMessage,
+  retryAssistantMessage,
+  setPendingSelection,
 } = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
@@ -141,13 +151,44 @@ function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
   addAttachments(files, source)
 }
 
+function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
+  composerText.value = prompt
+  if (selection) {
+    setPendingSelection(selection)
+  }
+}
+
 function closeAssistantDrawer() {
   assistantDrawerOpen.value = false
 }
 
 onMounted(() => {
   void loadRemoteState()
+  const pendingPrompt = sessionStorage.getItem(PENDING_ASSISTANT_PROMPT_KEY)
+  const pendingSelection = parsePendingAssistantSelection(
+    sessionStorage.getItem(PENDING_ASSISTANT_SELECTION_KEY),
+  )
+  if (pendingPrompt) {
+    applyPendingAssistantPrompt(pendingPrompt, pendingSelection)
+    sessionStorage.removeItem(PENDING_ASSISTANT_PROMPT_KEY)
+    sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
+  }
+  window.addEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+})
+
+function handlePendingPromptEvent(event: Event) {
+  const detail = (event as CustomEvent<string | { prompt?: string; selection?: PendingAssistantSelection }>).detail
+  const prompt = typeof detail === 'string' ? detail : detail?.prompt
+  if (typeof prompt !== 'string' || !prompt.trim()) return
+  const selection = typeof detail === 'string' ? null : detail.selection
+  applyPendingAssistantPrompt(prompt, selection)
+  sessionStorage.removeItem(PENDING_ASSISTANT_PROMPT_KEY)
+  sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
+}
 
 async function handleRenameConversation(id: string) {
   const conversation = conversations.value.find((item) => item.id === id)
@@ -188,6 +229,26 @@ async function handleShareConversation(id: string) {
     showToast('分享链接已复制', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '分享失败', 'error')
+  }
+}
+
+async function handleCopyMessage(content: string) {
+  try {
+    if (!navigator.clipboard) {
+      throw new Error('Clipboard unavailable')
+    }
+    await navigator.clipboard?.writeText(content)
+    showToast('已复制', 'success')
+  } catch {
+    showToast('复制失败', 'error')
+  }
+}
+
+async function handleRetryAssistantMessage(messageId: string) {
+  try {
+    await retryAssistantMessage(messageId)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '重试失败', 'error')
   }
 }
 

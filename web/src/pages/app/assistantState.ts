@@ -11,6 +11,8 @@ import {
   type StoredAssistantAttachment,
 } from './assistantAttachmentStore.ts'
 import { type AssistantAttachmentSource, validateAssistantFiles } from './assistantAttachmentRules.ts'
+import { findRetryUserMessage } from './assistantMessageActions.ts'
+import type { AssistantSelection } from '../../types/assistantRequest.ts'
 import {
   mergeRemoteConversationListWithTransientAttachments,
   mergeTransientMessageAttachments,
@@ -257,6 +259,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const isLoadingConversations = ref(false)
   const composerText = ref('')
   const composerAttachments = ref<AssistantAttachment[]>([])
+  const pendingSelection = ref<AssistantSelection | null>(null)
   const assistantMode = ref<AssistantMode>('default')
   const searchText = ref('')
   const isSending = ref(false)
@@ -404,6 +407,19 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerText.value = prompt
   }
 
+  function setPendingSelection(selection: AssistantSelection | null) {
+    pendingSelection.value = selection
+      ? {
+          text: selection.text,
+          source: selection.source,
+          sourceId: selection.sourceId,
+          messageId: selection.messageId,
+          documentId: selection.documentId,
+          range: selection.range,
+        }
+      : null
+  }
+
   function addAttachments(files: File[], source: AssistantAttachmentSource = 'picker') {
     const validation = validateAssistantFiles(files, composerAttachments.value, source)
     if (validation.rejected.length > 0) {
@@ -436,7 +452,8 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     }
 
     const trimmed = prompt.trim()
-    if (!trimmed && attachments.length === 0) {
+    const selectionForRequest = pendingSelection.value
+    if (!trimmed && attachments.length === 0 && !selectionForRequest) {
       return
     }
 
@@ -478,6 +495,11 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
         conversationId: conversation.id,
         studyStage: currentStudyStage(),
         assistantMode: assistantMode.value,
+        intent: selectionForRequest ? 'explain' : 'free_chat',
+        scope: selectionForRequest
+          ? (trimmed ? 'selection_and_message' : 'selection')
+          : 'message_only',
+        selection: selectionForRequest ?? undefined,
         attachments,
       })
       const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
@@ -493,6 +515,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       }
       composerText.value = ''
       composerAttachments.value = []
+      setPendingSelection(null)
       persistState()
     } catch (error) {
       conversation.messages = conversation.messages.filter(
@@ -507,6 +530,9 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       persistState()
     } finally {
       isSending.value = false
+      if (selectionForRequest) {
+        setPendingSelection(null)
+      }
       conversation.updatedAt = Date.now()
       persistState()
     }
@@ -521,6 +547,14 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       return
     }
     await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value)
+  }
+
+  async function retryAssistantMessage(messageId: string) {
+    const retryMessage = findRetryUserMessage(activeConversation.value.messages, messageId)
+    if (!retryMessage) {
+      throw new Error('没有找到可重试的上一条用户消息')
+    }
+    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [])
   }
 
   async function renameConversation(id: string, title: string) {
@@ -686,11 +720,13 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerAttachments,
     assistantMode,
     searchText,
+    pendingSelection,
     isSending,
     errorMessage,
     canRetry,
     loadRemoteState,
     applyStarter,
+    setPendingSelection,
     addAttachments,
     removeAttachment,
     setAssistantMode,
@@ -706,5 +742,6 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     createProject,
     sendMessage,
     retryLastMessage,
+    retryAssistantMessage,
   }
 }

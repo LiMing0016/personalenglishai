@@ -1,3 +1,5 @@
+import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
+
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
 export type AssistantAttachmentKind = 'image' | 'file'
@@ -47,6 +49,9 @@ export interface AssistantReplyRequest {
   conversationId: string
   studyStage?: string
   assistantMode?: AssistantMode
+  intent?: AssistantIntent
+  scope?: InputScope
+  selection?: AssistantSelection
   attachments: AssistantAttachment[]
 }
 

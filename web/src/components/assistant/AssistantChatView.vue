@@ -37,6 +37,37 @@
             v-html="renderAssistantMarkdown(message.content)"
           ></div>
           <p v-else class="message-content message-content--plain">{{ message.content }}</p>
+          <div
+            v-if="message.role === 'assistant' && message.status === 'done'"
+            class="message-actions"
+          >
+            <button
+              type="button"
+              class="message-action-button"
+              aria-label="复制"
+              title="复制"
+              @click="$emit('copyMessage', message.content)"
+            >
+              <svg class="message-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="11" height="11" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="message-action-button"
+              aria-label="重试"
+              title="重试"
+              @click="$emit('retryMessage', message.id)"
+            >
+              <svg class="message-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12a9 9 0 0 1-15.3 6.4" />
+                <path d="M3 12A9 9 0 0 1 18.3 5.6" />
+                <path d="M18 2v4h4" />
+                <path d="M6 22v-4H2" />
+              </svg>
+            </button>
+          </div>
         </div>
       </article>
 
@@ -70,8 +101,10 @@ defineProps<{
   emptySubtitle: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   chooseStarter: [prompt: string]
+  copyMessage: [content: string]
+  retryMessage: [messageId: string]
   retry: []
 }>()
 
@@ -83,6 +116,7 @@ function previewUrlById(id: string, file: File) {
   }
   return previewUrls.get(id)!
 }
+
 
 onBeforeUnmount(() => {
   for (const url of previewUrls.values()) {
@@ -258,6 +292,44 @@ onBeforeUnmount(() => {
   margin: 20px 0;
   border: none;
   border-top: 1px solid #e2e8f0;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.message-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  padding: 0;
+  cursor: pointer;
+}
+
+.message-action-button:hover,
+.message-action-button:focus-visible {
+  background: #e2e8f0;
+  color: #0f172a;
+  outline: none;
+}
+
+.message-action-icon {
+  width: 19px;
+  height: 19px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .message-attachments {

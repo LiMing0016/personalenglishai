@@ -1,7 +1,13 @@
 import { http } from './http'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
-import type { AssistantRequest as AssistantAgentRequest, LearningMode } from '../types/assistantRequest'
+import type {
+  AssistantIntent,
+  AssistantRequest as AssistantAgentRequest,
+  AssistantSelection,
+  InputScope,
+  LearningMode,
+} from '../types/assistantRequest'
 export type {
   AssistantAttachmentRef,
   AssistantErrorPayload,
@@ -65,6 +71,9 @@ export interface AssistantChatPayload {
   conversationId: string
   studyStage?: string
   assistantMode?: 'default' | 'exam'
+  intent?: AssistantIntent
+  scope?: InputScope
+  selection?: AssistantSelection
   attachments: AssistantAttachment[]
 }
 
@@ -94,15 +103,18 @@ function normalizeStudyStage(stage?: string): AssistantStudyStage | undefined {
 }
 
 function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentRequest {
+  const hasSelection = Boolean(payload.selection?.text?.trim())
+  const text = payload.input.trim()
   return {
     appConversationId: payload.conversationId,
     clientMessageId: createClientMessageId(),
     mode: mapLearningMode(payload.assistantMode),
-    intent: 'free_chat',
-    scope: 'message_only',
+    intent: payload.intent ?? (hasSelection ? 'explain' : 'free_chat'),
+    scope: payload.scope ?? (hasSelection ? (text ? 'selection_and_message' : 'selection') : 'message_only'),
     message: {
       text: payload.input,
     },
+    selection: payload.selection,
     studyContext: {
       studyStage: normalizeStudyStage(payload.studyStage),
       locale: 'zh-CN',
