@@ -9,10 +9,16 @@ from typing import Sequence
 from uuid import uuid4
 
 try:
+    from .adapters.openai_input_items import build_assistant_input_items
     from .adapters.openai_input_items import build_input_items
     from .agents.attachment import create_attachment_agent
+    from .agents.assistant_routing import route_assistant_agent
     from .agents.router import create_router_agent
+    from .agents.specialists import SPECIALIST_AGENT_SPECS
+    from .agents.specialists import create_specialist_agent
     from .prompts.user_context import build_contextual_user_message
+    from .schemas.assistant_request import AssistantRequest
+    from .schemas.assistant_request import AssistantRunMetadata
     from .schemas.chat import AssistantReply
     from .schemas.chat import UploadedAttachment
     from .schemas.routing import RoutingIntent
@@ -23,13 +29,20 @@ try:
     from .services.active_task_state import ActiveTaskStateStore
     from .services.active_task_state import InMemoryActiveTaskStateStore
     from .services.agent_session_runner import run_agent_session
+    from .services.assistant_request_validator import validate_assistant_request
     from .services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from .services.continuation_classifier import ContinuationClassifier
 except ImportError:  # pragma: no cover - script mode fallback
+    from adapters.openai_input_items import build_assistant_input_items
     from adapters.openai_input_items import build_input_items
     from agents.attachment import create_attachment_agent
+    from agents.assistant_routing import route_assistant_agent
     from agents.router import create_router_agent
+    from agents.specialists import SPECIALIST_AGENT_SPECS
+    from agents.specialists import create_specialist_agent
     from prompts.user_context import build_contextual_user_message
+    from schemas.assistant_request import AssistantRequest
+    from schemas.assistant_request import AssistantRunMetadata
     from schemas.chat import AssistantReply
     from schemas.chat import UploadedAttachment
     from schemas.routing import RoutingIntent
@@ -40,6 +53,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.active_task_state import ActiveTaskStateStore
     from services.active_task_state import InMemoryActiveTaskStateStore
     from services.agent_session_runner import run_agent_session
+    from services.assistant_request_validator import validate_assistant_request
     from services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from services.continuation_classifier import ContinuationClassifier
 
@@ -125,6 +139,7 @@ class AssistantAgentService:
         self.session_db_path = session_db_path
         self._router_agent = None
         self._attachment_agent = None
+        self._specialist_agents = {}
         self._active_task_store = active_task_store or InMemoryActiveTaskStateStore()
         self._continuation_classifier = continuation_classifier or ContinuationClassifier(
             AgentsSdkContinuationClassifierClient(model)
@@ -165,6 +180,103 @@ class AssistantAgentService:
 
         self._attachment_agent = create_attachment_agent(self.model)
         return self._attachment_agent
+
+    def _get_agent_by_name(self, agent_name: str):
+        if agent_name == "Router Agent":
+            return self._get_router_agent()
+        if agent_name in self._specialist_agents:
+            return self._specialist_agents[agent_name]
+
+        if not self.is_configured():
+            raise AssistantConfigError("OPENAI_API_KEY 未配置，学习助手暂时不可用。")
+
+        spec = next((candidate for candidate in SPECIALIST_AGENT_SPECS if candidate.name == agent_name), None)
+        if spec is None:
+            raise AssistantConfigError(f"未知学习助手 Agent: {agent_name}")
+        agent = create_specialist_agent(spec, self.model)
+        self._specialist_agents[agent_name] = agent
+        return agent
+
+    async def run_assistant_request(
+        self,
+        request: AssistantRequest,
+        authorization: str | None = None,
+    ) -> AssistantReply:
+        started_at = time.perf_counter()
+        validated = validate_assistant_request(request)
+        route = route_assistant_agent(request)
+        conversation_id = request.app_conversation_id or request.client_message_id
+        run_id = f"run_{uuid4().hex}"
+        trace_id = f"trace_{uuid4().hex}"
+
+        log.info(
+            "[ASSISTANT_RUN_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
+            "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
+            run_id,
+            trace_id,
+            conversation_id,
+            self.model,
+            request.mode,
+            request.intent,
+            validated.scope,
+            route.agent_name,
+            len(request.attachments),
+            bool(authorization),
+        )
+
+        try:
+            agent = self._get_agent_by_name(route.agent_name)
+            agent_input = build_assistant_input_items(request)
+            use_session = not request.attachments
+            result = await run_agent_session(
+                agent=agent,
+                agent_input=agent_input,
+                conversation_id=conversation_id,
+                session_db_path=self.session_db_path,
+                use_session=use_session,
+                run_context=AssistantRunContext(conversation_id=conversation_id),
+            )
+            if not result.final_output:
+                raise AssistantConfigError("学习助手没有返回内容。")
+
+            final_agent_name = result.agent_name or route.agent_name
+            duration_ms = (time.perf_counter() - started_at) * 1000
+            log.info(
+                "[ASSISTANT_RUN_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f "
+                "response_id=%s total_tokens=%s",
+                run_id,
+                trace_id,
+                conversation_id,
+                final_agent_name,
+                duration_ms,
+                result.run_items.last_response_id or "",
+                result.usage.total_tokens,
+            )
+        except Exception:
+            duration_ms = (time.perf_counter() - started_at) * 1000
+            log.error(
+                "[ASSISTANT_RUN_ERROR] run_id=%s trace_id=%s conversation_id=%s duration_ms=%.1f",
+                run_id,
+                trace_id,
+                conversation_id,
+                duration_ms,
+                exc_info=True,
+            )
+            raise
+
+        return AssistantReply(
+            reply=result.final_output,
+            agent_name=final_agent_name,
+            run=AssistantRunMetadata(
+                runId=run_id,
+                traceId=trace_id,
+                agentName=final_agent_name,
+                model=self.model,
+                mode=request.mode,
+                intent=request.intent,
+                scope=validated.scope,
+            ),
+        )
 
     async def chat(
         self,
