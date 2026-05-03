@@ -156,7 +156,7 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         mkdir.assert_not_called()
         sqlite_session.assert_not_called()
-        runner_run.assert_awaited_once_with(agent, agent_input, session=None)
+        runner_run.assert_awaited_once_with(agent, agent_input)
         self.assertEqual(result.final_output, "Feedback")
 
 

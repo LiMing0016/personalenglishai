@@ -136,7 +136,9 @@ async def run_agent_session(
         session_path.parent.mkdir(parents=True, exist_ok=True)
         session = SQLiteSession(conversation_id, str(session_path))
 
-    runner_kwargs = {"session": session}
+    runner_kwargs = {}
+    if use_session:
+        runner_kwargs["session"] = session
     if run_context is not None:
         runner_kwargs["context"] = run_context
 
