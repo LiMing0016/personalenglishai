@@ -4,6 +4,7 @@ import type { AssistantStreamEvent } from '../types/assistantRequest.ts'
 
 export function parseAssistantStreamChunk(chunk: string): Partial<AssistantStreamEvent>[] {
   return chunk
+    .replace(/\r\n/g, '\n')
     .split(/\n\n+/)
     .map((block) => block.trim())
     .filter(Boolean)
@@ -58,6 +59,7 @@ export async function streamAssistantEvents(
     const { done, value } = await reader.read()
     if (done) break
     pending += decoder.decode(value, { stream: true })
+    pending = pending.replace(/\r\n/g, '\n')
     const boundary = pending.lastIndexOf('\n\n')
     if (boundary < 0) continue
     const complete = pending.slice(0, boundary + 2)

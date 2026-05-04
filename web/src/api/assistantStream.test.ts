@@ -25,3 +25,11 @@ test('parseAssistantStreamChunk ignores malformed events', () => {
 
   assert.deepEqual(events, [{ type: 'run.completed' }])
 })
+
+test('parseAssistantStreamChunk parses CRLF server-sent event separators', () => {
+  const events = parseAssistantStreamChunk(
+    'data: {"type":"run.started"}\r\n\r\ndata: {"type":"message.delta","delta":"hi"}\r\n\r\n',
+  )
+
+  assert.deepEqual(events, [{ type: 'run.started' }, { type: 'message.delta', delta: 'hi' }])
+})

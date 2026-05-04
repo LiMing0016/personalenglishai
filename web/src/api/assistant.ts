@@ -27,6 +27,8 @@ interface ApiEnvelope<T> {
   data?: T
 }
 
+const ASSISTANT_REQUEST_TIMEOUT_MS = 60000
+
 export interface AssistantProjectDto {
   id: number
   name: string
@@ -307,7 +309,10 @@ export async function sendAssistantMessage(payload: AssistantChatPayload): Promi
     const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
       `/assistant/conversations/${payload.conversationId}/messages`,
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: ASSISTANT_REQUEST_TIMEOUT_MS,
+      },
     )
     return unwrap(res.data)
   }
@@ -325,6 +330,7 @@ export async function sendAssistantAgentMessage(payload: AssistantAgentRequest):
   const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
     `/assistant/conversations/${appConversationId}/messages/run`,
     payload,
+    { timeout: ASSISTANT_REQUEST_TIMEOUT_MS },
   )
   return unwrap(res.data)
 }
