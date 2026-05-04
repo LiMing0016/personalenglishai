@@ -495,6 +495,10 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       }
     }
 
+    composerText.value = ''
+    composerAttachments.value = []
+    setPendingSelection(null)
+
     try {
       let streamedReply = ''
       const updateLoadingMessage = (content: string) => {
@@ -539,9 +543,6 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           // Local optimistic state is already usable; the next selection reloads from server.
         }
       }
-      composerText.value = ''
-      composerAttachments.value = []
-      setPendingSelection(null)
       persistState()
     } catch (error) {
       conversation.messages = conversation.messages.filter(
