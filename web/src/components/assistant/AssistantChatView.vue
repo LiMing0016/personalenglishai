@@ -47,7 +47,9 @@
               class="message-action-button"
               aria-label="复制"
               title="复制"
-              @click="$emit('copyMessage', message.content)"
+              @mousedown.stop
+              @mouseup.stop
+              @click.stop="$emit('copyMessage', message.content)"
             >
               <svg class="message-action-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="9" y="9" width="11" height="11" rx="2" />
@@ -59,7 +61,9 @@
               class="message-action-button"
               aria-label="重试"
               title="重试"
-              @click="$emit('retryMessage', message.id)"
+              @mousedown.stop
+              @mouseup.stop
+              @click.stop="$emit('retryMessage', message.id)"
             >
               <svg class="message-action-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M21 12a9 9 0 0 1-15.3 6.4" />

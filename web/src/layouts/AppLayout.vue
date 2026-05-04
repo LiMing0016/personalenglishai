@@ -38,6 +38,7 @@ import {
   PENDING_ASSISTANT_PROMPT_KEY,
   PENDING_ASSISTANT_SELECTION_KEY,
 } from '@/pages/app/assistantMessageActions.ts'
+import { shouldOpenAssistantDrawerForSelection } from './appSelectionToolbar.ts'
 
 const route = useRoute()
 const router = useRouter()
@@ -126,8 +127,8 @@ function askAssistantWithSelection() {
   )
   hideSelectionToolbar()
   window.getSelection()?.removeAllRanges()
-  assistantDrawerOpen.value = true
-  if (route.path !== '/app/assistant') {
+  if (shouldOpenAssistantDrawerForSelection(route.path)) {
+    assistantDrawerOpen.value = true
     void router.push('/app/assistant')
   }
 }
