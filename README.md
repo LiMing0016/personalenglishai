@@ -190,7 +190,7 @@ python\ai_orchestrator\.venv\Scripts\python.exe -m uvicorn python.ai_orchestrato
 | `OPENAI_API_KEY` | Python orchestrator 调用 OpenAI 时使用 |
 | `AI_ASSISTANT_MODEL` | 学习助手模型，默认见 `docker-compose.yml` |
 
-完整变量说明见 [docs/deploy/environment-variables.md](docs/deploy/environment-variables.md)。
+完整变量说明见 [docs/runbooks/environment-variables.md](docs/runbooks/environment-variables.md)。
 
 ## 验证命令
 

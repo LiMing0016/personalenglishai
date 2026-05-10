@@ -18,4 +18,5 @@ related_code:
 - [本地开发](./local-dev.md)
 - [启动环境检查](./startup-env-checklist.md)
 - [本地脚本](./local-scripts.md)
+- [环境变量](./environment-variables.md)
 - [部署](./deploy.md)
