@@ -98,7 +98,7 @@
 
 为了验证同一篇作文重复提交时的 Prompt Cache 命中情况，仓库提供了本地诊断脚本：
 
-- [score-cache-diagnose.ps1](/F:/personalenglishai/scripts/score-cache-diagnose.ps1)
+- `scripts/score-cache-diagnose.ps1`
 
 脚本行为：
 
