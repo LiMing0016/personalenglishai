@@ -66,6 +66,11 @@ public class AuthServiceImpl implements AuthService {
             throw new BizException(ErrorCode.AUTH_LOGIN_FAILED);
         }
 
+        if (!user.isEmailVerified()) {
+            loginAttemptService.clearAttempts(normalizedEmail);
+            throw new BizException(ErrorCode.AUTH_EMAIL_NOT_VERIFIED);
+        }
+
         loginAttemptService.clearAttempts(normalizedEmail);
         return buildLoginResponse(user);
     }

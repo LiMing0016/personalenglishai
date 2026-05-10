@@ -4,7 +4,7 @@
     panel-title="欢迎回来"
     panel-subtitle="登录 Personal English AI，继续你的英语写作训练与 AI 学习计划。"
   >
-    <AuthTabs v-model="activeTab" :tabs="tabs" />
+    <AuthTabs v-if="tabs.length > 1" v-model="activeTab" :tabs="tabs" />
 
     <!-- 邮箱登录 -->
     <form v-if="activeTab === 'email'" @submit.prevent="onEmailSubmit" class="auth-form">
@@ -25,6 +25,18 @@
       />
 
       <p v-if="errorText" class="error-text">{{ errorText }}</p>
+
+      <div v-if="emailVerificationRequired" class="verify-actions">
+        <Button
+          variant="outline"
+          :disabled="resendCooldown > 0"
+          :loading="resendingVerification"
+          class="resend-btn"
+          @click="resendVerification"
+        >
+          {{ resendCooldown > 0 ? `重新发送 (${resendCooldown}s)` : '重新发送验证邮件' }}
+        </Button>
+      </div>
 
       <div class="forgot-link-row">
         <router-link to="/forgot-password" class="forgot-link">忘记密码？</router-link>
@@ -116,9 +128,11 @@ import SliderCaptcha from '@/components/auth/SliderCaptcha.vue'
 import Input from '@/components/Input.vue'
 import Button from '@/components/Button.vue'
 import { authApi } from '@/api/auth'
+import { authApi as emailAuthApi } from '@/api/authApi'
 import { clearAdminMeCache, getAdminMe } from '@/api/admin'
 import { setToken } from '@/utils/token'
-import { isValidEmail, isValidPassword, isValidPhone, isValidSmsCode } from '@/utils/validation'
+import { getErrorMessage, isValidEmail, isValidPassword, isValidPhone, isValidSmsCode } from '@/utils/validation'
+import { showToast } from '@/utils/toast'
 
 const router = useRouter()
 const route = useRoute()
@@ -127,10 +141,9 @@ const BUSINESS_HOME = '/app'
 const ADMIN_HOME = '/admin/dashboard'
 const tabs = [
   { label: '邮箱', value: 'email' },
-  { label: '手机', value: 'phone' },
 ]
 
-const activeTab = ref(route.query.tab === 'phone' ? 'phone' : 'email')
+const activeTab = ref('email')
 const phoneMode = ref<'otp' | 'password'>('otp')
 
 // email fields
@@ -153,14 +166,19 @@ const errorText = ref('')
 const loading = ref(false)
 const showCaptcha = ref(false)
 const captchaToken = ref('')
+const emailVerificationRequired = ref(false)
+const resendingVerification = ref(false)
+const resendCooldown = ref(0)
 
 // SMS cooldown
 const smsCooldown = ref(0)
 const smsSending = ref(false)
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
+let resendCooldownTimer: ReturnType<typeof setInterval> | null = null
 
 onUnmounted(() => {
   if (cooldownTimer) clearInterval(cooldownTimer)
+  if (resendCooldownTimer) clearInterval(resendCooldownTimer)
 })
 
 const registerLink = computed(() => {
@@ -171,6 +189,7 @@ const registerLink = computed(() => {
 // clear errorText on tab/mode switch
 watch([activeTab, phoneMode], () => {
   errorText.value = ''
+  emailVerificationRequired.value = false
 })
 
 // ── validation ──
@@ -262,6 +281,36 @@ async function sendCode(purpose: 'login' | 'register') {
   }
 }
 
+function startResendCooldown() {
+  resendCooldown.value = 60
+  if (resendCooldownTimer) {
+    clearInterval(resendCooldownTimer)
+  }
+  resendCooldownTimer = setInterval(() => {
+    resendCooldown.value--
+    if (resendCooldown.value <= 0 && resendCooldownTimer) {
+      clearInterval(resendCooldownTimer)
+      resendCooldownTimer = null
+    }
+  }, 1000)
+}
+
+async function resendVerification() {
+  if (!validateEmail() || resendCooldown.value > 0) return
+
+  resendingVerification.value = true
+  try {
+    await emailAuthApi.resendVerification(email.value)
+    showToast('验证邮件已重新发送', 'success')
+    startResendCooldown()
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { code?: string; message?: string } } }
+    errorText.value = getErrorMessage(err.response?.data?.code, err.response?.data?.message)
+  } finally {
+    resendingVerification.value = false
+  }
+}
+
 // ── captcha ──
 
 let pendingLoginType: 'email' | 'phone' = 'email'
@@ -299,6 +348,7 @@ async function onCaptchaVerified(token: string) {
 
 async function doEmailLogin() {
   loading.value = true
+  emailVerificationRequired.value = false
   try {
     const res = await authApi.login({
       email: email.value,
@@ -311,8 +361,10 @@ async function doEmailLogin() {
     clearAdminMeCache()
     await router.replace(await resolvePostLoginTarget())
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { message?: string } } }
-    errorText.value = err.response?.data?.message ?? '登录失败，请重试'
+    const err = e as { response?: { data?: { code?: string; message?: string } } }
+    const code = err.response?.data?.code
+    emailVerificationRequired.value = code === '403020'
+    errorText.value = getErrorMessage(code, err.response?.data?.message ?? '登录失败，请重试')
   } finally {
     loading.value = false
   }
@@ -360,6 +412,15 @@ async function doPhoneLogin() {
 
 .forgot-link:hover {
   text-decoration: underline;
+}
+
+.verify-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.resend-btn {
+  width: 100%;
 }
 </style>
 

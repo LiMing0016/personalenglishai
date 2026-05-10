@@ -26,8 +26,13 @@ export function isValidSmsCode(code: string): boolean {
 
 /**
  * 统一错误消息处理（不暴露过多细节，避免账号枚举）
- * @param _code 预留字段，当前实现不按 code 分支
  */
-export function getErrorMessage(_code?: string, defaultMessage?: string): string {
+export function getErrorMessage(code?: string, defaultMessage?: string): string {
+  if (code === '403020') {
+    return '邮箱尚未验证，请先完成邮箱验证'
+  }
+  if (code === '429003') {
+    return '验证邮件发送过于频繁，请稍后再试'
+  }
   return defaultMessage || '操作失败，请检查输入信息或稍后重试'
 }

@@ -43,6 +43,7 @@
   ```
 - 成功：HTTP **201**，`ApiResponse` 的 `data` 包含 `userId`
 - 成功后后端会创建邮箱验证 token，并发送验证邮件；邮件发送失败不会阻塞注册主流程。
+- 注册首次发送验证邮件前会执行 Redis IP 限流，同 IP 1 小时最多触发 20 次；超限返回 HTTP **429**，`429003`。
 - 邮箱已存在：HTTP **409**，`AUTH_EMAIL_EXISTS`
 - 参数校验失败：HTTP **400**，`COMMON_VALIDATION_ERROR`
 
@@ -58,6 +59,7 @@
 - **POST** `/api/v1/auth/resend-verification`
 - Request JSON 示例：`{"email":"local_001@test.com"}`
 - 成功：HTTP **200**。为避免邮箱枚举，邮箱不存在或已验证时也返回成功。
+- 限流：同邮箱 60 秒冷却、同邮箱 1 小时最多 5 次、同 IP 1 小时最多 20 次；超限返回 HTTP **429**，`429003`。
 
 ### 登录
 
@@ -65,7 +67,16 @@
 - Request JSON：**仅允许** `{"email":"xxx","password":"xxx"}`；多余字段（如 `nickname`）→ HTTP **400**，`400001`
 - 成功：HTTP **200**，`data` 含 `token`、`tokenType`（Bearer）、`expiresIn`
 - 用户不存在或密码错误：HTTP **401**，`401001`，`"用户名或密码错误"`
+- 邮箱未验证：仅在密码正确后返回 HTTP **403**，`403020`，`"邮箱尚未验证，请先完成邮箱验证"`；不会签发 token，也不会设置 refresh cookie。
 - 参数校验失败：HTTP **400**，`400001`
+
+### 错误码
+
+| code | 含义 |
+| --- | --- |
+| `401001` | 用户不存在或密码错误；密码错误时不会暴露邮箱是否已验证。 |
+| `403020` | 邮箱尚未验证，请先完成邮箱验证。 |
+| `429003` | 验证邮件发送过于频繁，请稍后再试。 |
 
 ### 当前用户档案（需 JWT）
 
@@ -89,6 +100,8 @@ curl -i -X POST http://localhost:8080/api/v1/auth/register \
 curl -i -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"local_001@test.com","password":"Abcd1234!"}'
+
+# 未验证邮箱登录 -> 403 + 403020；点击邮件验证后同一账号应能登录成功
 
 # 登录传 nickname 等多余字段 -> 必须 400（400001），不得 200
 curl -i -X POST http://localhost:8080/api/v1/auth/login \

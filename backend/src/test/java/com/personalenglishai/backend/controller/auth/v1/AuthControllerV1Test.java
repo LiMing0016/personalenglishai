@@ -68,6 +68,7 @@ class AuthControllerV1Test {
         @DisplayName("returns 201 and triggers verification email")
         void register_success() throws Exception {
             when(authService.register("u1@example.com", "Abcd1234", "Catalina")).thenReturn(100L);
+            doNothing().when(emailVerificationService).checkRegisterSendAllowed("127.0.0.1");
             doNothing().when(emailVerificationService).sendVerification(100L, "u1@example.com");
 
             mockMvc.perform(post("/api/v1/auth/register")
@@ -79,7 +80,25 @@ class AuthControllerV1Test {
                     .andExpect(jsonPath("$.code").value("0"))
                     .andExpect(jsonPath("$.data.userId").value(100));
 
+            verify(emailVerificationService).checkRegisterSendAllowed("127.0.0.1");
             verify(emailVerificationService).sendVerification(100L, "u1@example.com");
+        }
+
+        @Test
+        @DisplayName("returns 429 before creating user when register email sending is rate limited")
+        void register_rateLimitedBeforeCreateUser() throws Exception {
+            doThrow(new BizException(ErrorCode.AUTH_EMAIL_RESEND_RATE_LIMITED))
+                    .when(emailVerificationService).checkRegisterSendAllowed("127.0.0.1");
+
+            mockMvc.perform(post("/api/v1/auth/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"u1@example.com","password":"Abcd1234","nickname":"Catalina"}
+                                    """))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.code").value("429003"));
+
+            verify(authService, org.mockito.Mockito.never()).register("u1@example.com", "Abcd1234", "Catalina");
         }
 
         @Test
@@ -131,6 +150,24 @@ class AuthControllerV1Test {
                                     """))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value("401001"));
+        }
+
+        @Test
+        @DisplayName("returns 403 without refresh cookie when email is not verified")
+        void login_unverifiedEmail() throws Exception {
+            when(captchaService.validateToken("cap-ok")).thenReturn(true);
+            when(authService.login("u1@example.com", "Abcd1234"))
+                    .thenThrow(new BizException(ErrorCode.AUTH_EMAIL_NOT_VERIFIED));
+
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"u1@example.com","password":"Abcd1234","captchaToken":"cap-ok"}
+                                    """))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("403020"))
+                    .andExpect(cookie().doesNotExist("refresh_token"))
+                    .andExpect(header().doesNotExist("Set-Cookie"));
         }
     }
 
@@ -189,6 +226,38 @@ class AuthControllerV1Test {
             mockMvc.perform(get("/api/v1/auth/verify-email").param("token", "tok-1"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.status").value("VERIFIED"));
+        }
+
+        @Test
+        @DisplayName("resend verification passes email and client ip")
+        void resendVerification_success() throws Exception {
+            doNothing().when(emailVerificationService).resendVerification("u1@example.com", "203.0.113.8");
+
+            mockMvc.perform(post("/api/v1/auth/resend-verification")
+                            .header("X-Forwarded-For", "203.0.113.8, 10.0.0.2")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"u1@example.com"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value("0"));
+
+            verify(emailVerificationService).resendVerification("u1@example.com", "203.0.113.8");
+        }
+
+        @Test
+        @DisplayName("resend verification returns 429 when rate limited")
+        void resendVerification_rateLimited() throws Exception {
+            doThrow(new BizException(ErrorCode.AUTH_EMAIL_RESEND_RATE_LIMITED))
+                    .when(emailVerificationService).resendVerification("u1@example.com", "127.0.0.1");
+
+            mockMvc.perform(post("/api/v1/auth/resend-verification")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"u1@example.com"}
+                                    """))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.code").value("429003"));
         }
 
         @Test
