@@ -160,9 +160,18 @@ python\ai_orchestrator\.venv\Scripts\python.exe -m uvicorn python.ai_orchestrato
 | `SPRING_DATASOURCE_URL` | 后端 MySQL JDBC 地址 |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | 数据库账号密码 |
 | `JWT_SECRET` | JWT 密钥，生产环境必须使用足够长的随机值 |
+| `JWT_ACCESS_TOKEN_SECONDS` / `JWT_REFRESH_TOKEN_SECONDS` | Access / refresh token 有效期 |
+| `APP_BASE_URL` | 前端公开访问地址，用于生成邮箱验证链接 |
+| `MAIL_ENABLED` | 是否启用真实 SMTP 邮件发送；本地为 `false` 时输出日志邮件 |
+| `MAIL_HOST` / `MAIL_PORT` | SMTP 服务器地址和端口 |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 账号和授权码/密码 |
+| `MAIL_FROM` | 验证邮件发件人地址 |
+| `COOKIE_SECURE` | HTTPS 生产环境应为 `true`，用于保护 refresh cookie |
 | `REDIS_HOST` / `REDIS_PORT` | Redis 地址 |
 | `OPENAI_API_KEY` | Python orchestrator 调用 OpenAI 时使用 |
 | `AI_ASSISTANT_MODEL` | 学习助手模型，默认见 `docker-compose.yml` |
+
+完整变量说明见 [docs/deploy/environment-variables.md](docs/deploy/environment-variables.md)。
 
 ## 验证命令
 
