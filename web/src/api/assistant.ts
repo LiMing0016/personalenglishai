@@ -101,11 +101,26 @@ function mapLearningMode(mode?: AssistantChatPayload['assistantMode']): Learning
   return mode === 'exam' ? 'exam_boost' : 'daily_explain'
 }
 
-type AssistantStudyStage = NonNullable<AssistantAgentRequest['studyContext']>['studyStage']
+type AssistantStudyContext = NonNullable<AssistantAgentRequest['studyContext']>
+type AssistantStudyStage = AssistantStudyContext['studyStage']
+type AssistantTargetExam = AssistantStudyContext['targetExam']
 
 function normalizeStudyStage(stage?: string): AssistantStudyStage | undefined {
-  if (stage === 'beginner' || stage === 'intermediate' || stage === 'advanced') {
-    return stage
+  const normalized = stage?.trim()
+  return normalized || undefined
+}
+
+function normalizeTargetExam(stage?: string): AssistantTargetExam | undefined {
+  const normalized = stage?.trim().toLowerCase()
+  if (
+    normalized === 'ielts'
+    || normalized === 'toefl'
+    || normalized === 'cet4'
+    || normalized === 'cet6'
+    || normalized === 'gaokao'
+    || normalized === 'postgrad'
+  ) {
+    return normalized
   }
   return undefined
 }
@@ -125,6 +140,7 @@ function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentR
     selection: payload.selection,
     studyContext: {
       studyStage: normalizeStudyStage(payload.studyStage),
+      targetExam: normalizeTargetExam(payload.studyStage),
       locale: 'zh-CN',
       responseLanguage: 'zh-CN',
     },

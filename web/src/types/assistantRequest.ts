@@ -36,11 +36,11 @@ export type ImageDetail = 'low' | 'high' | 'auto'
 
 export type ResponseLanguage = 'zh-CN' | 'en-US' | 'mixed'
 
-export type StudyStage = 'beginner' | 'intermediate' | 'advanced'
+export type StudyStage = string
 
 export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
 
-export type TargetExam = 'ielts' | 'toefl' | 'cet4' | 'cet6' | 'gaokao'
+export type TargetExam = 'ielts' | 'toefl' | 'cet4' | 'cet6' | 'gaokao' | 'postgrad'
 
 export interface AssistantAttachmentRef {
   attachmentId: string

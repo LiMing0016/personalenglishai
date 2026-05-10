@@ -92,9 +92,9 @@ class AssistantRequestMessage(BaseModel):
 
 
 class AssistantStudyContext(BaseModel):
-    study_stage: Literal["beginner", "intermediate", "advanced"] | None = Field(default=None, alias="studyStage")
+    study_stage: str | None = Field(default=None, alias="studyStage")
     cefr_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None = Field(default=None, alias="cefrLevel")
-    target_exam: Literal["ielts", "toefl", "cet4", "cet6", "gaokao"] | None = Field(default=None, alias="targetExam")
+    target_exam: str | None = Field(default=None, alias="targetExam")
     locale: Literal["zh-CN", "en-US"] | None = None
     response_language: Literal["zh-CN", "en-US", "mixed"] | None = Field(default=None, alias="responseLanguage")
 

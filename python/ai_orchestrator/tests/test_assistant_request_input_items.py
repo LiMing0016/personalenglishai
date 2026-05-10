@@ -16,7 +16,31 @@ class AssistantRequestInputItemsTest(unittest.TestCase):
         items = build_assistant_input_items(request)
 
         self.assertEqual(items[0]["role"], "user")
-        self.assertEqual(items[0]["content"], [{"type": "input_text", "text": "解释现在完成时"}])
+        self.assertEqual(items[0]["content"][0]["type"], "input_text")
+        self.assertIn("[学习助手上下文]", items[0]["content"][0]["text"])
+        self.assertIn("- 当前模式: 日常学习讲解模式", items[0]["content"][0]["text"])
+        self.assertIn("解释现在完成时", items[0]["content"][0]["text"])
+
+    def test_request_includes_mode_and_study_context_for_agent(self) -> None:
+        request = AssistantRequest(
+            clientMessageId="client-1",
+            mode="exam_boost",
+            intent="translate",
+            message={"text": "翻译这段话"},
+            studyContext={
+                "studyStage": "postgrad",
+                "targetExam": "postgrad",
+                "responseLanguage": "zh-CN",
+            },
+        )
+
+        text = build_assistant_input_items(request)[0]["content"][0]["text"]
+
+        self.assertIn("- 当前模式: 考试提分模式", text)
+        self.assertIn("- 用户意图: 翻译", text)
+        self.assertIn("- 学段/目标: postgrad", text)
+        self.assertIn("- 目标考试: postgrad", text)
+        self.assertIn("- 回答语言: zh-CN", text)
 
     def test_selection_request_wraps_selected_text(self) -> None:
         request = AssistantRequest(
