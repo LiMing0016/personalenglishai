@@ -7,6 +7,7 @@ from python.ai_orchestrator.services.agent_session_runner import (
     AgentSessionRunItems,
     AgentSessionUsage,
     run_agent_session,
+    stream_agent_session,
 )
 
 
@@ -156,8 +157,73 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         mkdir.assert_not_called()
         sqlite_session.assert_not_called()
-        runner_run.assert_awaited_once_with(agent, agent_input, session=None)
+        runner_run.assert_awaited_once_with(agent, agent_input)
         self.assertEqual(result.final_output, "Feedback")
+
+    async def test_stream_agent_session_yields_text_deltas_and_completed_result(self) -> None:
+        from agents.stream_events import RawResponsesStreamEvent
+        from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
+
+        agent = object()
+        fake_stream_result = SimpleNamespace(
+            final_output="hello",
+            last_agent=SimpleNamespace(name="Router Agent"),
+        )
+
+        async def stream_events():
+            yield RawResponsesStreamEvent(
+                data=ResponseTextDeltaEvent(
+                    content_index=0,
+                    delta="he",
+                    item_id="msg-1",
+                    logprobs=[],
+                    output_index=0,
+                    sequence_number=1,
+                    type="response.output_text.delta",
+                )
+            )
+            yield RawResponsesStreamEvent(
+                data=ResponseTextDeltaEvent(
+                    content_index=0,
+                    delta="llo",
+                    item_id="msg-1",
+                    logprobs=[],
+                    output_index=0,
+                    sequence_number=2,
+                    type="response.output_text.delta",
+                )
+            )
+
+        fake_stream_result.stream_events = stream_events
+
+        with (
+            patch.object(Path, "mkdir") as mkdir,
+            patch("agents.SQLiteSession") as sqlite_session,
+            patch("agents.Runner.run_streamed", return_value=fake_stream_result) as run_streamed,
+        ):
+            events = [
+                event
+                async for event in stream_agent_session(
+                    agent=agent,
+                    agent_input=[{"role": "user", "content": [{"type": "input_text", "text": "Hi"}]}],
+                    conversation_id="conv-1",
+                    session_db_path="data/assistant.db",
+                    use_session=False,
+                )
+            ]
+
+        mkdir.assert_not_called()
+        sqlite_session.assert_not_called()
+        run_streamed.assert_called_once_with(
+            agent,
+            [{"role": "user", "content": [{"type": "input_text", "text": "Hi"}]}],
+        )
+        self.assertEqual(events[0].type, "delta")
+        self.assertEqual(events[0].delta, "he")
+        self.assertEqual(events[1].delta, "llo")
+        self.assertEqual(events[2].type, "completed")
+        self.assertEqual(events[2].result.final_output, "hello")
+        self.assertEqual(events[2].result.agent_name, "Router Agent")
 
 
 if __name__ == "__main__":

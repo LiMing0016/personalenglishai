@@ -28,6 +28,25 @@
       <header class="main-header">
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
+        <div class="header-spacer"></div>
+        <div class="markdown-theme-control" aria-label="助手输出风格">
+          <button
+            type="button"
+            class="markdown-theme-button"
+            :class="{ 'markdown-theme-button--active': markdownTheme === 'marktext' }"
+            @click="setMarkdownTheme('marktext')"
+          >
+            MarkText
+          </button>
+          <button
+            type="button"
+            class="markdown-theme-button"
+            :class="{ 'markdown-theme-button--active': markdownTheme === 'milkdown' }"
+            @click="setMarkdownTheme('milkdown')"
+          >
+            Milkdown
+          </button>
+        </div>
       </header>
 
       <AssistantChatView
@@ -36,7 +55,10 @@
         :can-retry="canRetry"
         :empty-title="emptyTitle"
         :empty-subtitle="emptySubtitle"
+        :markdown-theme="markdownTheme"
         @choose-starter="applyStarter"
+        @copy-message="handleCopyMessage"
+        @retry-message="handleRetryAssistantMessage"
         @retry="retryLastMessage"
       />
 
@@ -80,12 +102,24 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { showToast } from '@/utils/toast'
+import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
+import {
+  PENDING_ASSISTANT_PROMPT_KEY,
+  PENDING_ASSISTANT_SELECTION_KEY,
+  type PendingAssistantSelection,
+  parsePendingAssistantSelection,
+} from './assistantMessageActions.ts'
+import {
+  readAssistantMarkdownTheme,
+  writeAssistantMarkdownTheme,
+  type AssistantMarkdownTheme,
+} from './assistantMarkdownTheme.ts'
 import { createAssistantState } from './assistantState.ts'
 
 const {
@@ -117,6 +151,8 @@ const {
   createProject,
   sendMessage,
   retryLastMessage,
+  retryAssistantMessage,
+  setPendingSelection,
 } = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
@@ -129,6 +165,7 @@ const assistantDrawerOpen = injectedAssistantDrawerOpen ?? fallbackAssistantDraw
 const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
+const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
 
 const folderDialogCopy = computed(() =>
   folderDialogMode.value === 'move'
@@ -136,8 +173,20 @@ const folderDialogCopy = computed(() =>
     : '文件夹可以用来整理对话，让相关学习内容更容易找回。',
 )
 
-function handleFileSelect(files: File[]) {
-  addAttachments(files)
+function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
+  addAttachments(files, source)
+}
+
+function setMarkdownTheme(theme: AssistantMarkdownTheme) {
+  markdownTheme.value = theme
+  writeAssistantMarkdownTheme(theme)
+}
+
+function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
+  composerText.value = prompt
+  if (selection) {
+    setPendingSelection(selection)
+  }
 }
 
 function closeAssistantDrawer() {
@@ -146,7 +195,31 @@ function closeAssistantDrawer() {
 
 onMounted(() => {
   void loadRemoteState()
+  const pendingPrompt = sessionStorage.getItem(PENDING_ASSISTANT_PROMPT_KEY)
+  const pendingSelection = parsePendingAssistantSelection(
+    sessionStorage.getItem(PENDING_ASSISTANT_SELECTION_KEY),
+  )
+  if (pendingPrompt) {
+    applyPendingAssistantPrompt(pendingPrompt, pendingSelection)
+    sessionStorage.removeItem(PENDING_ASSISTANT_PROMPT_KEY)
+    sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
+  }
+  window.addEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+})
+
+function handlePendingPromptEvent(event: Event) {
+  const detail = (event as CustomEvent<string | { prompt?: string; selection?: PendingAssistantSelection }>).detail
+  const prompt = typeof detail === 'string' ? detail : detail?.prompt
+  if (typeof prompt !== 'string' || !prompt.trim()) return
+  const selection = typeof detail === 'string' ? null : detail.selection
+  applyPendingAssistantPrompt(prompt, selection)
+  sessionStorage.removeItem(PENDING_ASSISTANT_PROMPT_KEY)
+  sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
+}
 
 async function handleRenameConversation(id: string) {
   const conversation = conversations.value.find((item) => item.id === id)
@@ -187,6 +260,26 @@ async function handleShareConversation(id: string) {
     showToast('分享链接已复制', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '分享失败', 'error')
+  }
+}
+
+async function handleCopyMessage(content: string) {
+  try {
+    if (!navigator.clipboard) {
+      throw new Error('Clipboard unavailable')
+    }
+    await navigator.clipboard?.writeText(content)
+    showToast('已复制', 'success')
+  } catch {
+    showToast('复制失败', 'error')
+  }
+}
+
+async function handleRetryAssistantMessage(messageId: string) {
+  try {
+    await retryAssistantMessage(messageId)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '重试失败', 'error')
   }
 }
 
@@ -349,6 +442,43 @@ const folderConversationGroups = computed(() =>
   text-transform: uppercase;
 }
 
+.header-spacer {
+  flex: 1;
+}
+
+.markdown-theme-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dbe3ea;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.markdown-theme-button {
+  min-width: 78px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.markdown-theme-button:hover,
+.markdown-theme-button:focus-visible {
+  color: #0f172a;
+  outline: none;
+}
+
+.markdown-theme-button--active {
+  background: #dcfce7;
+  color: #047857;
+}
+
 .composer-dock {
   position: fixed;
   left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
@@ -367,6 +497,15 @@ const folderConversationGroups = computed(() =>
 
   .main-header {
     padding: 0 18px;
+  }
+
+  .markdown-theme-control {
+    gap: 2px;
+  }
+
+  .markdown-theme-button {
+    min-width: auto;
+    padding: 7px 9px;
   }
 
   .composer-dock {

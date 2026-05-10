@@ -1,14 +1,19 @@
+import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
+
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
 export type AssistantAttachmentKind = 'image' | 'file'
 export type AssistantMode = 'default' | 'exam'
 
-export interface AssistantAttachment {
+export interface AssistantAttachmentMetadata {
   id: string
   name: string
   size: number
   type: string
   kind: AssistantAttachmentKind
+}
+
+export interface AssistantAttachment extends AssistantAttachmentMetadata {
   file: File
 }
 
@@ -18,6 +23,7 @@ export interface AssistantMessage {
   content: string
   status: AssistantMessageStatus
   attachments?: AssistantAttachment[]
+  attachmentMetadata?: AssistantAttachmentMetadata[]
 }
 
 export interface AssistantConversation {
@@ -43,6 +49,9 @@ export interface AssistantReplyRequest {
   conversationId: string
   studyStage?: string
   assistantMode?: AssistantMode
+  intent?: AssistantIntent
+  scope?: InputScope
+  selection?: AssistantSelection
   attachments: AssistantAttachment[]
 }
 

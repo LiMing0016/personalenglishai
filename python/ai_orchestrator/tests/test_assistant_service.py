@@ -1,9 +1,11 @@
 import inspect
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
+from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
 from python.ai_orchestrator.schemas.routing_state import ActiveTaskState
 from python.ai_orchestrator.schemas.routing_state import ContinuationDecision
 from python.ai_orchestrator.services.active_task_state import InMemoryActiveTaskStateStore
@@ -297,6 +299,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_chat_disables_session_for_attachment_input_items(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
 
         with patch(
             "python.ai_orchestrator.assistant_service.run_agent_session",
@@ -318,9 +321,38 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
         self.assertEqual(run_agent_session.await_args.kwargs["agent_input"][0]["role"], "user")
 
+    async def test_chat_uses_attachment_agent_for_multimodal_inputs(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="The image says hello.", agent_name="Attachment Agent"),
+        ) as run_agent_session:
+            await service.chat(
+                message="翻译成中文。",
+                conversation_id="conv-image-1",
+                attachments=[
+                    {
+                        "filename": "screenshot.png",
+                        "content_type": "image/png",
+                        "content": b"fake-image",
+                    }
+                ],
+            )
+
+        agent = run_agent_session.await_args.kwargs["agent"]
+        self.assertIsNot(agent, service._router_agent)
+        self.assertIs(agent, service._attachment_agent)
+        self.assertEqual(agent.name, "Attachment Agent")
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
+
     async def test_chat_injects_study_stage_context_into_attachment_text_item(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
 
         with patch(
             "python.ai_orchestrator.assistant_service.run_agent_session",
@@ -345,6 +377,70 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- 学段: 雅思", content[0]["text"])
         self.assertEqual(content[1]["type"], "input_image")
 
+    async def test_run_assistant_request_disables_session_for_structured_input_items(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+
+        request = AssistantRequest.model_validate(
+            {
+                "appConversationId": "conv-p0-1",
+                "clientMessageId": "client-p0-1",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "message_only",
+                "message": {"text": "ping"},
+            }
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="pong", agent_name="Router Agent"),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        run_agent_session.assert_awaited_once()
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
+        self.assertIsInstance(run_agent_session.await_args.kwargs["agent_input"], list)
+        self.assertEqual(reply.reply, "pong")
+        self.assertEqual(reply.run.scope, "message_only")
+
+    async def test_stream_assistant_request_emits_delta_and_completion_events(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+
+        request = AssistantRequest.model_validate(
+            {
+                "appConversationId": "conv-stream-1",
+                "clientMessageId": "client-stream-1",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "message_only",
+                "message": {"text": "ping"},
+            }
+        )
+
+        async def fake_stream_agent_session(**kwargs):
+            yield SimpleNamespace(type="delta", delta="po", result=None)
+            yield SimpleNamespace(type="delta", delta="ng", result=None)
+            yield SimpleNamespace(
+                type="completed",
+                delta="",
+                result=AgentSessionResult(final_output="pong", agent_name="Router Agent"),
+            )
+
+        with patch("python.ai_orchestrator.assistant_service.stream_agent_session", fake_stream_agent_session):
+            events = [event async for event in service.stream_assistant_request(request)]
+
+        self.assertEqual(events[0]["type"], "run.started")
+        self.assertEqual(events[1]["type"], "message.created")
+        self.assertEqual(events[2]["type"], "message.delta")
+        self.assertEqual(events[2]["delta"], "po")
+        self.assertEqual(events[3]["delta"], "ng")
+        self.assertEqual(events[4]["type"], "message.completed")
+        self.assertEqual(events[4]["content"], "pong")
+        self.assertEqual(events[5]["type"], "run.completed")
+        self.assertEqual(events[5]["run"]["agentName"], "Router Agent")
 
     async def test_chat_rejects_empty_model_output(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")

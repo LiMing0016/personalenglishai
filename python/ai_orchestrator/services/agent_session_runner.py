@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(slots=True)
@@ -43,6 +43,13 @@ class AgentSessionResult:
     agent_name: str | None
     usage: AgentSessionUsage = field(default_factory=AgentSessionUsage)
     run_items: AgentSessionRunItems = field(default_factory=AgentSessionRunItems)
+
+
+@dataclass(slots=True)
+class AgentSessionStreamEvent:
+    type: Literal["delta", "completed"]
+    delta: str = ""
+    result: AgentSessionResult | None = None
 
 
 def _as_int(value: Any) -> int:
@@ -136,7 +143,9 @@ async def run_agent_session(
         session_path.parent.mkdir(parents=True, exist_ok=True)
         session = SQLiteSession(conversation_id, str(session_path))
 
-    runner_kwargs = {"session": session}
+    runner_kwargs = {}
+    if use_session:
+        runner_kwargs["session"] = session
     if run_context is not None:
         runner_kwargs["context"] = run_context
 
@@ -148,4 +157,46 @@ async def run_agent_session(
         agent_name=getattr(final_agent, "name", None),
         usage=extract_usage(result),
         run_items=extract_run_items(result),
+    )
+
+
+async def stream_agent_session(
+    *,
+    agent: Any,
+    agent_input: str | list[dict],
+    conversation_id: str,
+    session_db_path: str,
+    use_session: bool = True,
+    run_context: Any | None = None,
+):
+    from agents import Runner, SQLiteSession
+    from agents.stream_events import RawResponsesStreamEvent
+    from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
+
+    session = None
+    if use_session:
+        session_path = Path(session_db_path)
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session = SQLiteSession(conversation_id, str(session_path))
+
+    runner_kwargs = {}
+    if use_session:
+        runner_kwargs["session"] = session
+    if run_context is not None:
+        runner_kwargs["context"] = run_context
+
+    result = Runner.run_streamed(agent, agent_input, **runner_kwargs)
+    async for event in result.stream_events():
+        if isinstance(event, RawResponsesStreamEvent) and isinstance(event.data, ResponseTextDeltaEvent):
+            yield AgentSessionStreamEvent(type="delta", delta=event.data.delta)
+
+    final_agent = getattr(result, "last_agent", None)
+    yield AgentSessionStreamEvent(
+        type="completed",
+        result=AgentSessionResult(
+            final_output=str(getattr(result, "final_output", "") or "").strip(),
+            agent_name=getattr(final_agent, "name", None),
+            usage=extract_usage(result),
+            run_items=extract_run_items(result),
+        ),
     )

@@ -2,6 +2,7 @@ package com.personalenglishai.backend.service.assistant;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
@@ -10,6 +11,7 @@ import com.personalenglishai.backend.controller.dto.assistant.AssistantConversat
 import com.personalenglishai.backend.controller.dto.assistant.AssistantMessageResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectResponse;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantShareResponse;
 import com.personalenglishai.backend.controller.dto.assistant.CreateAssistantConversationRequest;
 import com.personalenglishai.backend.controller.dto.assistant.MoveAssistantConversationRequest;
@@ -26,23 +28,48 @@ import com.personalenglishai.backend.mapper.assistant.AssistantProjectMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantShareMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class AssistantConversationService {
     private static final String DEFAULT_TITLE = "新对话";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int MAX_ATTACHMENT_COUNT = 5;
+    private static final long MAX_ATTACHMENT_BYTES = 10L * 1024 * 1024;
+    private static final Set<String> ALLOWED_ATTACHMENT_TYPES = Set.of(
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    private static final Set<String> ALLOWED_ATTACHMENT_EXTENSIONS = Set.of(
+            ".pdf",
+            ".txt",
+            ".doc",
+            ".docx");
 
     private final AssistantProjectMapper projectMapper;
     private final AssistantConversationMapper conversationMapper;
     private final AssistantMessageMapper messageMapper;
     private final AssistantShareMapper shareMapper;
     private final PythonAssistantClient pythonAssistantClient;
+    private final AssistantRequestValidator assistantRequestValidator;
     private final ObjectMapper objectMapper;
 
     public AssistantConversationService(
@@ -51,12 +78,14 @@ public class AssistantConversationService {
             AssistantMessageMapper messageMapper,
             AssistantShareMapper shareMapper,
             PythonAssistantClient pythonAssistantClient,
+            AssistantRequestValidator assistantRequestValidator,
             ObjectMapper objectMapper) {
         this.projectMapper = projectMapper;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
         this.shareMapper = shareMapper;
         this.pythonAssistantClient = pythonAssistantClient;
+        this.assistantRequestValidator = assistantRequestValidator;
         this.objectMapper = objectMapper;
     }
 
@@ -146,8 +175,102 @@ public class AssistantConversationService {
             String conversationUid,
             SendAssistantMessageRequest request,
             String authorization) {
+        return sendMessageInternal(userId, conversationUid, request, Collections.emptyList(), authorization);
+    }
+
+    @Transactional
+    public AssistantConversationDetailResponse sendMessageWithFiles(
+            Long userId,
+            String conversationUid,
+            SendAssistantMessageRequest request,
+            List<MultipartFile> files,
+            String authorization) {
+        return sendMessageInternal(userId, conversationUid, request, toPythonFiles(files), authorization);
+    }
+
+    @Transactional
+    public AssistantConversationDetailResponse sendAgentMessage(
+            Long userId,
+            String conversationUid,
+            AssistantRequest request,
+            String authorization) {
+        AssistantConversation conversation = ensureConversation(userId, conversationUid);
+        request.setAppConversationId(conversationUid);
+        assistantRequestValidator.validateForAgentRun(request);
+
+        String prompt = displayPrompt(request);
+        int nextOrder = nextSortOrder(conversationUid);
+        AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
+        messageMapper.insert(userMessage);
+
+        PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.run(request, authorization);
+        String replyText = reply == null ? "" : reply.text();
+        if (replyText.isBlank()) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
+        }
+
+        messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+        String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
+        conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
+        return getConversation(userId, conversationUid);
+    }
+
+    public void writeAgentMessageStream(
+            Long userId,
+            String conversationUid,
+            AssistantRequest request,
+            String authorization,
+            OutputStream outputStream) {
+        AssistantConversation conversation = ensureConversation(userId, conversationUid);
+        request.setAppConversationId(conversationUid);
+        assistantRequestValidator.validateForAgentRun(request);
+
+        String prompt = displayPrompt(request);
+        int nextOrder = nextSortOrder(conversationUid);
+        messageMapper.insert(buildMessage(userId, conversationUid, "user", prompt, nextOrder));
+
+        StringBuilder deltaContent = new StringBuilder();
+        StringBuilder completedContent = new StringBuilder();
+        AtomicBoolean failed = new AtomicBoolean(false);
+
+        try {
+            pythonAssistantClient.streamRun(request, authorization)
+                    .doOnNext(eventJson -> {
+                        String normalized = normalizeStreamEvent(eventJson);
+                        if (normalized.isBlank()) {
+                            return;
+                        }
+                        captureAssistantStreamContent(normalized, deltaContent, completedContent, failed);
+                        writeSseEvent(outputStream, normalized);
+                    })
+                    .blockLast();
+        } catch (Exception e) {
+            failed.set(true);
+            writeSseEvent(outputStream, buildStreamFailureEvent(e));
+        }
+
+        String replyText = !completedContent.isEmpty() ? completedContent.toString() : deltaContent.toString();
+        if (!failed.get() && !replyText.isBlank()) {
+            messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+            String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
+            conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
+        }
+    }
+
+    private AssistantConversationDetailResponse sendMessageInternal(
+            Long userId,
+            String conversationUid,
+            SendAssistantMessageRequest request,
+            List<PythonAssistantClient.PythonAssistantFile> files,
+            String authorization) {
         AssistantConversation conversation = ensureConversation(userId, conversationUid);
         String prompt = cleanRequired(request.getMessage());
+        if (prompt.isBlank()) {
+            if (files.isEmpty()) {
+                throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "message 或 files 至少要提供一个");
+            }
+            prompt = "请查看我上传的 " + files.size() + " 个文件，并结合它回答。";
+        }
         int nextOrder = nextSortOrder(conversationUid);
 
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
@@ -158,7 +281,8 @@ public class AssistantConversationService {
                         prompt,
                         conversationUid,
                         request.getStudyStage(),
-                        request.getAssistantMode()),
+                        request.getAssistantMode(),
+                        files),
                 authorization);
         String replyText = reply == null ? "" : reply.text();
         if (replyText.isBlank()) {
@@ -169,6 +293,59 @@ public class AssistantConversationService {
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
         conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         return getConversation(userId, conversationUid);
+    }
+
+    private List<PythonAssistantClient.PythonAssistantFile> toPythonFiles(List<MultipartFile> files) {
+        List<MultipartFile> nonEmptyFiles = files == null
+                ? List.of()
+                : files.stream().filter(file -> file != null && !file.isEmpty()).toList();
+        if (nonEmptyFiles.size() > MAX_ATTACHMENT_COUNT) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "最多只能添加 5 个项目");
+        }
+
+        return nonEmptyFiles.stream().map(this::toPythonFile).toList();
+    }
+
+    private PythonAssistantClient.PythonAssistantFile toPythonFile(MultipartFile file) {
+        if (file.getSize() > MAX_ATTACHMENT_BYTES) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "单个文件最大支持 10MB");
+        }
+
+        String filename = cleanFilename(file.getOriginalFilename());
+        String contentType = cleanContentType(file.getContentType());
+        if (!isAllowedAttachment(filename, contentType)) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "仅支持 PNG、JPG、WebP、PDF、TXT、DOC、DOCX");
+        }
+
+        try {
+            return new PythonAssistantClient.PythonAssistantFile(filename, contentType, file.getBytes());
+        } catch (IOException e) {
+            throw new BizException(ErrorCode.COMMON_SYSTEM_ERROR);
+        }
+    }
+
+    private boolean isAllowedAttachment(String filename, String contentType) {
+        return ALLOWED_ATTACHMENT_TYPES.contains(contentType) ||
+                ALLOWED_ATTACHMENT_EXTENSIONS.contains(fileExtension(filename));
+    }
+
+    private String cleanFilename(String filename) {
+        if (filename == null || filename.trim().isEmpty()) {
+            return "attachment";
+        }
+        return filename.trim();
+    }
+
+    private String cleanContentType(String contentType) {
+        if (contentType == null || contentType.trim().isEmpty()) {
+            return "application/octet-stream";
+        }
+        return contentType.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String fileExtension(String filename) {
+        int index = filename.lastIndexOf('.');
+        return index >= 0 ? filename.substring(index).toLowerCase(Locale.ROOT) : "";
     }
 
     @Transactional
@@ -290,6 +467,77 @@ public class AssistantConversationService {
     private String buildSummary(String input) {
         String trimmed = input.trim();
         return trimmed.length() > 120 ? trimmed.substring(0, 120) + "..." : trimmed;
+    }
+
+    private String displayPrompt(AssistantRequest request) {
+        String text = request.getMessage() == null ? null : request.getMessage().getText();
+        if (text != null && !text.trim().isEmpty()) {
+            return text.trim();
+        }
+        if (request.getSelection() != null && request.getSelection().getText() != null &&
+                !request.getSelection().getText().trim().isEmpty()) {
+            return "请帮我解释这段内容";
+        }
+        if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
+            return "请查看我上传的 " + request.getAttachments().size() + " 个文件，并结合它回答。";
+        }
+        return "";
+    }
+
+    private String normalizeStreamEvent(String eventJson) {
+        String normalized = eventJson == null ? "" : eventJson.trim();
+        if (normalized.startsWith("data:")) {
+            normalized = normalized.substring("data:".length()).trim();
+        }
+        return normalized;
+    }
+
+    private void captureAssistantStreamContent(
+            String eventJson,
+            StringBuilder deltaContent,
+            StringBuilder completedContent,
+            AtomicBoolean failed) {
+        try {
+            JsonNode event = objectMapper.readTree(eventJson);
+            String type = event.path("type").asText("");
+            if ("message.delta".equals(type)) {
+                deltaContent.append(event.path("delta").asText(""));
+            } else if ("message.completed".equals(type)) {
+                completedContent.setLength(0);
+                completedContent.append(event.path("content").asText(""));
+            } else if ("run.failed".equals(type)) {
+                failed.set(true);
+            }
+        } catch (JsonProcessingException ignored) {
+            // Invalid stream chunks are still forwarded; they are not persisted as assistant content.
+        }
+    }
+
+    private void writeSseEvent(OutputStream outputStream, String eventJson) {
+        try {
+            outputStream.write(("data: " + eventJson + "\n\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.flush();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private String buildStreamFailureEvent(Exception e) {
+        String message = e instanceof BizException ? e.getMessage() : ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE.getMessage();
+        try {
+            return objectMapper.writeValueAsString(new StreamFailureEvent(message));
+        } catch (JsonProcessingException ignored) {
+            return "{\"type\":\"run.failed\",\"error\":{\"code\":\"OPENAI_RUN_FAILED\",\"message\":\"学习助手暂时不可用\"}}";
+        }
+    }
+
+    private record StreamFailureEvent(String type, StreamFailureError error) {
+        private StreamFailureEvent(String message) {
+            this("run.failed", new StreamFailureError("OPENAI_RUN_FAILED", message));
+        }
+    }
+
+    private record StreamFailureError(String code, String message) {
     }
 
     private String generateShareToken() {

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 try:
     from .assistant_service import AssistantAgentService, AssistantConfigError
     from .env_loader import load_orchestrator_env
+    from .schemas.assistant_request import AssistantRequest
+    from .schemas.chat import AssistantRunResponse
     from .schemas.chat import ChatResponse
     from .schemas.prompt_sheet import GenerateExamPromptRequest
     from .schemas.prompt_sheet import GenerateExamPromptResponse
@@ -15,9 +19,12 @@ try:
     from .schemas.prompt_sheet import PromptSheetChatResponse
     from .services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from .services.prompt_sheet_workflow import PromptSheetWorkflowService
+    from .services.assistant_request_validator import AssistantRequestValidationError
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
     from env_loader import load_orchestrator_env
+    from schemas.assistant_request import AssistantRequest
+    from schemas.chat import AssistantRunResponse
     from schemas.chat import ChatResponse
     from schemas.prompt_sheet import GenerateExamPromptRequest
     from schemas.prompt_sheet import GenerateExamPromptResponse
@@ -25,6 +32,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.prompt_sheet import PromptSheetChatResponse
     from services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from services.prompt_sheet_workflow import PromptSheetWorkflowService
+    from services.assistant_request_validator import AssistantRequestValidationError
 
 
 load_orchestrator_env()
@@ -97,6 +105,53 @@ async def chat(
         conversationId=conversation_id,
         agentName=result.agent_name,
     )
+
+
+@app.post("/assistant/run", response_model=AssistantRunResponse)
+async def assistant_run(
+    request: AssistantRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> AssistantRunResponse:
+    try:
+        result = await service.run_assistant_request(request, authorization=authorization)
+    except AssistantRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+    except AssistantConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - runtime safety
+        raise HTTPException(status_code=500, detail=f"assistant run failed: {exc}") from exc
+
+    if result.run is None:
+        raise HTTPException(status_code=500, detail="assistant run metadata missing")
+
+    return AssistantRunResponse(
+        reply=result.reply,
+        conversationId=request.app_conversation_id or request.client_message_id,
+        agentName=result.agent_name,
+        run=result.run,
+    )
+
+
+@app.post("/assistant/run/stream")
+async def assistant_run_stream(
+    request: AssistantRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    async def event_stream():
+        try:
+            async for event in service.stream_assistant_request(request, authorization=authorization):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except AssistantRequestValidationError as exc:
+            payload = {"type": "run.failed", "error": {"code": exc.code, "message": exc.message}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except AssistantConfigError as exc:
+            payload = {"type": "run.failed", "error": {"code": "OPENAI_RUN_FAILED", "message": str(exc)}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # pragma: no cover - runtime safety
+            payload = {"type": "run.failed", "error": {"code": "OPENAI_RUN_FAILED", "message": f"assistant run failed: {exc}"}}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/prompt-sheet/chat", response_model=PromptSheetChatResponse)

@@ -1,9 +1,31 @@
 import { computed, ref } from 'vue'
 
-import { assistantApi, assistantChat, type AssistantConversationDto, type AssistantProjectDto } from '../../api/assistant.ts'
+import {
+  assistantApi,
+  assistantChatStream,
+  type AssistantChatStreamHandlers,
+  type AssistantConversationDto,
+  type AssistantProjectDto,
+} from '../../api/assistant.ts'
 import { stageCache } from '../../stores/stageCache.ts'
+import { showToast } from '../../utils/toast.ts'
+import {
+  createAttachmentFile,
+  createAttachmentMetadata,
+  createBrowserAssistantAttachmentBlobStore,
+  type AssistantAttachmentBlobStore,
+  type StoredAssistantAttachment,
+} from './assistantAttachmentStore.ts'
+import { type AssistantAttachmentSource, validateAssistantFiles } from './assistantAttachmentRules.ts'
+import { findRetryUserMessage } from './assistantMessageActions.ts'
+import type { AssistantSelection } from '../../types/assistantRequest.ts'
+import {
+  mergeRemoteConversationListWithTransientAttachments,
+  mergeTransientMessageAttachments,
+} from './assistantConversationMerge.ts'
 import {
   type AssistantAttachment,
+  type AssistantAttachmentMetadata,
   type AssistantMode,
   type AssistantReplyRequest,
   type AssistantConversation,
@@ -11,10 +33,11 @@ import {
 } from './assistantMock.ts'
 
 interface CreateAssistantStateOptions {
-  buildReply?: (request: AssistantReplyRequest) => Promise<string>
+  buildReply?: (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => Promise<string>
   storage?: Storage
   storageKey?: string
   remote?: boolean
+  attachmentStore?: AssistantAttachmentBlobStore
 }
 
 const DEFAULT_STORAGE_KEY = 'peai:assistant:state:v1'
@@ -24,6 +47,7 @@ interface PersistedAssistantMessage {
   role: AssistantMessage['role']
   content: string
   status: AssistantMessage['status']
+  attachments?: AssistantAttachmentMetadata[]
 }
 
 interface PersistedAssistantConversation {
@@ -40,6 +64,11 @@ interface PersistedAssistantConversation {
 interface PersistedAssistantState {
   activeConversationId: string
   conversations: PersistedAssistantConversation[]
+}
+
+interface RestoredAssistantState {
+  activeConversationId: string
+  conversations: AssistantConversation[]
 }
 
 function createId(prefix: string) {
@@ -109,12 +138,32 @@ function toPersistedConversation(conversation: AssistantConversation): Persisted
         role: message.role,
         content: message.content,
         status: 'done',
+        attachments: persistedAttachmentMetadata(message),
       })),
   }
 }
 
+function persistedAttachmentMetadata(message: AssistantMessage): AssistantAttachmentMetadata[] | undefined {
+  const metadata = message.attachments?.length
+    ? message.attachments.map(createAttachmentMetadata)
+    : message.attachmentMetadata
+  return metadata?.length ? metadata.map((attachment) => ({ ...attachment })) : undefined
+}
+
 function isPersistedRole(role: unknown): role is AssistantMessage['role'] {
   return role === 'user' || role === 'assistant'
+}
+
+function isPersistedAttachmentMetadata(value: unknown): value is AssistantAttachmentMetadata {
+  const candidate = value as Partial<AssistantAttachmentMetadata> | null
+  return Boolean(
+    candidate &&
+      typeof candidate.id === 'string' &&
+      typeof candidate.name === 'string' &&
+      typeof candidate.size === 'number' &&
+      typeof candidate.type === 'string' &&
+      (candidate.kind === 'image' || candidate.kind === 'file'),
+  )
 }
 
 function restoreConversation(value: unknown): AssistantConversation | null {
@@ -135,6 +184,9 @@ function restoreConversation(value: unknown): AssistantConversation | null {
             role: candidate.role,
             content: candidate.content,
             status: 'done',
+            attachmentMetadata: Array.isArray(candidate.attachments)
+              ? candidate.attachments.filter(isPersistedAttachmentMetadata)
+              : undefined,
           } satisfies AssistantMessage
         })
         .filter((message): message is AssistantMessage => Boolean(message))
@@ -176,7 +228,7 @@ function fromRemoteConversation(dto: AssistantConversationDto): AssistantConvers
   }
 }
 
-function restoreAssistantState(storage: Storage | undefined, storageKey: string): PersistedAssistantState | null {
+function restoreAssistantState(storage: Storage | undefined, storageKey: string): RestoredAssistantState | null {
   if (!storage) return null
   try {
     const raw = storage.getItem(storageKey)
@@ -203,6 +255,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const storage = options.storage ?? fallbackStorage()
   const storageKey = options.storageKey ?? DEFAULT_STORAGE_KEY
   const remote = Boolean(options.remote)
+  const attachmentStore = options.attachmentStore ?? createBrowserAssistantAttachmentBlobStore()
   const remoteConversationIds = new Set<string>()
   const restored = restoreAssistantState(storage, storageKey)
   const conversations = ref<AssistantConversation[]>(restored?.conversations ?? [createEmptyConversation()])
@@ -212,14 +265,15 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const isLoadingConversations = ref(false)
   const composerText = ref('')
   const composerAttachments = ref<AssistantAttachment[]>([])
+  const pendingSelection = ref<AssistantSelection | null>(null)
   const assistantMode = ref<AssistantMode>('default')
   const searchText = ref('')
   const isSending = ref(false)
   const errorMessage = ref('')
   const lastFailedPrompt = ref('')
   const lastFailedAttachments = ref<AssistantAttachment[]>([])
-  const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest) => {
-    const response = await assistantChat(request)
+  const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => {
+    const response = await assistantChatStream(request, stream)
     return response.reply
   })
 
@@ -246,11 +300,14 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   }
 
   function replaceConversation(id: string, next: AssistantConversation) {
-    conversations.value = conversations.value.map((conversation) => (conversation.id === id ? next : conversation))
+    const previous = conversations.value.find((conversation) => conversation.id === id)
+    const merged = mergeTransientMessageAttachments(previous, next)
+    conversations.value = conversations.value.map((conversation) => (conversation.id === id ? merged : conversation))
     if (activeConversationId.value === id) {
-      activeConversationId.value = next.id
+      activeConversationId.value = merged.id
     }
     persistState()
+    void hydrateConversationAttachments(merged.id).catch(() => undefined)
   }
 
   function removeConversationLocal(id: string) {
@@ -276,16 +333,25 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       ])
       projects.value = remoteProjects
       remoteConversationIds.clear()
-      const nextConversations = remoteConversations.map((conversation) => {
+      const nextRemoteConversations = remoteConversations.map((conversation) => {
         remoteConversationIds.add(conversation.id)
         return fromRemoteConversation(conversation)
       })
-      archivedConversations.value = remoteArchived.map((conversation) => {
+      const nextArchivedConversations = remoteArchived.map((conversation) => {
         remoteConversationIds.add(conversation.id)
         return fromRemoteConversation(conversation)
       })
+      const nextConversations = mergeRemoteConversationListWithTransientAttachments(
+        conversations.value,
+        nextRemoteConversations,
+      )
+      archivedConversations.value = mergeRemoteConversationListWithTransientAttachments(
+        [...conversations.value, ...archivedConversations.value],
+        nextArchivedConversations,
+      )
       conversations.value = nextConversations.length > 0 ? nextConversations : [createEmptyConversation()]
       activeConversationId.value = conversations.value[0]!.id
+      void hydrateAllConversationAttachments().catch(() => undefined)
       if (remoteConversationIds.has(activeConversationId.value)) {
         const detail = await assistantApi.getConversation(activeConversationId.value)
         replaceConversation(activeConversationId.value, fromRemoteConversation(detail))
@@ -347,8 +413,26 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerText.value = prompt
   }
 
-  function addAttachments(files: File[]) {
-    const nextAttachments = files.map((file) => ({
+  function setPendingSelection(selection: AssistantSelection | null) {
+    pendingSelection.value = selection
+      ? {
+          text: selection.text,
+          source: selection.source,
+          sourceId: selection.sourceId,
+          messageId: selection.messageId,
+          documentId: selection.documentId,
+          range: selection.range,
+        }
+      : null
+  }
+
+  function addAttachments(files: File[], source: AssistantAttachmentSource = 'picker') {
+    const validation = validateAssistantFiles(files, composerAttachments.value, source)
+    if (validation.rejected.length > 0) {
+      showToast(validation.rejected[0]!.reason, 'error')
+    }
+
+    const nextAttachments = validation.accepted.map((file) => ({
       id: createId('attachment'),
       name: file.name,
       size: file.size,
@@ -374,7 +458,8 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     }
 
     const trimmed = prompt.trim()
-    if (!trimmed && attachments.length === 0) {
+    const selectionForRequest = pendingSelection.value
+    if (!trimmed && attachments.length === 0 && !selectionForRequest) {
       return
     }
 
@@ -393,6 +478,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     }
     const userMessage = createMessage('user', trimmed, 'done')
     userMessage.attachments = attachments.map((attachment) => ({ ...attachment }))
+    userMessage.attachmentMetadata = attachments.map(createAttachmentMetadata)
     const loadingMessage = createMessage('assistant', '正在思考...', 'loading')
     conversation.messages.push(userMessage, loadingMessage)
     conversation.updatedAt = Date.now()
@@ -401,14 +487,50 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     }
     conversation.summary = trimmed || `已添加 ${attachments.length} 个附件`
     persistState()
+    if (attachments.length > 0) {
+      try {
+        await saveAttachmentBlobs(attachments)
+      } catch {
+        showToast('附件本地保存失败，刷新后可能无法恢复', 'error')
+      }
+    }
+
+    composerText.value = ''
+    composerAttachments.value = []
+    setPendingSelection(null)
 
     try {
+      let streamedReply = ''
+      const updateLoadingMessage = (content: string) => {
+        const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
+        if (loadingIndex >= 0) {
+          conversation.messages.splice(loadingIndex, 1, {
+            ...conversation.messages[loadingIndex]!,
+            content,
+          })
+        }
+      }
+
       const reply = await buildReply({
         input: trimmed || `请查看我上传的 ${attachments.length} 个附件`,
         conversationId: conversation.id,
         studyStage: currentStudyStage(),
         assistantMode: assistantMode.value,
+        intent: selectionForRequest ? 'explain' : 'free_chat',
+        scope: selectionForRequest
+          ? (trimmed ? 'selection_and_message' : 'selection')
+          : 'message_only',
+        selection: selectionForRequest ?? undefined,
         attachments,
+      }, {
+        onDelta: (delta) => {
+          streamedReply += delta
+          updateLoadingMessage(streamedReply)
+        },
+        onCompleted: (content) => {
+          streamedReply = content
+          updateLoadingMessage(content)
+        },
       })
       const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
       if (loadingIndex >= 0) {
@@ -421,13 +543,13 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           // Local optimistic state is already usable; the next selection reloads from server.
         }
       }
-      composerText.value = ''
-      composerAttachments.value = []
       persistState()
     } catch (error) {
-      const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
-      if (loadingIndex >= 0) {
-        conversation.messages.splice(loadingIndex, 1)
+      conversation.messages = conversation.messages.filter(
+        (message) => message.id !== userMessage.id && message.id !== loadingMessage.id,
+      )
+      if (attachments.length > 0) {
+        void attachmentStore.deleteMany(attachments.map((attachment) => attachment.id)).catch(() => undefined)
       }
       errorMessage.value = error instanceof Error ? error.message : '学习助手暂时不可用'
       lastFailedPrompt.value = trimmed
@@ -435,6 +557,9 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       persistState()
     } finally {
       isSending.value = false
+      if (selectionForRequest) {
+        setPendingSelection(null)
+      }
       conversation.updatedAt = Date.now()
       persistState()
     }
@@ -449,6 +574,14 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       return
     }
     await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value)
+  }
+
+  async function retryAssistantMessage(messageId: string) {
+    const retryMessage = findRetryUserMessage(activeConversation.value.messages, messageId)
+    if (!retryMessage) {
+      throw new Error('没有找到可重试的上一条用户消息')
+    }
+    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [])
   }
 
   async function renameConversation(id: string, title: string) {
@@ -501,8 +634,13 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   }
 
   async function deleteConversation(id: string) {
+    const conversation = conversations.value.find((item) => item.id === id) ??
+      archivedConversations.value.find((item) => item.id === id)
     if (remote && remoteConversationIds.has(id)) {
       await assistantApi.deleteConversation(id)
+    }
+    if (conversation) {
+      await deleteConversationAttachments(conversation)
     }
     remoteConversationIds.delete(id)
     removeConversationLocal(id)
@@ -534,6 +672,70 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     return project
   }
 
+  async function saveAttachmentBlobs(attachments: AssistantAttachment[]) {
+    await Promise.all(
+      attachments.map((attachment) =>
+        attachmentStore.put({
+          ...createAttachmentMetadata(attachment),
+          blob: attachment.file,
+          createdAt: Date.now(),
+        }),
+      ),
+    )
+  }
+
+  async function hydrateConversation(conversation: AssistantConversation): Promise<AssistantConversation> {
+    const messages = await Promise.all(
+      conversation.messages.map(async (message) => {
+        const metadata = persistedAttachmentMetadata(message)
+        if (!metadata?.length || message.attachments?.length) {
+          return metadata?.length ? { ...message, attachmentMetadata: metadata } : message
+        }
+
+        const storedRecords = await Promise.all(metadata.map((attachment) => attachmentStore.get(attachment.id)))
+        const attachments = storedRecords
+          .map((record, index) => recordToAttachment(record, metadata[index]))
+          .filter((attachment): attachment is AssistantAttachment => Boolean(attachment))
+
+        return attachments.length > 0
+          ? { ...message, attachments, attachmentMetadata: metadata }
+          : { ...message, attachmentMetadata: metadata }
+      }),
+    )
+    return { ...conversation, messages }
+  }
+
+  function recordToAttachment(
+    record: StoredAssistantAttachment | null,
+    metadata: AssistantAttachmentMetadata | undefined,
+  ): AssistantAttachment | null {
+    if (!record || !metadata) return null
+    return createAttachmentFile(metadata, record.blob)
+  }
+
+  async function hydrateConversationAttachments(id: string) {
+    const conversation = conversations.value.find((item) => item.id === id)
+    if (!conversation) return
+    const hydrated = await hydrateConversation(conversation)
+    conversations.value = conversations.value.map((item) => (item.id === id ? hydrated : item))
+    persistState()
+  }
+
+  async function hydrateAllConversationAttachments() {
+    conversations.value = await Promise.all(conversations.value.map(hydrateConversation))
+    archivedConversations.value = await Promise.all(archivedConversations.value.map(hydrateConversation))
+    persistState()
+  }
+
+  async function deleteConversationAttachments(conversation: AssistantConversation) {
+    const attachmentIds = conversation.messages.flatMap((message) =>
+      persistedAttachmentMetadata(message)?.map((attachment) => attachment.id) ?? [],
+    )
+    await attachmentStore.deleteMany([...new Set(attachmentIds)])
+  }
+
+  void hydrateAllConversationAttachments().catch(() => undefined)
+
   return {
     conversations,
     archivedConversations,
@@ -545,11 +747,13 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerAttachments,
     assistantMode,
     searchText,
+    pendingSelection,
     isSending,
     errorMessage,
     canRetry,
     loadRemoteState,
     applyStarter,
+    setPendingSelection,
     addAttachments,
     removeAttachment,
     setAssistantMode,
@@ -565,5 +769,6 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     createProject,
     sendMessage,
     retryLastMessage,
+    retryAssistantMessage,
   }
 }

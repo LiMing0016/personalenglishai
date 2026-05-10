@@ -1,12 +1,33 @@
 import { http } from './http'
+import { streamAssistantEvents } from './assistantStream.ts'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
+import type {
+  AssistantIntent,
+  AssistantRequest as AssistantAgentRequest,
+  AssistantSelection,
+  InputScope,
+  LearningMode,
+} from '../types/assistantRequest'
+export type {
+  AssistantAttachmentRef,
+  AssistantErrorPayload,
+  AssistantIntent,
+  AssistantMessageResponse as AssistantAgentMessageResponse,
+  AssistantRequest,
+  AssistantRunMetadata,
+  AssistantStreamEvent,
+  InputScope,
+  LearningMode,
+} from '../types/assistantRequest'
 
 interface ApiEnvelope<T> {
   code?: string
   message?: string
   data?: T
 }
+
+const ASSISTANT_REQUEST_TIMEOUT_MS = 60000
 
 export interface AssistantProjectDto {
   id: number
@@ -53,12 +74,77 @@ export interface AssistantChatPayload {
   conversationId: string
   studyStage?: string
   assistantMode?: 'default' | 'exam'
+  intent?: AssistantIntent
+  scope?: InputScope
+  selection?: AssistantSelection
   attachments: AssistantAttachment[]
 }
 
 export interface AssistantChatResult {
   reply: string
   conversation?: AssistantConversationDto
+}
+
+export interface AssistantChatStreamHandlers {
+  onDelta?: (delta: string) => void
+  onCompleted?: (content: string) => void
+}
+
+function createClientMessageId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+  return `client-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function mapLearningMode(mode?: AssistantChatPayload['assistantMode']): LearningMode {
+  return mode === 'exam' ? 'exam_boost' : 'daily_explain'
+}
+
+type AssistantStudyContext = NonNullable<AssistantAgentRequest['studyContext']>
+type AssistantStudyStage = AssistantStudyContext['studyStage']
+type AssistantTargetExam = AssistantStudyContext['targetExam']
+
+function normalizeStudyStage(stage?: string): AssistantStudyStage | undefined {
+  const normalized = stage?.trim()
+  return normalized || undefined
+}
+
+function normalizeTargetExam(stage?: string): AssistantTargetExam | undefined {
+  const normalized = stage?.trim().toLowerCase()
+  if (
+    normalized === 'ielts'
+    || normalized === 'toefl'
+    || normalized === 'cet4'
+    || normalized === 'cet6'
+    || normalized === 'gaokao'
+    || normalized === 'postgrad'
+  ) {
+    return normalized
+  }
+  return undefined
+}
+
+function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentRequest {
+  const hasSelection = Boolean(payload.selection?.text?.trim())
+  const text = payload.input.trim()
+  return {
+    appConversationId: payload.conversationId,
+    clientMessageId: createClientMessageId(),
+    mode: mapLearningMode(payload.assistantMode),
+    intent: payload.intent ?? (hasSelection ? 'explain' : 'free_chat'),
+    scope: payload.scope ?? (hasSelection ? (text ? 'selection_and_message' : 'selection') : 'message_only'),
+    message: {
+      text: payload.input,
+    },
+    selection: payload.selection,
+    studyContext: {
+      studyStage: normalizeStudyStage(payload.studyStage),
+      targetExam: normalizeTargetExam(payload.studyStage),
+      locale: 'zh-CN',
+      responseLanguage: 'zh-CN',
+    },
+  }
 }
 
 function unwrap<T>(body: ApiEnvelope<T>): T {
@@ -160,10 +246,6 @@ export const assistantApi = {
 }
 
 export async function assistantChat(payload: AssistantChatPayload): Promise<AssistantChatResult> {
-  if (payload.attachments.length > 0) {
-    throw new Error('当前版本暂不支持通过后端保存附件对话，请先发送纯文本。')
-  }
-
   const conversation = await sendAssistantMessage(payload)
   const reply = latestAssistantReply(conversation)
   if (!reply.trim()) {
@@ -172,14 +254,99 @@ export async function assistantChat(payload: AssistantChatPayload): Promise<Assi
   return { reply, conversation }
 }
 
+export async function assistantChatStream(
+  payload: AssistantChatPayload,
+  handlers: AssistantChatStreamHandlers = {},
+): Promise<AssistantChatResult> {
+  if (payload.attachments.length > 0) {
+    return assistantChat(payload)
+  }
+
+  const agentRequest = toAssistantAgentRequest(payload)
+  let seenEvent = false
+  let failedMessage = ''
+  let completedContent = ''
+  let accumulatedContent = ''
+
+  try {
+    await streamAssistantEvents(
+      `/api/assistant/conversations/${payload.conversationId}/messages/run/stream`,
+      agentRequest,
+      (event) => {
+        seenEvent = true
+        if (event.type === 'message.delta' && 'delta' in event && typeof event.delta === 'string') {
+          accumulatedContent += event.delta
+          handlers.onDelta?.(event.delta)
+          return
+        }
+        if (event.type === 'message.completed' && 'content' in event && typeof event.content === 'string') {
+          completedContent = event.content
+          handlers.onCompleted?.(event.content)
+          return
+        }
+        if (event.type === 'run.failed' && 'error' in event) {
+          const error = event.error as { message?: string }
+          failedMessage = error.message || '学习助手暂时不可用'
+        }
+      },
+    )
+  } catch (error) {
+    if (!seenEvent) {
+      return assistantChat(payload)
+    }
+    throw error
+  }
+
+  if (failedMessage) {
+    throw new Error(failedMessage)
+  }
+
+  const reply = completedContent || accumulatedContent
+  if (!reply.trim()) {
+    throw new Error('学习助手没有返回内容')
+  }
+  return { reply }
+}
+
 export async function sendAssistantMessage(payload: AssistantChatPayload): Promise<AssistantConversationDto> {
+  if (payload.attachments.length > 0) {
+    const formData = new FormData()
+    formData.append('message', payload.input)
+    if (payload.studyStage) {
+      formData.append('studyStage', payload.studyStage)
+    }
+    if (payload.assistantMode) {
+      formData.append('assistantMode', payload.assistantMode)
+    }
+    for (const attachment of payload.attachments) {
+      formData.append('files', attachment.file, attachment.name)
+    }
+
+    const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
+      `/assistant/conversations/${payload.conversationId}/messages`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: ASSISTANT_REQUEST_TIMEOUT_MS,
+      },
+    )
+    return unwrap(res.data)
+  }
+
+  const agentRequest = toAssistantAgentRequest(payload)
+  const agentConversation = await sendAssistantAgentMessage(agentRequest)
+  return agentConversation
+}
+
+export async function sendAssistantAgentMessage(payload: AssistantAgentRequest): Promise<AssistantConversationDto> {
+  const appConversationId = payload.appConversationId
+  if (!appConversationId) {
+    throw new Error('学习助手会话 ID 不能为空')
+  }
   const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
-    `/assistant/conversations/${payload.conversationId}/messages`,
-    {
-      message: payload.input,
-      studyStage: payload.studyStage,
-      assistantMode: payload.assistantMode,
-    },
+    `/assistant/conversations/${appConversationId}/messages/run`,
+    payload,
+    { timeout: ASSISTANT_REQUEST_TIMEOUT_MS },
   )
   return unwrap(res.data)
 }
