@@ -138,4 +138,4 @@ Controller 接收 `LoginRequest`（仅 email、password）→ `@Valid` 校验 �
 | 全局异常 | `common/web/GlobalExceptionHandler` |
 | 错误码 | `common/error/ErrorCode`、`BizException` |
 
-接口契约与验收命令见 [Auth 模块验收说明](./README.md)。
+接口契约与验收命令见 [Auth 模块验收说明](./auth.md)。

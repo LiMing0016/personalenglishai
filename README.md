@@ -23,6 +23,25 @@ Personal English AI 是一个面向英语学习与写作训练的 Web 应用。�
 | Python AI | FastAPI, OpenAI Agents SDK, Uvicorn |
 | Deploy | Docker, Docker Compose, Nginx |
 
+## 文档站
+
+项目文档统一从 `docs/` 进入，并使用 VitePress 生成本地文档站。
+
+```powershell
+cd docs
+npm install
+npm run dev
+```
+
+构建验证：
+
+```powershell
+cd docs
+npm run build
+```
+
+文档治理规则见 `docs/contributing.md`。主导航只放当前有效文档，任务拆解统一放在根目录 `tasks/`；旧版状态说明、mockup 和临时资料统一归档到 `docs/archive/`。
+
 ## 仓库结构
 
 ```text
@@ -32,7 +51,7 @@ Personal English AI 是一个面向英语学习与写作训练的 Web 应用。�
 ├── python/
 │   ├── ai_orchestrator/         # 学习助手 agent 编排服务
 │   └── context_sidecar/         # 遗留上下文 sidecar，主要做兼容
-├── docs/                        # 产品、接口、评分、AI 与部署文档
+├── docs/                        # VitePress 文档站与项目文档
 ├── deploy/                      # Nginx 等部署配置
 ├── scripts/                     # 辅助脚本
 ├── docker-compose.yml           # 后端、Redis、Python 服务编排

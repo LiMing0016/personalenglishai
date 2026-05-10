@@ -188,5 +188,5 @@ sequenceDiagram
 
 ## 相关文档
 
-- [grammar-check-feature.md](/F:/personalenglishai/docs/grammar-check-feature.md)
-- [polish-feature-spec.md](/F:/personalenglishai/docs/polish-feature-spec.md)
+- [grammar-check-feature.md](../../ai/grammar-check.md)
+- [polish-feature-spec.md](../../ai/polish-feature.md)

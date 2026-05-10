@@ -8,8 +8,8 @@
 - [active-task-state-design.md](./active-task-state-design.md)：Active Task State、续问判定、状态生命周期和 classifier 设计。
 - [grammar-skills-profile-impact.md](./grammar-skills-profile-impact.md)：grammar-check / grammar-explain Skill 边界、事件字段、统计口径和用户画像影响。
 - [grammar-learning-events-persistence.md](./grammar-learning-events-persistence.md)：语法学习事件从 Python Orchestrator 到 Backend API、MySQL 和画像聚合的持久化方案。
-- [writing-task-metadata.md](./writing-task-metadata.md)：写作助教工作流的题目任务元数据层，说明作文中心任务、必答点、写作重点和推荐结构如何保存。
-- [../cefr/README.md](../cefr/README.md)：CEFR 在 PEAI 中作为能力坐标系的使用方式，包含项目指南、产品化应用和 RAG 抽取方案。
+- [writing-task-metadata.md](../architecture/writing-task-metadata.md)：写作助教工作流的题目任务元数据层，说明作文中心任务、必答点、写作重点和推荐结构如何保存。
+- [CEFR](../product/cefr/)：CEFR 在 PEAI 中作为能力坐标系的使用方式，包含项目指南、产品化应用和 RAG 抽取方案。
 
 维护规则：
 
