@@ -1,16 +1,13 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM ====== 配置区：只改这里 ======
-set "NGINX_DIR=D:\nginx-1.28.1"
-set "NGINX_PORT=8080"
-REM 是否暂停窗口：1=暂停（手动双击用），0=不暂停（IDEA Run 用）
-set "PAUSE_AT_END=0"
-REM ==============================
-
 set "ROOT=%~dp0"
 set "LOCAL_PORTS_FILE=%ROOT%local-ports.env"
-call :load_local_config
+set "LOCAL_PORTS_TEMPLATE=%ROOT%local-ports.env.example"
+call :load_config "%LOCAL_PORTS_TEMPLATE%" "template"
+call :load_config "%LOCAL_PORTS_FILE%" "local"
+call :resolve_nginx_config
+if errorlevel 1 exit /b 1
 
 set "NGINX_EXE=%NGINX_DIR%\nginx.exe"
 set "PORT=%NGINX_PORT%"
@@ -81,15 +78,44 @@ exit /b 0
 if "%PAUSE_AT_END%"=="1" call :wait_for_enter
 exit /b 1
 
-:load_local_config
-if exist "%LOCAL_PORTS_FILE%" (
-  echo [Nginx] Loading local port config: %LOCAL_PORTS_FILE%
-  for /f "usebackq tokens=1,* delims==" %%A in ("%LOCAL_PORTS_FILE%") do (
+:load_config
+set "_config_file=%~1"
+set "_config_label=%~2"
+if exist "%_config_file%" (
+  echo [Nginx] Loading %_config_label% port config: %_config_file%
+  for /f "usebackq tokens=1,* delims==" %%A in ("%_config_file%") do (
     set "_key=%%A"
     set "_value=%%B"
     if not "!_key!"=="" if not "!_key:~0,1!"=="#" set "!_key!=!_value!"
   )
 )
+exit /b 0
+
+:resolve_nginx_config
+if not defined PORT_OFFSET set "PORT_OFFSET=0"
+if not defined NGINX_DIR (
+  echo [Nginx] Missing NGINX_DIR. Set it in local-ports.env or local-ports.env.example.
+  exit /b 1
+)
+if not defined NGINX_PORT call :derive_port "NGINX_PORT" "%NGINX_BASE_PORT%" "%PORT_OFFSET%"
+if errorlevel 1 exit /b 1
+if not defined PAUSE_AT_END set "PAUSE_AT_END=0"
+exit /b 0
+
+:derive_port
+set "_target=%~1"
+set "_base=%~2"
+set "_offset=%~3"
+if "%_base%"=="" (
+  echo [Nginx] Missing base port for %_target%. Set %_target% or %_target:_PORT=_BASE_PORT% in local-ports.env.
+  exit /b 1
+)
+set /a "_derived=%_base% + %_offset%" >nul 2>nul
+if errorlevel 1 (
+  echo [Nginx] Invalid port expression for %_target%: base=%_base%, offset=%_offset%.
+  exit /b 1
+)
+set "%_target%=%_derived%"
 exit /b 0
 
 :wait_for_enter

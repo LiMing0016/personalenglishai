@@ -31,16 +31,21 @@
 
 ## 本地端口
 
-`start-local.bat` 使用 `local-ports.env` 控制本地端口，并会把前端地址注入后端 `APP_BASE_URL`。
+`start-local.bat` 使用 `local-ports.env.example` + `local-ports.env` 控制本地端口，并会把前端地址注入后端 `APP_BASE_URL`。脚本本身不写死端口号，默认端口由“基准端口 + `PORT_OFFSET`”推导。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `BACKEND_PORT` | `18081` | 本地后端端口。脚本会传入 `SERVER_PORT`。 |
-| `WEB_PORT` | `3300` | 本地前端端口。脚本会传入 Vite `--port`，也会生成本地 `APP_BASE_URL`。 |
+| `PORT_OFFSET` | `0` | 当前本地项目的端口偏移量。多 agent/worktree 并行时改这个值。 |
+| `BACKEND_BASE_PORT` | `18080` | 本地后端基准端口。未显式设置 `BACKEND_PORT` 时，脚本会推导 `BACKEND_PORT=BACKEND_BASE_PORT+PORT_OFFSET`。 |
+| `WEB_BASE_PORT` | `3300` | 本地前端基准端口。未显式设置 `WEB_PORT` 时，脚本会推导 `WEB_PORT=WEB_BASE_PORT+PORT_OFFSET`。 |
+| `PYTHON_BASE_PORT` | `8011` | Python orchestrator 基准端口。未显式设置 `PYTHON_PORT` 时，脚本会推导 `PYTHON_PORT=PYTHON_BASE_PORT+PORT_OFFSET`。 |
+| `NGINX_BASE_PORT` | `8080` | 本地 Nginx 基准端口。未显式设置 `NGINX_PORT` 时，脚本会推导 `NGINX_PORT=NGINX_BASE_PORT+PORT_OFFSET`。 |
+| `BACKEND_PORT` | 可选 | 显式指定本地后端端口。脚本会传入 `SERVER_PORT`。 |
+| `WEB_PORT` | 可选 | 显式指定本地前端端口。脚本会传入 Vite `--port`，也会生成本地 `APP_BASE_URL`。 |
 | `PYTHON_HOST` | `127.0.0.1` | Python orchestrator 监听地址。 |
-| `PYTHON_PORT` | `8011` | Python orchestrator 端口。 |
+| `PYTHON_PORT` | 可选 | 显式指定 Python orchestrator 端口。 |
 | `NGINX_DIR` | 本机路径 | 本地 Nginx 路径。 |
-| `NGINX_PORT` | `8080` | 本地 Nginx 端口。 |
+| `NGINX_PORT` | 可选 | 显式指定本地 Nginx 端口。 |
 | `PAUSE_AT_END` | `0` | 本地脚本是否暂停。 |
 
 手动启动 Vite 时默认端口是 `3000`；使用 `start-local.bat` 时默认端口是 `3300`。因此本地手动启动与脚本启动时，`APP_BASE_URL` 可能不同。
@@ -141,7 +146,7 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 
 | 变量 | 示例 | 说明 |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `http://localhost:18081` | Vite 开发代理目标。生产构建后通常由 Nginx 反代 `/api`，不依赖该值。 |
+| `VITE_API_BASE_URL` | 由脚本注入 | Vite 开发代理目标。`start-local.bat` 会按当前 `BACKEND_PORT` 注入，生产构建后通常由 Nginx 反代 `/api`。 |
 | `VITE_ASSISTANT_API_BASE_URL` | `http://127.0.0.1:8011` | 前端访问 Python orchestrator 的地址。 |
 
 前端运行时代码默认请求相对路径 `/api`。生产环境应通过 Nginx 将 `/api` 转发到后端。

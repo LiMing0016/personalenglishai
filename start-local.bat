@@ -6,15 +6,15 @@ set "BACKEND_DIR=%ROOT%backend"
 set "WEB_DIR=%ROOT%web"
 set "PYTHON_EXE=%ROOT%python\ai_orchestrator\.venv\Scripts\python.exe"
 set "LOCAL_PORTS_FILE=%ROOT%local-ports.env"
+set "LOCAL_PORTS_TEMPLATE=%ROOT%local-ports.env.example"
 
-set "BACKEND_PORT=18081"
-set "WEB_PORT=3300"
-set "PYTHON_HOST=127.0.0.1"
-set "PYTHON_PORT=8011"
 set "CHECK_ONLY=0"
 if "%~1"=="--check" set "CHECK_ONLY=1"
 
-call :load_local_config
+call :load_config "%LOCAL_PORTS_TEMPLATE%" "template"
+call :load_config "%LOCAL_PORTS_FILE%" "local"
+call :resolve_ports
+if errorlevel 1 exit /b 1
 
 call :check_prerequisites
 if errorlevel 1 exit /b 1
@@ -43,15 +43,47 @@ echo [PEAI] If backend fails, check backend/.env for datasource and JWT settings
 call :wait_for_enter
 exit /b 0
 
-:load_local_config
-if exist "%LOCAL_PORTS_FILE%" (
-  echo [PEAI] Loading local port config: %LOCAL_PORTS_FILE%
-  for /f "usebackq tokens=1,* delims==" %%A in ("%LOCAL_PORTS_FILE%") do (
+:load_config
+set "_config_file=%~1"
+set "_config_label=%~2"
+if exist "%_config_file%" (
+  echo [PEAI] Loading %_config_label% port config: %_config_file%
+  for /f "usebackq tokens=1,* delims==" %%A in ("%_config_file%") do (
     set "_key=%%A"
     set "_value=%%B"
     if not "!_key!"=="" if not "!_key:~0,1!"=="#" set "!_key!=!_value!"
   )
 )
+exit /b 0
+
+:resolve_ports
+if not defined PORT_OFFSET set "PORT_OFFSET=0"
+if not defined PYTHON_HOST (
+  echo [ERROR] Missing PYTHON_HOST. Set it in local-ports.env or local-ports.env.example.
+  exit /b 1
+)
+if not defined BACKEND_PORT call :derive_port "BACKEND_PORT" "%BACKEND_BASE_PORT%" "%PORT_OFFSET%"
+if errorlevel 1 exit /b 1
+if not defined WEB_PORT call :derive_port "WEB_PORT" "%WEB_BASE_PORT%" "%PORT_OFFSET%"
+if errorlevel 1 exit /b 1
+if not defined PYTHON_PORT call :derive_port "PYTHON_PORT" "%PYTHON_BASE_PORT%" "%PORT_OFFSET%"
+if errorlevel 1 exit /b 1
+exit /b 0
+
+:derive_port
+set "_target=%~1"
+set "_base=%~2"
+set "_offset=%~3"
+if "%_base%"=="" (
+  echo [ERROR] Missing base port for %_target%. Set %_target% or %_target:_PORT=_BASE_PORT% in local-ports.env.
+  exit /b 1
+)
+set /a "_derived=%_base% + %_offset%" >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] Invalid port expression for %_target%: base=%_base%, offset=%_offset%.
+  exit /b 1
+)
+set "%_target%=%_derived%"
 exit /b 0
 
 :wait_for_enter

@@ -124,15 +124,15 @@ npm run build
 start-local.bat
 ```
 
-默认端口：
+本地脚本端口来自 `local-ports.env`。默认模板使用“基准端口 + 偏移量”推导：
 
 | 服务 | 默认地址 |
 |------|----------|
 | Web | `http://localhost:3300` |
-| Backend | `http://localhost:18081` |
+| Backend | `http://localhost:18080` |
 | Python orchestrator | `http://127.0.0.1:8011` |
 
-端口可通过 `local-ports.env` 调整。脚本会在端口被占用时提示更换端口、结束占用进程或取消启动。
+同一仓库跑多个 agent/worktree 时，复制 `local-ports.env.example` 为 `local-ports.env`，只改 `PORT_OFFSET` 即可。脚本会在端口被占用时提示更换端口、结束占用进程或取消启动。
 
 ### 手动启动
 
