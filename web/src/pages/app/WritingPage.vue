@@ -5,118 +5,294 @@
     <p class="gate-hint">加载中…</p>
   </div>
 
-  <!-- Document list hub -->
-  <div v-else-if="phase === 'doc-list'" class="hub-page">
-    <!-- Header -->
-    <div class="hub-header">
-      <h2 class="hub-title">写作练习</h2>
-      <button class="new-doc-btn" @click="navigateToPhase('mode-select')">+ 新建作文</button>
-    </div>
+  <!-- Writing hub / dashboard -->
+  <div v-else-if="phase === 'doc-list' || phase === 'dashboard'" class="hub-page" :class="{ 'hub-page--dashboard': phase === 'dashboard' }">
+    <nav class="writing-section-tabs" aria-label="写作页面导航">
+      <RouterLink class="writing-section-tab" :class="{ active: phase === 'doc-list' }" to="/app/writing">写作练习</RouterLink>
+      <RouterLink class="writing-section-tab" :class="{ active: phase === 'dashboard' }" to="/app/writing/dashboard">Dashboard</RouterLink>
+    </nav>
 
-    <!-- Stats cards -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #ecfdf5; color: #047857;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ docList.length }}</span>
-          <span class="stat-label">篇作文</span>
-        </div>
+    <section class="dashboard-hero" aria-labelledby="writing-dashboard-title">
+      <div class="hero-copy">
+        <p class="hero-kicker">PEAI Writing / Practice</p>
+        <h2 id="writing-dashboard-title" class="hub-title">{{ phase === 'dashboard' ? 'Dashboard' : '写作练习' }}</h2>
+        <p class="hero-subtitle">
+          {{ phase === 'dashboard' ? '查看写作成长、能力曲线和主题覆盖' : '坚持每天写一点，英语写作自然进步。' }}
+        </p>
       </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #ecfdf5; color: #047857;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ totalSubmits }}</span>
-          <span class="stat-label">次评分</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #ecfdf5; color: #047857;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ avgScore ?? '--' }}</span>
-          <span class="stat-label">平均分</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background: #eff6ff; color: #2563eb;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        </div>
-        <div class="stat-info">
-          <span class="stat-value">{{ bestScore ?? '--' }}</span>
-          <span class="stat-label">最高分</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Analytics carousel -->
-    <div class="analytics-carousel">
-      <div class="carousel-header">
-        <span class="carousel-title">{{ ['得分趋势', '能力雷达', '错误分析'][carouselIndex] }}</span>
-        <div class="carousel-nav">
-          <button class="carousel-arrow" :disabled="carouselIndex <= 0" @click="carouselIndex--">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-          <span class="carousel-indicator">{{ carouselIndex + 1 }} / 3</span>
-          <button class="carousel-arrow" :disabled="carouselIndex >= 2" @click="carouselIndex++">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-        </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 260 150">
+          <path d="M32 116c22-20 48-21 76-8s58 13 91-16" />
+          <path d="M92 41h84c8 0 14 6 14 14v58H78V55c0-8 6-14 14-14Z" />
+          <path d="M103 64h49M103 80h62M103 96h38" />
+          <path d="M180 103l33-49 18 12-33 49-25 8 7-20Z" />
+          <path d="M35 95h42M46 82h31M57 69h20" />
+          <path d="M43 48c10-15 26-13 31 4-15 5-25 5-31-4Z" />
+        </svg>
       </div>
-      <div class="carousel-viewport">
-        <div class="carousel-track" :style="{ transform: `translateX(-${carouselIndex * 100}%)` }">
-          <!-- Panel 1: 得分趋势 -->
-          <div class="carousel-slide">
-            <div v-if="scoredDocs.length >= 3" ref="chartRef" class="carousel-chart" />
-            <div v-else class="carousel-placeholder">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              <span>完成 3 次以上评分后展示趋势图</span>
+
+      <button class="new-doc-btn new-doc-btn--academy" type="button" @click="navigateToPhase('mode-select')">
+        <span>+ 新建作文</span>
+        <span class="new-doc-divider" aria-hidden="true"></span>
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="m5 7 5 5 5-5" />
+        </svg>
+      </button>
+    </section>
+
+    <WritingOverviewCard
+      v-if="phase === 'dashboard'"
+      v-model:range="dashboardRange"
+      v-model:mode="dashboardMode"
+      v-model:custom-range="dashboardCustomRange"
+      :range-options="dashboardRangeOptions"
+      :mode-options="dashboardModeOptions"
+      :overview="mockWritingOverview"
+    />
+
+    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="growth-title">
+      <div class="section-heading">
+        <span class="section-kicker">Growth</span>
+        <h3 id="growth-title">成长 / 激励</h3>
+      </div>
+      <div class="growth-layout">
+        <article class="report-card score-trend-card">
+          <div class="card-header">
+            <div>
+              <span class="card-eyebrow">Essay Score Trend</span>
+              <h4>单篇得分趋势</h4>
+              <p>每个点代表一篇作文的最新评分</p>
+            </div>
+            <div class="mini-tabs" aria-label="趋势范围">
+              <span class="active">最近{{ mockGrowthDashboard.essayScoreTrend.length }}篇</span>
+              <span>全部</span>
             </div>
           </div>
-          <!-- Panel 2: 能力雷达 -->
-          <div class="carousel-slide">
-            <div v-if="hasRadarData" ref="radarRef" class="carousel-chart" />
-            <div v-else class="carousel-placeholder">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
-              <span>完成评分后展示六维能力雷达图</span>
-            </div>
+          <div class="score-trend-summary">
+            <span>最近3篇 <strong>+{{ recentScoreGrowth }}分</strong></span>
+            <span>最高 <strong>{{ highestEssayScore }}分</strong></span>
           </div>
-          <!-- Panel 3: 错误分析 -->
-          <div class="carousel-slide">
-            <div v-if="hasErrorData" ref="errorRef" class="carousel-chart" />
-            <div v-else class="carousel-placeholder">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-              <span>完成评分后展示错误类型分布</span>
-            </div>
+          <div
+            v-if="hasEssayScoreTrend"
+            ref="scoreTrendChartRef"
+            class="dashboard-chart dashboard-chart--score"
+            aria-label="得分趋势图"
+          ></div>
+          <div v-else class="score-trend-empty">
+            完成 2 篇以上评分后展示单篇得分趋势
           </div>
+          <div class="score-band-legend" aria-label="分数区间说明">
+            <span v-for="band in mockGrowthDashboard.scoreBands" :key="band.key">
+              <i :style="{ background: band.color }"></i>{{ band.label }}
+            </span>
+          </div>
+          <div class="overview-insight growth-insight">
+            <strong>AI建议</strong>
+            <span>最近几篇作文整体上升，建议保持每周 2 篇练习节奏。</span>
+          </div>
+        </article>
+
+        <div class="growth-side">
+          <article class="report-card score-distribution-card">
+            <div class="card-header card-header--compact">
+              <div>
+                <h4>分布分析</h4>
+                <span class="hint-text">全部作文 · 最新评分</span>
+              </div>
+            </div>
+            <h5 class="distribution-subtitle">得分分布</h5>
+            <div class="distribution-overview">
+              <div class="distribution-chart-shell">
+                <div ref="scoreDistributionChartRef" class="dashboard-chart dashboard-chart--distribution" aria-label="得分分布图"></div>
+                <div class="distribution-center" aria-hidden="true">
+                  <strong>80+</strong>
+                  <span>{{ highScorePercent }}%</span>
+                </div>
+              </div>
+              <div class="distribution-summary">
+                <span>高分占比</span>
+                <strong>{{ highScorePercent }}%</strong>
+                <em>80 分以上作文占全部最新评分的比例</em>
+              </div>
+            </div>
+            <div class="score-distribution-list" aria-label="得分区间占比">
+              <div v-for="bucket in mockGrowthDashboard.scoreDistribution" :key="bucket.key">
+                <span class="distribution-dot" :style="{ background: bucket.color }"></span>
+                <strong>{{ bucket.label }}</strong>
+                <em>{{ bucket.stage }}</em>
+                <span class="distribution-value">{{ bucket.count }}篇 · {{ bucket.percent }}%</span>
+                <span class="distribution-track" aria-hidden="true">
+                  <i :style="{ width: `${bucket.percent}%`, background: bucket.color }"></i>
+                </span>
+              </div>
+            </div>
+            <article class="score-scatter-card">
+              <div class="card-header card-header--compact">
+                <div>
+                  <h5>作文落点</h5>
+                  <span class="hint-text">按月份查看每篇作文所在分数区间</span>
+                </div>
+              </div>
+              <div ref="scoreScatterChartRef" class="dashboard-chart dashboard-chart--scatter" aria-label="作文落点散点图"></div>
+            </article>
+          </article>
         </div>
       </div>
-      <div class="carousel-dots">
-        <button v-for="i in 3" :key="i" class="carousel-dot" :class="{ active: carouselIndex === i - 1 }" @click="carouselIndex = i - 1" />
+    </section>
+
+    <section v-if="phase === 'dashboard'" class="dashboard-section practice-progress-section" aria-labelledby="practice-progress-title">
+      <div class="section-heading">
+        <span class="section-kicker">Practice</span>
+        <h3 id="practice-progress-title">练习进度</h3>
       </div>
-    </div>
+      <article class="report-card goal-card">
+        <div>
+          <h4>本月目标</h4>
+          <p>完成 {{ mockGrowthDashboard.monthlyGoalDone }} / {{ mockGrowthDashboard.monthlyGoalTotal }} 篇</p>
+          <span class="hint-text">还差 {{ monthlyGoalRemaining }} 篇完成本月目标</span>
+        </div>
+        <div class="goal-progress">
+          <span :style="{ width: `${monthlyGoalPercent}%` }"></span>
+        </div>
+        <div class="goal-badges">
+          <span>连续写作 {{ mockGrowthDashboard.streakDays }} 天</span>
+          <span>最长记录 {{ mockGrowthDashboard.bestStreakDays }} 天</span>
+        </div>
+      </article>
+    </section>
 
-    <!-- Search -->
-    <div class="search-bar">
-      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input
-        v-model="searchQuery"
-        class="search-input"
-        type="text"
-        placeholder="搜索作文标题..."
-      />
-      <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">&times;</button>
-    </div>
+    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="ability-title">
+      <div class="section-heading">
+        <span class="section-kicker">Ability</span>
+        <h3 id="ability-title">写作能力</h3>
+      </div>
+      <div class="ability-summary">
+        <article class="report-card level-card">
+          <span class="card-eyebrow">Current Level</span>
+          <div class="level-row">
+            <strong>{{ mockAbilityDashboard.level.currentLevel }}</strong>
+            <span>目标 {{ mockAbilityDashboard.level.targetLevel }}</span>
+          </div>
+          <div class="level-progress">
+            <span :style="{ width: `${mockAbilityDashboard.level.progressToNext}%` }"></span>
+          </div>
+          <p>{{ mockAbilityDashboard.level.basisText }}</p>
+          <p class="gap-text">{{ mockAbilityDashboard.level.gapText }}</p>
+          <div class="focus-tags">
+            <span v-for="item in mockAbilityDashboard.level.focus" :key="item">{{ item }}</span>
+          </div>
+        </article>
+        <article class="report-card growth-card">
+          <span class="card-eyebrow">Recent Growth</span>
+          <h4>最近成长点</h4>
+          <div class="growth-items">
+            <span v-for="item in mockAbilityDashboard.growthItems" :key="item.label">
+              <em>{{ item.label }}</em>
+              <strong :class="item.delta >= 0 ? 'delta-up' : 'delta-down'">{{ item.delta >= 0 ? '+' : '' }}{{ item.delta }}</strong>
+            </span>
+          </div>
+          <p>语法和结构提升明显，句式复杂度仍需加强。</p>
+        </article>
+      </div>
+      <article class="report-card ability-trend-card">
+        <div class="card-header">
+          <div>
+            <span class="card-eyebrow">CEFR Reference</span>
+            <h4>能力成长曲线</h4>
+          </div>
+          <div class="curve-legend">
+            <span class="overall">综合</span>
+            <span class="grammar">语法</span>
+            <span class="vocabulary">词汇</span>
+            <span class="coherence">结构</span>
+          </div>
+        </div>
+        <div ref="abilityChartRef" class="dashboard-chart dashboard-chart--ability" aria-label="能力成长曲线"></div>
+      </article>
+      <div class="diagnostics-grid">
+        <article class="report-card">
+          <h4>高频错误</h4>
+          <div class="error-bars">
+            <div v-for="item in mockAbilityDashboard.diagnostics" :key="item.label" class="error-row">
+              <div>
+                <span>{{ item.label }}</span>
+                <strong>{{ item.count }} 次</strong>
+              </div>
+              <em><i :class="item.tone" :style="{ width: `${item.count}%` }"></i></em>
+            </div>
+          </div>
+        </article>
+        <article class="report-card">
+          <h4>词汇与句式</h4>
+          <div class="metric-list">
+            <div v-for="item in mockAbilityDashboard.metrics" :key="item.label" class="metric-row">
+              <div>
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+              <em><i :style="{ width: `${item.percent}%` }"></i></em>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
 
-    <!-- Document grid section -->
-    <div class="doc-section">
+    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="topic-style-title">
+      <div class="section-heading">
+        <span class="section-kicker">Topic & Style</span>
+        <h3 id="topic-style-title">写作主题和风格</h3>
+      </div>
+      <div class="topic-layout">
+        <article class="report-card">
+          <h4>常练主题</h4>
+          <div class="topic-cloud">
+            <span v-for="topic in mockTopicStyleDashboard.topics" :key="topic.label" :class="`weight-${topic.weight}`">{{ topic.label }}</span>
+          </div>
+        </article>
+        <article class="report-card">
+          <h4>体裁分布</h4>
+          <div class="genre-list">
+            <div v-for="genre in mockTopicStyleDashboard.genres" :key="genre.label" class="genre-row">
+              <span>{{ genre.label }}</span>
+              <em><i :style="{ width: `${genre.percent}%` }"></i></em>
+              <strong>{{ genre.percent }}%</strong>
+            </div>
+          </div>
+        </article>
+        <article class="report-card next-prompt-card">
+          <span class="card-eyebrow">Recommended</span>
+          <h4>推荐下一篇</h4>
+          <strong>{{ mockTopicStyleDashboard.nextPrompt.title }}</strong>
+          <p>{{ mockTopicStyleDashboard.nextPrompt.reason }}</p>
+          <span class="difficulty">难度：{{ mockTopicStyleDashboard.nextPrompt.level }}</span>
+          <button type="button" @click="navigateToPhase('mode-select')">开始练习</button>
+        </article>
+      </div>
+    </section>
+
+    <div v-if="phase === 'doc-list'" class="writing-home-layout">
+      <!-- Search -->
+      <section class="doc-section" aria-labelledby="history-title">
       <div class="doc-section-header">
-        <span class="doc-section-title">历史作文</span>
+        <div>
+          <span class="section-kicker">Archive</span>
+          <h3 id="history-title" class="doc-section-title">历史作文</h3>
+        </div>
         <div class="doc-filters">
+          <span v-if="showHistoryPagination" class="history-page-summary">
+            第 {{ currentPage }} / {{ maxPage }} 页 · 共 {{ filteredDocs.length }} 篇
+          </span>
+          <div class="search-bar">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              v-model="searchQuery"
+              class="search-input"
+              type="text"
+              placeholder="搜索作文标题或关键词..."
+            />
+            <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">&times;</button>
+          </div>
           <div class="filter-pills">
             <button
               v-for="f in filterOptions"
@@ -161,9 +337,14 @@
           @click="openDocument(doc)"
         >
           <div class="doc-card-top">
-            <span class="doc-mode-tag" :class="doc.taskPrompt ? 'exam' : 'free'">
-              {{ doc.taskPrompt ? '考试' : '自由' }}
-            </span>
+            <div class="doc-card-tags">
+              <span class="doc-mode-tag" :class="doc.taskPrompt ? 'exam' : 'free'">
+                {{ doc.taskPrompt ? '考试' : '自由' }}
+              </span>
+              <span class="doc-status-pill" :class="docStatusClass(doc)">
+                {{ docStatusLabel(doc) }}
+              </span>
+            </div>
             <button class="doc-menu-btn" @click.stop="toggleMenu(doc.docId)" title="更多操作">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>
             </button>
@@ -180,6 +361,7 @@
             </div>
           </div>
           <h3 class="doc-card-title">{{ doc.title || '未命名作文' }}</h3>
+          <p class="doc-card-prompt">{{ docPromptSummary(doc) }}</p>
           <div class="doc-card-score-area">
             <template v-if="doc.latestScore != null">
               <span class="doc-score-num" :class="scoreColor(doc.latestScore)">{{ doc.latestScore }}</span>
@@ -192,11 +374,35 @@
             </template>
             <span v-else class="doc-score-none">未评分</span>
           </div>
+          <div class="doc-card-metrics">
+            <span>
+              <em>评分次数</em>
+              <strong>{{ doc.submitCount || 0 }}</strong>
+            </span>
+            <span>
+              <em>较初评</em>
+              <strong v-if="docScoreDelta(doc) !== null" :class="docScoreDelta(doc)! > 0 ? 'metric-up' : 'metric-down'">
+                {{ docScoreDelta(doc)! > 0 ? '+' : '' }}{{ docScoreDelta(doc) }}
+              </strong>
+              <strong v-else>--</strong>
+            </span>
+            <span>
+              <em>最近修改</em>
+              <strong>{{ formatTime(doc.updatedAt) }}</strong>
+            </span>
+          </div>
+          <p class="doc-next-step">{{ docNextStep(doc) }}</p>
           <div class="doc-card-bottom">
-            <span class="doc-card-time">{{ formatTime(doc.updatedAt) }}</span>
+            <span class="doc-card-time">{{ doc.taskPrompt ? '考试写作记录' : '自由写作记录' }}</span>
             <span class="doc-card-action">继续写作 &rarr;</span>
           </div>
         </div>
+        <div
+          v-for="index in historyPlaceholderCount"
+          :key="`history-placeholder-${index}`"
+          class="doc-card doc-card-placeholder"
+          aria-hidden="true"
+        ></div>
       </div>
 
       <!-- Rename dialog -->
@@ -232,7 +438,7 @@
       </div>
 
       <!-- Pagination -->
-      <div v-if="filteredDocs.length > PAGE_SIZE" class="pagination">
+      <div v-if="showHistoryPagination" class="pagination">
         <button
           class="page-btn"
           :disabled="currentPage <= 1"
@@ -248,10 +454,40 @@
         >{{ p === -1 ? '...' : p }}</button>
         <button
           class="page-btn"
-          :disabled="currentPage >= Math.ceil(filteredDocs.length / PAGE_SIZE)"
+          :disabled="currentPage >= maxPage"
           @click="currentPage++"
         >&rsaquo;</button>
       </div>
+    </section>
+
+      <aside class="daily-recommendations" aria-labelledby="daily-prompts-title">
+        <div class="daily-header">
+          <div>
+            <span class="section-kicker">Daily</span>
+            <h3 id="daily-prompts-title">每日推荐作文</h3>
+          </div>
+          <button class="daily-refresh" type="button" title="换一换">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15 6a6 6 0 1 0 1 6M15 6V2m0 4h-4" />
+            </svg>
+            换一换
+          </button>
+        </div>
+
+        <article v-for="prompt in mockDailyWritingPrompts" :key="prompt.id" class="daily-card">
+          <div class="daily-tags">
+            <span>{{ prompt.level }}</span>
+            <span>{{ prompt.genre }}</span>
+          </div>
+          <h4>{{ prompt.title }}</h4>
+          <p>{{ prompt.description }}</p>
+          <div class="daily-meta">
+            <span>推荐字数：{{ prompt.wordRange }}</span>
+            <span>预计用时：{{ prompt.estimatedMinutes }} 分钟</span>
+          </div>
+          <button type="button" @click="navigateToPhase('mode-select')">开始练习</button>
+        </article>
+      </aside>
     </div>
   </div>
 
@@ -474,21 +710,25 @@ import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount, inject } fr
 import { useRoute, useRouter } from 'vue-router'
 import { useSessionStorage, useEventListener } from '@vueuse/core'
 import * as echarts from 'echarts/core'
-import { LineChart, RadarChart, PieChart } from 'echarts/charts'
+import { LineChart, PieChart, RadarChart, ScatterChart } from 'echarts/charts'
 import {
   GridComponent,
-  TooltipComponent,
-  RadarComponent,
   LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  RadarComponent,
+  TooltipComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
-  LineChart, RadarChart, PieChart,
-  GridComponent, TooltipComponent, RadarComponent, LegendComponent,
+  LineChart, RadarChart, PieChart, ScatterChart,
+  GridComponent, TooltipComponent, RadarComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, MarkPointComponent,
   CanvasRenderer,
 ])
 import EditorShell from '@/components/writing/EditorShell.vue'
+import WritingOverviewCard from '@/components/writing/dashboard/WritingOverviewCard.vue'
 import ExamSetupPage from '@/pages/app/ExamSetupPage.vue'
 import type { ExamPromptType, ExamTopicInfo } from '@/pages/app/examPromptHelpers'
 import { buildExamTaskPrompt } from '@/pages/app/examPromptHelpers'
@@ -498,8 +738,20 @@ import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, ge
 import type { EssayPromptItem, WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
+import {
+  dashboardModeOptions,
+  dashboardRangeOptions,
+  mockAbilityDashboard,
+  mockDailyWritingPrompts,
+  mockGrowthDashboard,
+  mockWritingOverview,
+  mockTopicStyleDashboard,
+  type WritingDashboardMode,
+  type WritingDashboardRange,
+  type WritingDashboardCustomRange,
+} from './writingDashboardMock'
 
-type Phase = 'loading' | 'doc-list' | 'mode-select' | 'past-prompt-select' | 'exam-setup' | 'editor'
+type Phase = 'loading' | 'doc-list' | 'dashboard' | 'mode-select' | 'past-prompt-select' | 'exam-setup' | 'editor'
 type RoutePhase = Exclude<Phase, 'loading'>
 type NewTaskMode = 'free' | 'exam'
 type NewTaskSource = 'past_prompt' | 'ai_design'
@@ -540,6 +792,8 @@ const newTaskWordRangeOptions = ['80-100', '100-120', '120-150', '160-200', '160
 
 function resolveRoutePhase(): RoutePhase {
   switch (route.name) {
+    case 'WritingDashboard':
+      return 'dashboard'
     case 'WritingModeSelect':
       return 'mode-select'
     case 'WritingPastPromptSelect':
@@ -560,6 +814,8 @@ const phase = computed<Phase>(() => {
 
 function routeNameForPhase(nextPhase: RoutePhase) {
   switch (nextPhase) {
+    case 'dashboard':
+      return 'WritingDashboard'
     case 'mode-select':
       return 'WritingModeSelect'
     case 'past-prompt-select':
@@ -591,6 +847,12 @@ const PAGE_SIZE = 9
 const docList = ref<WritingDocumentItem[]>([])
 const currentPage = ref(1)
 const docListLoading = ref(false)
+const dashboardRange = ref<WritingDashboardRange>('30d')
+const dashboardMode = ref<WritingDashboardMode>('all')
+const dashboardCustomRange = ref<WritingDashboardCustomRange>({
+  start: formatDateInput(addDays(new Date(), -30)),
+  end: formatDateInput(new Date()),
+})
 const filterMode = ref<'all' | 'free' | 'exam'>('all')
 const sortBy = ref<'updatedAt' | 'createdAt' | 'score'>('updatedAt')
 const searchQuery = ref('')
@@ -603,16 +865,40 @@ const filterOptions = [
 
 // Computed stats
 const scoredDocs = computed(() => docList.value.filter(d => d.latestScore != null))
-const totalSubmits = computed(() => docList.value.reduce((s, d) => s + (d.submitCount || 0), 0))
-const avgScore = computed(() => {
-  if (scoredDocs.value.length === 0) return null
-  return Math.round(scoredDocs.value.reduce((s, d) => s + (d.latestScore ?? 0), 0) / scoredDocs.value.length)
+const dashboardDocs = computed(() => {
+  return docList.value.filter((doc) => {
+    if (dashboardMode.value === 'exam' && !doc.taskPrompt) return false
+    if (dashboardMode.value === 'free' && doc.taskPrompt) return false
+    return isWithinDashboardRange(doc.updatedAt)
+  })
 })
-const bestScore = computed(() => {
-  if (scoredDocs.value.length === 0) return null
-  return Math.max(...scoredDocs.value.map(d => d.latestScore ?? 0))
+const monthlyGoalPercent = computed(() => {
+  return Math.round((mockGrowthDashboard.monthlyGoalDone / mockGrowthDashboard.monthlyGoalTotal) * 100)
 })
 
+const monthlyGoalRemaining = computed(() => {
+  return Math.max(0, mockGrowthDashboard.monthlyGoalTotal - mockGrowthDashboard.monthlyGoalDone)
+})
+
+const highestEssayScore = computed(() => {
+  return Math.max(0, ...mockGrowthDashboard.essayScoreTrend.map(item => item.score))
+})
+
+const hasEssayScoreTrend = computed(() => {
+  return mockGrowthDashboard.essayScoreTrend.length >= 2
+})
+
+const recentScoreGrowth = computed(() => {
+  const recent = mockGrowthDashboard.essayScoreTrend.slice(-3)
+  if (recent.length < 2) return 0
+  return Math.max(0, recent[recent.length - 1].score - recent[0].score)
+})
+
+const highScorePercent = computed(() => {
+  return mockGrowthDashboard.scoreDistribution
+    .filter(bucket => (bucket.min ?? 0) >= 80)
+    .reduce((sum, bucket) => sum + bucket.percent, 0)
+})
 const filteredDocs = computed(() => {
   let list = [...docList.value]
   // Search
@@ -633,6 +919,7 @@ const filteredDocs = computed(() => {
 
 // Clamp currentPage when filteredDocs shrinks
 const maxPage = computed(() => Math.max(1, Math.ceil(filteredDocs.value.length / PAGE_SIZE)))
+const showHistoryPagination = computed(() => maxPage.value > 1)
 watch(maxPage, (mp) => {
   if (currentPage.value > mp) currentPage.value = mp
 })
@@ -641,6 +928,10 @@ const displayDocs = computed(() => {
   const page = Math.min(currentPage.value, maxPage.value)
   const start = (page - 1) * PAGE_SIZE
   return filteredDocs.value.slice(start, start + PAGE_SIZE)
+})
+const historyPlaceholderCount = computed(() => {
+  if (!showHistoryPagination.value) return 0
+  return Math.max(0, PAGE_SIZE - displayDocs.value.length)
 })
 
 const paginationPages = computed(() => {
@@ -658,9 +949,464 @@ const paginationPages = computed(() => {
 // Reset page when filter/sort changes
 watch([filterMode, sortBy, searchQuery], () => { currentPage.value = 1 })
 
+function isWithinDashboardRange(dateStr: string) {
+  if (dashboardRange.value === 'all') return true
+  if (!dateStr) return false
+  const date = new Date(dateStr)
+  const now = new Date()
+  if (Number.isNaN(date.getTime())) return false
+  if (dashboardRange.value === 'custom') {
+    const start = parseDateInput(dashboardCustomRange.value.start, false)
+    const end = parseDateInput(dashboardCustomRange.value.end, true)
+    if (!start || !end) return true
+    return date.getTime() >= start.getTime() && date.getTime() <= end.getTime()
+  }
+  const days = dashboardRange.value === '7d'
+    ? 7
+    : dashboardRange.value === '14d'
+      ? 14
+      : dashboardRange.value === 'year'
+        ? 365
+        : 30
+  const diff = now.getTime() - date.getTime()
+  return diff >= 0 && diff <= days * 24 * 60 * 60 * 1000
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDateInput(value: string, endOfDay: boolean) {
+  if (!value) return null
+  const date = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatScatterMonth(value: string) {
+  const date = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return '未知'
+  return `${date.getMonth() + 1}月`
+}
+
+function getScatterMonthTime(value: string) {
+  const date = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return Number.MAX_SAFE_INTEGER
+  return new Date(date.getFullYear(), date.getMonth(), 1).getTime()
+}
+
+function foldScoreForChart(score: number) {
+  if (score >= 60) return score
+  return 50 + Math.max(0, Math.min(score, 60)) / 60 * 10
+}
+
+function unfoldScoreAxisLabel(value: number) {
+  return value === 50 ? '0-60' : `${value}`
+}
+
+function resolveScoreBandColor(score: number) {
+  const bucket = mockGrowthDashboard.scoreDistribution.find((item) => {
+    const min = item.min ?? 0
+    return score >= min && score < item.max
+  })
+  return bucket?.color ?? '#0f8b6d'
+}
+
+const scoreTrendChartRef = ref<HTMLElement | null>(null)
+const scoreDistributionChartRef = ref<HTMLElement | null>(null)
+const scoreScatterChartRef = ref<HTMLElement | null>(null)
+const abilityChartRef = ref<HTMLElement | null>(null)
+let scoreTrendChartInstance: echarts.ECharts | null = null
+let scoreDistributionChartInstance: echarts.ECharts | null = null
+let scoreScatterChartInstance: echarts.ECharts | null = null
+let abilityChartInstance: echarts.ECharts | null = null
+
+const dashboardTooltipStyle = {
+  backgroundColor: '#fffefa',
+  borderColor: '#e4dfd3',
+  borderWidth: 1,
+  textStyle: {
+    color: '#191919',
+    fontSize: 12,
+  },
+}
+
+watch([phase, dashboardRange, dashboardMode, dashboardCustomRange, dashboardDocs], async () => {
+  await nextTick()
+  if (phase.value !== 'dashboard') return
+  renderDashboardCharts()
+}, { immediate: true })
+
+useEventListener(window, 'resize', () => {
+  scoreTrendChartInstance?.resize()
+  scoreDistributionChartInstance?.resize()
+  scoreScatterChartInstance?.resize()
+  abilityChartInstance?.resize()
+})
+
+function renderDashboardCharts() {
+  renderScoreTrendChart()
+  renderScoreDistributionChart()
+  renderScoreScatterChart()
+  renderAbilityChart()
+}
+
+function renderScoreTrendChart() {
+  const trend = mockGrowthDashboard.essayScoreTrend
+  if (!scoreTrendChartRef.value || trend.length < 2) {
+    if (scoreTrendChartInstance) {
+      scoreTrendChartInstance.dispose()
+      scoreTrendChartInstance = null
+    }
+    return
+  }
+  if (!scoreTrendChartInstance) {
+    scoreTrendChartInstance = echarts.init(scoreTrendChartRef.value)
+  }
+  const highest = trend.reduce((best, item) => (item.score > best.score ? item : best), trend[0])
+  const latest = trend[trend.length - 1]
+  scoreTrendChartInstance.setOption({
+    animationDuration: 650,
+    color: ['#0f8b6d'],
+    grid: { top: 34, right: 24, bottom: 34, left: 38 },
+    tooltip: {
+      trigger: 'axis',
+      ...dashboardTooltipStyle,
+      formatter: (params: any) => {
+        const dataIndex = params[0]?.dataIndex ?? 0
+        const point = trend[dataIndex]
+        if (!point) return ''
+        const modeLabel = point.mode === 'exam' ? '考试模式' : '自由模式'
+        const deltaText = point.delta > 0 ? `+${point.delta}` : point.delta < 0 ? `${point.delta}` : '持平'
+        return [
+          `<strong>${point.title}</strong>`,
+          modeLabel,
+          `最新得分：<strong>${point.score}</strong> 分`,
+          `较上一篇：<strong>${deltaText}</strong>`,
+          `评分时间：${point.scoredAt}`,
+          `AI建议：${point.aiSuggestion || '继续保持当前练习节奏。'}`,
+        ].join('<br/>')
+      },
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: trend.map(item => `第${item.essayNo}篇`),
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#ded9ce' } },
+      axisLabel: { color: '#8b8579', fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      min: 50,
+      max: 100,
+      interval: 10,
+      axisLabel: { color: '#8b8579', fontSize: 11, formatter: unfoldScoreAxisLabel },
+      splitLine: { lineStyle: { color: 'rgba(222, 217, 206, 0.42)', type: 'dashed' } },
+    },
+    series: [{
+      name: '得分',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 7,
+      data: trend.map(item => ({
+        value: foldScoreForChart(item.score),
+        itemStyle: item.essayNo === latest?.essayNo
+          ? { color: '#0f8b6d', borderColor: '#0f8b6d', borderWidth: 3 }
+          : { color: '#fffefa', borderColor: '#0f8b6d', borderWidth: 2.5 },
+      })),
+      lineStyle: {
+        color: '#0f8b6d',
+        width: 3.5,
+        shadowBlur: 8,
+        shadowColor: 'rgba(15, 139, 109, 0.18)',
+      },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(15, 139, 109, 0.16)' },
+          { offset: 1, color: 'rgba(15, 139, 109, 0.01)' },
+        ]),
+      },
+      markArea: {
+        silent: true,
+        label: { show: false },
+        data: mockGrowthDashboard.scoreBands.map(band => [
+          {
+            name: band.label,
+            yAxis: band.min === 0 ? 50 : band.min,
+            itemStyle: { color: `${band.color}90` },
+          },
+          { yAxis: band.max },
+        ]),
+      },
+      markLine: {
+        silent: true,
+        symbol: 'none',
+        label: { show: false },
+        lineStyle: {
+          color: 'rgba(31, 28, 21, 0.18)',
+          width: 1,
+          type: 'solid',
+        },
+        data: [60, 70, 80, 90].map(value => ({ yAxis: value })),
+      },
+      markPoint: highest
+        ? {
+            symbol: 'roundRect',
+            symbolSize: [72, 28],
+            symbolOffset: [0, -22],
+            itemStyle: { color: '#fff7ed', borderColor: '#d97706', borderWidth: 1 },
+            label: {
+              color: '#c2410c',
+              fontSize: 11,
+              fontWeight: 800,
+              formatter: `最高${highest.score}`,
+            },
+            data: [{ coord: [`第${highest.essayNo}篇`, foldScoreForChart(highest.score)] }],
+          }
+        : undefined,
+    }],
+  })
+}
+
+function renderScoreDistributionChart() {
+  if (!scoreDistributionChartRef.value) return
+  if (!scoreDistributionChartInstance) {
+    scoreDistributionChartInstance = echarts.init(scoreDistributionChartRef.value)
+  }
+
+  scoreDistributionChartInstance.setOption({
+    animationDuration: 650,
+    color: mockGrowthDashboard.scoreDistribution.map(item => item.color),
+    tooltip: {
+      trigger: 'item',
+      ...dashboardTooltipStyle,
+      formatter: (params: any) => {
+        const item = mockGrowthDashboard.scoreDistribution[params.dataIndex]
+        if (!item) return ''
+        return `${item.label} · ${item.stage}<br/>作文：<strong>${item.count}</strong> 篇<br/>占比：<strong>${item.percent}%</strong>`
+      },
+    },
+    series: [{
+      name: '得分分布',
+      type: 'pie',
+      radius: ['68%', '84%'],
+      center: ['50%', '50%'],
+      startAngle: 92,
+      minAngle: 8,
+      avoidLabelOverlap: true,
+      label: { show: false },
+      labelLine: { show: false },
+      itemStyle: {
+        borderColor: '#fbfaf7',
+        borderWidth: 2,
+        borderRadius: 3,
+      },
+      emphasis: {
+        scaleSize: 3,
+        itemStyle: {
+          shadowBlur: 14,
+          shadowColor: 'rgba(31, 28, 21, 0.12)',
+        },
+      },
+      data: mockGrowthDashboard.scoreDistribution.map(item => ({
+        name: `${item.label} ${item.stage}`,
+        value: item.count,
+      })),
+    }],
+  })
+}
+
+function renderScoreScatterChart() {
+  const trend = mockGrowthDashboard.essayScoreTrend
+  if (!scoreScatterChartRef.value || trend.length === 0) return
+  if (!scoreScatterChartInstance) {
+    scoreScatterChartInstance = echarts.init(scoreScatterChartRef.value)
+  }
+
+  const months = Array.from(new Set(
+    [...trend]
+      .sort((a, b) => getScatterMonthTime(a.scoredAt) - getScatterMonthTime(b.scoredAt))
+      .map(item => formatScatterMonth(item.scoredAt)),
+  ))
+
+  scoreScatterChartInstance.setOption({
+    animationDuration: 650,
+    grid: { top: 18, right: 18, bottom: 30, left: 44 },
+    tooltip: {
+      trigger: 'item',
+      ...dashboardTooltipStyle,
+      formatter: (params: any) => {
+        const point = params.data?.essay
+        if (!point) return ''
+        const modeLabel = point.mode === 'exam' ? '考试模式' : '自由模式'
+        return [
+          `<strong>${point.title}</strong>`,
+          modeLabel,
+          `最新得分：<strong>${point.score}</strong> 分`,
+          `评分时间：${point.scoredAt}`,
+          `区间：${params.data?.bandLabel ?? '-'}`,
+        ].join('<br/>')
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: months,
+      boundaryGap: true,
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#ded9ce' } },
+      axisLabel: { color: '#8b8579', fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      min: 50,
+      max: 100,
+      interval: 10,
+      axisLabel: { color: '#8b8579', fontSize: 11, formatter: unfoldScoreAxisLabel },
+      splitLine: { lineStyle: { color: 'rgba(222, 217, 206, 0.42)', type: 'dashed' } },
+    },
+    series: [{
+      name: '作文落点',
+      type: 'scatter',
+      symbolSize: 10,
+      data: trend.map((item) => {
+        const bucket = mockGrowthDashboard.scoreDistribution.find((band) => {
+          const min = band.min ?? 0
+          return item.score >= min && item.score < band.max
+        })
+        return {
+          value: [formatScatterMonth(item.scoredAt), foldScoreForChart(item.score)],
+          essay: item,
+          bandLabel: bucket ? `${bucket.label} ${bucket.stage}` : '-',
+          itemStyle: {
+            color: resolveScoreBandColor(item.score),
+            borderColor: '#fffefa',
+            borderWidth: 2,
+            shadowBlur: 10,
+            shadowColor: 'rgba(31, 28, 21, 0.12)',
+          },
+        }
+      }),
+      markArea: {
+        silent: true,
+        label: { show: false },
+        data: mockGrowthDashboard.scoreBands.map(band => [
+          {
+            yAxis: band.min === 0 ? 50 : band.min,
+            itemStyle: { color: `${band.color}58` },
+          },
+          { yAxis: band.max },
+        ]),
+      },
+    }],
+  })
+}
+
+function renderAbilityChart() {
+  if (!abilityChartRef.value) return
+  if (!abilityChartInstance) {
+    abilityChartInstance = echarts.init(abilityChartRef.value)
+  }
+  const trend = mockAbilityDashboard.trend
+  const dates = trend.map(item => item.date)
+  const makeSeries = (
+    name: string,
+    key: 'overall' | 'grammar' | 'vocabulary' | 'coherence',
+    color: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    name,
+    type: 'line',
+    smooth: true,
+    symbol: 'circle',
+    symbolSize: key === 'overall' ? 7 : 5,
+    data: trend.map(item => item[key]),
+    lineStyle: { width: key === 'overall' ? 4 : 2.5, color },
+    itemStyle: { color, borderColor: '#fffefa', borderWidth: 2 },
+    ...extra,
+  })
+
+  abilityChartInstance.setOption({
+    animationDuration: 650,
+    color: ['#059669', '#d97706', '#2563eb', '#7c3aed'],
+    legend: {
+      top: 4,
+      right: 8,
+      icon: 'roundRect',
+      itemWidth: 18,
+      itemHeight: 3,
+      textStyle: { color: '#6f6a60', fontSize: 11 },
+    },
+    grid: { top: 44, right: 24, bottom: 34, left: 42 },
+    tooltip: {
+      trigger: 'axis',
+      ...dashboardTooltipStyle,
+      formatter: (params: any) => {
+        const rows = params
+          .map((item: any) => `${item.marker}${item.seriesName}：<strong>${item.value}</strong>`)
+          .join('<br/>')
+        return `${params[0].axisValue}<br/>${rows}`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: dates,
+      axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#ded9ce' } },
+      axisLabel: { color: '#8b8579', fontSize: 11 },
+    },
+    yAxis: {
+      type: 'value',
+      min: 40,
+      max: 100,
+      interval: 10,
+      axisLabel: { color: '#8b8579', fontSize: 11 },
+      splitLine: { lineStyle: { color: '#ebe5da', type: 'dashed' } },
+    },
+    series: [
+      makeSeries('综合', 'overall', '#059669', {
+        markArea: {
+          silent: true,
+          label: { color: 'rgba(31, 31, 31, 0.35)', fontSize: 11, fontWeight: 700 },
+          data: [
+            [{ name: 'C2', yAxis: 90, itemStyle: { color: 'rgba(124, 58, 237, 0.06)' } }, { yAxis: 100 }],
+            [{ name: 'C1', yAxis: 80, itemStyle: { color: 'rgba(217, 119, 6, 0.055)' } }, { yAxis: 90 }],
+            [{ name: 'B2', yAxis: 70, itemStyle: { color: 'rgba(5, 150, 105, 0.08)' } }, { yAxis: 80 }],
+            [{ name: 'B1', yAxis: 55, itemStyle: { color: 'rgba(37, 99, 235, 0.055)' } }, { yAxis: 70 }],
+            [{ name: 'A2', yAxis: 40, itemStyle: { color: 'rgba(107, 114, 128, 0.05)' } }, { yAxis: 55 }],
+          ],
+        },
+      }),
+      makeSeries('语法', 'grammar', '#d97706'),
+      makeSeries('词汇', 'vocabulary', '#2563eb'),
+      makeSeries('结构', 'coherence', '#7c3aed'),
+    ],
+  })
+}
+
+function disposeDashboardCharts() {
+  if (scoreTrendChartInstance) { scoreTrendChartInstance.dispose(); scoreTrendChartInstance = null }
+  if (scoreDistributionChartInstance) { scoreDistributionChartInstance.dispose(); scoreDistributionChartInstance = null }
+  if (scoreScatterChartInstance) { scoreScatterChartInstance.dispose(); scoreScatterChartInstance = null }
+  if (abilityChartInstance) { abilityChartInstance.dispose(); abilityChartInstance = null }
+}
+
 // Immersive toggle: only editor is immersive
 watch(phase, (p, prev) => {
   setImmersive(p === 'editor' ? true : false)
+  if (prev === 'dashboard' && p !== 'dashboard') {
+    disposeDashboardCharts()
+  }
   if (!booting.value && p === 'doc-list' && prev && prev !== 'doc-list') {
     void loadDocList()
   }
@@ -671,6 +1417,7 @@ watch(phase, (p, prev) => {
 
 onBeforeUnmount(() => {
   setImmersive(null)
+  disposeDashboardCharts()
 })
 
 // Carousel
@@ -1222,6 +1969,42 @@ function scoreColor(score: number) {
   return 'low'
 }
 
+function docStatusLabel(doc: WritingDocumentItem) {
+  if (doc.status === 0 && doc.taskPrompt) return '题目草稿'
+  if (doc.latestScore != null) return '已评分'
+  if ((doc.submitCount ?? 0) > 0) return '待查看'
+  return '待评分'
+}
+
+function docStatusClass(doc: WritingDocumentItem) {
+  if (doc.status === 0 && doc.taskPrompt) return 'draft'
+  if (doc.latestScore != null) return 'scored'
+  if ((doc.submitCount ?? 0) > 0) return 'review'
+  return 'pending'
+}
+
+function docPromptSummary(doc: WritingDocumentItem) {
+  const prompt = doc.taskPrompt?.replace(/\s+/g, ' ').trim()
+  return prompt || '自由写作，无固定题目'
+}
+
+function docScoreDelta(doc: WritingDocumentItem) {
+  if (doc.initialScore == null || doc.latestScore == null || doc.latestScore === doc.initialScore) {
+    return null
+  }
+  return doc.latestScore - doc.initialScore
+}
+
+function docNextStep(doc: WritingDocumentItem) {
+  if (doc.status === 0 && doc.taskPrompt) return '继续完善题目设置，再进入写作。'
+  if (doc.latestScore == null) return '提交评分，生成讲评和修改建议。'
+  const delta = docScoreDelta(doc)
+  if (delta != null && delta > 0) return '分数已有提升，可以继续做同类题巩固。'
+  if (doc.latestScore >= 80) return '提炼高分表达，沉淀为个人模板。'
+  if (doc.latestScore >= 60) return '根据讲评补强结构、词汇和表达。'
+  return '先订正基础错误，再重写一版。'
+}
+
 function formatTime(dateStr: string) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
@@ -1275,52 +2058,6 @@ function formatTime(dateStr: string) {
   transition: background 0.15s;
 }
 .new-doc-btn:hover { background: #065f46; }
-
-/* ── Stats grid ── */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-}
-
-.stat-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.stat-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.stat-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1.1;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: 2px;
-}
 
 /* ── Analytics carousel ── */
 .analytics-carousel {
@@ -2300,9 +3037,1215 @@ function formatTime(dateStr: string) {
   color: #64748b;
 }
 
+.hub-page {
+  max-width: 1880px;
+  padding: 34px 28px 56px;
+  background: #f7f5ef;
+  color: #191919;
+}
+
+.writing-section-tabs {
+  display: inline-flex;
+  gap: 28px;
+  margin: 0 0 28px;
+  border-bottom: 1px solid #ded9ce;
+}
+
+.writing-section-tab {
+  position: relative;
+  padding: 0 0 12px;
+  color: #7a746a;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.writing-section-tab.active {
+  color: #191919;
+}
+
+.writing-section-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: #191919;
+  border-radius: 999px;
+}
+
+.dashboard-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px auto;
+  align-items: start;
+  gap: 28px;
+  margin-bottom: 24px;
+}
+
+.hub-page--dashboard .dashboard-hero {
+  margin-bottom: 18px;
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.hero-kicker,
+.section-kicker,
+.card-eyebrow {
+  display: block;
+  margin: 0 0 8px;
+  color: #6f6a60;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.hub-title {
+  margin: 0;
+  color: #1e1e1e;
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1.08;
+}
+
+.hero-subtitle {
+  margin: 10px 0 0;
+  color: #6f6a60;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.filter-pills--warm {
+  border-color: #ded9ce;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.hero-art {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  color: #1f1f1f;
+}
+
+.hero-art svg {
+  width: 250px;
+  height: 144px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  opacity: 0.78;
+}
+
+.new-doc-btn--academy {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0 16px 0 22px;
+  border-radius: 12px;
+  background: #111111;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.new-doc-btn--academy:hover {
+  background: #000000;
+}
+
+.new-doc-btn--academy svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.new-doc-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.writing-home-layout {
+  --writing-home-panel-min-height: 860px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 36px;
+  align-items: stretch;
+}
+
+.writing-home-layout .doc-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  min-height: var(--writing-home-panel-min-height);
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid #e4dfd3;
+  border-radius: 16px;
+  box-shadow: 0 16px 42px rgba(31, 28, 21, 0.05);
+}
+
+.writing-home-layout .doc-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.writing-home-layout .doc-card {
+  min-height: 168px;
+  padding: 18px;
+}
+
+.daily-recommendations {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--writing-home-panel-min-height);
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #e4dfd3;
+  border-radius: 16px;
+  box-shadow: 0 16px 42px rgba(31, 28, 21, 0.05);
+}
+
+.daily-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.daily-header h3 {
+  margin: 0;
+  color: #191919;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.daily-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: #7a746a;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.daily-refresh:hover {
+  color: #191919;
+  background: #f2eee5;
+}
+
+.daily-refresh svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.daily-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 16px;
+  background: #fffefa;
+  border: 1px solid #e9e2d4;
+  border-radius: 12px;
+}
+
+.daily-card + .daily-card {
+  margin-top: 12px;
+}
+
+.daily-tags {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.daily-tags span {
+  padding: 4px 8px;
+  color: #087858;
+  background: #e8f7ef;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.daily-tags span:first-child {
+  color: #9a6200;
+  background: #fff2d4;
+}
+
+.daily-card h4 {
+  margin: 0;
+  color: #191919;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.daily-card p {
+  margin: 8px 0 0;
+  color: #6f6a60;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.daily-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  color: #8a8275;
+  font-size: 12px;
+}
+
+.daily-card button {
+  width: 100%;
+  margin-top: auto;
+  padding: 9px 12px;
+  color: #5e4b2c;
+  background: #f4efe5;
+  border: 1px solid #e4dfd3;
+  border-radius: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.daily-card button:hover {
+  color: #191919;
+  background: #ebe3d5;
+  border-color: #d8cfbf;
+}
+
+.report-card,
+.doc-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #e4dfd3;
+  box-shadow: 0 14px 36px rgba(31, 28, 21, 0.04);
+}
+
+.dashboard-section {
+  margin-top: 30px;
+}
+
+.section-heading {
+  margin-bottom: 14px;
+}
+
+.section-heading h3,
+.doc-section-title {
+  margin: 0;
+  color: #191919;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.report-card {
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.card-header,
+.card-header--compact {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.card-header h4,
+.report-card h4,
+.report-card h5 {
+  margin: 0;
+  color: #191919;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.report-card h5 {
+  font-size: 14px;
+}
+
+.hint-text {
+  color: #8b8579;
+  font-size: 12px;
+}
+
+.growth-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 18px;
+}
+
+.score-trend-card {
+  min-height: 470px;
+}
+
+.dashboard-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard-chart--score {
+  height: 292px;
+  margin-top: 16px;
+}
+
+.score-trend-empty {
+  display: grid;
+  place-items: center;
+  height: 292px;
+  margin-top: 16px;
+  border: 1px dashed #ded9ce;
+  border-radius: 14px;
+  background: #fbfaf7;
+  color: #8b8579;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-chart--distribution {
+  height: 128px;
+}
+
+.dashboard-chart--scatter {
+  height: 178px;
+  margin-top: 10px;
+}
+
+.dashboard-chart--ability {
+  height: 330px;
+  margin-top: 16px;
+  border: 1px solid #eee9df;
+  border-radius: 12px;
+  background: #fbfaf7;
+}
+
+.mini-tabs {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid #ded9ce;
+  border-radius: 999px;
+  background: #fbfaf7;
+}
+
+.mini-tabs span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #7a746a;
+  font-size: 12px;
+}
+
+.mini-tabs .active {
+  background: #e8f6ef;
+  color: #047857;
+  font-weight: 800;
+}
+
+.card-header p {
+  margin: 6px 0 0;
+  color: #6f6a60;
+  font-size: 12px;
+}
+
+.score-trend-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.score-trend-summary span,
+.goal-badges span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f2eee6;
+  color: #6f6a60;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.score-trend-summary strong {
+  margin-left: 4px;
+  color: #047857;
+}
+
+.score-band-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 12px;
+  color: #6f6a60;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.score-band-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.score-band-legend i {
+  width: 12px;
+  height: 8px;
+  border: 1px solid rgba(31, 28, 21, 0.08);
+  border-radius: 999px;
+}
+
+.growth-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #eee9df;
+  border-radius: 12px;
+  background: #fbfaf7;
+}
+
+.growth-insight strong {
+  flex: 0 0 auto;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.growth-insight span {
+  color: #514c43;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.trend-plot {
+  position: relative;
+  height: 250px;
+  margin-top: 20px;
+  padding-left: 38px;
+}
+
+.trend-grid {
+  position: absolute;
+  inset: 0 0 20px 0;
+  display: grid;
+  grid-template-rows: repeat(4, 1fr);
+}
+
+.trend-grid span {
+  border-top: 1px dashed #e9e3d7;
+  color: #9a9387;
+  font-size: 11px;
+}
+
+.trend-plot svg {
+  position: relative;
+  width: 100%;
+  height: 230px;
+  overflow: visible;
+}
+
+.trend-line {
+  fill: none;
+  stroke: #059669;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.trend-plot circle {
+  fill: #f7f5ef;
+  stroke: #059669;
+  stroke-width: 3;
+}
+
+.trend-badge {
+  position: absolute;
+  top: 62px;
+  left: 45%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trend-tooltip {
+  position: absolute;
+  right: 58px;
+  top: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #e4dfd3;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #191919;
+  font-size: 12px;
+  box-shadow: 0 10px 24px rgba(31, 28, 21, 0.08);
+}
+
+.growth-side {
+  min-width: 0;
+}
+
+.score-distribution-card {
+  min-height: 470px;
+}
+
+.distribution-subtitle {
+  margin-top: 16px !important;
+}
+
+.distribution-overview {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #eee9df;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fffefa 0%, #f6f1e8 100%);
+}
+
+.distribution-chart-shell {
+  position: relative;
+  min-height: 128px;
+}
+
+.distribution-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.distribution-center strong {
+  color: #191919;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.distribution-center span {
+  margin-top: 4px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.distribution-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.distribution-summary span {
+  color: #7a746a;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.distribution-summary strong {
+  color: #191919;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.distribution-summary em {
+  max-width: 180px;
+  color: #6f6a60;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.score-distribution-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.score-distribution-list div {
+  display: grid;
+  grid-template-columns: auto 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #7a746a;
+  font-size: 11px;
+}
+
+.distribution-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.score-distribution-list strong {
+  color: #191919;
+  font-size: 12px;
+}
+
+.score-distribution-list em {
+  overflow: hidden;
+  color: #6f6a60;
+  font-style: normal;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-value {
+  color: #7a746a;
+  font-weight: 750;
+}
+
+.distribution-track {
+  grid-column: 2 / -1;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee9df;
+}
+
+.distribution-track i {
+  display: block;
+  height: 100%;
+  min-width: 6px;
+  border-radius: inherit;
+}
+
+.score-scatter-card {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #eee9df;
+}
+
+.practice-progress-section .goal-card {
+  grid-template-columns: minmax(240px, 0.42fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.practice-progress-section .goal-progress {
+  min-width: 260px;
+}
+
+.goal-card {
+  display: grid;
+  gap: 14px;
+}
+
+.goal-card p {
+  margin: 8px 0 0;
+  color: #514c43;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.goal-progress,
+.level-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee9df;
+}
+
+.goal-progress span,
+.level-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #059669;
+}
+
+.goal-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7a746a;
+  font-size: 12px;
+}
+
+.goal-meta strong {
+  color: #191919;
+}
+
+.goal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ability-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.level-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 6px 0 14px;
+}
+
+.level-row strong {
+  color: #191919;
+  font-size: 48px;
+  line-height: 1;
+}
+
+.level-row span {
+  color: #514c43;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.level-card p,
+.growth-card p,
+.next-prompt-card p {
+  margin: 10px 0 0;
+  color: #6f6a60;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gap-text {
+  color: #047857 !important;
+  font-weight: 800;
+}
+
+.focus-tags,
+.topic-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.focus-tags span,
+.topic-cloud span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f2eee6;
+  color: #514c43;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.growth-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.growth-items span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fbfaf7;
+}
+
+.growth-items em {
+  color: #514c43;
+  font-style: normal;
+  font-size: 13px;
+}
+
+.delta-up,
+.metric-up {
+  color: #047857 !important;
+}
+
+.delta-down,
+.metric-down {
+  color: #dc2626 !important;
+}
+
+.ability-trend-card {
+  margin-bottom: 18px;
+}
+
+.curve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #6f6a60;
+  font-size: 12px;
+}
+
+.curve-legend span::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+  background: #059669;
+}
+
+.curve-legend .grammar::before { background: #d97706; }
+.curve-legend .vocabulary::before { background: #2563eb; }
+.curve-legend .coherence::before { background: #7c3aed; }
+
+.ability-chart {
+  position: relative;
+  height: 300px;
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid #eee9df;
+  border-radius: 12px;
+  background: #fbfaf7;
+}
+
+.cefr-band {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  color: rgba(31, 31, 31, 0.35);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.band-c2 { top: 0; height: 8%; background: rgba(124, 58, 237, 0.07); }
+.band-c1 { top: 8%; height: 17%; background: rgba(217, 119, 6, 0.06); }
+.band-b2 { top: 25%; height: 25%; background: rgba(5, 150, 105, 0.08); }
+.band-b1 { top: 50%; height: 25%; background: rgba(37, 99, 235, 0.06); }
+.band-a2 { top: 75%; height: 25%; background: rgba(107, 114, 128, 0.05); }
+
+.ability-chart svg {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+}
+
+.ability-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.ability-line.overall { stroke: #059669; stroke-width: 4; }
+.ability-line.grammar { stroke: #d97706; }
+.ability-line.vocabulary { stroke: #2563eb; }
+.ability-line.coherence { stroke: #7c3aed; }
+
+.diagnostics-grid,
+.topic-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.diagnostics-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+.error-bars,
+.metric-list,
+.genre-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.error-row,
+.metric-row,
+.genre-row {
+  display: grid;
+  gap: 8px;
+}
+
+.error-row div,
+.metric-row div,
+.genre-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.genre-row {
+  grid-template-columns: 76px minmax(0, 1fr) 44px;
+}
+
+.error-row span,
+.metric-row span,
+.genre-row span {
+  color: #514c43;
+  font-size: 13px;
+}
+
+.error-row strong,
+.metric-row strong,
+.genre-row strong {
+  color: #191919;
+  font-size: 12px;
+}
+
+.error-row em,
+.metric-row em,
+.genre-row em {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eee9df;
+}
+
+.error-row i,
+.metric-row i,
+.genre-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #059669;
+}
+
+.error-row i.danger { background: #dc2626; }
+.error-row i.warning { background: #d97706; }
+.error-row i.success { background: #059669; }
+
+.topic-cloud .weight-5 {
+  color: #047857;
+  font-size: 19px;
+}
+
+.topic-cloud .weight-4 {
+  color: #2563eb;
+  font-size: 16px;
+}
+
+.topic-cloud .weight-3 {
+  color: #7c3aed;
+}
+
+.next-prompt-card strong {
+  display: block;
+  margin-top: 6px;
+  color: #191919;
+  font-size: 20px;
+}
+
+.difficulty {
+  display: inline-flex;
+  margin-top: 14px;
+  color: #7a746a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.next-prompt-card button {
+  display: block;
+  margin-top: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.doc-section {
+  margin-top: 34px;
+}
+
+.doc-section-header {
+  align-items: flex-end;
+}
+
+.doc-filters {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.history-page-summary {
+  color: #7a746a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.doc-filters .search-bar {
+  width: min(340px, 100%);
+  margin-bottom: 0;
+}
+
+.search-input,
+.sort-select,
+.filter-pills {
+  border-color: #ded9ce;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.doc-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.doc-card {
+  min-height: 260px;
+  border-radius: 14px;
+}
+
+.doc-card:hover {
+  border-color: #b8d9c6;
+  box-shadow: 0 18px 38px rgba(31, 28, 21, 0.07);
+  transform: translateY(-2px);
+}
+
+.doc-card-placeholder,
+.doc-card-placeholder:hover {
+  visibility: hidden;
+  pointer-events: none;
+  transform: none;
+}
+
+.doc-card-tags {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.doc-mode-tag {
+  border-radius: 999px;
+}
+
+.doc-status-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.doc-status-pill.scored { background: #e8f6ef; color: #047857; }
+.doc-status-pill.pending { background: #f2eee6; color: #6f6a60; }
+.doc-status-pill.review { background: #eef2ff; color: #4f46e5; }
+.doc-status-pill.draft { background: #fff7ed; color: #c2410c; }
+
+.doc-card-prompt {
+  min-height: 38px;
+}
+
+.doc-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.doc-card-metrics span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 9px;
+  background: #fbfaf7;
+}
+
+.doc-card-metrics em {
+  color: #8b8579;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.doc-card-metrics strong {
+  overflow: hidden;
+  color: #191919;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-next-step {
+  margin: 0 0 12px;
+  color: #6f6a60;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ── Responsive ── */
+@media (max-width: 1500px) {
+  .writing-home-layout {
+    --writing-home-panel-min-height: 780px;
+  }
+
+  .writing-home-layout .doc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .dashboard-hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .hero-art {
+    display: none;
+  }
+  .doc-grid,
+  .topic-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .writing-home-layout {
+    grid-template-columns: 1fr;
+  }
+  .growth-layout,
+  .ability-summary,
+  .diagnostics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .hub-page { padding: 24px 16px 44px; }
+  .dashboard-hero { grid-template-columns: 1fr; }
+  .hub-title { font-size: 34px; }
+  .doc-grid,
+  .writing-home-layout .doc-grid,
+  .topic-layout { grid-template-columns: 1fr; }
+  .writing-section-tabs {
+    width: 100%;
+    gap: 20px;
+  }
+  .growth-items { grid-template-columns: 1fr; }
+  .card-header { flex-direction: column; }
+  .doc-filters { justify-content: flex-start; }
+  .doc-filters .search-bar { width: 100%; }
   .task-modal { padding: 26px 20px; }
   .task-option-grid--two,
   .task-field-grid,
@@ -2320,13 +4263,16 @@ function formatTime(dateStr: string) {
   .past-prompt-preview {
     position: static;
   }
+  .writing-home-layout {
+    --writing-home-panel-min-height: 0;
+  }
 }
 
 @media (max-width: 560px) {
-  .hub-header { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .new-doc-btn--academy { width: 100%; justify-content: center; }
+  .filter-pills { width: 100%; }
+  .filter-pill { flex: 1; }
   .mode-grid { grid-template-columns: 1fr; }
-  .doc-grid { grid-template-columns: 1fr; }
   .doc-section-header { flex-direction: column; align-items: flex-start; }
   .task-modal-page { align-items: flex-start; }
   .task-modal-actions {
