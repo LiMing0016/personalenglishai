@@ -95,6 +95,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
+        path: 'writing/dashboard',
+        name: 'WritingDashboard',
+        component: () => import('@/pages/app/WritingPage.vue'),
+      },
+      {
         path: 'writing/mode',
         name: 'WritingModeSelect',
         component: () => import('@/pages/app/WritingPage.vue'),

@@ -106,6 +106,7 @@ export default defineConfig({
             { text: '本地开发', link: '/runbooks/local-dev' },
             { text: '启动环境检查', link: '/runbooks/startup-env-checklist' },
             { text: '本地脚本', link: '/runbooks/local-scripts' },
+            { text: '环境变量', link: '/runbooks/environment-variables' },
             { text: '部署', link: '/runbooks/deploy' }
           ]
         }

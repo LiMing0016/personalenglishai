@@ -3,7 +3,7 @@
     panel-title="创建账号"
     panel-subtitle="注册 Personal English AI，开始你的英语写作与个性化提升计划。"
   >
-    <AuthTabs v-model="activeTab" :tabs="tabs" />
+    <AuthTabs v-if="tabs.length > 1" v-model="activeTab" :tabs="tabs" />
 
     <!-- 邮箱注册 -->
     <form v-if="activeTab === 'email'" @submit.prevent="onEmailSubmit" class="auth-form">
@@ -121,7 +121,6 @@ const router = useRouter()
 const BUSINESS_HOME = '/app'
 const tabs = [
   { label: '邮箱', value: 'email' },
-  { label: '手机', value: 'phone' },
 ]
 
 const activeTab = ref('email')

@@ -21,6 +21,19 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_phone_verified (phone_verified)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='users';
 
+-- email verification tokens
+CREATE TABLE IF NOT EXISTS email_verification_token (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id    BIGINT NOT NULL COMMENT 'users.id',
+    token      VARCHAR(128) NOT NULL UNIQUE COMMENT 'verification token',
+    expires_at DATETIME NOT NULL COMMENT 'expiration time',
+    used       TINYINT NOT NULL DEFAULT 0 COMMENT '0=unused,1=used',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_token (token),
+    INDEX idx_user_id (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='email verification tokens';
+
 -- user profile (1:1)
 CREATE TABLE IF NOT EXISTS user_profile (
     user_id BIGINT PRIMARY KEY COMMENT 'users.id',

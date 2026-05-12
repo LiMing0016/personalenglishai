@@ -10,7 +10,7 @@ Personal English AI 是一个面向英语学习与写作训练的 Web 应用。�
 | 学习助手 | `/app/assistant` 提供类 ChatGPT 的对话体验，支持新建对话、历史搜索、文件夹整理、置顶、归档、分享、删除和移动到文件夹 |
 | 全局应用侧栏 | 应用页统一使用左侧窄栏导航，覆盖写作、学习助手、单词、听力、口语和个人中心入口 |
 | 个人中心 | `/app/me` 提供综合能力、我的作文、能力雷达、订阅、邀请激励、账号设置和学段切换 |
-| 鉴权与安全 | 支持 JWT 登录态、邮箱/手机号注册登录、401/403 边界处理、滑动拼图验证码 |
+| 鉴权与安全 | 支持 JWT 登录态、邮箱注册验证、未验证邮箱禁止登录、401/403 边界处理、滑动拼图验证码 |
 | AI 服务 | 后端负责评分、语法、Prompt 组装、上下文管理和 AI 调用；Python orchestrator 负责学习助手 agent 编排 |
 | 持久化 | MySQL 存储用户、作文、评分、学习助手文件夹/对话/消息/分享；Redis 用于任务状态、缓存和 sidecar 状态 |
 
@@ -40,7 +40,7 @@ cd docs
 npm run build
 ```
 
-文档治理规则见 `docs/contributing.md`。主导航只放当前有效文档，历史任务拆解、旧版状态说明、mockup 和临时资料统一归档到 `docs/archive/`。
+文档治理规则见 `docs/contributing.md`。主导航只放当前有效文档，任务拆解统一放在根目录 `tasks/`；旧版状态说明、mockup 和临时资料统一归档到 `docs/archive/`。
 
 ## 仓库结构
 
@@ -124,15 +124,15 @@ npm run build
 start-local.bat
 ```
 
-默认端口：
+本地脚本端口来自 `local-ports.env`。默认模板使用“基准端口 + 偏移量”推导：
 
 | 服务 | 默认地址 |
 |------|----------|
 | Web | `http://localhost:3300` |
-| Backend | `http://localhost:18081` |
+| Backend | `http://localhost:18080` |
 | Python orchestrator | `http://127.0.0.1:8011` |
 
-端口可通过 `local-ports.env` 调整。脚本会在端口被占用时提示更换端口、结束占用进程或取消启动。
+同一仓库跑多个 agent/worktree 时，复制 `local-ports.env.example` 为 `local-ports.env`，只改 `PORT_OFFSET` 即可。脚本会在端口被占用时提示更换端口、结束占用进程或取消启动。
 
 ### 手动启动
 
@@ -179,9 +179,18 @@ python\ai_orchestrator\.venv\Scripts\python.exe -m uvicorn python.ai_orchestrato
 | `SPRING_DATASOURCE_URL` | 后端 MySQL JDBC 地址 |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | 数据库账号密码 |
 | `JWT_SECRET` | JWT 密钥，生产环境必须使用足够长的随机值 |
+| `JWT_ACCESS_TOKEN_SECONDS` / `JWT_REFRESH_TOKEN_SECONDS` | Access / refresh token 有效期 |
+| `APP_BASE_URL` | 前端公开访问地址，用于生成邮箱验证链接 |
+| `MAIL_ENABLED` | 是否启用真实 SMTP 邮件发送；本地为 `false` 时输出日志邮件 |
+| `MAIL_HOST` / `MAIL_PORT` | SMTP 服务器地址和端口 |
+| `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP 账号和授权码/密码 |
+| `MAIL_FROM` | 验证邮件发件人地址 |
+| `COOKIE_SECURE` | HTTPS 生产环境应为 `true`，用于保护 refresh cookie |
 | `REDIS_HOST` / `REDIS_PORT` | Redis 地址 |
 | `OPENAI_API_KEY` | Python orchestrator 调用 OpenAI 时使用 |
 | `AI_ASSISTANT_MODEL` | 学习助手模型，默认见 `docker-compose.yml` |
+
+完整变量说明见 [docs/runbooks/environment-variables.md](docs/runbooks/environment-variables.md)。
 
 ## 验证命令
 

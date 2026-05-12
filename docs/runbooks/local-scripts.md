@@ -18,42 +18,51 @@ local-ports.env
 Copy-Item .\local-ports.env.example .\local-ports.env
 ```
 
-然后按当前项目文件夹修改端口，例如第一个项目：
+然后按当前项目文件夹修改 `PORT_OFFSET`。脚本会用“基准端口 + 偏移量”推导各服务端口，例如第一个项目：
 
 ```env
-BACKEND_PORT=18081
-WEB_PORT=3300
+PORT_OFFSET=0
+
+BACKEND_BASE_PORT=18080
+WEB_BASE_PORT=3300
+PYTHON_BASE_PORT=8011
+NGINX_BASE_PORT=8080
+
 PYTHON_HOST=127.0.0.1
-PYTHON_PORT=8011
 
 NGINX_DIR=D:\nginx-1.28.1
-NGINX_PORT=8080
 PAUSE_AT_END=0
 ```
 
-第二个项目可以改成：
+第二个项目只需要改偏移量：
 
 ```env
-BACKEND_PORT=18181
-WEB_PORT=3310
+PORT_OFFSET=100
+
+BACKEND_BASE_PORT=18080
+WEB_BASE_PORT=3300
+PYTHON_BASE_PORT=8011
+NGINX_BASE_PORT=8080
+
 PYTHON_HOST=127.0.0.1
-PYTHON_PORT=8021
 
 NGINX_DIR=D:\nginx-1.28.1
-NGINX_PORT=8081
 PAUSE_AT_END=0
 ```
 
-第三个项目可以改成：
+第三个项目继续增加偏移量：
 
 ```env
-BACKEND_PORT=18281
-WEB_PORT=3320
+PORT_OFFSET=200
+
+BACKEND_BASE_PORT=18080
+WEB_BASE_PORT=3300
+PYTHON_BASE_PORT=8011
+NGINX_BASE_PORT=8080
+
 PYTHON_HOST=127.0.0.1
-PYTHON_PORT=8031
 
 NGINX_DIR=D:\nginx-1.28.1
-NGINX_PORT=8082
 PAUSE_AT_END=0
 ```
 
@@ -61,7 +70,7 @@ PAUSE_AT_END=0
 
 - `local-ports.env` 是本机个人配置，已经被 `.gitignore` 忽略，不应该提交。
 - 每行格式用 `KEY=value`，等号两边不要加空格。
-- 如果没有 `local-ports.env`，脚本会使用默认端口。
+- 如果没有 `local-ports.env`，脚本会先读取 `local-ports.env.example` 里的基准端口。
 - `local-ports.env.example` 是模板，可以提交到 Git，方便其他电脑复制。
 
 ## 1. 脚本类型
@@ -101,13 +110,13 @@ start-local.bat
 http://localhost:${WEB_PORT}
 ```
 
-如果没有 `local-ports.env`，默认值是：
+如果没有 `local-ports.env`，脚本会使用 `local-ports.env.example` 里的基准端口和 `PORT_OFFSET=0`：
 
 ```text
-BACKEND_PORT=18081
-WEB_PORT=3300
+BACKEND_BASE_PORT=18080
+WEB_BASE_PORT=3300
 PYTHON_HOST=127.0.0.1
-PYTHON_PORT=8011
+PYTHON_BASE_PORT=8011
 ```
 
 启动前端时，脚本会把 `VITE_API_BASE_URL` 设置成当前后端地址。这样前端页面和 Vite `/api` 代理都会打到当前项目自己的后端端口。
@@ -200,17 +209,13 @@ start-nginx.bat
 
 用途：启动或重载本机 Nginx。
 
-当前脚本默认使用本机 Nginx 路径：
+当前脚本从 `local-ports.env.example` + `local-ports.env` 读取本机 Nginx 路径和端口：
 
-```bat
-set "NGINX_DIR=D:\nginx-1.28.1"
-```
-
-如果 Nginx 不在这个目录，不需要改脚本，改当前项目的 `local-ports.env` 即可：
+如果 Nginx 不在模板里的目录，不需要改脚本，改当前项目的 `local-ports.env` 即可：
 
 ```env
 NGINX_DIR=D:\nginx-1.28.1
-NGINX_PORT=8080
+NGINX_BASE_PORT=8080
 ```
 
 它会做这些事：

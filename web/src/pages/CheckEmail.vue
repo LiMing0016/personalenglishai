@@ -7,6 +7,15 @@
       <div v-if="email" class="email-display">
         <strong>{{ email }}</strong>
       </div>
+      <Input
+        v-else
+        v-model="manualEmail"
+        type="email"
+        label="邮箱"
+        placeholder="请输入注册邮箱"
+        :error="emailError"
+        @blur="validateManualEmail"
+      />
 
       <div class="actions">
         <Button
@@ -34,13 +43,16 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import Button from '@/components/Button.vue'
+import Input from '@/components/Input.vue'
 import { authApi } from '@/api/authApi'
-import { getErrorMessage } from '@/utils/validation'
+import { getErrorMessage, isValidEmail } from '@/utils/validation'
 import { showToast } from '@/utils/toast'
 
 const route = useRoute()
 
 const email = ref<string>('')
+const manualEmail = ref('')
+const emailError = ref('')
 const resending = ref(false)
 const countdown = ref(0)
 const errorMessage = ref('')
@@ -72,8 +84,28 @@ const startCountdown = () => {
   }, 1000)
 }
 
+const validateManualEmail = () => {
+  if (email.value) {
+    emailError.value = ''
+    return true
+  }
+  if (!manualEmail.value.trim()) {
+    emailError.value = '请输入邮箱'
+    return false
+  }
+  if (!isValidEmail(manualEmail.value.trim())) {
+    emailError.value = '邮箱格式不正确'
+    return false
+  }
+  emailError.value = ''
+  return true
+}
+
 const handleResend = async () => {
   if (countdown.value > 0) {
+    return
+  }
+  if (!validateManualEmail()) {
     return
   }
 
@@ -81,7 +113,8 @@ const handleResend = async () => {
   resending.value = true
 
   try {
-    const response = await authApi.resendVerification(email.value || undefined)
+    const targetEmail = email.value || manualEmail.value.trim()
+    const response = await authApi.resendVerification(targetEmail)
 
     if (response.success) {
       showToast('验证邮件已重新发送', 'success')
@@ -91,8 +124,9 @@ const handleResend = async () => {
       showToast(getErrorMessage(response.code), 'error')
     }
   } catch (error) {
-    errorMessage.value = getErrorMessage()
-    showToast(getErrorMessage(), 'error')
+    const err = error as { response?: { data?: { code?: string; message?: string } } }
+    errorMessage.value = getErrorMessage(err.response?.data?.code, err.response?.data?.message)
+    showToast(errorMessage.value, 'error')
   } finally {
     resending.value = false
   }

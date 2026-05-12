@@ -25,7 +25,14 @@ assert.ok(
   appRailSource.includes('border: 1px solid var(--app-sidebar-border'),
   'shared rail logo button should use the same bordered control style as the sidebar shell',
 )
-for (const linkText of ['写', '助', '词', '听', '说']) {
+assert.ok(appRailSource.includes("shortLabel: '助'"), 'assistant entry should keep the assistant text shortcut')
+for (const removedShortcut of ["shortLabel: '写'", "shortLabel: '词'", "shortLabel: '听'", "shortLabel: '说'"]) {
+  assert.ok(!appRailSource.includes(removedShortcut), `shared rail should replace ${removedShortcut} with a logo icon`)
+}
+for (const iconName of ['writing', 'reading', 'listening', 'speaking']) {
+  assert.ok(appRailSource.includes(`skillIcon: '${iconName}'`), `shared rail should include ${iconName} logo icon`)
+}
+for (const linkText of ['助']) {
   assert.ok(appRailSource.includes(linkText), `shared rail should include ${linkText}`)
 }
 for (const linkTarget of ['/app/writing', '/app/assistant', '/app/vocabulary', '/app/listening', '/app/speaking']) {

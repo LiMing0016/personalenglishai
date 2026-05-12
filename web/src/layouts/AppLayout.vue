@@ -1,7 +1,7 @@
 <template>
   <div
     class="app-layout"
-    :class="{ immersive }"
+    :class="{ immersive, 'app-layout--writing': isWritingRoute }"
     @mouseup="handleSelectionChange"
     @keyup="handleSelectionChange"
   >
@@ -55,6 +55,7 @@ provide('assistantDrawerOpen', assistantDrawerOpen)
 const immersive = computed(() =>
   immersiveOverride.value !== null ? immersiveOverride.value : Boolean(route.meta.immersive)
 )
+const isWritingRoute = computed(() => route.path.startsWith('/app/writing'))
 const selectionToolbarStyle = computed(() => ({
   left: `${selectionToolbar.left}px`,
   top: `${selectionToolbar.top}px`,
@@ -142,6 +143,12 @@ function askAssistantWithSelection() {
   flex-direction: row;
   background: #f5f6f7;
 }
+.app-layout--writing {
+  height: 100vh;
+  --app-sidebar-border: #e4dfd3;
+  overflow: hidden;
+  background: #f7f5ef;
+}
 .app-layout.immersive {
   /* immersive mode: no nav, full height for child */
 }
@@ -153,6 +160,18 @@ function askAssistantWithSelection() {
   min-height: 0;
   min-width: 0;
   height: 100vh;
+}
+.app-layout--writing .app-main {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #f7f5ef;
+  scrollbar-gutter: stable;
+}
+.app-layout--writing :deep(.app-rail) {
+  background: #f7f5ef;
+}
+.app-layout--writing :deep(.rail-brand) {
+  background: #fbfaf7;
 }
 
 /* immersive: main takes full viewport */

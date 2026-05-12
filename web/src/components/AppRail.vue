@@ -20,7 +20,8 @@
       :title="item.label"
       :aria-label="item.label"
     >
-      {{ item.shortLabel }}
+      <AppRailSkillIcon v-if="item.skillIcon" :icon="item.skillIcon" />
+      <span v-else class="rail-short-label">{{ item.shortLabel }}</span>
     </RouterLink>
 
     <button
@@ -74,6 +75,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import AppRailSkillIcon from './AppRailSkillIcon.vue'
 
 defineProps<{
   assistantDrawerOpen: boolean
@@ -86,13 +88,23 @@ const emit = defineEmits<{
 
 const route = useRoute()
 
+type SkillIcon = 'writing' | 'reading' | 'listening' | 'speaking'
+type AppNavItem = {
+  to: string
+  activePrefix: string
+  label: string
+} & (
+  | { skillIcon: SkillIcon; shortLabel?: never }
+  | { shortLabel: string; skillIcon?: never }
+)
+
 const appNavItems = [
-  { to: '/app/writing', activePrefix: '/app/writing', label: '写作', shortLabel: '写' },
+  { to: '/app/writing', activePrefix: '/app/writing', label: '写作', skillIcon: 'writing' },
   { to: '/app/assistant', activePrefix: '/app/assistant', label: '学习助手', shortLabel: '助' },
-  { to: '/app/vocabulary', activePrefix: '/app/vocabulary', label: '单词', shortLabel: '词' },
-  { to: '/app/listening', activePrefix: '/app/listening', label: '听力', shortLabel: '听' },
-  { to: '/app/speaking', activePrefix: '/app/speaking', label: '口语', shortLabel: '说' },
-] as const
+  { to: '/app/vocabulary', activePrefix: '/app/vocabulary', label: '单词', skillIcon: 'reading' },
+  { to: '/app/listening', activePrefix: '/app/listening', label: '听力', skillIcon: 'listening' },
+  { to: '/app/speaking', activePrefix: '/app/speaking', label: '口语', skillIcon: 'speaking' },
+] satisfies readonly AppNavItem[]
 
 function isActive(activePrefix: string) {
   return route.path === activePrefix || route.path.startsWith(`${activePrefix}/`)
@@ -167,9 +179,12 @@ function isActive(activePrefix: string) {
 }
 
 .rail-nav-link {
+  text-decoration: none;
+}
+
+.rail-short-label {
   font-size: 13px;
   font-weight: 800;
-  text-decoration: none;
 }
 
 .rail-button svg {

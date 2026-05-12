@@ -62,12 +62,14 @@ public class AuthControllerV1 {
     public ResponseEntity<ApiResponse<RegisterResponse>> register(
             @Valid @RequestBody RegisterRequest request,
             HttpServletRequest httpRequest) {
+        String ip = resolveClientIp(httpRequest);
+        emailVerificationService.checkRegisterSendAllowed(ip);
         Long userId = authService.register(
                 request.getEmail(),
                 request.getPassword(),
                 request.getNickname()
         );
-        audit.info("[REGISTER] email={} userId={} ip={}", request.getEmail(), userId, resolveClientIp(httpRequest));
+        audit.info("[REGISTER] email={} userId={} ip={}", request.getEmail(), userId, ip);
         // 注册成功后发送验证邮件
         emailVerificationService.sendVerification(userId, request.getEmail());
         RegisterResponse data = new RegisterResponse(userId);
@@ -180,9 +182,10 @@ public class AuthControllerV1 {
      * 重新发送验证邮件 — POST /api/v1/auth/resend-verification
      */
     @PostMapping("/resend-verification")
-    public ResponseEntity<ApiResponse<Void>> resendVerification(@RequestBody Map<String, String> request) {
+    public ResponseEntity<ApiResponse<Void>> resendVerification(@RequestBody Map<String, String> request,
+                                                                HttpServletRequest httpRequest) {
         String email = request.getOrDefault("email", "");
-        emailVerificationService.resendVerification(email);
+        emailVerificationService.resendVerification(email, resolveClientIp(httpRequest));
         // 不论邮箱是否存在都返回成功（防枚举）
         ApiResponse<Void> body = ApiResponse.success();
         body.setTraceId(MDC.get("traceId"));

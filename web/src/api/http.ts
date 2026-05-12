@@ -117,7 +117,7 @@ http.interceptors.response.use(
       }
     }
 
-    if (status === 403) {
+    if (status === 403 && responseCode !== '403020') {
       showToast('无权限访问', 'error')
     }
 

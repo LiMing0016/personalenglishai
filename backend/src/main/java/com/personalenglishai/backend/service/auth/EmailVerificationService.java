@@ -22,15 +22,18 @@ public class EmailVerificationService {
     private final EmailVerificationTokenMapper tokenMapper;
     private final UserMapper userMapper;
     private final EmailService emailService;
+    private final EmailVerificationRateLimitService rateLimitService;
     private final String baseUrl;
 
     public EmailVerificationService(EmailVerificationTokenMapper tokenMapper,
                                     UserMapper userMapper,
                                     EmailService emailService,
+                                    EmailVerificationRateLimitService rateLimitService,
                                     @Value("${app.base-url:http://localhost:5173}") String baseUrl) {
         this.tokenMapper = tokenMapper;
         this.userMapper = userMapper;
         this.emailService = emailService;
+        this.rateLimitService = rateLimitService;
         this.baseUrl = baseUrl;
     }
 
@@ -59,8 +62,9 @@ public class EmailVerificationService {
     /**
      * 重新发送验证邮件
      */
-    public void resendVerification(String email) {
+    public void resendVerification(String email, String ip) {
         String normalizedEmail = email == null ? "" : email.trim().toLowerCase();
+        rateLimitService.checkAndConsumeResend(normalizedEmail, ip);
         User user = userMapper.findByEmail(normalizedEmail);
         if (user == null) {
             // 不暴露邮箱是否存在
@@ -70,6 +74,10 @@ public class EmailVerificationService {
             return;
         }
         sendVerification(user.getId(), user.getEmail());
+    }
+
+    public void checkRegisterSendAllowed(String ip) {
+        rateLimitService.checkAndConsumeRegisterSend(ip);
     }
 
     /**

@@ -35,10 +35,23 @@ services:
       
       # JWT 配置
       - JWT_SECRET=${JWT_SECRET:-your-secret-key-must-be-at-least-32-bytes-long-for-security}
-      - JWT_EXPIRE_SECONDS=${JWT_EXPIRE_SECONDS:-86400}
+      - JWT_ACCESS_TOKEN_SECONDS=${JWT_ACCESS_TOKEN_SECONDS:-1800}
+      - JWT_REFRESH_TOKEN_SECONDS=${JWT_REFRESH_TOKEN_SECONDS:-259200}
       
       # Resend API Key（预留，未配置不影响启动）
       - RESEND_API_KEY=${RESEND_API_KEY:-}
+
+      # Email verification SMTP
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:3000}
+      - MAIL_ENABLED=${MAIL_ENABLED:-false}
+      - MAIL_HOST=${MAIL_HOST:-}
+      - MAIL_PORT=${MAIL_PORT:-465}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-noreply@personalenglishai.com}
+      - MAIL_SSL_ENABLE=${MAIL_SSL_ENABLE:-true}
+      - MAIL_STARTTLS_ENABLE=${MAIL_STARTTLS_ENABLE:-false}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
 
       # Python OpenAI Agents SDK orchestrator
       - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8002}

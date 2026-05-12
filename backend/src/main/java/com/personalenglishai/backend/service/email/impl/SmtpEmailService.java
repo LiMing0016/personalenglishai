@@ -5,6 +5,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.mail.MailException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
@@ -43,7 +44,7 @@ public class SmtpEmailService implements EmailService {
             helper.setText(html, true);
             mailSender.send(message);
             log.info("[Email] sent to={} subject={}", to, subject);
-        } catch (MessagingException e) {
+        } catch (MessagingException | MailException e) {
             // 仅记录错误，不抛异常——避免邮件发送失败阻塞注册等主流程
             log.error("[Email] failed to send to={} subject={}", to, subject, e);
         }
