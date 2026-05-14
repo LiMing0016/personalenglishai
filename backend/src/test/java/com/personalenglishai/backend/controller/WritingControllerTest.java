@@ -475,6 +475,52 @@ class WritingControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/writing/dashboard")
+    class Dashboard {
+
+        @Test
+        @DisplayName("returns 401 when userId is missing")
+        void dashboard_noAuth() throws Exception {
+            mockMvc.perform(get("/api/writing/dashboard"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("returns overview and growth dashboard with default scope")
+        void dashboard_success() throws Exception {
+            when(writingDashboardService.buildDashboard(1L, "30d", "all", null, null))
+                    .thenReturn(writingDashboardResponse());
+
+            mockMvc.perform(get("/api/writing/dashboard")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.scope.range").value("30d"))
+                    .andExpect(jsonPath("$.scope.mode").value("all"))
+                    .andExpect(jsonPath("$.scope.scorePolicy").value("latest"))
+                    .andExpect(jsonPath("$.overview.summary.totalEssays").value(2))
+                    .andExpect(jsonPath("$.overview.summary.totalSubmissions").value(3))
+                    .andExpect(jsonPath("$.overview.trend[0].essayCount").value(1))
+                    .andExpect(jsonPath("$.growth.essayScoreTrend[0].title").value("Practice essay"))
+                    .andExpect(jsonPath("$.growth.scoreDistribution[3].label").value("80-90"))
+                    .andExpect(jsonPath("$.growth.monthlyGoal.target").value(3))
+                    .andExpect(jsonPath("$.growth.streak.currentDays").value(2));
+        }
+
+        @Test
+        @DisplayName("passes filters to dashboard service")
+        void dashboard_passesFilters() throws Exception {
+            when(writingDashboardService.buildDashboard(1L, "custom", "exam", "2026-05-01", "2026-05-31"))
+                    .thenReturn(writingDashboardResponse());
+
+            mockMvc.perform(get("/api/writing/dashboard?range=custom&mode=exam&start=2026-05-01&end=2026-05-31")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk());
+
+            verify(writingDashboardService).buildDashboard(1L, "custom", "exam", "2026-05-01", "2026-05-31");
+        }
+    }
+
+    @Nested
     @DisplayName("POST /api/writing/generate-exam-dialogue-turn")
     class GenerateExamDialogueTurn {
 
@@ -1034,5 +1080,83 @@ class WritingControllerTest {
         req.setEssay(essay);
         req.setMode(mode);
         return req;
+    }
+
+    private Map<String, Object> writingDashboardResponse() {
+        Map<String, Object> scope = new LinkedHashMap<>();
+        scope.put("range", "30d");
+        scope.put("mode", "all");
+        scope.put("scorePolicy", "latest");
+        scope.put("start", "2026-05-01");
+        scope.put("end", "2026-05-31");
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalEssays", 2);
+        summary.put("totalSubmissions", 3);
+        summary.put("averageScore", 81);
+        summary.put("bestScore", 88);
+
+        Map<String, Object> trendRow = new LinkedHashMap<>();
+        trendRow.put("date", "2026-05-01");
+        trendRow.put("sourceLabel", "2026-05-01");
+        trendRow.put("essayCount", 1);
+        trendRow.put("submissionCount", 2);
+        trendRow.put("averageScore", 82);
+        trendRow.put("bestScore", 88);
+
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("summary", summary);
+        overview.put("trend", List.of(trendRow));
+        overview.put("insight", "最近样本仍偏少，建议继续完成评分后观察趋势。");
+
+        Map<String, Object> trendPoint = new LinkedHashMap<>();
+        trendPoint.put("essayNo", 1);
+        trendPoint.put("title", "Practice essay");
+        trendPoint.put("mode", "free");
+        trendPoint.put("score", 82);
+        trendPoint.put("scoredAt", "2026-05-01 20:00");
+        trendPoint.put("delta", 0);
+        trendPoint.put("aiSuggestion", "继续保持当前练习节奏。");
+
+        Map<String, Object> distributionBucket = new LinkedHashMap<>();
+        distributionBucket.put("key", "80-90");
+        distributionBucket.put("label", "80-90");
+        distributionBucket.put("stage", "良好");
+        distributionBucket.put("min", 80);
+        distributionBucket.put("max", 90);
+        distributionBucket.put("count", 1);
+        distributionBucket.put("percent", 50);
+        distributionBucket.put("color", "#63AE86");
+        distributionBucket.put("backgroundColor", "#D7EADD");
+
+        Map<String, Object> monthlyGoal = new LinkedHashMap<>();
+        monthlyGoal.put("done", 2);
+        monthlyGoal.put("target", 3);
+        monthlyGoal.put("remaining", 1);
+
+        Map<String, Object> streak = new LinkedHashMap<>();
+        streak.put("currentDays", 2);
+        streak.put("bestDays", 3);
+
+        Map<String, Object> growth = new LinkedHashMap<>();
+        growth.put("essayScoreTrend", List.of(trendPoint));
+        growth.put("scoreDistribution", List.of(
+                Map.of("key", "under-60", "label", "<60"),
+                Map.of("key", "60-70", "label", "60-70"),
+                Map.of("key", "70-80", "label", "70-80"),
+                distributionBucket
+        ));
+        growth.put("scoreBands", List.of());
+        growth.put("highScorePercent", 50);
+        growth.put("scoreScatter", List.of());
+        growth.put("monthlyGoal", monthlyGoal);
+        growth.put("streak", streak);
+        growth.put("insight", "最近样本仍偏少，建议继续完成评分后观察趋势。");
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("scope", scope);
+        response.put("overview", overview);
+        response.put("growth", growth);
+        return response;
     }
 }

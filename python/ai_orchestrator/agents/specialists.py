@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 from agents import Agent
@@ -107,6 +108,11 @@ def _log_handoff(agent_name: str):
     return on_handoff
 
 
+def _handoff_tool_name(agent_name: str) -> str:
+    normalized_name = re.sub(r"[^a-z0-9]+", "_", agent_name.lower()).strip("_")
+    return f"transfer_to_{normalized_name}"
+
+
 def create_specialist_agents(model: str) -> list[Agent]:
     return [create_specialist_agent(spec, model) for spec in SPECIALIST_AGENT_SPECS]
 
@@ -115,6 +121,7 @@ def create_specialist_handoffs(model: str):
     return [
         handoff(
             create_specialist_agent(spec, model),
+            tool_name_override=_handoff_tool_name(spec.name),
             on_handoff=_log_handoff(spec.name),
             input_type=HandoffRoutingMetadata,
         )

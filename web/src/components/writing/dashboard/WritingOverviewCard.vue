@@ -112,10 +112,12 @@ import { useEventListener } from '@vueuse/core'
 
 import type {
   WritingDashboardMode,
+  WritingDashboardOverview,
+  WritingDashboardOverviewTrendItem,
   WritingDashboardRange,
+} from '@/api/writing'
+import type {
   WritingDashboardCustomRange,
-  WritingOverviewData,
-  WritingOverviewTrendPoint,
 } from '@/pages/app/writingDashboardMock'
 
 echarts.use([
@@ -129,7 +131,7 @@ echarts.use([
 ])
 
 const props = defineProps<{
-  overview: WritingOverviewData
+  overview: WritingDashboardOverview
   range: WritingDashboardRange
   mode: WritingDashboardMode
   customRange: WritingDashboardCustomRange
@@ -150,7 +152,7 @@ let chartInstance: echarts.ECharts | null = null
 const DAY_MS = 24 * 60 * 60 * 1000
 const TARGET_SCORE = 80
 
-interface DisplayTrendPoint extends WritingOverviewTrendPoint {
+interface DisplayTrendPoint extends WritingDashboardOverviewTrendItem {
   sourceLabel: string
 }
 
@@ -392,21 +394,10 @@ function renderChart() {
 }
 
 function buildDisplayTrend(): DisplayTrendPoint[] {
-  if (props.range === 'all') {
-    return props.overview.trend.map(item => ({
-      ...item,
-      sourceLabel: item.date,
-    }))
-  }
-
-  const window = resolveTrendWindow()
-  const labels = window.unit === 'month'
-    ? buildMonthLabels(window.start, window.end)
-    : window.unit === 'week'
-      ? buildWeekLabels(window.start, window.end)
-      : buildDayLabels(window.start, window.end)
-
-  return labels.map((label, index) => buildSyntheticTrendPoint(label, index, labels.length, window.unit))
+  return props.overview.trend.map(item => ({
+    ...item,
+    sourceLabel: item.sourceLabel || item.date,
+  }))
 }
 
 function resolveTrendWindow(): TrendWindow {
@@ -450,79 +441,6 @@ function resolveTrendWindow(): TrendWindow {
   }
 }
 
-function buildDayLabels(start: Date, end: Date) {
-  const total = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS) + 1)
-  return Array.from({ length: total }, (_, index) => {
-    const date = addDays(start, index)
-    return {
-      key: formatDayLabel(date),
-      sourceLabel: formatFullDateLabel(date),
-    }
-  })
-}
-
-function buildWeekLabels(start: Date, end: Date) {
-  const labels: Array<{ key: string; sourceLabel: string }> = []
-  let cursor = start
-  let weekIndex = 1
-
-  while (cursor.getTime() <= end.getTime()) {
-    const weekStart = cursor
-    const weekEnd = new Date(Math.min(addDays(cursor, 6).getTime(), end.getTime()))
-    labels.push({
-      key: `第${weekIndex}周`,
-      sourceLabel: `${formatDateLabel(formatDateInput(weekStart))} - ${formatDateLabel(formatDateInput(weekEnd))}`,
-    })
-    cursor = addDays(cursor, 7)
-    weekIndex += 1
-  }
-
-  return labels
-}
-
-function buildMonthLabels(start: Date, end: Date) {
-  const labels: Array<{ key: string; sourceLabel: string }> = []
-  let cursor = startOfMonth(start)
-  const last = startOfMonth(end)
-
-  while (cursor.getTime() <= last.getTime()) {
-    labels.push({
-      key: formatMonthLabel(cursor),
-      sourceLabel: `${cursor.getFullYear()}年${String(cursor.getMonth() + 1).padStart(2, '0')}月`,
-    })
-    cursor = addMonths(cursor, 1)
-  }
-
-  return labels.length ? labels : [{ key: formatMonthLabel(start), sourceLabel: formatFullDateLabel(start) }]
-}
-
-function buildSyntheticTrendPoint(
-  label: { key: string; sourceLabel: string },
-  index: number,
-  total: number,
-  unit: TrendWindow['unit'],
-): DisplayTrendPoint {
-  const seed = props.overview.trend[index % Math.max(1, props.overview.trend.length)]
-  const progress = total <= 1 ? 1 : index / (total - 1)
-  const startScore = props.overview.trend[0]?.averageScore ?? Math.max(60, props.overview.summary.averageScore - 10)
-  const averageScore = clampScore(Math.round(startScore + (props.overview.summary.averageScore - startScore) * progress))
-  const bestScore = clampScore(Math.max(averageScore, Math.round(averageScore + (props.overview.summary.bestScore - averageScore) * 0.72)))
-  const shouldShowSparseCount = unit === 'month' ? index % 3 === 1 : unit === 'week' ? true : index % 5 === 0
-
-  return {
-    date: label.key,
-    sourceLabel: label.sourceLabel,
-    essayCount: unit === 'week'
-      ? Math.max(1, seed?.essayCount ?? 0, index % 2 === 0 ? 2 : 1)
-      : seed?.essayCount || (shouldShowSparseCount ? 1 : 0),
-    submissionCount: unit === 'week'
-      ? Math.max(1, seed?.submissionCount ?? 0, index % 2 === 0 ? 2 : 1)
-      : seed?.submissionCount || (unit === 'month' && index % 4 === 2 ? 1 : 0),
-    averageScore,
-    bestScore,
-  }
-}
-
 function addDays(date: Date, days: number) {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -548,26 +466,6 @@ function parseDateInput(value: string) {
   const [year, month, day] = value.split('-').map(Number)
   if (!year || !month || !day) return null
   return new Date(year, month - 1, day)
-}
-
-function formatDayLabel(date: Date) {
-  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function formatMonthLabel(date: Date) {
-  return `${String(date.getFullYear()).slice(2)}/${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-
-function formatFullDateLabel(date: Date) {
-  return `${date.getFullYear()}-${formatDayLabel(date)}`
-}
-
-function formatDateInput(date: Date) {
-  return `${date.getFullYear()}-${formatDayLabel(date)}`
-}
-
-function clampScore(value: number) {
-  return Math.min(100, Math.max(50, value))
 }
 
 function selectMode(event: Event) {

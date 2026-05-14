@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
 from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
+from python.ai_orchestrator.schemas.routing import RoutingDecision
 from python.ai_orchestrator.schemas.routing_state import ActiveTaskState
 from python.ai_orchestrator.schemas.routing_state import ContinuationDecision
 from python.ai_orchestrator.services.active_task_state import InMemoryActiveTaskStateStore
@@ -79,6 +80,297 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run_agent_session.await_args.kwargs["run_context"].conversation_id, "conv-1")
         self.assertEqual(reply.reply, "Here is feedback.")
         self.assertEqual(reply.agent_name, "Evaluation Agent")
+
+    async def test_run_assistant_request_runs_route_decision_before_legacy_reply(self) -> None:
+        class FakeRouteDecisionRunner:
+            def __init__(self) -> None:
+                self.requests = []
+
+            async def route(self, route_request, *, flush_trace=True):
+                self.requests.append(route_request)
+                return RoutingDecision(
+                    intent="translation",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="translation",
+                    confidence=0.9,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Translation request.",
+                )
+
+        route_runner = FakeRouteDecisionRunner()
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=route_runner,
+            route_decision_enabled=True,
+        )
+        service._specialist_agents["Translation Agent"] = object()
+        request = AssistantRequest(
+            appConversationId="conv-route-1",
+            clientMessageId="client-1",
+            mode="daily_explain",
+            intent="translate",
+            scope="message_only",
+            message={"text": "翻译 hello"},
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="你好", agent_name="Translation Agent"),
+        ):
+            reply = await service.run_assistant_request(request)
+
+        self.assertEqual(reply.reply, "你好")
+        self.assertEqual(len(route_runner.requests), 1)
+        self.assertEqual(route_runner.requests[0].message, "翻译 hello")
+        self.assertEqual(route_runner.requests[0].conversation_id, "conv-route-1")
+        self.assertEqual(route_runner.requests[0].assistant_mode, "daily_explain")
+
+    async def test_run_assistant_request_uses_route_decision_target_agent(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="polish",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="polish",
+                    confidence=0.94,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="User asked for polishing.",
+                )
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            route_decision_enabled=True,
+        )
+        polish_agent = object()
+        service._specialist_agents["Polish Agent"] = polish_agent
+        service._router_agent = object()
+        request = AssistantRequest(
+            appConversationId="conv-route-2",
+            clientMessageId="client-2",
+            mode="daily_explain",
+            intent="free_chat",
+            scope="message_only",
+            message={"text": "润色这句话：I very like English."},
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="I really like English.", agent_name="Polish Agent"),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        self.assertIs(run_agent_session.await_args.kwargs["agent"], polish_agent)
+        self.assertEqual(reply.agent_name, "Polish Agent")
+        self.assertEqual(reply.run.agent_name, "Polish Agent")
+
+    async def test_run_assistant_request_wraps_route_and_target_agent_in_single_trace(self) -> None:
+        class FakeTrace:
+            def __init__(self) -> None:
+                self.entered = False
+                self.exited = False
+
+            def __enter__(self):
+                self.entered = True
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.exited = True
+                return False
+
+        class FakeRouteDecisionRunner:
+            def __init__(self) -> None:
+                self.flush_values = []
+
+            async def route(self, route_request, *, flush_trace=True):
+                self.flush_values.append(flush_trace)
+                return RoutingDecision(
+                    intent="polish",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="polish",
+                    confidence=0.94,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="User asked for polishing.",
+                )
+
+        fake_trace = FakeTrace()
+        route_runner = FakeRouteDecisionRunner()
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=route_runner,
+            route_decision_enabled=True,
+        )
+        service._specialist_agents["Polish Agent"] = object()
+        request = AssistantRequest(
+            appConversationId="conv-trace-1",
+            clientMessageId="client-trace-1",
+            mode="daily_explain",
+            intent="free_chat",
+            scope="message_only",
+            message={"text": "润色这句话：I very like English."},
+        )
+
+        with (
+            patch(
+                "python.ai_orchestrator.assistant_service.run_agent_session",
+                new_callable=AsyncMock,
+                return_value=AgentSessionResult(final_output="I really like English.", agent_name="Polish Agent"),
+            ),
+            patch("agents.trace", return_value=fake_trace) as trace,
+            patch("agents.flush_traces") as flush_traces,
+        ):
+            await service.run_assistant_request(request)
+
+        trace.assert_called_once()
+        self.assertEqual(trace.call_args.args[0], "PEAI Assistant Workflow")
+        self.assertEqual(trace.call_args.kwargs["group_id"], "conv-trace-1")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["component"], "assistant_agent_service")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["route_decision_enabled"], "true")
+        self.assertTrue(fake_trace.entered)
+        self.assertTrue(fake_trace.exited)
+        self.assertEqual(route_runner.flush_values, [False])
+        flush_traces.assert_called_once()
+
+    async def test_stream_assistant_request_runs_route_decision_before_legacy_stream(self) -> None:
+        class FakeRouteDecisionRunner:
+            def __init__(self) -> None:
+                self.requests = []
+
+            async def route(self, route_request, *, flush_trace=True):
+                self.requests.append(route_request)
+                return RoutingDecision(
+                    intent="translation",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="translation",
+                    confidence=0.9,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Translation request.",
+                )
+
+        route_runner = FakeRouteDecisionRunner()
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=route_runner,
+            route_decision_enabled=True,
+        )
+        service._specialist_agents["Translation Agent"] = object()
+        request = AssistantRequest(
+            appConversationId="conv-route-1",
+            clientMessageId="client-1",
+            mode="daily_explain",
+            intent="translate",
+            scope="message_only",
+            message={"text": "翻译 hello"},
+        )
+
+        async def fake_stream_agent_session(**kwargs):
+            yield SimpleNamespace(type="delta", delta="你", result=None)
+            yield SimpleNamespace(
+                type="completed",
+                delta="",
+                result=AgentSessionResult(final_output="你好", agent_name="Translation Agent"),
+            )
+
+        with patch("python.ai_orchestrator.assistant_service.stream_agent_session", fake_stream_agent_session):
+            events = [event async for event in service.stream_assistant_request(request)]
+
+        self.assertEqual(events[-1]["type"], "run.completed")
+        self.assertEqual(len(route_runner.requests), 1)
+        self.assertEqual(route_runner.requests[0].message, "翻译 hello")
+
+    async def test_stream_assistant_request_uses_route_decision_target_agent(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="scoring",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="scoring",
+                    confidence=0.92,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="User asked for scoring.",
+                )
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            route_decision_enabled=True,
+        )
+        scoring_agent = object()
+        service._specialist_agents["Scoring Agent"] = scoring_agent
+        service._router_agent = object()
+        request = AssistantRequest(
+            appConversationId="conv-route-3",
+            clientMessageId="client-3",
+            mode="daily_explain",
+            intent="free_chat",
+            scope="message_only",
+            message={"text": "给这篇作文评分。"},
+        )
+
+        async def fake_stream_agent_session(**kwargs):
+            self.assertIs(kwargs["agent"], scoring_agent)
+            yield SimpleNamespace(type="delta", delta="8", result=None)
+            yield SimpleNamespace(
+                type="completed",
+                delta="",
+                result=AgentSessionResult(final_output="8分", agent_name="Scoring Agent"),
+            )
+
+        with patch("python.ai_orchestrator.assistant_service.stream_agent_session", fake_stream_agent_session):
+            events = [event async for event in service.stream_assistant_request(request)]
+
+        self.assertEqual(events[0]["agentName"], "Scoring Agent")
+        self.assertEqual(events[-1]["run"]["agentName"], "Scoring Agent")
+
+    async def test_route_assistant_request_returns_route_decision(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="writing_evaluation",
+                    route_type="run_workflow",
+                    workflow="writing_evaluation",
+                    target_agent="writing_evaluation",
+                    confidence=0.91,
+                    required_inputs=["essay_text", "topic_prompt"],
+                    missing_inputs=[],
+                    reason="Debug route decision.",
+                )
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+        )
+        request = AssistantRequest(
+            appConversationId="conv-route-1",
+            clientMessageId="client-1",
+            mode="exam_boost",
+            intent="grade_writing",
+            scope="message_only",
+            message={"text": "帮我看看这篇作文是否跑题"},
+        )
+
+        decision = await service.route_assistant_request(request)
+
+        self.assertEqual(decision.intent, "writing_evaluation")
+        self.assertEqual(decision.route_type, "run_workflow")
 
     async def test_chat_saves_active_task_state_after_specialist_result(self) -> None:
         store = InMemoryActiveTaskStateStore()

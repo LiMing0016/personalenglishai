@@ -165,4 +165,41 @@
         WHERE user_id = #{userId} AND overall_score IS NOT NULL
     </select>
 
+    <select id="selectDashboardSubmissionRows" resultType="java.util.LinkedHashMap">
+        SELECT
+            e.id AS evaluationId,
+            e.document_id AS documentId,
+            CASE
+                WHEN d.task_prompt IS NULL OR CHAR_LENGTH(TRIM(d.task_prompt)) = 0 THEN 'free'
+                ELSE 'exam'
+            END AS mode,
+            e.overall_score AS overallScore,
+            e.created_at AS evaluatedAt
+        FROM essay_evaluation e
+        INNER JOIN documents d ON d.id = e.document_id
+        WHERE e.user_id = #{userId}
+          AND d.owner_user_id = #{userId}
+          AND d.deleted_at IS NULL
+          AND e.overall_score IS NOT NULL
+          <if test="startAt != null">
+            AND e.created_at &gt;= #{startAt}
+          </if>
+          <if test="endExclusive != null">
+            AND e.created_at &lt; #{endExclusive}
+          </if>
+          AND (
+            #{mode} = 'all'
+            OR (
+              #{mode} = 'free'
+              AND (d.task_prompt IS NULL OR CHAR_LENGTH(TRIM(d.task_prompt)) = 0)
+            )
+            OR (
+              #{mode} = 'exam'
+              AND d.task_prompt IS NOT NULL
+              AND CHAR_LENGTH(TRIM(d.task_prompt)) > 0
+            )
+          )
+        ORDER BY e.created_at ASC
+    </select>
+
 </mapper>

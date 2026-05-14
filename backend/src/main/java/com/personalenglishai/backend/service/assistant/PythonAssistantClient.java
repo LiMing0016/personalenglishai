@@ -27,7 +27,7 @@ public class PythonAssistantClient {
 
     public PythonAssistantClient(
             WebClient.Builder builder,
-            @Value("${assistant.orchestrator.base-url:http://127.0.0.1:8002}") String baseUrl,
+            @Value("${assistant.orchestrator.base-url:http://127.0.0.1:8011}") String baseUrl,
             @Value("${assistant.orchestrator.timeout-ms:60000}") long timeoutMs) {
         this.webClient = builder.baseUrl(baseUrl).build();
         this.timeout = Duration.ofMillis(timeoutMs);
