@@ -1,0 +1,887 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#VPContent"
+  - banner:
+    - generic:
+      - generic:
+        - generic:
+          - link "Personal English AI 文档" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e7]: Personal English AI 文档
+          - generic [ref=e8]:
+            - button "搜索文档" [ref=e10] [cursor=pointer]:
+              - generic [ref=e12]: 搜索文档
+              - generic [ref=e13]:
+                - generic [ref=e14]: Ctrl
+                - generic [ref=e15]: K
+            - navigation "Main Navigation" [ref=e16]:
+              - generic [ref=e17]: Main Navigation
+              - link "首页" [ref=e18] [cursor=pointer]:
+                - /url: /
+                - generic [ref=e19]: 首页
+              - link "产品" [ref=e20] [cursor=pointer]:
+                - /url: /product/
+                - generic [ref=e21]: 产品
+              - link "架构" [ref=e22] [cursor=pointer]:
+                - /url: /architecture/
+                - generic [ref=e23]: 架构
+              - link "接口" [ref=e24] [cursor=pointer]:
+                - /url: /api/
+                - generic [ref=e25]: 接口
+              - link "数据" [ref=e26] [cursor=pointer]:
+                - /url: /data/
+                - generic [ref=e27]: 数据
+              - link "AI" [ref=e28] [cursor=pointer]:
+                - /url: /ai/
+                - generic [ref=e29]: AI
+              - link "Agent" [ref=e30] [cursor=pointer]:
+                - /url: /agent/
+                - generic [ref=e31]: Agent
+              - link "运行手册" [ref=e32] [cursor=pointer]:
+                - /url: /runbooks/
+                - generic [ref=e33]: 运行手册
+              - link "测试" [ref=e34] [cursor=pointer]:
+                - /url: /testing/
+                - generic [ref=e35]: 测试
+              - link "ADR" [ref=e36] [cursor=pointer]:
+                - /url: /adr/
+                - generic [ref=e37]: ADR
+            - button "extra navigation" [ref=e39] [cursor=pointer]
+  - button "本页目录" [ref=e44] [cursor=pointer]: 本页目录
+  - complementary [ref=e46]:
+    - navigation "Sidebar Navigation" [ref=e48]:
+      - generic [ref=e49]: Sidebar Navigation
+      - generic [ref=e51]:
+        - button "Agent" [ref=e52]:
+          - heading "Agent" [level=2] [ref=e54]
+        - generic [ref=e55]:
+          - link "Agent 设计总览" [ref=e59] [cursor=pointer]:
+            - /url: /agent/
+            - paragraph [ref=e60]: Agent 设计总览
+          - link "路由 Agent" [ref=e64] [cursor=pointer]:
+            - /url: /agent/%E8%B7%AF%E7%94%B1agent
+            - paragraph [ref=e65]: 路由 Agent
+  - generic [ref=e70]:
+    - main [ref=e71]:
+      - generic [ref=e73]:
+        - heading "路由 Agent 设计 Permalink to “路由 Agent 设计”" [level=1] [ref=e74]:
+          - text: 路由 Agent 设计
+          - link "Permalink to “路由 Agent 设计”" [ref=e75] [cursor=pointer]:
+            - /url: "#路由-agent-设计"
+            - text: "#"
+        - heading "当前目标 Permalink to “当前目标”" [level=2] [ref=e76]:
+          - text: 当前目标
+          - link "Permalink to “当前目标”" [ref=e77] [cursor=pointer]:
+            - /url: "#当前目标"
+            - text: "#"
+        - paragraph [ref=e78]: 路由 Agent 是 PEAI 多 Agent 写作与学习工作流的第一层决策器。
+        - paragraph [ref=e79]: 它的目标不是回答用户问题，而是把用户本轮输入转换成稳定、可验证、可被后端消费的结构化路由决策。
+        - generic [ref=e80]:
+          - button "Copy Code" [ref=e81] [cursor=pointer]
+          - generic [ref=e82]: text
+          - code [ref=e84]:
+            - generic [ref=e85]: 用户输入 + 产品上下文
+            - generic [ref=e86]: "-> RouteRequest"
+            - generic [ref=e87]: "-> RouteAgent"
+            - generic [ref=e88]: "-> RoutingDecision"
+            - generic [ref=e89]: "-> 后端 workflow runner"
+            - generic [ref=e90]: "-> 专门 workflow / capability agent"
+        - paragraph [ref=e91]: 第一版只做路由决策，不做长期记忆、用户画像、评分、润色或学习建议生成。
+        - heading "总体架构 Permalink to “总体架构”" [level=2] [ref=e92]:
+          - text: 总体架构
+          - link "Permalink to “总体架构”" [ref=e93] [cursor=pointer]:
+            - /url: "#总体架构"
+            - text: "#"
+        - img [ref=e96]
+        - paragraph [ref=e97]: 核心原则：
+        - list [ref=e98]:
+          - listitem [ref=e99]: RouteAgent 只负责“去哪儿”。
+          - listitem [ref=e100]: Workflow 负责“怎么执行”。
+          - listitem [ref=e101]: Capability Agent 负责“具体能力”。
+          - listitem [ref=e102]: Runtime config 负责“用哪个模型”。
+        - heading "职责边界 Permalink to “职责边界”" [level=2] [ref=e103]:
+          - text: 职责边界
+          - link "Permalink to “职责边界”" [ref=e104] [cursor=pointer]:
+            - /url: "#职责边界"
+            - text: "#"
+        - table [ref=e105]:
+          - rowgroup [ref=e106]:
+            - row "模块 负责 不负责" [ref=e107]:
+              - columnheader "模块" [ref=e108]
+              - columnheader "负责" [ref=e109]
+              - columnheader "不负责" [ref=e110]
+          - rowgroup [ref=e111]:
+            - row "RouteAgent 意图识别、workflow 选择、缺失输入判断、路由置信度 评分、诊断、润色、直接教学、模型选择" [ref=e112]:
+              - cell "RouteAgent" [ref=e113]
+              - cell "意图识别、workflow 选择、缺失输入判断、路由置信度" [ref=e114]
+              - cell "评分、诊断、润色、直接教学、模型选择" [ref=e115]
+            - row "Workflow Runner 根据 RoutingDecision 调用对应 workflow 自己生成模型回答" [ref=e116]:
+              - cell "Workflow Runner" [ref=e117]
+              - cell "根据 RoutingDecision 调用对应 workflow" [ref=e118]
+              - cell "自己生成模型回答" [ref=e119]
+            - row "Workflow 固定业务链路编排、中间结果传递、错误路径处理 自由决定全局路由" [ref=e120]:
+              - cell "Workflow" [ref=e121]
+              - cell "固定业务链路编排、中间结果传递、错误路径处理" [ref=e122]
+              - cell "自由决定全局路由" [ref=e123]
+            - row "Capability Agent 单一垂直能力，如评分、润色、语法解释 自行互调其他 Agent" [ref=e124]:
+              - cell "Capability Agent" [ref=e125]
+              - cell "单一垂直能力，如评分、润色、语法解释" [ref=e126]
+              - cell "自行互调其他 Agent" [ref=e127]
+            - row "Tool 确定性查询、校验、保存、检索 替代 Agent 做开放式生成" [ref=e128]:
+              - cell "Tool" [ref=e129]
+              - cell "确定性查询、校验、保存、检索" [ref=e130]
+              - cell "替代 Agent 做开放式生成" [ref=e131]
+        - heading "数据流 Permalink to “数据流”" [level=2] [ref=e132]:
+          - text: 数据流
+          - link "Permalink to “数据流”" [ref=e133] [cursor=pointer]:
+            - /url: "#数据流"
+            - text: "#"
+        - generic [ref=e134]: "sequenceDiagram participant U as User participant B as Backend participant R as RouteAgent participant W as Workflow Runner participant A as Capability Agent U->>B: message + page context B->>B: build RouteRequest B->>R: RouteRequest R-->>B: RoutingDecision alt missing required input B-->>U: ask clarification else out of scope B-->>U: scope guard response else enough information B->>W: run workflow(decision) W->>A: call target agent / tools A-->>W: structured result W-->>B: workflow result B-->>U: user-facing response end"
+        - paragraph [ref=e135]:
+          - text: 用户的
+          - code [ref=e136]: message
+          - text: 只出现在 RouteAgent 输入里，不应该被 RouteAgent 原样放进输出 JSON。
+        - heading "RouteRequest Permalink to “RouteRequest”" [level=2] [ref=e137]:
+          - text: RouteRequest
+          - link "Permalink to “RouteRequest”" [ref=e138] [cursor=pointer]:
+            - /url: "#routerequest"
+            - text: "#"
+        - paragraph [ref=e139]:
+          - code [ref=e140]: RouteRequest
+          - text: 是后端传给 RouteAgent 的输入对象。它表达用户本轮请求和产品上下文。
+        - generic [ref=e141]:
+          - button "Copy Code" [ref=e142] [cursor=pointer]
+          - generic [ref=e143]: json
+          - code [ref=e145]:
+            - generic [ref=e146]: "{"
+            - generic [ref=e147]: "\"message\": \"帮我看看这篇作文能得多少分\","
+            - generic [ref=e148]: "\"conversationId\": \"conv_123\","
+            - generic [ref=e149]: "\"userId\": \"user_001\","
+            - generic [ref=e150]: "\"studyStage\": \"高中\","
+            - generic [ref=e151]: "\"assistantMode\": \"exam\","
+            - generic [ref=e152]: "\"context\": {"
+            - generic [ref=e153]: "\"selectedText\": null,"
+            - generic [ref=e154]: "\"essayText\": null,"
+            - generic [ref=e155]: "\"topicPrompt\": null,"
+            - generic [ref=e156]: "\"currentPage\": \"writing_editor\","
+            - generic [ref=e157]: "\"activeTask\": null"
+            - generic [ref=e158]: "}"
+            - generic [ref=e159]: "}"
+        - paragraph [ref=e160]: 字段说明：
+        - table [ref=e161]:
+          - rowgroup [ref=e162]:
+            - row "字段 是否给模型 说明" [ref=e163]:
+              - columnheader "字段" [ref=e164]
+              - columnheader "是否给模型" [ref=e165]
+              - columnheader "说明" [ref=e166]
+          - rowgroup [ref=e167]:
+            - row "message 是 用户本轮输入文本" [ref=e168]:
+              - cell "message" [ref=e169]:
+                - code [ref=e170]: message
+              - cell "是" [ref=e171]
+              - cell "用户本轮输入文本" [ref=e172]
+            - row "conversationId 否，默认只进运行上下文 产品侧会话 ID" [ref=e173]:
+              - cell "conversationId" [ref=e174]:
+                - code [ref=e175]: conversationId
+              - cell "否，默认只进运行上下文" [ref=e176]
+              - cell "产品侧会话 ID" [ref=e177]
+            - row "userId 否，默认只进运行上下文 用户 ID" [ref=e178]:
+              - cell "userId" [ref=e179]:
+                - code [ref=e180]: userId
+              - cell "否，默认只进运行上下文" [ref=e181]
+              - cell "用户 ID" [ref=e182]
+            - row "studyStage 是 学段，如小学、初中、高中、四级、雅思" [ref=e183]:
+              - cell "studyStage" [ref=e184]:
+                - code [ref=e185]: studyStage
+              - cell "是" [ref=e186]
+              - cell "学段，如小学、初中、高中、四级、雅思" [ref=e187]
+            - row "assistantMode 是 对话模式，如 default、exam" [ref=e188]:
+              - cell "assistantMode" [ref=e189]:
+                - code [ref=e190]: assistantMode
+              - cell "是" [ref=e191]
+              - cell "对话模式，如 default、exam" [ref=e192]:
+                - text: 对话模式，如
+                - code [ref=e193]: default
+                - text: 、
+                - code [ref=e194]: exam
+            - row "context.selectedText 是，如存在 用户选中的文本" [ref=e195]:
+              - cell "context.selectedText" [ref=e196]:
+                - code [ref=e197]: context.selectedText
+              - cell "是，如存在" [ref=e198]
+              - cell "用户选中的文本" [ref=e199]
+            - row "context.essayText 是，如当前任务需要 当前作文正文" [ref=e200]:
+              - cell "context.essayText" [ref=e201]:
+                - code [ref=e202]: context.essayText
+              - cell "是，如当前任务需要" [ref=e203]
+              - cell "当前作文正文" [ref=e204]
+            - row "context.topicPrompt 是，如当前任务需要 当前作文题目" [ref=e205]:
+              - cell "context.topicPrompt" [ref=e206]:
+                - code [ref=e207]: context.topicPrompt
+              - cell "是，如当前任务需要" [ref=e208]
+              - cell "当前作文题目" [ref=e209]
+            - row "context.currentPage 可选 当前产品页面，用于辅助判断" [ref=e210]:
+              - cell "context.currentPage" [ref=e211]:
+                - code [ref=e212]: context.currentPage
+              - cell "可选" [ref=e213]
+              - cell "当前产品页面，用于辅助判断" [ref=e214]
+            - row "context.activeTask 可选 上一轮未完成任务状态，第一版可以为空" [ref=e215]:
+              - cell "context.activeTask" [ref=e216]:
+                - code [ref=e217]: context.activeTask
+              - cell "可选" [ref=e218]
+              - cell "上一轮未完成任务状态，第一版可以为空" [ref=e219]
+        - heading "RoutingDecision Permalink to “RoutingDecision”" [level=2] [ref=e220]:
+          - text: RoutingDecision
+          - link "Permalink to “RoutingDecision”" [ref=e221] [cursor=pointer]:
+            - /url: "#routingdecision"
+            - text: "#"
+        - paragraph [ref=e222]:
+          - code [ref=e223]: RoutingDecision
+          - text: 是 RouteAgent 的唯一输出。后端只根据这个对象决定下一步。
+        - generic [ref=e224]:
+          - button "Copy Code" [ref=e225] [cursor=pointer]
+          - generic [ref=e226]: json
+          - code [ref=e228]:
+            - generic [ref=e229]: "{"
+            - generic [ref=e230]: "\"intent\": \"writing_evaluation\","
+            - generic [ref=e231]: "\"workflow\": \"writing_evaluation_workflow\","
+            - generic [ref=e232]: "\"routeType\": \"ask_clarification\","
+            - generic [ref=e233]: "\"targetAgent\": \"WritingCoachAgent\","
+            - generic [ref=e234]: "\"confidence\": 0.86,"
+            - generic [ref=e235]: "\"requiredInputs\": [\"essayText\", \"studyStage\"],"
+            - generic [ref=e236]: "\"missingInputs\": [\"essayText\"],"
+            - generic [ref=e237]: "\"normalizedInputs\": {"
+            - generic [ref=e238]: "\"hasEssayText\": false,"
+            - generic [ref=e239]: "\"hasTopicPrompt\": false,"
+            - generic [ref=e240]: "\"hasSelectedText\": false,"
+            - generic [ref=e241]: "\"studyStage\": \"高中\","
+            - generic [ref=e242]: "\"assistantMode\": \"exam\","
+            - generic [ref=e243]: "\"currentPage\": \"writing_editor\""
+            - generic [ref=e244]: "},"
+            - generic [ref=e245]: "\"reason\": \"用户要求作文评分，但没有提供作文正文\""
+            - generic [ref=e246]: "}"
+        - paragraph [ref=e247]: 字段说明：
+        - table [ref=e248]:
+          - rowgroup [ref=e249]:
+            - row "字段 类型 说明" [ref=e250]:
+              - columnheader "字段" [ref=e251]
+              - columnheader "类型" [ref=e252]
+              - columnheader "说明" [ref=e253]
+          - rowgroup [ref=e254]:
+            - row "intent enum 标准化后的用户意图" [ref=e255]:
+              - cell "intent" [ref=e256]:
+                - code [ref=e257]: intent
+              - cell "enum" [ref=e258]
+              - cell "标准化后的用户意图" [ref=e259]
+            - row "workflow enum 或 null 后续要进入的业务 workflow" [ref=e260]:
+              - cell "workflow" [ref=e261]:
+                - code [ref=e262]: workflow
+              - cell "enum 或 null" [ref=e263]
+              - cell "后续要进入的业务 workflow" [ref=e264]
+            - row "routeType enum 本轮处理方式" [ref=e265]:
+              - cell "routeType" [ref=e266]:
+                - code [ref=e267]: routeType
+              - cell "enum" [ref=e268]
+              - cell "本轮处理方式" [ref=e269]
+            - row "targetAgent enum 或 null 第一跳目标 Agent" [ref=e270]:
+              - cell "targetAgent" [ref=e271]:
+                - code [ref=e272]: targetAgent
+              - cell "enum 或 null" [ref=e273]
+              - cell "第一跳目标 Agent" [ref=e274]
+            - row "confidence number 路由置信度，范围 0 到 1" [ref=e275]:
+              - cell "confidence" [ref=e276]:
+                - code [ref=e277]: confidence
+              - cell "number" [ref=e278]
+              - cell "路由置信度，范围 0 到 1" [ref=e279]
+            - row "requiredInputs string[] 该 workflow 理论上需要的输入" [ref=e280]:
+              - cell "requiredInputs" [ref=e281]:
+                - code [ref=e282]: requiredInputs
+              - cell "string[]" [ref=e283]
+              - cell "该 workflow 理论上需要的输入" [ref=e284]
+            - row "missingInputs string[] 当前缺失的关键输入" [ref=e285]:
+              - cell "missingInputs" [ref=e286]:
+                - code [ref=e287]: missingInputs
+              - cell "string[]" [ref=e288]
+              - cell "当前缺失的关键输入" [ref=e289]
+            - row "normalizedInputs object 便于后端判断的输入摘要" [ref=e290]:
+              - cell "normalizedInputs" [ref=e291]:
+                - code [ref=e292]: normalizedInputs
+              - cell "object" [ref=e293]
+              - cell "便于后端判断的输入摘要" [ref=e294]
+            - row "reason string 调试和日志用原因，不展示给用户" [ref=e295]:
+              - cell "reason" [ref=e296]:
+                - code [ref=e297]: reason
+              - cell "string" [ref=e298]
+              - cell "调试和日志用原因，不展示给用户" [ref=e299]
+        - heading "路由决策树 Permalink to “路由决策树”" [level=2] [ref=e300]:
+          - text: 路由决策树
+          - link "Permalink to “路由决策树”" [ref=e301] [cursor=pointer]:
+            - /url: "#路由决策树"
+            - text: "#"
+        - generic [ref=e302]: "flowchart TD START[\"收到 RouteRequest\"] --> SCOPE{\"是否英语学习相关？\"} SCOPE -->|否| OUT[\"routeType=out_of_scope\"] SCOPE -->|是| INTENT[\"判断标准 intent\"] INTENT --> INPUTS{\"workflow 必需输入是否齐全？\"} INPUTS -->|否| CLARIFY[\"routeType=ask_clarification<br/>missingInputs\"] INPUTS -->|是| SIMPLE{\"是否轻量直接回答？\"} SIMPLE -->|是| DIRECT[\"routeType=answer_direct\"] SIMPLE -->|否| CONF{\"confidence 是否足够？\"} CONF -->|低| CLARIFY CONF -->|足够| RUN[\"routeType=run_workflow<br/>workflow + targetAgent\"]"
+        - paragraph [ref=e303]: 建议阈值：
+        - table [ref=e304]:
+          - rowgroup [ref=e305]:
+            - row "confidence 处理" [ref=e306]:
+              - columnheader "confidence" [ref=e307]
+              - columnheader "处理" [ref=e308]
+          - rowgroup [ref=e309]:
+            - row ">= 0.75 可以执行路由" [ref=e310]:
+              - cell ">= 0.75" [ref=e311]:
+                - code [ref=e312]: ">= 0.75"
+              - cell "可以执行路由" [ref=e313]
+            - row "0.45 - 0.75 优先追问或降级到 unknown" [ref=e314]:
+              - cell "0.45 - 0.75" [ref=e315]:
+                - code [ref=e316]: 0.45 - 0.75
+              - cell "优先追问或降级到 unknown" [ref=e317]:
+                - text: 优先追问或降级到
+                - code [ref=e318]: unknown
+            - row "< 0.45 不进入高风险 workflow" [ref=e319]:
+              - cell "< 0.45" [ref=e320]:
+                - code [ref=e321]: < 0.45
+              - cell "不进入高风险 workflow" [ref=e322]
+        - paragraph [ref=e323]: 高置信度但缺关键输入时，也必须先追问。
+        - heading "Intent 与 Workflow 映射 Permalink to “Intent 与 Workflow 映射”" [level=2] [ref=e324]:
+          - text: Intent 与 Workflow 映射
+          - link "Permalink to “Intent 与 Workflow 映射”" [ref=e325] [cursor=pointer]:
+            - /url: "#intent-与-workflow-映射"
+            - text: "#"
+        - paragraph [ref=e326]: 第一版 intent 不宜过多，先覆盖主链路。
+        - table [ref=e327]:
+          - rowgroup [ref=e328]:
+            - row "intent workflow targetAgent 场景" [ref=e329]:
+              - columnheader "intent" [ref=e330]
+              - columnheader "workflow" [ref=e331]
+              - columnheader "targetAgent" [ref=e332]
+              - columnheader "场景" [ref=e333]
+          - rowgroup [ref=e334]:
+            - row "writing_evaluation writing_evaluation_workflow WritingCoachAgent 作文评分、诊断、修改建议" [ref=e335]:
+              - cell "writing_evaluation" [ref=e336]:
+                - code [ref=e337]: writing_evaluation
+              - cell "writing_evaluation_workflow" [ref=e338]:
+                - code [ref=e339]: writing_evaluation_workflow
+              - cell "WritingCoachAgent" [ref=e340]:
+                - code [ref=e341]: WritingCoachAgent
+              - cell "作文评分、诊断、修改建议" [ref=e342]
+            - row "writing_live_coach writing_live_coach_workflow WritingCoachAgent 写作中实时指导" [ref=e343]:
+              - cell "writing_live_coach" [ref=e344]:
+                - code [ref=e345]: writing_live_coach
+              - cell "writing_live_coach_workflow" [ref=e346]:
+                - code [ref=e347]: writing_live_coach_workflow
+              - cell "WritingCoachAgent" [ref=e348]:
+                - code [ref=e349]: WritingCoachAgent
+              - cell "写作中实时指导" [ref=e350]
+            - row "topic_analysis topic_analysis_workflow TopicAnalysisAgent 审题、写作思路、跑题判断" [ref=e351]:
+              - cell "topic_analysis" [ref=e352]:
+                - code [ref=e353]: topic_analysis
+              - cell "topic_analysis_workflow" [ref=e354]:
+                - code [ref=e355]: topic_analysis_workflow
+              - cell "TopicAnalysisAgent" [ref=e356]:
+                - code [ref=e357]: TopicAnalysisAgent
+              - cell "审题、写作思路、跑题判断" [ref=e358]
+            - row "polish polish_workflow PolishAgent 润色、改写、表达升级" [ref=e359]:
+              - cell "polish" [ref=e360]:
+                - code [ref=e361]: polish
+              - cell "polish_workflow" [ref=e362]:
+                - code [ref=e363]: polish_workflow
+              - cell "PolishAgent" [ref=e364]:
+                - code [ref=e365]: PolishAgent
+              - cell "润色、改写、表达升级" [ref=e366]
+            - row "grammar_help grammar_help_workflow GrammarAgent 语法解释、句子结构" [ref=e367]:
+              - cell "grammar_help" [ref=e368]:
+                - code [ref=e369]: grammar_help
+              - cell "grammar_help_workflow" [ref=e370]:
+                - code [ref=e371]: grammar_help_workflow
+              - cell "GrammarAgent" [ref=e372]:
+                - code [ref=e373]: GrammarAgent
+              - cell "语法解释、句子结构" [ref=e374]
+            - row "vocab_help vocab_help_workflow VocabAgent 单词、短语、搭配" [ref=e375]:
+              - cell "vocab_help" [ref=e376]:
+                - code [ref=e377]: vocab_help
+              - cell "vocab_help_workflow" [ref=e378]:
+                - code [ref=e379]: vocab_help_workflow
+              - cell "VocabAgent" [ref=e380]:
+                - code [ref=e381]: VocabAgent
+              - cell "单词、短语、搭配" [ref=e382]
+            - row "practice_generation practice_generation_workflow PracticeAgent 出题、练习生成" [ref=e383]:
+              - cell "practice_generation" [ref=e384]:
+                - code [ref=e385]: practice_generation
+              - cell "practice_generation_workflow" [ref=e386]:
+                - code [ref=e387]: practice_generation_workflow
+              - cell "PracticeAgent" [ref=e388]:
+                - code [ref=e389]: PracticeAgent
+              - cell "出题、练习生成" [ref=e390]
+            - row "learning_plan learning_plan_workflow LearningPlannerAgent 学习计划、阶段目标" [ref=e391]:
+              - cell "learning_plan" [ref=e392]:
+                - code [ref=e393]: learning_plan
+              - cell "learning_plan_workflow" [ref=e394]:
+                - code [ref=e395]: learning_plan_workflow
+              - cell "LearningPlannerAgent" [ref=e396]:
+                - code [ref=e397]: LearningPlannerAgent
+              - cell "学习计划、阶段目标" [ref=e398]
+            - row "general_chat general_chat_workflow GeneralChatAgent 普通英语学习问答" [ref=e399]:
+              - cell "general_chat" [ref=e400]:
+                - code [ref=e401]: general_chat
+              - cell "general_chat_workflow" [ref=e402]:
+                - code [ref=e403]: general_chat_workflow
+              - cell "GeneralChatAgent" [ref=e404]:
+                - code [ref=e405]: GeneralChatAgent
+              - cell "普通英语学习问答" [ref=e406]
+            - row "unknown null null 不确定，需要追问" [ref=e407]:
+              - cell "unknown" [ref=e408]:
+                - code [ref=e409]: unknown
+              - cell "null" [ref=e410]
+              - cell "null" [ref=e411]
+              - cell "不确定，需要追问" [ref=e412]
+        - paragraph [ref=e413]:
+          - text: 第一版可以先让多个写作相关 intent 指向同一个
+          - code [ref=e414]: WritingCoachAgent
+          - text: 。等结构化输出稳定后，再拆
+          - code [ref=e415]: ScoringAgent
+          - text: 、
+          - code [ref=e416]: ErrorDiagnosisAgent
+          - text: 、
+          - code [ref=e417]: RevisionPlanAgent
+          - text: 、
+          - code [ref=e418]: PolishAgent
+          - text: 和
+          - code [ref=e419]: PracticeAgent
+          - text: 。
+        - heading "Pydantic Schema 建议 Permalink to “Pydantic Schema 建议”" [level=2] [ref=e420]:
+          - text: Pydantic Schema 建议
+          - link "Permalink to “Pydantic Schema 建议”" [ref=e421] [cursor=pointer]:
+            - /url: "#pydantic-schema-建议"
+            - text: "#"
+        - generic [ref=e422]:
+          - button "Copy Code" [ref=e423] [cursor=pointer]
+          - generic [ref=e424]: python
+          - code [ref=e426]:
+            - generic [ref=e427]: from typing import Literal
+            - generic [ref=e428]: from pydantic import BaseModel, Field
+            - generic [ref=e429]: RoutingIntent = Literal[
+            - generic [ref=e430]: "\"writing_evaluation\","
+            - generic [ref=e431]: "\"writing_live_coach\","
+            - generic [ref=e432]: "\"topic_analysis\","
+            - generic [ref=e433]: "\"polish\","
+            - generic [ref=e434]: "\"grammar_help\","
+            - generic [ref=e435]: "\"vocab_help\","
+            - generic [ref=e436]: "\"practice_generation\","
+            - generic [ref=e437]: "\"learning_plan\","
+            - generic [ref=e438]: "\"general_chat\","
+            - generic [ref=e439]: "\"unknown\","
+            - generic [ref=e440]: "]"
+            - generic [ref=e441]: RouteType = Literal[
+            - generic [ref=e442]: "\"run_workflow\","
+            - generic [ref=e443]: "\"ask_clarification\","
+            - generic [ref=e444]: "\"answer_direct\","
+            - generic [ref=e445]: "\"out_of_scope\","
+            - generic [ref=e446]: "]"
+            - generic [ref=e447]: WorkflowName = Literal[
+            - generic [ref=e448]: "\"writing_evaluation_workflow\","
+            - generic [ref=e449]: "\"writing_live_coach_workflow\","
+            - generic [ref=e450]: "\"topic_analysis_workflow\","
+            - generic [ref=e451]: "\"polish_workflow\","
+            - generic [ref=e452]: "\"grammar_help_workflow\","
+            - generic [ref=e453]: "\"vocab_help_workflow\","
+            - generic [ref=e454]: "\"practice_generation_workflow\","
+            - generic [ref=e455]: "\"learning_plan_workflow\","
+            - generic [ref=e456]: "\"general_chat_workflow\","
+            - generic [ref=e457]: "]"
+            - generic [ref=e458]: TargetAgent = Literal[
+            - generic [ref=e459]: "\"WritingCoachAgent\","
+            - generic [ref=e460]: "\"TopicAnalysisAgent\","
+            - generic [ref=e461]: "\"PolishAgent\","
+            - generic [ref=e462]: "\"GrammarAgent\","
+            - generic [ref=e463]: "\"VocabAgent\","
+            - generic [ref=e464]: "\"PracticeAgent\","
+            - generic [ref=e465]: "\"LearningPlannerAgent\","
+            - generic [ref=e466]: "\"GeneralChatAgent\","
+            - generic [ref=e467]: "]"
+            - generic [ref=e468]: "class RoutingNormalizedInputs(BaseModel):"
+            - generic [ref=e469]: "has_essay_text: bool = False"
+            - generic [ref=e470]: "has_topic_prompt: bool = False"
+            - generic [ref=e471]: "has_selected_text: bool = False"
+            - generic [ref=e472]: "study_stage: str | None = None"
+            - generic [ref=e473]: "assistant_mode: str | None = None"
+            - generic [ref=e474]: "current_page: str | None = None"
+            - generic [ref=e475]: "class RoutingDecision(BaseModel):"
+            - generic [ref=e476]: "intent: RoutingIntent"
+            - generic [ref=e477]: "workflow: WorkflowName | None = None"
+            - generic [ref=e478]: "route_type: RouteType"
+            - generic [ref=e479]: "target_agent: TargetAgent | None = None"
+            - generic [ref=e480]: "confidence: float = Field(ge=0.0, le=1.0)"
+            - generic [ref=e481]: "required_inputs: list[str] = Field(default_factory=list)"
+            - generic [ref=e482]: "missing_inputs: list[str] = Field(default_factory=list)"
+            - generic [ref=e483]: "normalized_inputs: RoutingNormalizedInputs"
+            - generic [ref=e484]: "reason: str"
+        - heading "Agents SDK 落位 Permalink to “Agents SDK 落位”" [level=2] [ref=e485]:
+          - text: Agents SDK 落位
+          - link "Permalink to “Agents SDK 落位”" [ref=e486] [cursor=pointer]:
+            - /url: "#agents-sdk-落位"
+            - text: "#"
+        - paragraph [ref=e487]: RouteAgent 使用 OpenAI Agents SDK 的结构化输出能力。
+        - generic [ref=e488]:
+          - button "Copy Code" [ref=e489] [cursor=pointer]
+          - generic [ref=e490]: python
+          - code [ref=e492]:
+            - generic [ref=e493]: route_agent = Agent(
+            - generic [ref=e494]: name="RouteAgent",
+            - generic [ref=e495]: model=settings.ROUTE_MODEL,
+            - generic [ref=e496]: instructions=route_prompt,
+            - generic [ref=e497]: output_type=RoutingDecision,
+            - generic [ref=e498]: )
+        - paragraph [ref=e499]:
+          - text: 后端运行后只读取
+          - code [ref=e500]: final_output
+          - text: ：
+        - generic [ref=e501]:
+          - button "Copy Code" [ref=e502] [cursor=pointer]
+          - generic [ref=e503]: python
+          - code [ref=e505]:
+            - generic [ref=e506]: decision = route_result.final_output
+            - generic [ref=e507]: "if decision.route_type == \"ask_clarification\":"
+            - generic [ref=e508]: return build_clarification_message(decision)
+            - generic [ref=e509]: "if decision.route_type == \"out_of_scope\":"
+            - generic [ref=e510]: return build_out_of_scope_message()
+            - generic [ref=e511]: "if decision.workflow == \"writing_evaluation_workflow\":"
+            - generic [ref=e512]: return run_writing_evaluation_workflow(request, decision)
+        - paragraph [ref=e513]: RouteAgent 不应该调用 scoring、polish 或 profile tool。它可以在后续接入轻量 classifier 或 active task state，但仍然只输出路由决策。
+        - heading "模型配置 Permalink to “模型配置”" [level=2] [ref=e514]:
+          - text: 模型配置
+          - link "Permalink to “模型配置”" [ref=e515] [cursor=pointer]:
+            - /url: "#模型配置"
+            - text: "#"
+        - paragraph [ref=e516]: 当前模型不由 RouteAgent 决定。模型选择属于后端运行配置。
+        - generic [ref=e517]:
+          - button "Copy Code" [ref=e518] [cursor=pointer]
+          - generic [ref=e519]: text
+          - code [ref=e521]:
+            - generic [ref=e522]: ROUTE_MODEL=gpt-5.4-mini
+            - generic [ref=e523]: WRITING_MODEL=gpt-5.4
+            - generic [ref=e524]: SCORING_MODEL=gpt-5.4
+            - generic [ref=e525]: POLISH_MODEL=gpt-5.4-mini
+        - paragraph [ref=e526]: 运行层按 Agent 或 workflow 选择模型：
+        - generic [ref=e527]:
+          - button "Copy Code" [ref=e528] [cursor=pointer]
+          - generic [ref=e529]: python
+          - code [ref=e531]:
+            - generic [ref=e532]: "MODEL_BY_AGENT = {"
+            - generic [ref=e533]: "\"RouteAgent\": settings.ROUTE_MODEL,"
+            - generic [ref=e534]: "\"WritingCoachAgent\": settings.WRITING_MODEL,"
+            - generic [ref=e535]: "\"TopicAnalysisAgent\": settings.WRITING_MODEL,"
+            - generic [ref=e536]: "\"PolishAgent\": settings.POLISH_MODEL,"
+            - generic [ref=e537]: "}"
+        - paragraph [ref=e538]: 原则：
+        - list [ref=e539]:
+          - listitem [ref=e540]:
+            - text: RouteAgent 只决定
+            - code [ref=e541]: intent
+            - text: 、
+            - code [ref=e542]: workflow
+            - text: 、
+            - code [ref=e543]: routeType
+            - text: 和
+            - code [ref=e544]: targetAgent
+            - text: 。
+          - listitem [ref=e545]: 后端根据配置决定实际模型。
+          - listitem [ref=e546]: 不让模型自己决定下一步使用哪个模型。
+          - listitem [ref=e547]: 评分、审题、诊断这类高影响任务使用更强模型。
+        - heading "路由样例 Permalink to “路由样例”" [level=2] [ref=e548]:
+          - text: 路由样例
+          - link "Permalink to “路由样例”" [ref=e549] [cursor=pointer]:
+            - /url: "#路由样例"
+            - text: "#"
+        - heading "作文评分但缺少正文 Permalink to “作文评分但缺少正文”" [level=3] [ref=e550]:
+          - text: 作文评分但缺少正文
+          - link "Permalink to “作文评分但缺少正文”" [ref=e551] [cursor=pointer]:
+            - /url: "#作文评分但缺少正文"
+            - text: "#"
+        - paragraph [ref=e552]: 输入：
+        - generic [ref=e553]:
+          - button "Copy Code" [ref=e554] [cursor=pointer]
+          - generic [ref=e555]: text
+          - code [ref=e557]:
+            - generic [ref=e558]: 帮我看看这篇作文能得多少分
+        - paragraph [ref=e559]: 输出：
+        - generic [ref=e560]:
+          - button "Copy Code" [ref=e561] [cursor=pointer]
+          - generic [ref=e562]: json
+          - code [ref=e564]:
+            - generic [ref=e565]: "{"
+            - generic [ref=e566]: "\"intent\": \"writing_evaluation\","
+            - generic [ref=e567]: "\"workflow\": \"writing_evaluation_workflow\","
+            - generic [ref=e568]: "\"routeType\": \"ask_clarification\","
+            - generic [ref=e569]: "\"targetAgent\": \"WritingCoachAgent\","
+            - generic [ref=e570]: "\"confidence\": 0.86,"
+            - generic [ref=e571]: "\"requiredInputs\": [\"essayText\", \"studyStage\"],"
+            - generic [ref=e572]: "\"missingInputs\": [\"essayText\"],"
+            - generic [ref=e573]: "\"normalizedInputs\": {"
+            - generic [ref=e574]: "\"hasEssayText\": false,"
+            - generic [ref=e575]: "\"hasTopicPrompt\": false,"
+            - generic [ref=e576]: "\"hasSelectedText\": false,"
+            - generic [ref=e577]: "\"studyStage\": \"高中\","
+            - generic [ref=e578]: "\"assistantMode\": \"exam\","
+            - generic [ref=e579]: "\"currentPage\": \"writing_editor\""
+            - generic [ref=e580]: "},"
+            - generic [ref=e581]: "\"reason\": \"用户要求作文评分，但没有提供作文正文\""
+            - generic [ref=e582]: "}"
+        - heading "作文评分且上下文已有正文 Permalink to “作文评分且上下文已有正文”" [level=3] [ref=e583]:
+          - text: 作文评分且上下文已有正文
+          - link "Permalink to “作文评分且上下文已有正文”" [ref=e584] [cursor=pointer]:
+            - /url: "#作文评分且上下文已有正文"
+            - text: "#"
+        - paragraph [ref=e585]: 输入：
+        - generic [ref=e586]:
+          - button "Copy Code" [ref=e587] [cursor=pointer]
+          - generic [ref=e588]: text
+          - code [ref=e590]:
+            - generic [ref=e591]: 请帮我评分，并告诉我怎么改。
+        - paragraph [ref=e592]: 上下文：
+        - generic [ref=e593]:
+          - button "Copy Code" [ref=e594] [cursor=pointer]
+          - generic [ref=e595]: json
+          - code [ref=e597]:
+            - generic [ref=e598]: "{"
+            - generic [ref=e599]: "\"essayText\": \"Nowadays, many students use mobile phones every day...\","
+            - generic [ref=e600]: "\"topicPrompt\": \"手机使用时间变化趋势图\","
+            - generic [ref=e601]: "\"studyStage\": \"高中\""
+            - generic [ref=e602]: "}"
+        - paragraph [ref=e603]: 输出：
+        - generic [ref=e604]:
+          - button "Copy Code" [ref=e605] [cursor=pointer]
+          - generic [ref=e606]: json
+          - code [ref=e608]:
+            - generic [ref=e609]: "{"
+            - generic [ref=e610]: "\"intent\": \"writing_evaluation\","
+            - generic [ref=e611]: "\"workflow\": \"writing_evaluation_workflow\","
+            - generic [ref=e612]: "\"routeType\": \"run_workflow\","
+            - generic [ref=e613]: "\"targetAgent\": \"WritingCoachAgent\","
+            - generic [ref=e614]: "\"confidence\": 0.93,"
+            - generic [ref=e615]: "\"requiredInputs\": [\"essayText\", \"studyStage\"],"
+            - generic [ref=e616]: "\"missingInputs\": [],"
+            - generic [ref=e617]: "\"normalizedInputs\": {"
+            - generic [ref=e618]: "\"hasEssayText\": true,"
+            - generic [ref=e619]: "\"hasTopicPrompt\": true,"
+            - generic [ref=e620]: "\"hasSelectedText\": false,"
+            - generic [ref=e621]: "\"studyStage\": \"高中\","
+            - generic [ref=e622]: "\"assistantMode\": \"exam\","
+            - generic [ref=e623]: "\"currentPage\": \"writing_editor\""
+            - generic [ref=e624]: "},"
+            - generic [ref=e625]: "\"reason\": \"用户要求对当前作文进行评分、诊断和修改建议，必要输入已具备\""
+            - generic [ref=e626]: "}"
+        - heading "审题与跑题判断 Permalink to “审题与跑题判断”" [level=3] [ref=e627]:
+          - text: 审题与跑题判断
+          - link "Permalink to “审题与跑题判断”" [ref=e628] [cursor=pointer]:
+            - /url: "#审题与跑题判断"
+            - text: "#"
+        - paragraph [ref=e629]: 输入：
+        - generic [ref=e630]:
+          - button "Copy Code" [ref=e631] [cursor=pointer]
+          - generic [ref=e632]: text
+          - code [ref=e634]:
+            - generic [ref=e635]: 这个题目应该从哪些方面写？会不会容易跑题？
+        - paragraph [ref=e636]: 输出：
+        - generic [ref=e637]:
+          - button "Copy Code" [ref=e638] [cursor=pointer]
+          - generic [ref=e639]: json
+          - code [ref=e641]:
+            - generic [ref=e642]: "{"
+            - generic [ref=e643]: "\"intent\": \"topic_analysis\","
+            - generic [ref=e644]: "\"workflow\": \"topic_analysis_workflow\","
+            - generic [ref=e645]: "\"routeType\": \"run_workflow\","
+            - generic [ref=e646]: "\"targetAgent\": \"TopicAnalysisAgent\","
+            - generic [ref=e647]: "\"confidence\": 0.9,"
+            - generic [ref=e648]: "\"requiredInputs\": [\"topicPrompt\", \"studyStage\"],"
+            - generic [ref=e649]: "\"missingInputs\": [],"
+            - generic [ref=e650]: "\"normalizedInputs\": {"
+            - generic [ref=e651]: "\"hasEssayText\": false,"
+            - generic [ref=e652]: "\"hasTopicPrompt\": true,"
+            - generic [ref=e653]: "\"hasSelectedText\": false,"
+            - generic [ref=e654]: "\"studyStage\": \"高中\","
+            - generic [ref=e655]: "\"assistantMode\": \"exam\","
+            - generic [ref=e656]: "\"currentPage\": \"writing_editor\""
+            - generic [ref=e657]: "},"
+            - generic [ref=e658]: "\"reason\": \"用户询问题目理解、写作切入点和跑题风险\""
+            - generic [ref=e659]: "}"
+        - heading "润色选中文本 Permalink to “润色选中文本”" [level=3] [ref=e660]:
+          - text: 润色选中文本
+          - link "Permalink to “润色选中文本”" [ref=e661] [cursor=pointer]:
+            - /url: "#润色选中文本"
+            - text: "#"
+        - paragraph [ref=e662]: 输入：
+        - generic [ref=e663]:
+          - button "Copy Code" [ref=e664] [cursor=pointer]
+          - generic [ref=e665]: text
+          - code [ref=e667]:
+            - generic [ref=e668]: 帮我把这句话写得自然一点
+        - paragraph [ref=e669]: 上下文：
+        - generic [ref=e670]:
+          - button "Copy Code" [ref=e671] [cursor=pointer]
+          - generic [ref=e672]: json
+          - code [ref=e674]:
+            - generic [ref=e675]: "{"
+            - generic [ref=e676]: "\"selectedText\": \"I very like play basketball.\""
+            - generic [ref=e677]: "}"
+        - paragraph [ref=e678]: 输出：
+        - generic [ref=e679]:
+          - button "Copy Code" [ref=e680] [cursor=pointer]
+          - generic [ref=e681]: json
+          - code [ref=e683]:
+            - generic [ref=e684]: "{"
+            - generic [ref=e685]: "\"intent\": \"polish\","
+            - generic [ref=e686]: "\"workflow\": \"polish_workflow\","
+            - generic [ref=e687]: "\"routeType\": \"run_workflow\","
+            - generic [ref=e688]: "\"targetAgent\": \"PolishAgent\","
+            - generic [ref=e689]: "\"confidence\": 0.92,"
+            - generic [ref=e690]: "\"requiredInputs\": [\"selectedText\"],"
+            - generic [ref=e691]: "\"missingInputs\": [],"
+            - generic [ref=e692]: "\"normalizedInputs\": {"
+            - generic [ref=e693]: "\"hasEssayText\": false,"
+            - generic [ref=e694]: "\"hasTopicPrompt\": false,"
+            - generic [ref=e695]: "\"hasSelectedText\": true,"
+            - generic [ref=e696]: "\"studyStage\": \"初中\","
+            - generic [ref=e697]: "\"assistantMode\": \"default\","
+            - generic [ref=e698]: "\"currentPage\": \"assistant\""
+            - generic [ref=e699]: "},"
+            - generic [ref=e700]: "\"reason\": \"用户要求改写当前选中文本，使表达更自然\""
+            - generic [ref=e701]: "}"
+        - heading "与写作工作流的关系 Permalink to “与写作工作流的关系”" [level=2] [ref=e702]:
+          - text: 与写作工作流的关系
+          - link "Permalink to “与写作工作流的关系”" [ref=e703] [cursor=pointer]:
+            - /url: "#与写作工作流的关系"
+            - text: "#"
+        - generic [ref=e704]: flowchart TD ROUTE["RouteAgent<br/>writing_evaluation"] --> WF["writing_evaluation_workflow"] WF --> INPUT["装配输入<br/>essayText / topicPrompt / studyStage"] INPUT --> COACH["WritingCoachAgent v1"] COACH --> RESULT["WritingWorkflowResult"] RESULT --> BLOCKS["前端 content blocks<br/>summary / table / flowchart / practice"] RESULT --> EVENTS["learningEvents / profileSignals<br/>先产出，后续再聚合"]
+        - paragraph [ref=e705]:
+          - text: 第一版
+          - code [ref=e706]: WritingCoachAgent v1
+          - text: 可以一次性返回完整结构化结果。后续再拆成：
+        - list [ref=e707]:
+          - listitem [ref=e708]:
+            - code [ref=e709]: TopicAnalysisAgent
+          - listitem [ref=e710]:
+            - code [ref=e711]: ScoringAgent
+          - listitem [ref=e712]:
+            - code [ref=e713]: ErrorDiagnosisAgent
+          - listitem [ref=e714]:
+            - code [ref=e715]: RevisionPlanAgent
+          - listitem [ref=e716]:
+            - code [ref=e717]: PolishAgent
+          - listitem [ref=e718]:
+            - code [ref=e719]: PracticeAgent
+        - paragraph [ref=e720]: 拆分条件：
+        - list [ref=e721]:
+          - listitem [ref=e722]: 有独立 prompt。
+          - listitem [ref=e723]: 有独立输入输出 schema。
+          - listitem [ref=e724]: 可以单独回归测试。
+          - listitem [ref=e725]: 被多个 workflow 复用。
+          - listitem [ref=e726]: 失败后可以单独重试。
+        - heading "验证要求 Permalink to “验证要求”" [level=2] [ref=e727]:
+          - text: 验证要求
+          - link "Permalink to “验证要求”" [ref=e728] [cursor=pointer]:
+            - /url: "#验证要求"
+            - text: "#"
+        - paragraph [ref=e729]: 第一版至少覆盖：
+        - list [ref=e730]:
+          - listitem [ref=e731]: 作文评分缺正文时追问。
+          - listitem [ref=e732]:
+            - text: 作文评分有正文时进入
+            - code [ref=e733]: writing_evaluation_workflow
+            - text: 。
+          - listitem [ref=e734]:
+            - text: 审题请求进入
+            - code [ref=e735]: topic_analysis_workflow
+            - text: 。
+          - listitem [ref=e736]:
+            - text: 润色选中文本进入
+            - code [ref=e737]: polish_workflow
+            - text: 。
+          - listitem [ref=e738]:
+            - text: 语法问题进入
+            - code [ref=e739]: grammar_help_workflow
+            - text: 。
+          - listitem [ref=e740]:
+            - text: 单词搭配问题进入
+            - code [ref=e741]: vocab_help_workflow
+            - text: 。
+          - listitem [ref=e742]:
+            - text: 出题请求进入
+            - code [ref=e743]: practice_generation_workflow
+            - text: 。
+          - listitem [ref=e744]:
+            - text: 非英语学习请求进入
+            - code [ref=e745]: out_of_scope
+            - text: 。
+          - listitem [ref=e746]:
+            - text: 低置信度请求进入
+            - code [ref=e747]: ask_clarification
+            - text: 。
+          - listitem [ref=e748]: 输出 JSON 能被 Pydantic schema 校验。
+        - paragraph [ref=e749]: 建议测试文件：
+        - generic [ref=e750]:
+          - button "Copy Code" [ref=e751] [cursor=pointer]
+          - generic [ref=e752]: text
+          - code [ref=e754]:
+            - generic [ref=e755]: python/ai_orchestrator/tests/test_route_agent_schema.py
+            - generic [ref=e756]: python/ai_orchestrator/tests/test_route_agent_cases.py
+            - generic [ref=e757]: python/ai_orchestrator/tests/test_writing_workflow_routing.py
+        - heading "实施顺序 Permalink to “实施顺序”" [level=2] [ref=e758]:
+          - text: 实施顺序
+          - link "Permalink to “实施顺序”" [ref=e759] [cursor=pointer]:
+            - /url: "#实施顺序"
+            - text: "#"
+        - list [ref=e760]:
+          - listitem [ref=e761]:
+            - text: 定义
+            - code [ref=e762]: RouteRequest
+            - text: 和
+            - code [ref=e763]: RoutingDecision
+            - text: schema。
+          - listitem [ref=e764]: 写 RouteAgent prompt，要求只输出结构化决策。
+          - listitem [ref=e765]: 准备 20 到 30 条路由回归样例。
+          - listitem [ref=e766]: 用 fake client 或固定响应测试 schema 校验。
+          - listitem [ref=e767]:
+            - text: 接入
+            - code [ref=e768]: writing_evaluation_workflow
+            - text: 。
+          - listitem [ref=e769]:
+            - text: 第一版只让
+            - code [ref=e770]: writing_evaluation_workflow
+            - text: 调用一个
+            - code [ref=e771]: WritingCoachAgent
+            - text: 。
+          - listitem [ref=e772]:
+            - text: 跑通后再拆
+            - code [ref=e773]: ScoringAgent
+            - text: 、
+            - code [ref=e774]: ErrorDiagnosisAgent
+            - text: 、
+            - code [ref=e775]: PolishAgent
+            - text: 、
+            - code [ref=e776]: PracticeAgent
+            - text: 。
+        - heading "后续演进 Permalink to “后续演进”" [level=2] [ref=e777]:
+          - text: 后续演进
+          - link "Permalink to “后续演进”" [ref=e778] [cursor=pointer]:
+            - /url: "#后续演进"
+            - text: "#"
+        - list [ref=e779]:
+          - listitem [ref=e780]:
+            - text: 接入
+            - code [ref=e781]: ActiveTaskState
+            - text: ，支持“继续”“换一种”“更详细”等续问继承。
+          - listitem [ref=e782]:
+            - text: 加入
+            - code [ref=e783]: outputMode
+            - text: ，辅助前端选择普通文本、表格、流程图或思维导图渲染。
+          - listitem [ref=e784]:
+            - text: 加入
+            - code [ref=e785]: riskLevel
+            - text: ，对评分、画像、长期计划等高影响任务做更严格校验。
+          - listitem [ref=e786]: 加入 trace metadata，把 route decision、workflow、target agent 记录到运行日志。
+          - listitem [ref=e787]: 接入用户画像 tool，但不让 RouteAgent 自己实现记忆系统。
+    - contentinfo [ref=e788]:
+      - navigation "Pager" [ref=e789]:
+        - generic [ref=e790]: Pager
+        - link "上一篇 Agent 设计总览" [ref=e792] [cursor=pointer]:
+          - /url: /agent/
+          - generic [ref=e793]: 上一篇
+          - generic [ref=e794]: Agent 设计总览

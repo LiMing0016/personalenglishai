@@ -1218,7 +1218,101 @@ export function getWritingDocuments(page = 0, size = 10): Promise<WritingDocumen
 }
 
 export type WritingDashboardMode = 'all' | 'free' | 'exam'
-export type WritingDashboardGranularity = 'week' | 'month'
+export type WritingDashboardRange = '7d' | '14d' | '30d' | 'year' | 'all' | 'custom'
+export type WritingDashboardGranularity = 'day' | 'week' | 'month' | 'year'
+
+export interface WritingDashboardScope {
+  range: WritingDashboardRange
+  mode: WritingDashboardMode
+  scorePolicy: 'latest'
+  start: string
+  end: string
+  granularity: WritingDashboardGranularity
+}
+
+export interface WritingDashboardOverviewTrendItem {
+  date: string
+  sourceLabel: string
+  essayCount: number
+  submissionCount: number
+  averageScore: number
+  bestScore: number
+}
+
+export interface WritingDashboardOverview {
+  summary: {
+    totalEssays: number
+    totalSubmissions: number
+    averageScore: number
+    bestScore: number
+  }
+  trend: WritingDashboardOverviewTrendItem[]
+  insight: string
+}
+
+export interface WritingDashboardEssayScoreTrendItem {
+  essayNo: number
+  title: string
+  mode: 'free' | 'exam'
+  score: number
+  scoredAt: string
+  delta: number
+  aiSuggestion: string
+}
+
+export interface WritingDashboardScoreDistributionItem {
+  key: string
+  label: string
+  stage: string
+  min: number | null
+  max: number
+  count: number
+  percent: number
+  color: string
+  backgroundColor: string
+}
+
+export interface WritingDashboardScoreBand {
+  key: string
+  label: string
+  min: number
+  max: number
+  color: string
+}
+
+export interface WritingDashboardScoreScatterItem {
+  month: string
+  score: number
+  title: string
+  mode: 'free' | 'exam'
+  scoredAt: string
+  bandLabel: string
+}
+
+export interface WritingDashboardGrowth {
+  essayScoreTrend: WritingDashboardEssayScoreTrendItem[]
+  scoreDistribution: WritingDashboardScoreDistributionItem[]
+  scoreBands: WritingDashboardScoreBand[]
+  highScorePercent: number
+  scoreScatter: WritingDashboardScoreScatterItem[]
+  monthlyGoal: {
+    done: number
+    target: number
+    remaining: number
+  }
+  streak: {
+    currentDays: number
+    bestDays: number
+    activeDays: number
+  }
+  insight: string
+}
+
+export interface WritingDashboardResponse {
+  scope: WritingDashboardScope
+  overview: WritingDashboardOverview
+  growth: WritingDashboardGrowth
+}
 
 export interface WritingDashboardAssetSummary {
   totalEssays: number
@@ -1246,6 +1340,17 @@ export function getWritingDashboardAssets(params: {
 }): Promise<WritingDashboardAssetsResponse> {
   return http
     .get<WritingDashboardAssetsResponse>('/writing/dashboard/assets', { params })
+    .then((res) => res.data)
+}
+
+export function getWritingDashboard(params: {
+  range?: WritingDashboardRange
+  mode?: WritingDashboardMode
+  start?: string
+  end?: string
+}): Promise<WritingDashboardResponse> {
+  return http
+    .get<WritingDashboardResponse>('/writing/dashboard', { params })
     .then((res) => res.data)
 }
 

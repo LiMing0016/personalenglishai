@@ -11,6 +11,7 @@ from uuid import uuid4
 try:
     from .adapters.openai_input_items import build_assistant_input_items
     from .adapters.openai_input_items import build_input_items
+    from .adapters.route_request_adapter import build_route_request
     from .agents.attachment import create_attachment_agent
     from .agents.assistant_routing import route_assistant_agent
     from .agents.router import create_router_agent
@@ -22,6 +23,7 @@ try:
     from .schemas.chat import AssistantReply
     from .schemas.chat import UploadedAttachment
     from .schemas.routing import RoutingIntent
+    from .schemas.routing import RoutingDecision
     from .schemas.routing_state import ActiveTaskState
     from .schemas.routing_state import ContinuationClassifierInput
     from .schemas.routing_state import ContinuationDecision
@@ -33,9 +35,11 @@ try:
     from .services.assistant_request_validator import validate_assistant_request
     from .services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from .services.continuation_classifier import ContinuationClassifier
+    from .services.route_decision_runner import RouteDecisionRunner
 except ImportError:  # pragma: no cover - script mode fallback
     from adapters.openai_input_items import build_assistant_input_items
     from adapters.openai_input_items import build_input_items
+    from adapters.route_request_adapter import build_route_request
     from agents.attachment import create_attachment_agent
     from agents.assistant_routing import route_assistant_agent
     from agents.router import create_router_agent
@@ -47,6 +51,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.chat import AssistantReply
     from schemas.chat import UploadedAttachment
     from schemas.routing import RoutingIntent
+    from schemas.routing import RoutingDecision
     from schemas.routing_state import ActiveTaskState
     from schemas.routing_state import ContinuationClassifierInput
     from schemas.routing_state import ContinuationDecision
@@ -58,6 +63,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.assistant_request_validator import validate_assistant_request
     from services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from services.continuation_classifier import ContinuationClassifier
+    from services.route_decision_runner import RouteDecisionRunner
 
 
 class AssistantConfigError(RuntimeError):
@@ -98,12 +104,34 @@ _AGENT_TASK_METADATA: dict[str, ActiveTaskMetadata] = {
     ),
 }
 
+_ROUTE_DECISION_TARGET_AGENTS: dict[str, str] = {
+    "polish": "Polish Agent",
+    "sentence_structure": "Sentence Structure Agent",
+    "vocab": "Vocab Agent",
+    "translation": "Translation Agent",
+    "scoring": "Scoring Agent",
+    "practice_design": "Prompt Design Agent",
+    "ability_profile": "Ability Profile Agent",
+    "learning_planner": "Learning Planner Agent",
+    "writing_evaluation": "Scoring Agent",
+    "first_draft_coach": "Prompt Design Agent",
+    "realtime_sentence_feedback": "Sentence Structure Agent",
+}
+
 
 def _summarize_text(text: str, *, limit: int = 160) -> str:
     normalized = " ".join(text.split())
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[:limit].rstrip()}..."
+
+
+def _trace_metadata_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def _build_continuation_routing_message(
@@ -136,6 +164,8 @@ class AssistantAgentService:
         session_db_path: str,
         active_task_store: ActiveTaskStateStore | None = None,
         continuation_classifier=None,
+        route_decision_runner=None,
+        route_decision_enabled: bool = False,
     ) -> None:
         self.model = model
         self.session_db_path = session_db_path
@@ -146,6 +176,8 @@ class AssistantAgentService:
         self._continuation_classifier = continuation_classifier or ContinuationClassifier(
             AgentsSdkContinuationClassifierClient(model)
         )
+        self._route_decision_runner = route_decision_runner
+        self._route_decision_enabled = route_decision_enabled
 
     @classmethod
     def from_env(cls) -> "AssistantAgentService":
@@ -158,7 +190,17 @@ class AssistantAgentService:
             "AI_ASSISTANT_SESSION_DB_PATH",
             str(Path(__file__).resolve().parent / "data" / "assistant_sessions.db"),
         )
-        return cls(model=model, session_db_path=session_db_path)
+        route_decision_enabled = os.getenv("AI_ASSISTANT_ROUTE_DECISION_ENABLED", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        return cls(
+            model=model,
+            session_db_path=session_db_path,
+            route_decision_enabled=route_decision_enabled,
+        )
 
     def is_configured(self) -> bool:
         return bool(os.getenv("OPENAI_API_KEY", "").strip())
@@ -199,6 +241,115 @@ class AssistantAgentService:
         self._specialist_agents[agent_name] = agent
         return agent
 
+    def _get_route_decision_runner(self):
+        if self._route_decision_runner is None:
+            if not self.is_configured():
+                raise AssistantConfigError("OPENAI_API_KEY 未配置，学习助手暂时不可用。")
+            self._route_decision_runner = RouteDecisionRunner(model=self.model)
+        return self._route_decision_runner
+
+    async def route_assistant_request(
+        self,
+        request: AssistantRequest,
+        authorization: str | None = None,
+    ) -> RoutingDecision:
+        validate_assistant_request(request)
+        return await self._run_route_decision(request)
+
+    async def _run_route_decision(self, request: AssistantRequest, *, flush_trace: bool = True) -> RoutingDecision:
+        route_request = build_route_request(request)
+        return await self._get_route_decision_runner().route(route_request, flush_trace=flush_trace)
+
+    async def _maybe_run_route_decision(
+        self,
+        request: AssistantRequest,
+        *,
+        run_id: str,
+        trace_id: str,
+        flush_trace: bool = True,
+    ) -> RoutingDecision | None:
+        if not self._route_decision_enabled:
+            return None
+
+        try:
+            decision = await self._run_route_decision(request, flush_trace=flush_trace)
+        except Exception:
+            log.error(
+                "[ROUTE_DECISION_ERROR] run_id=%s trace_id=%s conversation_id=%s",
+                run_id,
+                trace_id,
+                request.app_conversation_id or request.client_message_id,
+                exc_info=True,
+            )
+            return None
+
+        log.info(
+            "[ROUTE_DECISION_DONE] run_id=%s trace_id=%s conversation_id=%s intent=%s route_type=%s "
+            "workflow=%s target_agent=%s confidence=%.2f missing_inputs=%s",
+            run_id,
+            trace_id,
+            request.app_conversation_id or request.client_message_id,
+            decision.intent,
+            decision.route_type,
+            decision.workflow or "",
+            decision.target_agent or "",
+            decision.confidence,
+            decision.missing_inputs,
+        )
+        return decision
+
+    def _resolve_agent_name_from_route_decision(self, decision: RoutingDecision | None) -> str | None:
+        if decision is None:
+            return None
+        if decision.route_type != "run_workflow" or decision.target_agent is None:
+            return None
+        return _ROUTE_DECISION_TARGET_AGENTS.get(decision.target_agent)
+
+    def _assistant_trace_metadata(
+        self,
+        request: AssistantRequest,
+        *,
+        run_id: str,
+        trace_id: str,
+        scope: str,
+    ) -> dict[str, object]:
+        metadata = {
+            "component": "assistant_agent_service",
+            "run_id": run_id,
+            "trace_id": trace_id,
+            "model": self.model,
+            "mode": request.mode,
+            "intent": request.intent,
+            "scope": scope,
+            "route_decision_enabled": self._route_decision_enabled,
+        }
+        return {key: _trace_metadata_value(value) for key, value in metadata.items()}
+
+    def _assistant_workflow_trace(
+        self,
+        request: AssistantRequest,
+        *,
+        conversation_id: str | None,
+        run_id: str,
+        trace_id: str,
+        scope: str,
+    ):
+        from agents import trace
+
+        return trace(
+            "PEAI Assistant Workflow",
+            group_id=conversation_id,
+            metadata=self._assistant_trace_metadata(request, run_id=run_id, trace_id=trace_id, scope=scope),
+        )
+
+    def _flush_trace_export(self) -> None:
+        try:
+            from agents import flush_traces
+
+            flush_traces()
+        except Exception:
+            log.warning("Assistant workflow trace flush failed", exc_info=True)
+
     async def run_assistant_request(
         self,
         request: AssistantRequest,
@@ -211,48 +362,63 @@ class AssistantAgentService:
         run_id = f"run_{uuid4().hex}"
         trace_id = f"trace_{uuid4().hex}"
 
-        log.info(
-            "[ASSISTANT_RUN_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
-            "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
-            run_id,
-            trace_id,
-            conversation_id,
-            self.model,
-            request.mode,
-            request.intent,
-            validated.scope,
-            route.agent_name,
-            len(request.attachments),
-            bool(authorization),
-        )
-
         try:
-            agent = self._get_agent_by_name(route.agent_name)
-            agent_input = build_assistant_input_items(request)
-            result = await run_agent_session(
-                agent=agent,
-                agent_input=agent_input,
+            with self._assistant_workflow_trace(
+                request,
                 conversation_id=conversation_id,
-                session_db_path=self.session_db_path,
-                use_session=False,
-                run_context=AssistantRunContext(conversation_id=conversation_id),
-            )
-            if not result.final_output:
-                raise AssistantConfigError("学习助手没有返回内容。")
+                run_id=run_id,
+                trace_id=trace_id,
+                scope=validated.scope,
+            ):
+                route_decision = await self._maybe_run_route_decision(
+                    request,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    flush_trace=False,
+                )
+                resolved_agent_name = self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
 
-            final_agent_name = result.agent_name or route.agent_name
-            duration_ms = (time.perf_counter() - started_at) * 1000
-            log.info(
-                "[ASSISTANT_RUN_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f "
-                "response_id=%s total_tokens=%s",
-                run_id,
-                trace_id,
-                conversation_id,
-                final_agent_name,
-                duration_ms,
-                result.run_items.last_response_id or "",
-                result.usage.total_tokens,
-            )
+                log.info(
+                    "[ASSISTANT_RUN_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
+                    "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
+                    run_id,
+                    trace_id,
+                    conversation_id,
+                    self.model,
+                    request.mode,
+                    request.intent,
+                    validated.scope,
+                    resolved_agent_name,
+                    len(request.attachments),
+                    bool(authorization),
+                )
+
+                agent = self._get_agent_by_name(resolved_agent_name)
+                agent_input = build_assistant_input_items(request)
+                result = await run_agent_session(
+                    agent=agent,
+                    agent_input=agent_input,
+                    conversation_id=conversation_id,
+                    session_db_path=self.session_db_path,
+                    use_session=False,
+                    run_context=AssistantRunContext(conversation_id=conversation_id),
+                )
+                if not result.final_output:
+                    raise AssistantConfigError("学习助手没有返回内容。")
+
+                final_agent_name = result.agent_name or resolved_agent_name
+                duration_ms = (time.perf_counter() - started_at) * 1000
+                log.info(
+                    "[ASSISTANT_RUN_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f "
+                    "response_id=%s total_tokens=%s",
+                    run_id,
+                    trace_id,
+                    conversation_id,
+                    final_agent_name,
+                    duration_ms,
+                    result.run_items.last_response_id or "",
+                    result.usage.total_tokens,
+                )
         except Exception:
             duration_ms = (time.perf_counter() - started_at) * 1000
             log.error(
@@ -264,6 +430,8 @@ class AssistantAgentService:
                 exc_info=True,
             )
             raise
+        finally:
+            self._flush_trace_export()
 
         return AssistantReply(
             reply=result.final_output,
@@ -292,94 +460,109 @@ class AssistantAgentService:
         trace_id = f"trace_{uuid4().hex}"
         message_id = f"msg_{uuid4().hex}"
 
-        log.info(
-            "[ASSISTANT_STREAM_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
-            "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
-            run_id,
-            trace_id,
-            conversation_id,
-            self.model,
-            request.mode,
-            request.intent,
-            validated.scope,
-            route.agent_name,
-            len(request.attachments),
-            bool(authorization),
-        )
-
-        yield {
-            "type": "run.started",
-            "runId": run_id,
-            "traceId": trace_id,
-            "agentName": route.agent_name,
-            "model": self.model,
-        }
-        yield {
-            "type": "message.created",
-            "runId": run_id,
-            "messageId": message_id,
-            "role": "assistant",
-        }
-
         content_parts: list[str] = []
         try:
-            agent = self._get_agent_by_name(route.agent_name)
-            agent_input = build_assistant_input_items(request)
-            final_result = None
-            async for event in stream_agent_session(
-                agent=agent,
-                agent_input=agent_input,
+            with self._assistant_workflow_trace(
+                request,
                 conversation_id=conversation_id,
-                session_db_path=self.session_db_path,
-                use_session=False,
-                run_context=AssistantRunContext(conversation_id=conversation_id),
-            ):
-                if event.type == "delta":
-                    content_parts.append(event.delta)
-                    yield {
-                        "type": "message.delta",
-                        "runId": run_id,
-                        "messageId": message_id,
-                        "delta": event.delta,
-                    }
-                    continue
-                final_result = event.result
-
-            if final_result is None or not final_result.final_output:
-                raise AssistantConfigError("学习助手没有返回内容。")
-
-            final_agent_name = final_result.agent_name or route.agent_name
-            run_metadata = AssistantRunMetadata(
-                runId=run_id,
-                traceId=trace_id,
-                agentName=final_agent_name,
-                model=self.model,
-                mode=request.mode,
-                intent=request.intent,
+                run_id=run_id,
+                trace_id=trace_id,
                 scope=validated.scope,
-            )
-            yield {
-                "type": "message.completed",
-                "runId": run_id,
-                "messageId": message_id,
-                "content": final_result.final_output or "".join(content_parts),
-            }
-            yield {
-                "type": "run.completed",
-                "runId": run_id,
-                "run": run_metadata.model_dump(by_alias=True),
-            }
+            ):
+                route_decision = await self._maybe_run_route_decision(
+                    request,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    flush_trace=False,
+                )
+                resolved_agent_name = self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
 
-            duration_ms = (time.perf_counter() - started_at) * 1000
-            log.info(
-                "[ASSISTANT_STREAM_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f total_tokens=%s",
-                run_id,
-                trace_id,
-                conversation_id,
-                final_agent_name,
-                duration_ms,
-                final_result.usage.total_tokens,
-            )
+                log.info(
+                    "[ASSISTANT_STREAM_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
+                    "intent=%s scope=%s agent=%s attachment_count=%s authorization_present=%s",
+                    run_id,
+                    trace_id,
+                    conversation_id,
+                    self.model,
+                    request.mode,
+                    request.intent,
+                    validated.scope,
+                    resolved_agent_name,
+                    len(request.attachments),
+                    bool(authorization),
+                )
+
+                yield {
+                    "type": "run.started",
+                    "runId": run_id,
+                    "traceId": trace_id,
+                    "agentName": resolved_agent_name,
+                    "model": self.model,
+                }
+                yield {
+                    "type": "message.created",
+                    "runId": run_id,
+                    "messageId": message_id,
+                    "role": "assistant",
+                }
+
+                agent = self._get_agent_by_name(resolved_agent_name)
+                agent_input = build_assistant_input_items(request)
+                final_result = None
+                async for event in stream_agent_session(
+                    agent=agent,
+                    agent_input=agent_input,
+                    conversation_id=conversation_id,
+                    session_db_path=self.session_db_path,
+                    use_session=False,
+                    run_context=AssistantRunContext(conversation_id=conversation_id),
+                ):
+                    if event.type == "delta":
+                        content_parts.append(event.delta)
+                        yield {
+                            "type": "message.delta",
+                            "runId": run_id,
+                            "messageId": message_id,
+                            "delta": event.delta,
+                        }
+                        continue
+                    final_result = event.result
+
+                if final_result is None or not final_result.final_output:
+                    raise AssistantConfigError("学习助手没有返回内容。")
+
+                final_agent_name = final_result.agent_name or resolved_agent_name
+                run_metadata = AssistantRunMetadata(
+                    runId=run_id,
+                    traceId=trace_id,
+                    agentName=final_agent_name,
+                    model=self.model,
+                    mode=request.mode,
+                    intent=request.intent,
+                    scope=validated.scope,
+                )
+                yield {
+                    "type": "message.completed",
+                    "runId": run_id,
+                    "messageId": message_id,
+                    "content": final_result.final_output or "".join(content_parts),
+                }
+                yield {
+                    "type": "run.completed",
+                    "runId": run_id,
+                    "run": run_metadata.model_dump(by_alias=True),
+                }
+
+                duration_ms = (time.perf_counter() - started_at) * 1000
+                log.info(
+                    "[ASSISTANT_STREAM_DONE] run_id=%s trace_id=%s conversation_id=%s agent=%s duration_ms=%.1f total_tokens=%s",
+                    run_id,
+                    trace_id,
+                    conversation_id,
+                    final_agent_name,
+                    duration_ms,
+                    final_result.usage.total_tokens,
+                )
         except Exception as exc:
             duration_ms = (time.perf_counter() - started_at) * 1000
             log.error(
@@ -398,6 +581,8 @@ class AssistantAgentService:
                     "message": str(exc),
                 },
             }
+        finally:
+            self._flush_trace_export()
 
     async def chat(
         self,

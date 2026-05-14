@@ -13,6 +13,7 @@ try:
     from .schemas.assistant_request import AssistantRequest
     from .schemas.chat import AssistantRunResponse
     from .schemas.chat import ChatResponse
+    from .schemas.routing import RoutingDecision
     from .schemas.prompt_sheet import GenerateExamPromptRequest
     from .schemas.prompt_sheet import GenerateExamPromptResponse
     from .schemas.prompt_sheet import PromptSheetChatRequest
@@ -26,6 +27,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.assistant_request import AssistantRequest
     from schemas.chat import AssistantRunResponse
     from schemas.chat import ChatResponse
+    from schemas.routing import RoutingDecision
     from schemas.prompt_sheet import GenerateExamPromptRequest
     from schemas.prompt_sheet import GenerateExamPromptResponse
     from schemas.prompt_sheet import PromptSheetChatRequest
@@ -130,6 +132,21 @@ async def assistant_run(
         agentName=result.agent_name,
         run=result.run,
     )
+
+
+@app.post("/assistant/route/debug", response_model=RoutingDecision)
+async def assistant_route_debug(
+    request: AssistantRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> RoutingDecision:
+    try:
+        return await service.route_assistant_request(request, authorization=authorization)
+    except AssistantRequestValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+    except AssistantConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - runtime safety
+        raise HTTPException(status_code=500, detail=f"assistant route debug failed: {exc}") from exc
 
 
 @app.post("/assistant/run/stream")

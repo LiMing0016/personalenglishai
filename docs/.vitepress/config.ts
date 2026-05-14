@@ -6,6 +6,22 @@ export default defineConfig({
   description: 'Personal English AI 项目文档中心',
   cleanUrls: true,
   ignoreDeadLinks: false,
+  markdown: {
+    config(md) {
+      const defaultFence = md.renderer.rules.fence!
+
+      md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+        const token = tokens[idx]
+        const language = token.info.trim().split(/\s+/)[0]
+
+        if (language === 'mermaid') {
+          return `<pre class="mermaid">${md.utils.escapeHtml(token.content)}</pre>`
+        }
+
+        return defaultFence(tokens, idx, options, env, self)
+      }
+    }
+  },
   themeConfig: {
     search: {
       provider: 'local',
@@ -34,6 +50,7 @@ export default defineConfig({
       { text: '接口', link: '/api/' },
       { text: '数据', link: '/data/' },
       { text: 'AI', link: '/ai/' },
+      { text: 'Agent', link: '/agent/' },
       { text: '运行手册', link: '/runbooks/' },
       { text: '测试', link: '/testing/' },
       { text: 'ADR', link: '/adr/' }
@@ -95,6 +112,16 @@ export default defineConfig({
             { text: '学习助手', link: '/ai/learning-assistant-architecture' },
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
+          ]
+        }
+      ],
+      '/agent/': [
+        {
+          text: 'Agent',
+          items: [
+            { text: 'Agent 设计总览', link: '/agent/' },
+            { text: '路由 Agent', link: '/agent/路由agent' },
+            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/openai-agents-sdk-study-notes' }
           ]
         }
       ],

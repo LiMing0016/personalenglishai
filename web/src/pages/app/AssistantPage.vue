@@ -400,6 +400,10 @@ const folderConversationGroups = computed(() =>
   background: #f8fafc;
 }
 
+:global(.app-layout--rail-collapsed) .assistant-page {
+  --app-rail-width: 0px;
+}
+
 .assistant-page--drawer-open {
   --assistant-sidebar-current-width: var(--assistant-sidebar-width);
 }

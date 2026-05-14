@@ -91,7 +91,7 @@ writing:
 
 assistant:
   orchestrator:
-    base-url: ${ASSISTANT_ORCHESTRATOR_BASE_URL:${VITE_ASSISTANT_API_BASE_URL:http://127.0.0.1:8002}}
+    base-url: ${ASSISTANT_ORCHESTRATOR_BASE_URL:${VITE_ASSISTANT_API_BASE_URL:http://127.0.0.1:8011}}
     timeout-ms: ${ASSISTANT_ORCHESTRATOR_TIMEOUT_MS:60000}
 
 ai:

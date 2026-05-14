@@ -14,6 +14,7 @@ _PROMPT_FILES = {
     "prompt_design": "agent_instructions/prompt_design.md",
     "prompt_sheet_canvas": "agent_instructions/prompt_sheet_canvas.md",
     "prompt_sheet_chat": "agent_instructions/prompt_sheet_chat.md",
+    "route_decision": "agent_instructions/route_decision.md",
     "router": "agent_instructions/router.md",
     "scoring": "agent_instructions/scoring.md",
     "sentence_structure": "agent_instructions/sentence_structure.md",

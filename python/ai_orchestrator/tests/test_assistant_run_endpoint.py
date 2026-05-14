@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from python.ai_orchestrator.app import app
 from python.ai_orchestrator.schemas.assistant_request import AssistantRunMetadata
 from python.ai_orchestrator.schemas.chat import AssistantReply
+from python.ai_orchestrator.schemas.routing import RoutingDecision
 
 
 class CapturingRunService:
@@ -39,6 +40,19 @@ class CapturingRunService:
         yield {"type": "message.delta", "runId": "run-1", "messageId": "msg-1", "delta": "llo"}
         yield {"type": "message.completed", "runId": "run-1", "messageId": "msg-1", "content": "hello"}
         yield {"type": "run.completed", "runId": "run-1"}
+
+    async def route_assistant_request(self, request, authorization=None) -> RoutingDecision:
+        self.received = {"request": request, "authorization": authorization}
+        return RoutingDecision(
+            intent="writing_evaluation",
+            route_type="run_workflow",
+            workflow="writing_evaluation",
+            target_agent="writing_evaluation",
+            confidence=0.91,
+            required_inputs=["essay_text", "topic_prompt"],
+            missing_inputs=[],
+            reason="Debug route decision.",
+        )
 
 
 class AssistantRunEndpointTest(unittest.TestCase):
@@ -111,6 +125,33 @@ class AssistantRunEndpointTest(unittest.TestCase):
         self.assertIn('"type": "message.delta"', body)
         self.assertIn('"delta": "he"', body)
         self.assertIn('"type": "message.completed"', body)
+        self.assertEqual(fake_service.received["authorization"], "Bearer token")
+
+    def test_assistant_route_debug_returns_routing_decision_json(self) -> None:
+        client = TestClient(app)
+        fake_service = CapturingRunService()
+
+        with patch("python.ai_orchestrator.app.service", fake_service):
+            response = client.post(
+                "/assistant/route/debug",
+                json={
+                    "appConversationId": "conv-1",
+                    "clientMessageId": "client-1",
+                    "mode": "exam_boost",
+                    "intent": "grade_writing",
+                    "scope": "message_only",
+                    "message": {"text": "帮我看看这篇作文是否跑题"},
+                },
+                headers={"Authorization": "Bearer token"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["intent"], "writing_evaluation")
+        self.assertEqual(body["route_type"], "run_workflow")
+        self.assertEqual(body["workflow"], "writing_evaluation")
+        self.assertEqual(body["target_agent"], "writing_evaluation")
+        self.assertEqual(body["confidence"], 0.91)
         self.assertEqual(fake_service.received["authorization"], "Bearer token")
 
 

@@ -1,7 +1,12 @@
 <template>
   <div
     class="app-layout"
-    :class="{ immersive, 'app-layout--writing': isWritingRoute }"
+    :class="{
+      immersive,
+      'app-layout--writing': isWritingRoute,
+      'app-layout--rail-collapsed': railCollapsed,
+      'app-layout--rail-expanded': !railCollapsed,
+    }"
     @mouseup="handleSelectionChange"
     @keyup="handleSelectionChange"
   >
@@ -17,9 +22,9 @@
     </button>
 
     <AppRail
-      :assistant-drawer-open="assistantDrawerOpen"
+      :collapsed="railCollapsed"
       @open-assistant-drawer="openAssistantDrawer"
-      @toggle-assistant-drawer="toggleAssistantDrawer"
+      @toggle-rail="toggleRail"
     />
     <main class="app-main">
       <router-view />
@@ -40,10 +45,12 @@ import {
 } from '@/pages/app/assistantMessageActions.ts'
 import { shouldOpenAssistantDrawerForSelection } from './appSelectionToolbar.ts'
 
+const RAIL_COLLAPSED_STORAGE_KEY = 'peai:app-rail-collapsed'
 const route = useRoute()
 const router = useRouter()
 const immersiveOverride = ref<boolean | null>(null)
 const assistantDrawerOpen = ref(false)
+const railCollapsed = ref(readRailCollapsedPreference())
 const selectionToolbar = reactive({
   visible: false,
   text: '',
@@ -68,13 +75,18 @@ function openAssistantDrawer() {
   }
 }
 
-function toggleAssistantDrawer() {
-  if (route.path !== '/app/assistant') {
-    assistantDrawerOpen.value = true
-    void router.push('/app/assistant')
-    return
-  }
-  assistantDrawerOpen.value = !assistantDrawerOpen.value
+function readRailCollapsedPreference() {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) === 'true'
+}
+
+function persistRailCollapsedPreference(collapsed: boolean) {
+  localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, String(collapsed))
+}
+
+function toggleRail() {
+  railCollapsed.value = !railCollapsed.value
+  persistRailCollapsedPreference(railCollapsed.value)
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -142,6 +154,7 @@ function askAssistantWithSelection() {
   display: flex;
   flex-direction: row;
   background: #f5f6f7;
+  transition: background-color 180ms ease;
 }
 .app-layout--writing {
   height: 100vh;
@@ -160,6 +173,7 @@ function askAssistantWithSelection() {
   min-height: 0;
   min-width: 0;
   height: 100vh;
+  transition: margin-left 180ms ease;
 }
 .app-layout--writing .app-main {
   overflow-y: auto;

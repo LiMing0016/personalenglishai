@@ -48,8 +48,14 @@
       v-model:custom-range="dashboardCustomRange"
       :range-options="dashboardRangeOptions"
       :mode-options="dashboardModeOptions"
-      :overview="mockWritingOverview"
+      :overview="dashboardOverview"
     />
+    <div v-if="phase === 'dashboard' && dashboardLoading" class="dashboard-state">
+      Dashboard 数据加载中…
+    </div>
+    <div v-else-if="phase === 'dashboard' && dashboardError" class="dashboard-state dashboard-state--error">
+      {{ dashboardError }}
+    </div>
 
     <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="growth-title">
       <div class="section-heading">
@@ -64,8 +70,8 @@
               <h4>单篇得分趋势</h4>
               <p>每个点代表一篇作文的最新评分</p>
             </div>
-            <div class="mini-tabs" aria-label="趋势范围">
-              <span class="active">最近{{ mockGrowthDashboard.essayScoreTrend.length }}篇</span>
+          <div class="mini-tabs" aria-label="趋势范围">
+              <span class="active">最近{{ dashboardGrowth.essayScoreTrend.length }}篇</span>
               <span>全部</span>
             </div>
           </div>
@@ -80,16 +86,16 @@
             aria-label="得分趋势图"
           ></div>
           <div v-else class="score-trend-empty">
-            完成 2 篇以上评分后展示单篇得分趋势
+            完成评分后展示单篇得分趋势，2 篇以上会形成趋势线
           </div>
           <div class="score-band-legend" aria-label="分数区间说明">
-            <span v-for="band in mockGrowthDashboard.scoreBands" :key="band.key">
+            <span v-for="band in dashboardGrowth.scoreBands" :key="band.key">
               <i :style="{ background: band.color }"></i>{{ band.label }}
             </span>
           </div>
           <div class="overview-insight growth-insight">
             <strong>AI建议</strong>
-            <span>最近几篇作文整体上升，建议保持每周 2 篇练习节奏。</span>
+            <span>{{ dashboardGrowth.insight }}</span>
           </div>
         </article>
 
@@ -117,7 +123,7 @@
               </div>
             </div>
             <div class="score-distribution-list" aria-label="得分区间占比">
-              <div v-for="bucket in mockGrowthDashboard.scoreDistribution" :key="bucket.key">
+              <div v-for="bucket in dashboardGrowth.scoreDistribution" :key="bucket.key">
                 <span class="distribution-dot" :style="{ background: bucket.color }"></span>
                 <strong>{{ bucket.label }}</strong>
                 <em>{{ bucket.stage }}</em>
@@ -149,15 +155,15 @@
       <article class="report-card goal-card">
         <div>
           <h4>本月目标</h4>
-          <p>完成 {{ mockGrowthDashboard.monthlyGoalDone }} / {{ mockGrowthDashboard.monthlyGoalTotal }} 篇</p>
+          <p>完成 {{ dashboardGrowth.monthlyGoal.done }} / {{ dashboardGrowth.monthlyGoal.target }} 篇</p>
           <span class="hint-text">还差 {{ monthlyGoalRemaining }} 篇完成本月目标</span>
         </div>
         <div class="goal-progress">
           <span :style="{ width: `${monthlyGoalPercent}%` }"></span>
         </div>
         <div class="goal-badges">
-          <span>连续写作 {{ mockGrowthDashboard.streakDays }} 天</span>
-          <span>最长记录 {{ mockGrowthDashboard.bestStreakDays }} 天</span>
+          <span>连续写作 {{ dashboardGrowth.streak.currentDays }} 天</span>
+          <span>最长记录 {{ dashboardGrowth.streak.bestDays }} 天</span>
         </div>
       </article>
     </section>
@@ -734,8 +740,18 @@ import type { ExamPromptType, ExamTopicInfo } from '@/pages/app/examPromptHelper
 import { buildExamTaskPrompt } from '@/pages/app/examPromptHelpers'
 import { stageCache } from '@/stores/stageCache'
 import { getStageId } from '@/constants/stage'
-import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats, getEssayPrompts } from '@/api/writing'
-import type { EssayPromptItem, WritingDocumentItem, WritingSessionMetadataResponse, WritingStatsResponse } from '@/api/writing'
+import { getWritingSessionMetadata, startWritingSession, getWritingDocuments, getWritingStats, getEssayPrompts, getWritingDashboard } from '@/api/writing'
+import type {
+  EssayPromptItem,
+  WritingDashboardGrowth,
+  WritingDashboardMode,
+  WritingDashboardOverview,
+  WritingDashboardRange,
+  WritingDashboardResponse,
+  WritingDocumentItem,
+  WritingSessionMetadataResponse,
+  WritingStatsResponse,
+} from '@/api/writing'
 import { renameDocument, deleteDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import {
@@ -743,11 +759,7 @@ import {
   dashboardRangeOptions,
   mockAbilityDashboard,
   mockDailyWritingPrompts,
-  mockGrowthDashboard,
-  mockWritingOverview,
   mockTopicStyleDashboard,
-  type WritingDashboardMode,
-  type WritingDashboardRange,
   type WritingDashboardCustomRange,
 } from './writingDashboardMock'
 
@@ -789,6 +801,48 @@ const newTaskGenreOptions = [
   { value: 'letter', label: '书信' },
 ]
 const newTaskWordRangeOptions = ['80-100', '100-120', '120-150', '160-200', '160-220', '250']
+
+const emptyDashboardOverview: WritingDashboardOverview = {
+  summary: {
+    totalEssays: 0,
+    totalSubmissions: 0,
+    averageScore: 0,
+    bestScore: 0,
+  },
+  trend: [],
+  insight: '先完成一篇作文评分后，这里会展示写作趋势和建议。',
+}
+
+const emptyDashboardGrowth: WritingDashboardGrowth = {
+  essayScoreTrend: [],
+  scoreDistribution: [
+    { key: 'under-60', label: '<60', stage: '需要补基础', min: null, max: 60, count: 0, percent: 0, color: '#D97A72', backgroundColor: '#F7D8D4' },
+    { key: '60-70', label: '60-70', stage: '基础建立', min: 60, max: 70, count: 0, percent: 0, color: '#D49A45', backgroundColor: '#F3E0BD' },
+    { key: '70-80', label: '70-80', stage: '稳定提升', min: 70, max: 80, count: 0, percent: 0, color: '#A7B45F', backgroundColor: '#E7E8C8' },
+    { key: '80-90', label: '80-90', stage: '良好', min: 80, max: 90, count: 0, percent: 0, color: '#63AE86', backgroundColor: '#D7EADD' },
+    { key: '90-100', label: '90-100', stage: '优秀', min: 90, max: 101, count: 0, percent: 0, color: '#6999C2', backgroundColor: '#D8E6F2' },
+  ],
+  scoreBands: [
+    { key: 'under-60', label: '需要补基础', min: 0, max: 60, color: '#F7D8D4' },
+    { key: '60-70', label: '基础建立', min: 60, max: 70, color: '#F3E0BD' },
+    { key: '70-80', label: '稳定提升', min: 70, max: 80, color: '#E7E8C8' },
+    { key: '80-90', label: '良好', min: 80, max: 90, color: '#D7EADD' },
+    { key: '90-100', label: '优秀', min: 90, max: 101, color: '#D8E6F2' },
+  ],
+  highScorePercent: 0,
+  scoreScatter: [],
+  monthlyGoal: {
+    done: 0,
+    target: 3,
+    remaining: 3,
+  },
+  streak: {
+    currentDays: 0,
+    bestDays: 0,
+    activeDays: 0,
+  },
+  insight: '先完成一篇作文评分后，这里会展示写作趋势和建议。',
+}
 
 function resolveRoutePhase(): RoutePhase {
   switch (route.name) {
@@ -853,6 +907,9 @@ const dashboardCustomRange = ref<WritingDashboardCustomRange>({
   start: formatDateInput(addDays(new Date(), -30)),
   end: formatDateInput(new Date()),
 })
+const dashboardData = ref<WritingDashboardResponse | null>(null)
+const dashboardLoading = ref(false)
+const dashboardError = ref('')
 const filterMode = ref<'all' | 'free' | 'exam'>('all')
 const sortBy = ref<'updatedAt' | 'createdAt' | 'score'>('updatedAt')
 const searchQuery = ref('')
@@ -865,39 +922,33 @@ const filterOptions = [
 
 // Computed stats
 const scoredDocs = computed(() => docList.value.filter(d => d.latestScore != null))
-const dashboardDocs = computed(() => {
-  return docList.value.filter((doc) => {
-    if (dashboardMode.value === 'exam' && !doc.taskPrompt) return false
-    if (dashboardMode.value === 'free' && doc.taskPrompt) return false
-    return isWithinDashboardRange(doc.updatedAt)
-  })
-})
+const dashboardOverview = computed(() => dashboardData.value?.overview ?? emptyDashboardOverview)
+const dashboardGrowth = computed(() => dashboardData.value?.growth ?? emptyDashboardGrowth)
 const monthlyGoalPercent = computed(() => {
-  return Math.round((mockGrowthDashboard.monthlyGoalDone / mockGrowthDashboard.monthlyGoalTotal) * 100)
+  const target = dashboardGrowth.value.monthlyGoal.target || 1
+  return Math.round((dashboardGrowth.value.monthlyGoal.done / target) * 100)
 })
 
 const monthlyGoalRemaining = computed(() => {
-  return Math.max(0, mockGrowthDashboard.monthlyGoalTotal - mockGrowthDashboard.monthlyGoalDone)
+  return dashboardGrowth.value.monthlyGoal.remaining
 })
 
 const highestEssayScore = computed(() => {
-  return Math.max(0, ...mockGrowthDashboard.essayScoreTrend.map(item => item.score))
+  return Math.max(0, ...dashboardGrowth.value.essayScoreTrend.map(item => item.score))
 })
 
 const hasEssayScoreTrend = computed(() => {
-  return mockGrowthDashboard.essayScoreTrend.length >= 2
+  return dashboardGrowth.value.essayScoreTrend.length >= 2
 })
 
 const recentScoreGrowth = computed(() => {
-  const recent = mockGrowthDashboard.essayScoreTrend.slice(-3)
+  const recent = dashboardGrowth.value.essayScoreTrend.slice(-3)
   if (recent.length < 2) return 0
   return Math.max(0, recent[recent.length - 1].score - recent[0].score)
 })
 
 const highScorePercent = computed(() => {
-  return mockGrowthDashboard.scoreDistribution
-    .filter(bucket => (bucket.min ?? 0) >= 80)
-    .reduce((sum, bucket) => sum + bucket.percent, 0)
+  return dashboardGrowth.value.highScorePercent
 })
 const filteredDocs = computed(() => {
   let list = [...docList.value]
@@ -949,27 +1000,39 @@ const paginationPages = computed(() => {
 // Reset page when filter/sort changes
 watch([filterMode, sortBy, searchQuery], () => { currentPage.value = 1 })
 
-function isWithinDashboardRange(dateStr: string) {
-  if (dashboardRange.value === 'all') return true
-  if (!dateStr) return false
-  const date = new Date(dateStr)
-  const now = new Date()
-  if (Number.isNaN(date.getTime())) return false
-  if (dashboardRange.value === 'custom') {
-    const start = parseDateInput(dashboardCustomRange.value.start, false)
-    const end = parseDateInput(dashboardCustomRange.value.end, true)
-    if (!start || !end) return true
-    return date.getTime() >= start.getTime() && date.getTime() <= end.getTime()
+let dashboardRequestSeq = 0
+
+watch([phase, dashboardRange, dashboardMode, dashboardCustomRange], () => {
+  if (phase.value === 'dashboard') {
+    void loadWritingDashboard()
   }
-  const days = dashboardRange.value === '7d'
-    ? 7
-    : dashboardRange.value === '14d'
-      ? 14
-      : dashboardRange.value === 'year'
-        ? 365
-        : 30
-  const diff = now.getTime() - date.getTime()
-  return diff >= 0 && diff <= days * 24 * 60 * 60 * 1000
+}, { immediate: true, deep: true })
+
+async function loadWritingDashboard() {
+  const requestSeq = ++dashboardRequestSeq
+  dashboardLoading.value = true
+  dashboardError.value = ''
+  try {
+    const params: Parameters<typeof getWritingDashboard>[0] = {
+      range: dashboardRange.value,
+      mode: dashboardMode.value,
+    }
+    if (dashboardRange.value === 'custom') {
+      params.start = dashboardCustomRange.value.start
+      params.end = dashboardCustomRange.value.end
+    }
+    const data = await getWritingDashboard(params)
+    if (requestSeq !== dashboardRequestSeq) return
+    dashboardData.value = data
+  } catch {
+    if (requestSeq !== dashboardRequestSeq) return
+    dashboardData.value = null
+    dashboardError.value = 'Dashboard 数据加载失败，完成评分后可重试；当前不会展示 mock 成绩。'
+  } finally {
+    if (requestSeq === dashboardRequestSeq) {
+      dashboardLoading.value = false
+    }
+  }
 }
 
 function addDays(date: Date, days: number) {
@@ -983,18 +1046,6 @@ function formatDateInput(date: Date) {
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   const day = `${date.getDate()}`.padStart(2, '0')
   return `${year}-${month}-${day}`
-}
-
-function parseDateInput(value: string, endOfDay: boolean) {
-  if (!value) return null
-  const date = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-function formatScatterMonth(value: string) {
-  const date = new Date(value.replace(' ', 'T'))
-  if (Number.isNaN(date.getTime())) return '未知'
-  return `${date.getMonth() + 1}月`
 }
 
 function getScatterMonthTime(value: string) {
@@ -1013,7 +1064,7 @@ function unfoldScoreAxisLabel(value: number) {
 }
 
 function resolveScoreBandColor(score: number) {
-  const bucket = mockGrowthDashboard.scoreDistribution.find((item) => {
+  const bucket = dashboardGrowth.value.scoreDistribution.find((item) => {
     const min = item.min ?? 0
     return score >= min && score < item.max
   })
@@ -1039,7 +1090,7 @@ const dashboardTooltipStyle = {
   },
 }
 
-watch([phase, dashboardRange, dashboardMode, dashboardCustomRange, dashboardDocs], async () => {
+watch([phase, dashboardRange, dashboardMode, dashboardCustomRange, dashboardGrowth], async () => {
   await nextTick()
   if (phase.value !== 'dashboard') return
   renderDashboardCharts()
@@ -1060,7 +1111,7 @@ function renderDashboardCharts() {
 }
 
 function renderScoreTrendChart() {
-  const trend = mockGrowthDashboard.essayScoreTrend
+  const trend = dashboardGrowth.value.essayScoreTrend
   if (!scoreTrendChartRef.value || trend.length < 2) {
     if (scoreTrendChartInstance) {
       scoreTrendChartInstance.dispose()
@@ -1139,7 +1190,7 @@ function renderScoreTrendChart() {
       markArea: {
         silent: true,
         label: { show: false },
-        data: mockGrowthDashboard.scoreBands.map(band => [
+        data: dashboardGrowth.value.scoreBands.map(band => [
           {
             name: band.label,
             yAxis: band.min === 0 ? 50 : band.min,
@@ -1186,12 +1237,12 @@ function renderScoreDistributionChart() {
 
   scoreDistributionChartInstance.setOption({
     animationDuration: 650,
-    color: mockGrowthDashboard.scoreDistribution.map(item => item.color),
+    color: dashboardGrowth.value.scoreDistribution.map(item => item.color),
     tooltip: {
       trigger: 'item',
       ...dashboardTooltipStyle,
       formatter: (params: any) => {
-        const item = mockGrowthDashboard.scoreDistribution[params.dataIndex]
+        const item = dashboardGrowth.value.scoreDistribution[params.dataIndex]
         if (!item) return ''
         return `${item.label} · ${item.stage}<br/>作文：<strong>${item.count}</strong> 篇<br/>占比：<strong>${item.percent}%</strong>`
       },
@@ -1218,7 +1269,7 @@ function renderScoreDistributionChart() {
           shadowColor: 'rgba(31, 28, 21, 0.12)',
         },
       },
-      data: mockGrowthDashboard.scoreDistribution.map(item => ({
+      data: dashboardGrowth.value.scoreDistribution.map(item => ({
         name: `${item.label} ${item.stage}`,
         value: item.count,
       })),
@@ -1227,16 +1278,22 @@ function renderScoreDistributionChart() {
 }
 
 function renderScoreScatterChart() {
-  const trend = mockGrowthDashboard.essayScoreTrend
-  if (!scoreScatterChartRef.value || trend.length === 0) return
+  const points = dashboardGrowth.value.scoreScatter
+  if (!scoreScatterChartRef.value || points.length === 0) {
+    if (scoreScatterChartInstance) {
+      scoreScatterChartInstance.dispose()
+      scoreScatterChartInstance = null
+    }
+    return
+  }
   if (!scoreScatterChartInstance) {
     scoreScatterChartInstance = echarts.init(scoreScatterChartRef.value)
   }
 
   const months = Array.from(new Set(
-    [...trend]
+    [...points]
       .sort((a, b) => getScatterMonthTime(a.scoredAt) - getScatterMonthTime(b.scoredAt))
-      .map(item => formatScatterMonth(item.scoredAt)),
+      .map(item => item.month),
   ))
 
   scoreScatterChartInstance.setOption({
@@ -1278,28 +1335,22 @@ function renderScoreScatterChart() {
       name: '作文落点',
       type: 'scatter',
       symbolSize: 10,
-      data: trend.map((item) => {
-        const bucket = mockGrowthDashboard.scoreDistribution.find((band) => {
-          const min = band.min ?? 0
-          return item.score >= min && item.score < band.max
-        })
-        return {
-          value: [formatScatterMonth(item.scoredAt), foldScoreForChart(item.score)],
-          essay: item,
-          bandLabel: bucket ? `${bucket.label} ${bucket.stage}` : '-',
-          itemStyle: {
-            color: resolveScoreBandColor(item.score),
-            borderColor: '#fffefa',
-            borderWidth: 2,
-            shadowBlur: 10,
-            shadowColor: 'rgba(31, 28, 21, 0.12)',
-          },
-        }
-      }),
+      data: points.map(item => ({
+        value: [item.month, foldScoreForChart(item.score)],
+        essay: item,
+        bandLabel: item.bandLabel,
+        itemStyle: {
+          color: resolveScoreBandColor(item.score),
+          borderColor: '#fffefa',
+          borderWidth: 2,
+          shadowBlur: 10,
+          shadowColor: 'rgba(31, 28, 21, 0.12)',
+        },
+      })),
       markArea: {
         silent: true,
         label: { show: false },
-        data: mockGrowthDashboard.scoreBands.map(band => [
+        data: dashboardGrowth.value.scoreBands.map(band => [
           {
             yAxis: band.min === 0 ? 50 : band.min,
             itemStyle: { color: `${band.color}58` },
@@ -3342,6 +3393,23 @@ function formatTime(dateStr: string) {
 
 .dashboard-section {
   margin-top: 30px;
+}
+
+.dashboard-state {
+  margin: -14px 0 24px;
+  padding: 10px 14px;
+  border: 1px solid #e4dfd3;
+  border-radius: 12px;
+  background: #fbfaf7;
+  color: #6f6a60;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.dashboard-state--error {
+  border-color: #f1c4bd;
+  background: #fff4f2;
+  color: #b33b2f;
 }
 
 .section-heading {

@@ -706,6 +706,20 @@ public class WritingController {
         return ResponseEntity.ok(writingDashboardService.buildAssetDashboard(userId, mode, granularity));
     }
 
+    @GetMapping("/dashboard")
+    public ResponseEntity<java.util.Map<String, Object>> getDashboard(
+            @RequestParam(defaultValue = "30d") String range,
+            @RequestParam(defaultValue = "all") String mode,
+            @RequestParam(required = false) String start,
+            @RequestParam(required = false) String end,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(401).build();
+        }
+        return ResponseEntity.ok(writingDashboardService.buildDashboard(userId, range, mode, start, end));
+    }
+
     /**
      * 获取用户写作聚合统计（维度平均分 + 错误分布）
      * GET /api/writing/stats

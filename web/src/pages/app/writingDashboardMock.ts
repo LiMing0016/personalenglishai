@@ -8,6 +8,7 @@ export interface WritingDashboardCustomRange {
 
 export interface WritingOverviewTrendPoint {
   date: string
+  sourceLabel?: string
   essayCount: number
   submissionCount: number
   averageScore: number

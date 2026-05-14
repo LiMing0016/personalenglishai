@@ -1,0 +1,15 @@
+.mermaid,
+.mermaid-rendered {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--vp-code-block-bg);
+}
+
+.mermaid svg,
+.mermaid-rendered svg {
+  max-width: 100%;
+  height: auto;
+}

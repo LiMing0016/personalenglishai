@@ -5,7 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from python.ai_orchestrator.agents.router import create_router_agent
-from python.ai_orchestrator.agents.specialists import SPECIALIST_AGENT_SPECS, _log_handoff
+from python.ai_orchestrator.agents.specialists import (
+    SPECIALIST_AGENT_SPECS,
+    _log_handoff,
+    create_specialist_handoffs,
+)
 from python.ai_orchestrator.prompts.agents import load_agent_instructions
 from python.ai_orchestrator.schemas.routing import HandoffRoutingMetadata
 
@@ -63,6 +67,27 @@ class AgentStructureTest(unittest.TestCase):
                 self.assertIn("intent", properties)
                 self.assertIn("reason", properties)
                 self.assertIn("confidence", properties)
+
+    def test_specialist_handoffs_use_explicit_snake_case_tool_names(self) -> None:
+        source = inspect.getsource(create_specialist_handoffs)
+
+        self.assertIn("tool_name_override", source)
+
+        router_agent = create_router_agent("test-model")
+
+        self.assertEqual(
+            [specialist_handoff.tool_name for specialist_handoff in router_agent.handoffs],
+            [
+                "transfer_to_polish_agent",
+                "transfer_to_sentence_structure_agent",
+                "transfer_to_vocab_agent",
+                "transfer_to_translation_agent",
+                "transfer_to_scoring_agent",
+                "transfer_to_prompt_design_agent",
+                "transfer_to_ability_profile_agent",
+                "transfer_to_learning_planner_agent",
+            ],
+        )
 
     def test_handoff_logging_includes_conversation_id(self) -> None:
         on_handoff = _log_handoff("Polish Agent")

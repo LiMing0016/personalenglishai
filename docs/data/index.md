@@ -14,3 +14,4 @@ related_code:
 ## 当前文档
 
 - [评分持久化结构](./scoring-persistence-schema.md)
+- [写作 Dashboard 数据口径](./writing-dashboard-data.md)

@@ -20,4 +20,11 @@ public interface DocumentScoreSummaryMapper {
             @Param("userId") Long userId,
             @Param("mode") String mode
     );
+
+    List<Map<String, Object>> selectDashboardLatestRows(
+            @Param("userId") Long userId,
+            @Param("mode") String mode,
+            @Param("startAt") java.time.LocalDateTime startAt,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive
+    );
 }
