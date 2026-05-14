@@ -4,6 +4,8 @@ import com.personalenglishai.backend.entity.subscription.AiTokenUsageEvent;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
+
 @Mapper
 public interface AiTokenUsageMapper {
     int insertIgnoreEvent(AiTokenUsageEvent event);
@@ -14,4 +16,11 @@ public interface AiTokenUsageMapper {
 
     Long selectMonthlyTokenUsed(@Param("userId") Long userId,
                                 @Param("usageMonth") String usageMonth);
+
+    int upsertDailyUsage(@Param("userId") Long userId,
+                         @Param("usageDate") LocalDate usageDate,
+                         @Param("tokenDelta") Long tokenDelta);
+
+    Long selectDailyTokenUsed(@Param("userId") Long userId,
+                              @Param("usageDate") LocalDate usageDate);
 }

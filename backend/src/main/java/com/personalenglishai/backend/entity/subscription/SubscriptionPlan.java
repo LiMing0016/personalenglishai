@@ -7,6 +7,7 @@ public class SubscriptionPlan {
     private String planCode;
     private String name;
     private Long monthlyTokenLimit;
+    private Long dailyTokenLimit;
     private Integer sortOrder;
     private Boolean active;
     private LocalDateTime createdAt;
@@ -42,6 +43,14 @@ public class SubscriptionPlan {
 
     public void setMonthlyTokenLimit(Long monthlyTokenLimit) {
         this.monthlyTokenLimit = monthlyTokenLimit;
+    }
+
+    public Long getDailyTokenLimit() {
+        return dailyTokenLimit;
+    }
+
+    public void setDailyTokenLimit(Long dailyTokenLimit) {
+        this.dailyTokenLimit = dailyTokenLimit;
     }
 
     public Integer getSortOrder() {

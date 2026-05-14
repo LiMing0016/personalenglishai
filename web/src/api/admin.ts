@@ -130,6 +130,68 @@ export interface AdminAuditLogItem {
   createdAt: string
 }
 
+export interface AdminSubscriptionListItem {
+  userId: number
+  email: string | null
+  phone: string | null
+  nickname: string
+  userStatus: string
+  planCode: string
+  planName: string
+  subscriptionStatus: 'active' | 'free' | 'expired' | string
+  quotaPeriod: 'daily' | 'monthly' | string
+  tokenLimit: number
+  tokenUsed: number
+  tokenRemaining: number
+  overLimit: boolean | number
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  usageMonth: string | null
+  usageDate: string | null
+}
+
+export interface AdminSubscriptionQuotaRule {
+  planCode: string
+  planName: string
+  quotaPeriod: 'daily' | 'monthly' | string
+  dailyTokenLimit: number | null
+  monthlyTokenLimit: number | null
+  active: boolean | number
+  sortOrder: number
+}
+
+export interface AdminSubscriptionOverview {
+  totalUsers: number
+  ordinaryUsers: number
+  subscribedUsers: number
+  todayNewUsers: number
+  todayNewSubscriptions: number
+  todayFreeTokenUsed: number
+  todayPaidTokenUsed: number
+  overLimitUsers: number
+  sevenDaySubscriptionRate: number
+  planDistribution: AdminSubscriptionPlanDistribution[]
+}
+
+export interface AdminSubscriptionPlanDistribution {
+  planCode: string
+  planName: string
+  userCount: number
+  ratio: number
+  sortOrder: number
+}
+
+export interface AdminSubscriptionDailyStat {
+  statDate: string
+  newUsers: number
+  newSubscriptions: number
+  ordinaryUsers: number
+  subscribedUsers: number
+  freeTokenUsed: number
+  paidTokenUsed: number
+  subscriptionRate: number
+}
+
 let cachedAdminMe: AdminMe | null = null
 let pendingAdminMe: Promise<AdminMe> | null = null
 let cachedToken: string | null = null
@@ -215,6 +277,21 @@ export const adminApi = {
   },
   listAuditLogs(params: Record<string, unknown>) {
     return http.get<AdminPageResponse<AdminAuditLogItem>>('/admin/audit-logs', { params }).then((r) => r.data)
+  },
+  listSubscriptions(params: Record<string, unknown>) {
+    return http.get<AdminPageResponse<AdminSubscriptionListItem>>('/admin/subscriptions', { params }).then((r) => r.data)
+  },
+  getSubscriptionOverview() {
+    return http.get<AdminSubscriptionOverview>('/admin/subscriptions/overview').then((r) => r.data)
+  },
+  listSubscriptionDailyStats(params: Record<string, unknown>) {
+    return http.get<AdminSubscriptionDailyStat[]>('/admin/subscriptions/daily-stats', { params }).then((r) => r.data)
+  },
+  listSubscriptionQuotaRules() {
+    return http.get<AdminSubscriptionQuotaRule[]>('/admin/subscription/quota-rules').then((r) => r.data)
+  },
+  updateSubscriptionQuotaRule(planCode: string, payload: { dailyTokenLimit?: number; monthlyTokenLimit?: number }) {
+    return http.put<AdminSubscriptionQuotaRule>(`/admin/subscription/quota-rules/${planCode}`, payload).then((r) => r.data)
   },
 }
 

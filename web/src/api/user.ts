@@ -44,6 +44,9 @@ export interface SubscriptionPlan {
   planCode: 'free' | 'basic' | 'pro' | 'premium'
   name: string
   monthlyTokenLimit: number
+  dailyTokenLimit?: number | null
+  quotaPeriod?: 'daily' | 'monthly'
+  tokenLimit?: number
 }
 
 export interface SubscriptionStatus {
@@ -51,8 +54,12 @@ export interface SubscriptionStatus {
   planName: string
   currentPeriodStart: string | null
   currentPeriodEnd: string | null
+  quotaPeriod?: 'daily' | 'monthly'
+  usageDate?: string | null
   usageMonth: string
+  dailyTokenLimit?: number | null
   monthlyTokenLimit: number
+  tokenLimit?: number
   tokenUsed: number
   tokenRemaining: number
   overLimit: boolean

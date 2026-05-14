@@ -10,13 +10,13 @@
       </div>
       <div class="quota-summary">
         <span>{{ formatTokens(status?.tokenUsed ?? 0) }}</span>
-        <small>/ {{ formatTokens(status?.monthlyTokenLimit ?? 0) }}</small>
+        <small>/ {{ formatTokens(effectiveLimit) }}</small>
       </div>
     </div>
 
     <div class="usage-panel">
       <div class="usage-row">
-        <span>{{ status?.usageMonth ?? '--' }} token 用量</span>
+        <span>{{ usageWindowText }} token 用量</span>
         <strong>{{ usagePercent }}%</strong>
       </div>
       <div class="progress-track">
@@ -78,14 +78,21 @@ type PaidPlanCode = 'basic' | 'pro' | 'premium'
 const paidPlans = computed(() =>
   plans.value.filter((plan): plan is SubscriptionPlan & { planCode: PaidPlanCode } => plan.planCode !== 'free')
 )
+const effectiveLimit = computed(() => status.value?.tokenLimit ?? status.value?.monthlyTokenLimit ?? 0)
 const usagePercent = computed(() => {
-  const limit = status.value?.monthlyTokenLimit ?? 0
+  const limit = effectiveLimit.value
   if (limit <= 0) return 0
   return Math.round(((status.value?.tokenUsed ?? 0) / limit) * 100)
 })
 const periodText = computed(() => {
   if (!status.value?.currentPeriodEnd) return 'Free 档长期有效'
   return `有效期至 ${formatDate(status.value.currentPeriodEnd)}`
+})
+const usageWindowText = computed(() => {
+  if (status.value?.quotaPeriod === 'daily') {
+    return `${status.value.usageDate ?? '今日'} 每日`
+  }
+  return `${status.value?.usageMonth ?? '--'} 每月`
 })
 
 function formatTokens(value: number): string {

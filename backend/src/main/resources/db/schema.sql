@@ -462,6 +462,7 @@ CREATE TABLE IF NOT EXISTS subscription_plan (
     plan_code VARCHAR(32) NOT NULL COMMENT 'free | basic | pro | premium',
     name VARCHAR(64) NOT NULL,
     monthly_token_limit BIGINT NOT NULL,
+    daily_token_limit BIGINT NULL COMMENT 'Free daily token quota; paid plans use monthly_token_limit',
     sort_order INT NOT NULL DEFAULT 0,
     active TINYINT(1) NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -469,15 +470,16 @@ CREATE TABLE IF NOT EXISTS subscription_plan (
     UNIQUE KEY uk_subscription_plan_code (plan_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='subscription plan definitions';
 
-INSERT INTO subscription_plan (plan_code, name, monthly_token_limit, sort_order, active)
+INSERT INTO subscription_plan (plan_code, name, monthly_token_limit, daily_token_limit, sort_order, active)
 VALUES
-    ('free', 'Free', 100000, 0, 1),
-    ('basic', 'Basic', 1000000, 1, 1),
-    ('pro', 'Pro', 5000000, 2, 1),
-    ('premium', 'Premium', 20000000, 3, 1)
+    ('free', 'Free', 100000, 10000, 0, 1),
+    ('basic', 'Basic', 1000000, NULL, 1, 1),
+    ('pro', 'Pro', 5000000, NULL, 2, 1),
+    ('premium', 'Premium', 20000000, NULL, 3, 1)
 ON DUPLICATE KEY UPDATE
     name = VALUES(name),
     monthly_token_limit = VALUES(monthly_token_limit),
+    daily_token_limit = VALUES(daily_token_limit),
     sort_order = VALUES(sort_order),
     active = VALUES(active),
     updated_at = CURRENT_TIMESTAMP;
@@ -533,6 +535,18 @@ CREATE TABLE IF NOT EXISTS user_ai_token_usage_monthly (
         ON DELETE CASCADE
         ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='monthly AI token usage aggregate';
+
+CREATE TABLE IF NOT EXISTS user_ai_token_usage_daily (
+    user_id BIGINT NOT NULL,
+    usage_date DATE NOT NULL COMMENT 'natural date by server timezone',
+    token_used BIGINT NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, usage_date),
+    CONSTRAINT fk_user_ai_token_usage_daily_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='daily AI token usage aggregate';
 
 CREATE TABLE IF NOT EXISTS subscription_redeem_code (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -1,14 +1,19 @@
 package com.personalenglishai.backend.service.subscription.dto;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 public class SubscriptionStatusResponse {
     private String planCode;
     private String planName;
     private LocalDateTime currentPeriodStart;
     private LocalDateTime currentPeriodEnd;
+    private String quotaPeriod;
+    private LocalDate usageDate;
     private String usageMonth;
+    private Long dailyTokenLimit;
     private Long monthlyTokenLimit;
+    private Long tokenLimit;
     private Long tokenUsed;
     private Long tokenRemaining;
     private Boolean overLimit;
@@ -45,6 +50,22 @@ public class SubscriptionStatusResponse {
         this.currentPeriodEnd = currentPeriodEnd;
     }
 
+    public String getQuotaPeriod() {
+        return quotaPeriod;
+    }
+
+    public void setQuotaPeriod(String quotaPeriod) {
+        this.quotaPeriod = quotaPeriod;
+    }
+
+    public LocalDate getUsageDate() {
+        return usageDate;
+    }
+
+    public void setUsageDate(LocalDate usageDate) {
+        this.usageDate = usageDate;
+    }
+
     public String getUsageMonth() {
         return usageMonth;
     }
@@ -53,12 +74,28 @@ public class SubscriptionStatusResponse {
         this.usageMonth = usageMonth;
     }
 
+    public Long getDailyTokenLimit() {
+        return dailyTokenLimit;
+    }
+
+    public void setDailyTokenLimit(Long dailyTokenLimit) {
+        this.dailyTokenLimit = dailyTokenLimit;
+    }
+
     public Long getMonthlyTokenLimit() {
         return monthlyTokenLimit;
     }
 
     public void setMonthlyTokenLimit(Long monthlyTokenLimit) {
         this.monthlyTokenLimit = monthlyTokenLimit;
+    }
+
+    public Long getTokenLimit() {
+        return tokenLimit;
+    }
+
+    public void setTokenLimit(Long tokenLimit) {
+        this.tokenLimit = tokenLimit;
     }
 
     public Long getTokenUsed() {

@@ -82,10 +82,28 @@ button {
 .admin-nav {
   margin-top: 28px;
   display: grid;
-  gap: 10px;
+  gap: 18px;
+}
+
+.admin-nav-group {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-nav-group__label {
+  padding: 0 14px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .admin-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 12px 14px;
   border-radius: 14px;
   color: var(--admin-muted);
@@ -97,6 +115,16 @@ button {
 .admin-nav-link--active {
   color: var(--admin-accent-dark);
   background: rgba(19, 111, 75, 0.1);
+}
+
+.admin-nav-link__status {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(242, 180, 90, 0.18);
+  color: #8d5a00;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .admin-main {
@@ -586,6 +614,62 @@ button {
 @media (max-width: 768px) {
   .admin-dashboard-page__quicklinks-head {
     align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.ops-agent-layout {
+  background:
+    linear-gradient(135deg, rgba(12, 23, 18, 0.04), transparent 36%),
+    var(--admin-bg);
+}
+
+.ops-agent-sidebar {
+  background: #101913;
+}
+
+.ops-agent-sidebar .admin-brand,
+.ops-agent-sidebar .admin-role {
+  color: #f7fff7;
+}
+
+.ops-agent-sidebar .admin-nav-link {
+  color: rgba(247, 255, 247, 0.72);
+}
+
+.ops-agent-sidebar .admin-nav-link:hover,
+.ops-agent-sidebar .admin-nav-link--active {
+  background: rgba(219, 240, 226, 0.12);
+  color: #f7fff7;
+}
+
+.ops-agent-page {
+  display: grid;
+  gap: 18px;
+}
+
+.ops-agent-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ops-agent-case-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-height: 160px;
+}
+
+.admin-empty-row td {
+  padding: 36px 16px;
+  color: var(--admin-muted);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .ops-agent-hero {
     flex-direction: column;
   }
 }

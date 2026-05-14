@@ -25,6 +25,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -37,6 +38,8 @@ import java.util.Map;
 @Service
 public class SubscriptionService {
     private static final String PLAN_FREE = "free";
+    private static final String QUOTA_PERIOD_DAILY = "daily";
+    private static final String QUOTA_PERIOD_MONTHLY = "monthly";
     private static final String STATUS_ACTIVE = "active";
     private static final String REDEEM_STATUS_UNUSED = "unused";
     private static final String REDEEM_STATUS_REDEEMED = "redeemed";
@@ -87,19 +90,29 @@ public class SubscriptionService {
     }
 
     public SubscriptionStatusResponse getCurrentSubscription(Long userId) {
-        SubscriptionPlan plan = resolveCurrentPlan(userId);
         UserSubscription subscription = resolveActiveSubscription(userId, LocalDateTime.now(clock));
+        SubscriptionPlan plan = subscription == null ? freePlan() : planByCode(subscription.getPlanCode());
+        if (plan == null || !isPaidPlan(plan)) {
+            plan = freePlan();
+            subscription = null;
+        }
+        boolean monthlyQuota = subscription != null && isPaidPlan(plan);
         String usageMonth = currentUsageMonth();
-        long used = monthlyUsed(userId, usageMonth);
-        long limit = plan.getMonthlyTokenLimit() == null ? 0L : plan.getMonthlyTokenLimit();
+        LocalDate usageDate = currentUsageDate();
+        long used = monthlyQuota ? monthlyUsed(userId, usageMonth) : dailyUsed(userId, usageDate);
+        long limit = monthlyQuota ? monthlyLimit(plan) : dailyLimit(plan);
 
         SubscriptionStatusResponse response = new SubscriptionStatusResponse();
         response.setPlanCode(plan.getPlanCode());
         response.setPlanName(plan.getName());
         response.setCurrentPeriodStart(subscription == null ? null : subscription.getCurrentPeriodStart());
         response.setCurrentPeriodEnd(subscription == null ? null : subscription.getCurrentPeriodEnd());
+        response.setQuotaPeriod(monthlyQuota ? QUOTA_PERIOD_MONTHLY : QUOTA_PERIOD_DAILY);
+        response.setUsageDate(monthlyQuota ? null : usageDate);
         response.setUsageMonth(usageMonth);
-        response.setMonthlyTokenLimit(limit);
+        response.setDailyTokenLimit(dailyLimit(plan));
+        response.setMonthlyTokenLimit(monthlyLimit(plan));
+        response.setTokenLimit(limit);
         response.setTokenUsed(used);
         response.setTokenRemaining(Math.max(0L, limit - used));
         response.setOverLimit(used >= limit);
@@ -206,7 +219,7 @@ public class SubscriptionService {
         if (Boolean.TRUE.equals(status.getOverLimit())) {
             throw new BizException(
                     ErrorCode.SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED,
-                    "本月 AI token 额度已用完，请升级会员后继续使用"
+                    "AI token 额度已用完，请升级会员后继续使用"
             );
         }
     }
@@ -239,17 +252,21 @@ public class SubscriptionService {
         if (inserted <= 0) {
             return false;
         }
-        usageMapper.upsertMonthlyUsage(record.userId(), currentUsageMonth(), totalTokens);
+        if (usesMonthlyQuota(record.userId())) {
+            usageMapper.upsertMonthlyUsage(record.userId(), currentUsageMonth(), totalTokens);
+        } else {
+            usageMapper.upsertDailyUsage(record.userId(), currentUsageDate(), totalTokens);
+        }
         return true;
     }
 
     private SubscriptionPlan resolveCurrentPlan(Long userId) {
         UserSubscription subscription = resolveActiveSubscription(userId, LocalDateTime.now(clock));
         if (subscription == null) {
-            return DEFAULT_PLANS.get(PLAN_FREE);
+            return freePlan();
         }
         SubscriptionPlan plan = planByCode(subscription.getPlanCode());
-        return plan == null ? DEFAULT_PLANS.get(PLAN_FREE) : plan;
+        return plan == null ? freePlan() : plan;
     }
 
     private SubscriptionStatusResponse applySubscription(Long userId, String planCode, int durationDays) {
@@ -312,7 +329,15 @@ public class SubscriptionService {
     }
 
     private SubscriptionPlanResponse toPlanResponse(SubscriptionPlan plan) {
-        return new SubscriptionPlanResponse(plan.getPlanCode(), plan.getName(), plan.getMonthlyTokenLimit());
+        boolean free = PLAN_FREE.equalsIgnoreCase(plan.getPlanCode());
+        return new SubscriptionPlanResponse(
+                plan.getPlanCode(),
+                plan.getName(),
+                plan.getMonthlyTokenLimit(),
+                plan.getDailyTokenLimit(),
+                free ? QUOTA_PERIOD_DAILY : QUOTA_PERIOD_MONTHLY,
+                free ? dailyLimit(plan) : monthlyLimit(plan)
+        );
     }
 
     private long monthlyUsed(Long userId, String usageMonth) {
@@ -323,8 +348,45 @@ public class SubscriptionService {
         return used == null ? 0L : used;
     }
 
+    private long dailyUsed(Long userId, LocalDate usageDate) {
+        if (userId == null) {
+            return 0L;
+        }
+        Long used = usageMapper.selectDailyTokenUsed(userId, usageDate);
+        return used == null ? 0L : used;
+    }
+
     private String currentUsageMonth() {
         return YearMonth.now(clock).toString();
+    }
+
+    private LocalDate currentUsageDate() {
+        return LocalDate.now(clock);
+    }
+
+    private boolean usesMonthlyQuota(Long userId) {
+        UserSubscription subscription = resolveActiveSubscription(userId, LocalDateTime.now(clock));
+        if (subscription == null) {
+            return false;
+        }
+        return isPaidPlan(planByCode(subscription.getPlanCode()));
+    }
+
+    private SubscriptionPlan freePlan() {
+        SubscriptionPlan plan = planMapper.findByPlanCode(PLAN_FREE);
+        return plan == null ? DEFAULT_PLANS.get(PLAN_FREE) : plan;
+    }
+
+    private static boolean isPaidPlan(SubscriptionPlan plan) {
+        return plan != null && plan.getPlanCode() != null && !PLAN_FREE.equalsIgnoreCase(plan.getPlanCode());
+    }
+
+    private static long monthlyLimit(SubscriptionPlan plan) {
+        return plan == null || plan.getMonthlyTokenLimit() == null ? 0L : plan.getMonthlyTokenLimit();
+    }
+
+    private static long dailyLimit(SubscriptionPlan plan) {
+        return plan == null || plan.getDailyTokenLimit() == null ? 0L : plan.getDailyTokenLimit();
     }
 
     private static long resolveTotalTokens(AiTokenUsageRecord record) {
@@ -407,18 +469,20 @@ public class SubscriptionService {
 
     private static Map<String, SubscriptionPlan> defaultPlans() {
         Map<String, SubscriptionPlan> plans = new LinkedHashMap<>();
-        putPlan(plans, "free", "Free", 100_000L, 0);
-        putPlan(plans, "basic", "Basic", 1_000_000L, 1);
-        putPlan(plans, "pro", "Pro", 5_000_000L, 2);
-        putPlan(plans, "premium", "Premium", 20_000_000L, 3);
+        putPlan(plans, "free", "Free", 100_000L, 10_000L, 0);
+        putPlan(plans, "basic", "Basic", 1_000_000L, null, 1);
+        putPlan(plans, "pro", "Pro", 5_000_000L, null, 2);
+        putPlan(plans, "premium", "Premium", 20_000_000L, null, 3);
         return plans;
     }
 
-    private static void putPlan(Map<String, SubscriptionPlan> plans, String code, String name, long limit, int sortOrder) {
+    private static void putPlan(Map<String, SubscriptionPlan> plans, String code, String name, long monthlyLimit,
+                                Long dailyLimit, int sortOrder) {
         SubscriptionPlan plan = new SubscriptionPlan();
         plan.setPlanCode(code);
         plan.setName(name);
-        plan.setMonthlyTokenLimit(limit);
+        plan.setMonthlyTokenLimit(monthlyLimit);
+        plan.setDailyTokenLimit(dailyLimit);
         plan.setSortOrder(sortOrder);
         plan.setActive(true);
         plans.put(code, plan);

@@ -6,20 +6,26 @@
       <div class="admin-role" v-else-if="loading">正在验证管理员身份...</div>
       <div class="admin-role" v-else>管理员后台</div>
       <nav class="admin-nav">
-        <router-link
-          v-for="item in visibleNav"
-          :key="item.to"
-          :to="item.to"
-          class="admin-nav-link"
-          active-class="admin-nav-link--active"
-        >{{ item.label }}</router-link>
+        <section v-for="group in visibleNavGroups" :key="group.label" class="admin-nav-group">
+          <div class="admin-nav-group__label">{{ group.label }}</div>
+          <router-link
+            v-for="item in group.items"
+            :key="item.to"
+            :to="item.to"
+            class="admin-nav-link"
+            active-class="admin-nav-link--active"
+          >
+            <span>{{ item.label }}</span>
+            <span v-if="item.status === 'placeholder'" class="admin-nav-link__status">待接入</span>
+          </router-link>
+        </section>
       </nav>
     </aside>
     <main class="admin-main">
       <header class="admin-topbar">
         <div>
           <div class="admin-title">管理员后台</div>
-          <div class="admin-subtitle">数据看板、用户治理、作文排查、题库与 Rubric 管理</div>
+          <div class="admin-subtitle">运营治理、用户权益、作文排查、内容资产与 AI 调试</div>
         </div>
         <router-link to="/app" class="admin-back-link">返回主站</router-link>
       </header>
@@ -34,22 +40,85 @@
 import { computed, onMounted, ref } from 'vue'
 import { getAdminMe, type AdminMe } from '@/api/admin'
 
+type AdminNavStatus = 'implemented' | 'placeholder'
+
+interface AdminNavItem {
+  to: string
+  label: string
+  permission?: string
+  status?: AdminNavStatus
+}
+
+interface AdminNavGroup {
+  label: string
+  items: AdminNavItem[]
+}
+
 const me = ref<AdminMe | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-const nav = [
-  { to: '/admin/dashboard', label: 'Dashboard' },
-  { to: '/admin/users', label: '用户', permission: 'admin.users.read' },
-  { to: '/admin/essays', label: '作文', permission: 'admin.essays.read' },
-  { to: '/admin/prompts', label: '题库', permission: 'admin.prompts.read' },
-  { to: '/admin/rubrics', label: 'Rubric', permission: 'admin.rubrics.read' },
-  { to: '/admin/audit-logs', label: '审计', permission: 'admin.audit.read' },
+const navGroups: AdminNavGroup[] = [
+  {
+    label: '总览',
+    items: [
+      { to: '/admin/dashboard', label: 'Dashboard', status: 'implemented' },
+    ],
+  },
+  {
+    label: '用户运营',
+    items: [
+      { to: '/admin/users', label: '用户', permission: 'admin.users.read', status: 'implemented' },
+    ],
+  },
+  {
+    label: '订阅与权益',
+    items: [
+      { to: '/admin/subscriptions', label: '订阅用户', permission: 'admin.subscription.read', status: 'implemented' },
+      { to: '/admin/subscription/redeem-codes', label: '兑换码', permission: 'admin.subscription.write', status: 'placeholder' },
+      { to: '/admin/subscription/quota-ledger', label: '权益流水', permission: 'admin.subscription.write', status: 'placeholder' },
+    ],
+  },
+  {
+    label: '作文与评测',
+    items: [
+      { to: '/admin/essays', label: '作文排查', permission: 'admin.essays.read', status: 'implemented' },
+    ],
+  },
+  {
+    label: '内容资产',
+    items: [
+      { to: '/admin/prompts', label: '题库', permission: 'admin.prompts.read', status: 'implemented' },
+      { to: '/admin/rubrics', label: 'Rubric', permission: 'admin.rubrics.read', status: 'implemented' },
+      { to: '/admin/prompt-assets', label: 'Prompt', permission: 'admin.prompts.read', status: 'placeholder' },
+      { to: '/admin/materials', label: '素材', permission: 'admin.prompts.read', status: 'placeholder' },
+      { to: '/admin/scoring-config', label: '评分配置', permission: 'admin.rubrics.read', status: 'placeholder' },
+    ],
+  },
+  {
+    label: 'AI 与 Agent',
+    items: [
+      { to: '/admin/agent-debug/runs', label: 'Agent Debug', status: 'placeholder' },
+      { to: '/admin/model-usage', label: '模型用量', status: 'placeholder' },
+    ],
+  },
+  {
+    label: '审计与系统',
+    items: [
+      { to: '/admin/audit-logs', label: '审计日志', permission: 'admin.audit.read', status: 'implemented' },
+      { to: '/admin/admin-users', label: '管理员权限', permission: 'admin.users.write', status: 'placeholder' },
+    ],
+  },
 ]
 
-const visibleNav = computed(() => {
+const visibleNavGroups = computed(() => {
   const permissions = new Set(me.value?.permissions ?? [])
-  return nav.filter((item) => !item.permission || permissions.has(item.permission))
+  return navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.permission || permissions.has(item.permission)),
+    }))
+    .filter((group) => group.items.length > 0)
 })
 
 onMounted(async () => {
