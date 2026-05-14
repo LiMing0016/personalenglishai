@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminSubscriptionQueryMapper">
+    <sql id="EffectivePlanCase">
+        CASE
+            WHEN us.id IS NOT NULL
+             AND us.status = 'active'
+             AND us.current_period_end IS NOT NULL
+             AND us.current_period_end <![CDATA[>]]> #{now}
+             AND us.plan_code != 'free'
+            THEN us.plan_code
+            ELSE 'free'
+        END
+    </sql>
+
+    <sql id="EffectiveStatusCase">
+        CASE
+            WHEN us.id IS NOT NULL
+             AND us.status = 'active'
+             AND us.current_period_end IS NOT NULL
+             AND us.current_period_end <![CDATA[>]]> #{now}
+             AND us.plan_code != 'free'
+            THEN 'active'
+            WHEN us.id IS NULL THEN 'free'
+            ELSE 'expired'
+        END
+    </sql>
+
+    <sql id="SubscriptionFilter">
+        WHERE 1 = 1
+          <if test="keyword != null and keyword != ''">
+            AND (
+              u.email LIKE CONCAT('%', #{keyword}, '%')
+              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+          <if test="planCode != null and planCode != ''">
+            AND <include refid="EffectivePlanCase"/> = #{planCode}
+          </if>
+          <if test="subscriptionStatus != null and subscriptionStatus != ''">
+            AND <include refid="EffectiveStatusCase"/> = #{subscriptionStatus}
+          </if>
+          <if test="overLimit != null and overLimit">
+            AND CASE
+                  WHEN <include refid="EffectivePlanCase"/> = 'free'
+                  THEN COALESCE(daily_usage.token_used, 0) >= COALESCE(free_plan.daily_token_limit, 0)
+                  ELSE COALESCE(monthly_usage.token_used, 0) >= COALESCE(paid_plan.monthly_token_limit, 0)
+                END
+          </if>
+          <if test="expiresFrom != null and expiresFrom != ''">
+            AND us.current_period_end <![CDATA[>=]]> #{expiresFrom}
+          </if>
+          <if test="expiresTo != null and expiresTo != ''">
+            AND us.current_period_end <![CDATA[<=]]> #{expiresTo}
+          </if>
+    </sql>
+
+    <select id="searchSubscriptions" resultType="java.util.LinkedHashMap">
+        SELECT u.id AS userId,
+               u.email,
+               u.phone,
+               u.nickname,
+               u.status AS userStatus,
+               <include refid="EffectivePlanCase"/> AS planCode,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN free_plan.name
+                   ELSE paid_plan.name
+               END AS planName,
+               <include refid="EffectiveStatusCase"/> AS subscriptionStatus,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN 'daily'
+                   ELSE 'monthly'
+               END AS quotaPeriod,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN COALESCE(free_plan.daily_token_limit, 0)
+                   ELSE COALESCE(paid_plan.monthly_token_limit, 0)
+               END AS tokenLimit,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN COALESCE(daily_usage.token_used, 0)
+                   ELSE COALESCE(monthly_usage.token_used, 0)
+               END AS tokenUsed,
+               GREATEST(0, CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN COALESCE(free_plan.daily_token_limit, 0) - COALESCE(daily_usage.token_used, 0)
+                   ELSE COALESCE(paid_plan.monthly_token_limit, 0) - COALESCE(monthly_usage.token_used, 0)
+               END) AS tokenRemaining,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free'
+                   THEN COALESCE(daily_usage.token_used, 0) >= COALESCE(free_plan.daily_token_limit, 0)
+                   ELSE COALESCE(monthly_usage.token_used, 0) >= COALESCE(paid_plan.monthly_token_limit, 0)
+               END AS overLimit,
+               us.current_period_start AS currentPeriodStart,
+               us.current_period_end AS currentPeriodEnd,
+               #{usageMonth} AS usageMonth,
+               #{usageDate} AS usageDate
+        FROM users u
+        LEFT JOIN user_subscription us ON us.user_id = u.id
+        LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+        LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+        LEFT JOIN user_ai_token_usage_monthly monthly_usage
+               ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+        LEFT JOIN user_ai_token_usage_daily daily_usage
+               ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
+        <include refid="SubscriptionFilter"/>
+        ORDER BY
+            CASE WHEN <include refid="EffectiveStatusCase"/> = 'active' THEN 0 ELSE 1 END,
+            us.current_period_end DESC,
+            u.created_at DESC,
+            u.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countSubscriptions" resultType="long">
+        SELECT COUNT(1)
+        FROM users u
+        LEFT JOIN user_subscription us ON us.user_id = u.id
+        LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+        LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+        LEFT JOIN user_ai_token_usage_monthly monthly_usage
+               ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+        LEFT JOIN user_ai_token_usage_daily daily_usage
+               ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
+        <include refid="SubscriptionFilter"/>
+    </select>
+
+    <select id="selectOverview" resultType="java.util.LinkedHashMap">
+        SELECT
+            (SELECT COUNT(1) FROM users) AS totalUsers,
+            (SELECT COUNT(1)
+             FROM user_subscription us
+             WHERE us.status = 'active'
+               AND us.current_period_end IS NOT NULL
+               AND us.current_period_end <![CDATA[>]]> #{now}
+               AND us.plan_code != 'free') AS subscribedUsers,
+            (
+              (SELECT COUNT(1) FROM users)
+              -
+              (SELECT COUNT(1)
+               FROM user_subscription us
+               WHERE us.status = 'active'
+                 AND us.current_period_end IS NOT NULL
+                 AND us.current_period_end <![CDATA[>]]> #{now}
+                 AND us.plan_code != 'free')
+            ) AS ordinaryUsers,
+            (SELECT COUNT(1)
+             FROM users u
+             WHERE DATE(u.created_at) = #{today}) AS todayNewUsers,
+            (SELECT COUNT(1)
+             FROM user_subscription us
+             WHERE us.status = 'active'
+               AND us.plan_code != 'free'
+               AND DATE(us.current_period_start) = #{today}) AS todayNewSubscriptions,
+            (SELECT COALESCE(SUM(d.token_used), 0)
+             FROM user_ai_token_usage_daily d
+             WHERE d.usage_date = #{today}) AS todayFreeTokenUsed,
+            (SELECT COALESCE(SUM(e.total_tokens), 0)
+             FROM ai_token_usage_event e
+             INNER JOIN user_subscription us ON us.user_id = e.user_id
+             WHERE DATE(e.occurred_at) = #{today}
+               AND us.status = 'active'
+               AND us.current_period_end IS NOT NULL
+               AND us.current_period_end <![CDATA[>]]> #{now}
+               AND us.plan_code != 'free') AS todayPaidTokenUsed,
+            (SELECT COUNT(1)
+             FROM users u
+             LEFT JOIN user_subscription us ON us.user_id = u.id
+             LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+             LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+             LEFT JOIN user_ai_token_usage_daily daily_usage
+                    ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{today}
+             LEFT JOIN user_ai_token_usage_monthly monthly_usage
+                    ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+             WHERE CASE
+                    WHEN us.id IS NOT NULL
+                     AND us.status = 'active'
+                     AND us.current_period_end IS NOT NULL
+                     AND us.current_period_end <![CDATA[>]]> #{now}
+                     AND us.plan_code != 'free'
+                    THEN COALESCE(monthly_usage.token_used, 0) >= COALESCE(paid_plan.monthly_token_limit, 0)
+                    ELSE COALESCE(daily_usage.token_used, 0) >= COALESCE(free_plan.daily_token_limit, 0)
+                   END) AS overLimitUsers,
+            (SELECT CASE
+                    WHEN COUNT(DISTINCT u.id) = 0 THEN 0
+                    ELSE ROUND(
+                        COUNT(DISTINCT CASE
+                            WHEN us.status = 'active'
+                             AND us.plan_code != 'free'
+                             AND DATE(us.current_period_start) BETWEEN DATE_SUB(#{today}, INTERVAL 6 DAY) AND #{today}
+                            THEN us.user_id
+                        END) * 100.0 / COUNT(DISTINCT u.id),
+                        2
+                    )
+                   END
+             FROM users u
+             LEFT JOIN user_subscription us ON us.user_id = u.id
+             WHERE DATE(u.created_at) BETWEEN DATE_SUB(#{today}, INTERVAL 6 DAY) AND #{today}) AS sevenDaySubscriptionRate
+    </select>
+
+    <select id="selectPlanDistribution" resultType="java.util.LinkedHashMap">
+        SELECT p.plan_code AS planCode,
+               p.name AS planName,
+               COALESCE(plan_counts.user_count, 0) AS userCount,
+               CASE
+                   WHEN totals.total_users = 0 THEN 0
+                   ELSE ROUND(COALESCE(plan_counts.user_count, 0) * 100.0 / totals.total_users, 2)
+               END AS ratio,
+               p.sort_order AS sortOrder
+        FROM subscription_plan p
+        CROSS JOIN (
+            SELECT COUNT(1) AS total_users
+            FROM users
+        ) totals
+        LEFT JOIN (
+            SELECT effective_plan.plan_code,
+                   COUNT(1) AS user_count
+            FROM (
+                SELECT u.id,
+                       CASE
+                           WHEN us.id IS NOT NULL
+                            AND us.status = 'active'
+                            AND us.current_period_end IS NOT NULL
+                            AND us.current_period_end <![CDATA[>]]> #{now}
+                            AND us.plan_code != 'free'
+                           THEN us.plan_code
+                           ELSE 'free'
+                       END AS plan_code
+                FROM users u
+                LEFT JOIN user_subscription us ON us.user_id = u.id
+            ) effective_plan
+            GROUP BY effective_plan.plan_code
+        ) plan_counts ON plan_counts.plan_code = p.plan_code
+        WHERE p.active = 1
+        ORDER BY p.sort_order ASC
+    </select>
+
+    <select id="selectDailyStats" resultType="java.util.LinkedHashMap">
+        WITH RECURSIVE dates AS (
+            SELECT #{dateFrom} AS statDate
+            UNION ALL
+            SELECT DATE_ADD(statDate, INTERVAL 1 DAY)
+            FROM dates
+            WHERE statDate <![CDATA[<]]> #{dateTo}
+        )
+        SELECT dates.statDate AS statDate,
+               (SELECT COUNT(1)
+                FROM users u
+                WHERE DATE(u.created_at) = dates.statDate) AS newUsers,
+               (SELECT COUNT(1)
+                FROM user_subscription us
+                WHERE us.status = 'active'
+                  AND us.plan_code != 'free'
+                  AND DATE(us.current_period_start) = dates.statDate) AS newSubscriptions,
+               (SELECT COUNT(1)
+                FROM user_subscription us
+                WHERE us.status = 'active'
+                  AND us.plan_code != 'free'
+                  AND us.current_period_start <![CDATA[<=]]> DATE_ADD(dates.statDate, INTERVAL 1 DAY)
+                  AND us.current_period_end <![CDATA[>]]> dates.statDate) AS subscribedUsers,
+               (SELECT COUNT(1)
+                FROM users u
+                WHERE u.created_at <![CDATA[<]]> DATE_ADD(dates.statDate, INTERVAL 1 DAY))
+                -
+               (SELECT COUNT(1)
+                FROM user_subscription us
+                WHERE us.status = 'active'
+                  AND us.plan_code != 'free'
+                  AND us.current_period_start <![CDATA[<=]]> DATE_ADD(dates.statDate, INTERVAL 1 DAY)
+                  AND us.current_period_end <![CDATA[>]]> dates.statDate) AS ordinaryUsers,
+               (SELECT COALESCE(SUM(d.token_used), 0)
+                FROM user_ai_token_usage_daily d
+                WHERE d.usage_date = dates.statDate) AS freeTokenUsed,
+               (SELECT COALESCE(SUM(e.total_tokens), 0)
+                FROM ai_token_usage_event e
+                INNER JOIN user_subscription us ON us.user_id = e.user_id
+                WHERE DATE(e.occurred_at) = dates.statDate
+                  AND us.status = 'active'
+                  AND us.plan_code != 'free'
+                  AND us.current_period_start <![CDATA[<=]]> e.occurred_at
+                  AND us.current_period_end <![CDATA[>]]> e.occurred_at) AS paidTokenUsed,
+               CASE
+                   WHEN (SELECT COUNT(1) FROM users u WHERE DATE(u.created_at) = dates.statDate) = 0 THEN 0
+                   ELSE ROUND(
+                       (SELECT COUNT(1)
+                        FROM user_subscription us
+                        WHERE us.status = 'active'
+                          AND us.plan_code != 'free'
+                          AND DATE(us.current_period_start) = dates.statDate) * 100.0
+                       /
+                       (SELECT COUNT(1) FROM users u WHERE DATE(u.created_at) = dates.statDate),
+                       2
+                   )
+               END AS subscriptionRate
+        FROM dates
+        ORDER BY dates.statDate DESC
+    </select>
+</mapper>

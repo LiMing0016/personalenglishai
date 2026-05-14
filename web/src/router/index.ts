@@ -17,6 +17,7 @@ import { stageCache, clearStageCache } from '@/stores/stageCache'
 
 const BUSINESS_HOME = '/app'
 const ADMIN_HOME = '/admin/dashboard'
+const OPS_AGENT_HOME = '/ops/agent/runs'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -184,6 +185,21 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminUserDetailPage.vue'),
       },
       {
+        path: 'subscriptions',
+        name: 'AdminSubscriptions',
+        component: () => import('@/pages/admin/AdminSubscriptionsPage.vue'),
+      },
+      {
+        path: 'subscription/redeem-codes',
+        name: 'AdminRedeemCodes',
+        component: () => import('@/pages/admin/AdminRedeemCodesPage.vue'),
+      },
+      {
+        path: 'subscription/quota-ledger',
+        name: 'AdminQuotaLedger',
+        component: () => import('@/pages/admin/AdminQuotaLedgerPage.vue'),
+      },
+      {
         path: 'essays',
         name: 'AdminEssays',
         component: () => import('@/pages/admin/AdminEssaysPage.vue'),
@@ -219,9 +235,75 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminRubricDetailPage.vue'),
       },
       {
+        path: 'prompt-assets',
+        name: 'AdminPromptAssets',
+        component: () => import('@/pages/admin/AdminPromptAssetsPage.vue'),
+      },
+      {
+        path: 'materials',
+        name: 'AdminMaterials',
+        component: () => import('@/pages/admin/AdminMaterialsPage.vue'),
+      },
+      {
+        path: 'scoring-config',
+        name: 'AdminScoringConfig',
+        component: () => import('@/pages/admin/AdminScoringConfigPage.vue'),
+      },
+      {
+        path: 'agent-debug/runs',
+        name: 'AdminAgentDebugRuns',
+        component: () => import('@/pages/ops/agent/OpsAgentRunsPage.vue'),
+      },
+      {
+        path: 'agent-debug/runs/:id',
+        name: 'AdminAgentDebugRunDetail',
+        component: () => import('@/pages/ops/agent/OpsAgentRunDetailPage.vue'),
+      },
+      {
+        path: 'model-usage',
+        name: 'AdminModelUsage',
+        component: () => import('@/pages/admin/AdminModelUsagePage.vue'),
+      },
+      {
         path: 'audit-logs',
         name: 'AdminAuditLogs',
         component: () => import('@/pages/admin/AdminAuditLogsPage.vue'),
+      },
+      {
+        path: 'admin-users',
+        name: 'AdminAdminUsers',
+        component: () => import('@/pages/admin/AdminAdminUsersPage.vue'),
+      },
+    ],
+  },
+  {
+    path: '/ops/agent',
+    component: () => import('@/layouts/OpsAgentLayout.vue'),
+    meta: { public: false, requiresAdmin: true, skipStageCheck: true },
+    children: [
+      {
+        path: '',
+        redirect: OPS_AGENT_HOME,
+      },
+      {
+        path: 'runs',
+        name: 'OpsAgentRuns',
+        component: () => import('@/pages/ops/agent/OpsAgentRunsPage.vue'),
+      },
+      {
+        path: 'runs/:id',
+        name: 'OpsAgentRunDetail',
+        component: () => import('@/pages/ops/agent/OpsAgentRunDetailPage.vue'),
+      },
+      {
+        path: 'prompts',
+        name: 'OpsAgentPrompts',
+        component: () => import('@/pages/ops/agent/OpsAgentPromptsPage.vue'),
+      },
+      {
+        path: 'eval-cases',
+        name: 'OpsAgentEvalCases',
+        component: () => import('@/pages/ops/agent/OpsAgentEvalCasesPage.vue'),
       },
     ],
   },

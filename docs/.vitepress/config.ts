@@ -50,6 +50,7 @@ export default defineConfig({
       { text: '接口', link: '/api/' },
       { text: '数据', link: '/data/' },
       { text: 'AI', link: '/ai/' },
+      { text: 'Admin', link: '/admin/' },
       { text: 'Agent', link: '/agent/' },
       { text: '运行手册', link: '/runbooks/' },
       { text: '测试', link: '/testing/' },
@@ -85,6 +86,7 @@ export default defineConfig({
           text: '接口',
           items: [
             { text: '接口总览', link: '/api/' },
+            { text: 'Admin 订阅与额度', link: '/api/admin-subscription' },
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
@@ -115,13 +117,23 @@ export default defineConfig({
           ]
         }
       ],
+      '/admin/': [
+        {
+          text: 'Admin',
+          items: [
+            { text: 'Admin 后台体验改造', link: '/admin/' }
+          ]
+        }
+      ],
       '/agent/': [
         {
           text: 'Agent',
           items: [
             { text: 'Agent 设计总览', link: '/agent/' },
             { text: '路由 Agent', link: '/agent/路由agent' },
-            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/openai-agents-sdk-study-notes' }
+            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/openai-agents-sdk-study-notes' },
+            { text: 'Agent 可观测性与调试中心', link: '/agent/agent-observability-center' },
+            { text: 'AI 调试端设计', link: '/agent/ai-debug-console' }
           ]
         }
       ],

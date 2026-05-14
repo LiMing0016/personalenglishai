@@ -19,12 +19,14 @@ public final class AdminRoles {
                     AdminPermissions.RUBRICS_READ,
                     AdminPermissions.RUBRICS_WRITE,
                     AdminPermissions.AUDIT_READ,
+                    AdminPermissions.SUBSCRIPTION_READ,
                     AdminPermissions.SUBSCRIPTION_WRITE
             ),
             SUPPORT_ADMIN, Set.of(
                     AdminPermissions.USERS_READ,
                     AdminPermissions.USERS_WRITE,
-                    AdminPermissions.ESSAYS_READ
+                    AdminPermissions.ESSAYS_READ,
+                    AdminPermissions.SUBSCRIPTION_READ
             ),
             CONTENT_ADMIN, Set.of(
                     AdminPermissions.PROMPTS_READ,

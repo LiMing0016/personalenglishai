@@ -58,4 +58,28 @@
         LIMIT 1
     </select>
 
+    <insert id="upsertDailyUsage">
+        INSERT INTO user_ai_token_usage_daily (
+            user_id,
+            usage_date,
+            token_used
+        )
+        VALUES (
+            #{userId},
+            #{usageDate},
+            #{tokenDelta}
+        )
+        ON DUPLICATE KEY UPDATE
+            token_used = token_used + VALUES(token_used),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="selectDailyTokenUsed" resultType="long">
+        SELECT token_used
+        FROM user_ai_token_usage_daily
+        WHERE user_id = #{userId}
+          AND usage_date = #{usageDate}
+        LIMIT 1
+    </select>
+
 </mapper>

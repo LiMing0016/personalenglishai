@@ -14,5 +14,6 @@ related_code:
 ## 当前文档
 
 - [AI Command API](./ai-command.md)
+- [Admin 订阅与额度 API](./admin-subscription.md)
 - [Document API](./document.md)
 - [考试写作题目 API](./writing-ai-exam-prompt.md)

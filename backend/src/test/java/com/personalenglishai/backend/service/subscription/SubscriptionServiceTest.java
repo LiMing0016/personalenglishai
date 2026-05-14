@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -51,13 +52,16 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void defaultUserUsesFreePlanAndMonthlyQuota() {
+    void defaultUserUsesFreePlanAndDailyQuota() {
         var status = service.getCurrentSubscription(1L);
 
         assertThat(status.getPlanCode()).isEqualTo("free");
-        assertThat(status.getMonthlyTokenLimit()).isEqualTo(100_000L);
+        assertThat(status.getQuotaPeriod()).isEqualTo("daily");
+        assertThat(status.getDailyTokenLimit()).isEqualTo(10_000L);
+        assertThat(status.getTokenLimit()).isEqualTo(10_000L);
+        assertThat(status.getUsageDate()).isEqualTo(LocalDate.now(FIXED_CLOCK));
         assertThat(status.getTokenUsed()).isZero();
-        assertThat(status.getTokenRemaining()).isEqualTo(100_000L);
+        assertThat(status.getTokenRemaining()).isEqualTo(10_000L);
     }
 
     @Test
@@ -65,7 +69,9 @@ class SubscriptionServiceTest {
         var status = service.mockPurchase(1L, "basic");
 
         assertThat(status.getPlanCode()).isEqualTo("basic");
+        assertThat(status.getQuotaPeriod()).isEqualTo("monthly");
         assertThat(status.getMonthlyTokenLimit()).isEqualTo(1_000_000L);
+        assertThat(status.getTokenLimit()).isEqualTo(1_000_000L);
         assertThat(status.getCurrentPeriodStart()).isEqualTo(LocalDateTime.now(FIXED_CLOCK));
         assertThat(status.getCurrentPeriodEnd()).isEqualTo(LocalDateTime.now(FIXED_CLOCK).plusDays(30));
     }
@@ -180,7 +186,7 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void recordsUsageIntoMonthlyAggregateIdempotently() {
+    void recordsFreeUsageIntoDailyAggregateIdempotently() {
         var usage = new AiTokenUsageRecord(
                 "usage-1",
                 1L,
@@ -199,15 +205,74 @@ class SubscriptionServiceTest {
         assertThat(service.recordUsage(usage)).isFalse();
 
         var status = service.getCurrentSubscription(1L);
+        assertThat(status.getQuotaPeriod()).isEqualTo("daily");
         assertThat(status.getTokenUsed()).isEqualTo(145L);
-        assertThat(status.getTokenRemaining()).isEqualTo(99_855L);
+        assertThat(status.getTokenRemaining()).isEqualTo(9_855L);
+        assertThat(usageMapper.monthly).isEmpty();
+    }
+
+    @Test
+    void paidUsersStillRecordUsageIntoMonthlyAggregate() {
+        service.mockPurchase(1L, "basic");
+
+        assertThat(service.recordUsage(new AiTokenUsageRecord(
+                "usage-paid-1",
+                1L,
+                "writing.evaluate",
+                "openai",
+                "gpt-4o",
+                100L,
+                0L,
+                20L,
+                0L,
+                null,
+                "trace-paid-1"
+        ))).isTrue();
+
+        var status = service.getCurrentSubscription(1L);
+        assertThat(status.getQuotaPeriod()).isEqualTo("monthly");
+        assertThat(status.getTokenUsed()).isEqualTo(120L);
+        assertThat(status.getTokenRemaining()).isEqualTo(999_880L);
+        assertThat(usageMapper.daily).isEmpty();
+    }
+
+    @Test
+    void expiredPaidSubscriptionFallsBackToFreeDailyQuota() {
+        service.mockPurchase(1L, "basic");
+        subscriptionMapper.subscriptions.get(1L).setCurrentPeriodEnd(LocalDateTime.now(FIXED_CLOCK).minusSeconds(1));
+
+        assertThat(service.recordUsage(new AiTokenUsageRecord(
+                "usage-expired-1", 1L, "writing.evaluate", "openai", "gpt-4o",
+                300L, 0L, 0L, 0L, null, "trace-expired-1"
+        ))).isTrue();
+
+        var status = service.getCurrentSubscription(1L);
+        assertThat(status.getPlanCode()).isEqualTo("free");
+        assertThat(status.getQuotaPeriod()).isEqualTo("daily");
+        assertThat(status.getTokenUsed()).isEqualTo(300L);
+        assertThat(usageMapper.monthly).isEmpty();
+    }
+
+    @Test
+    void updatedFreeDailyQuotaImmediatelyAffectsQuotaCheck() {
+        planMapper.updateQuotaRule("free", 120L, 100_000L);
+        service.recordUsage(new AiTokenUsageRecord(
+                "usage-free-limit-1", 1L, "writing.evaluate", "openai", "gpt-4o",
+                120L, 0L, 0L, 0L, null, "trace-free-limit-1"
+        ));
+
+        assertThat(service.getCurrentSubscription(1L).getTokenLimit()).isEqualTo(120L);
+        assertThatThrownBy(() -> service.assertAiTokenQuotaAvailable(1L))
+                .isInstanceOf(BizException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED);
     }
 
     @Test
     void quotaCheckAllowsCurrentRequestUntilAlreadyOverLimit() {
         service.recordUsage(new AiTokenUsageRecord(
                 "usage-1", 1L, "writing.evaluate", "openai", "gpt-4o",
-                99_999L, 0L, 0L, 0L, null, "trace-1"));
+                9_999L, 0L, 0L, 0L, null, "trace-1"));
 
         service.assertAiTokenQuotaAvailable(1L);
 
@@ -236,17 +301,18 @@ class SubscriptionServiceTest {
         private final Map<String, SubscriptionPlan> plans = new LinkedHashMap<>();
 
         private FakeSubscriptionPlanMapper() {
-            add("free", "Free", 100_000L, 0);
-            add("basic", "Basic", 1_000_000L, 1);
-            add("pro", "Pro", 5_000_000L, 2);
-            add("premium", "Premium", 20_000_000L, 3);
+            add("free", "Free", 100_000L, 10_000L, 0);
+            add("basic", "Basic", 1_000_000L, null, 1);
+            add("pro", "Pro", 5_000_000L, null, 2);
+            add("premium", "Premium", 20_000_000L, null, 3);
         }
 
-        private void add(String code, String name, long limit, int sortOrder) {
+        private void add(String code, String name, long monthlyLimit, Long dailyLimit, int sortOrder) {
             SubscriptionPlan plan = new SubscriptionPlan();
             plan.setPlanCode(code);
             plan.setName(name);
-            plan.setMonthlyTokenLimit(limit);
+            plan.setMonthlyTokenLimit(monthlyLimit);
+            plan.setDailyTokenLimit(dailyLimit);
             plan.setSortOrder(sortOrder);
             plans.put(code, plan);
         }
@@ -259,6 +325,17 @@ class SubscriptionServiceTest {
         @Override
         public SubscriptionPlan findByPlanCode(String planCode) {
             return plans.get(planCode);
+        }
+
+        @Override
+        public int updateQuotaRule(String planCode, Long dailyTokenLimit, Long monthlyTokenLimit) {
+            SubscriptionPlan plan = plans.get(planCode);
+            if (plan == null) {
+                return 0;
+            }
+            plan.setDailyTokenLimit(dailyTokenLimit);
+            plan.setMonthlyTokenLimit(monthlyTokenLimit);
+            return 1;
         }
     }
 
@@ -280,6 +357,7 @@ class SubscriptionServiceTest {
     private static final class FakeAiTokenUsageMapper implements AiTokenUsageMapper {
         private final Map<String, AiTokenUsageEvent> events = new LinkedHashMap<>();
         private final Map<String, UserAiTokenUsageMonthly> monthly = new LinkedHashMap<>();
+        private final Map<String, Long> daily = new LinkedHashMap<>();
 
         @Override
         public int insertIgnoreEvent(AiTokenUsageEvent event) {
@@ -308,6 +386,18 @@ class SubscriptionServiceTest {
         public Long selectMonthlyTokenUsed(Long userId, String usageMonth) {
             UserAiTokenUsageMonthly row = monthly.get(userId + ":" + usageMonth);
             return row == null ? null : row.getTokenUsed();
+        }
+
+        @Override
+        public int upsertDailyUsage(Long userId, LocalDate usageDate, Long tokenDelta) {
+            String key = userId + ":" + usageDate;
+            daily.put(key, daily.getOrDefault(key, 0L) + tokenDelta);
+            return 1;
+        }
+
+        @Override
+        public Long selectDailyTokenUsed(Long userId, LocalDate usageDate) {
+            return daily.get(userId + ":" + usageDate);
         }
     }
 

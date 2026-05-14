@@ -11,4 +11,8 @@ public interface SubscriptionPlanMapper {
     List<SubscriptionPlan> selectActivePlans();
 
     SubscriptionPlan findByPlanCode(@Param("planCode") String planCode);
+
+    int updateQuotaRule(@Param("planCode") String planCode,
+                        @Param("dailyTokenLimit") Long dailyTokenLimit,
+                        @Param("monthlyTokenLimit") Long monthlyTokenLimit);
 }
