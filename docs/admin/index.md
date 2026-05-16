@@ -11,6 +11,9 @@ related_code:
   - web/src/api/admin.ts
   - backend/src/main/java/com/personalenglishai/backend/controller/admin/
 related_docs:
+  - docs/admin/current-admin-product-design.md
+  - docs/admin/user-center-design.md
+  - docs/admin/bi-analytics-design.md
   - docs/agent/agent-observability-center.md
   - docs/ai-debug/index.md
   - docs/product/subscription/subscription-token-quota.md
@@ -24,6 +27,12 @@ related_docs:
 
 首版采用“运营工作台 + 资源模块”的信息架构。Dashboard 负责发现问题和进入高频任务；用户、订阅、作文、内容资产、AI 与 Agent、审计系统按运营处理路径分组。AI 调试能力保留为后台支持入口，不替代业务管理员端主线。
 
+用户中心的后续演进采用“用户索引页 + 用户摘要抽屉 + 用户 360 详情页 + 独立业务模块反查”的结构，详见 [Admin 用户中心设计方案](./user-center-design.md)。
+
+BI 分析后台作为 `/admin` 下的独立数据分析模块演进，不塞进用户中心或普通 Dashboard。首版采用“固定指标看板 + Mock 数据 + API 契约预留”的前端先行方案，详见 [Admin BI 分析后台前端方案](./bi-analytics-design.md)。
+
+当前分支已实现的后台壳、用户中心、订阅与权益、Agent Debug 和 BI 骨架状态，统一记录在 [当前管理员端产品说明与设计方案](./current-admin-product-design.md)。该文档用于区分“已经可用的能力”和“基于视觉稿继续补齐的目标形态”。
+
 ## 范围
 
 覆盖：
@@ -35,6 +44,7 @@ related_docs:
 - 内容资产：题库、Rubric、Prompt、素材、评分配置。
 - AI 与 Agent：Agent Debug Center、模型用量、Prompt 调试入口。
 - 审计与系统：管理员操作日志、权限可见性、系统配置入口。
+- 数据分析：增长、活跃、订阅、写作、AI 用量、漏斗和导出任务。
 
 不覆盖：
 
@@ -42,6 +52,7 @@ related_docs:
 - 立即重做全部后端 admin API。
 - 首期引入新的前端框架、组件库或状态层。
 - 在业务后台内嵌 Langfuse、DeepEval 或第三方控制台。
+- 首期实现自由拖拽 BI、自定义 SQL 查询或完整数据仓库。
 
 ## 设计原则
 
@@ -63,6 +74,7 @@ flowchart TB
   ADMIN --> CONTENT["内容资产"]
   ADMIN --> AI["AI 与 Agent"]
   ADMIN --> SYSTEM["审计与系统"]
+  ADMIN --> ANALYTICS["数据分析 BI"]
 
   USERS --> USER_LIST["用户列表"]
   USERS --> USER_DETAIL["用户详情"]
@@ -88,6 +100,13 @@ flowchart TB
   SYSTEM --> AUDIT["审计日志"]
   SYSTEM --> ADMIN_USERS["管理员权限"]
   SYSTEM --> SETTINGS["系统配置"]
+
+  ANALYTICS --> ANALYTICS_OVERVIEW["BI 总览"]
+  ANALYTICS --> ANALYTICS_USERS["用户分析"]
+  ANALYTICS --> ANALYTICS_SUBS["订阅分析"]
+  ANALYTICS --> ANALYTICS_WRITING["写作分析"]
+  ANALYTICS --> ANALYTICS_AI["AI 用量"]
+  ANALYTICS --> ANALYTICS_FUNNEL["转化漏斗"]
 ```
 
 ## 导航结构
@@ -97,7 +116,7 @@ flowchart TB
 | 分组 | 菜单 | 路由建议 | 说明 |
 | --- | --- | --- | --- |
 | 总览 | Dashboard | `/admin/dashboard` | 运营概览和待处理任务 |
-| 用户运营 | 用户 | `/admin/users` | 用户搜索、状态治理、画像摘要 |
+| 用户运营 | 用户 | `/admin/users` | 用户搜索、状态治理、画像、订阅和额度摘要 |
 | 订阅与权益 | 订阅用户 | `/admin/subscriptions` | 订阅状态、套餐、到期、异常 |
 | 订阅与权益 | 兑换码 | `/admin/subscription/redeem-codes` | 生成和追踪兑换码 |
 | 作文与评测 | 作文排查 | `/admin/essays` | 作文、评测结果、异步任务状态 |
@@ -106,8 +125,14 @@ flowchart TB
 | 内容资产 | Prompt | `/admin/prompt-assets` | 业务 Prompt、版本、启停 |
 | 内容资产 | 素材 | `/admin/materials` | 写作素材、范文、表达库 |
 | 内容资产 | 评分配置 | `/admin/scoring-config` | 模式、分值、规则映射 |
-| AI 与 Agent | Agent Debug | `/admin/agent-debug/runs` | Agent run 列表和详情 |
+| AI 与 Agent | Agent Debug | `/ops/agent/runs` | Agent run 列表和详情 |
 | AI 与 Agent | 模型用量 | `/admin/model-usage` | token、成本、模型分布 |
+| 数据分析 | BI 总览 | `/admin/analytics` | 固定指标看板，首版可接 Mock |
+| 数据分析 | 用户分析 | `/admin/analytics/users` | 增长、活跃、留存、学段分布 |
+| 数据分析 | 订阅分析 | `/admin/analytics/subscriptions` | 转化、套餐、额度消耗 |
+| 数据分析 | 写作分析 | `/admin/analytics/writing` | 作文提交、评分完成率、分数分布 |
+| 数据分析 | AI 用量 | `/admin/analytics/ai-usage` | 模型、token、失败率、成本估算 |
+| 数据分析 | 转化漏斗 | `/admin/analytics/funnel` | 注册到订阅漏斗 |
 | 审计与系统 | 审计日志 | `/admin/audit-logs` | 管理员操作追踪 |
 | 审计与系统 | 管理员权限 | `/admin/admin-users` | 角色和权限分配 |
 
@@ -158,13 +183,13 @@ Dashboard 是运营入口，不是装饰性数据大屏。
 
 ### 用户运营
 
-用户列表支持按关键词、状态、学段、注册来源、管理员角色、最近活跃时间筛选。
+用户列表支持按关键词、状态、学段、注册来源、账号角色、管理员角色、订阅套餐、订阅状态、是否超额、注册时间和最近活跃时间筛选。
 
 用户详情按运营视角组织：
 
 - 账号信息：邮箱、手机号、昵称、状态、注册来源、最近活跃。
 - 学习信息：学段、写作提交、最近评测、能力画像摘要。
-- 权益信息：当前套餐、额度、兑换码、到期时间。
+- 权益信息：当前套餐、订阅状态、额度周期、已用额度、剩余额度、是否超额和到期时间。
 - 治理操作：禁用 / 启用、管理员角色、备注。
 - 关联记录：作文、订阅、审计。
 
@@ -214,11 +239,26 @@ AI 与 Agent 是排查和质量治理入口。
 
 首期包括：
 
-- Agent Debug：从 `/admin/agent-debug/runs` 进入 run 列表和详情。
+- Agent Debug：从 `/ops/agent/runs` 进入 run 列表和详情。
 - 模型用量：按模型、workflow、日期统计 token 和成本。
 - Prompt 调试：查看 Prompt snapshot、prompt key、版本和 hash。
 
 它可以复用 `docs/ai-debug/` 的能力设计，但路由和导航应合并到 `/admin` 下，避免业务后台和 AI 调试后台割裂。
+
+### 数据分析
+
+数据分析模块用于固定 BI 看板，不替代用户中心和业务排查模块。
+
+首期页面：
+
+- BI 总览：新增用户、活跃用户、订阅新增、作文提交、AI token、失败率和异常提醒。
+- 用户分析：增长、活跃、留存、学段分布和用户分群。
+- 订阅分析：订阅转化、套餐分布、额度消耗、即将到期和超额用户。
+- 写作分析：作文提交、评分完成率、分数分布、失败任务和高使用题目。
+- AI 用量：模型分布、token 趋势、workflow 分布、失败原因和成本估算。
+- 转化漏斗：注册、完善学段、首篇作文、完成评分、订阅。
+
+首版允许使用 Mock 数据完成前端原型和交互，但 DTO 和 API 层必须按真实接口形态设计，后续逐块接入聚合接口。
 
 ### 审计与系统
 
@@ -242,6 +282,19 @@ AI 与 Agent 是排查和质量治理入口。
 | `support_admin` | 用户、作文排查、订阅只读或有限操作 |
 | `content_admin` | 题库、Rubric、Prompt、素材、评分配置 |
 
+本地开发种子账号由 `backend/src/main/resources/db/seed_admin_accounts.sql` 维护：
+
+| 账号 | 角色 | 初始密码 |
+| --- | --- | --- |
+| `superadmin@peai.local` | `super_admin` | `Admin123!` |
+| `supportadmin@peai.local` | `support_admin` | `Admin123!` |
+| `contentadmin@peai.local` | `content_admin` | `Admin123!` |
+| `admin01@admin.com` | `super_admin` | `Kiss497.*` |
+| `admin02@admin.com` | `super_admin` | `Kiss497.*` |
+| `admin03@admin.com` | `super_admin` | `Kiss497.*` |
+
+如果本地数据库已有旧账号，重新执行该脚本会刷新密码 hash、邮箱验证状态、管理员角色和基础 profile。
+
 建议补充权限：
 
 | 权限 | 用途 |
@@ -255,6 +308,9 @@ AI 与 Agent 是排查和质量治理入口。
 | `admin.agent_debug.read` | 查看 Agent run |
 | `admin.agent_debug.export` | 导出 debug JSON |
 | `admin.model_usage.read` | 查看模型用量 |
+| `admin.analytics.read` | 查看 BI 看板 |
+| `admin.analytics.export` | 导出 BI 数据 |
+| `admin.analytics.cost.read` | 查看成本估算 |
 
 前端根据权限裁剪导航和按钮；后端仍必须在 controller 或 service 层执行权限校验。
 
@@ -289,6 +345,14 @@ AI 与 Agent 是排查和质量治理入口。
 - 模型用量接真实聚合接口。
 - Prompt 调试和 eval case 进入后台。
 
+### P3：BI 前端先行和逐块接入
+
+- 新增 `/admin/analytics` 数据分析分组。
+- 使用 Mock 数据完成 BI 总览、用户、订阅、写作、AI 用量和漏斗页面。
+- 抽象统一筛选器、KPI 卡、图表面板和数据表组件。
+- 优先复用现有订阅、用户、作文、审计接口。
+- 指标稳定后新增聚合接口和快照能力。
+
 ## 验收标准
 
 - `/admin` 左侧导航按方案 A 分组展示。
@@ -296,6 +360,7 @@ AI 与 Agent 是排查和质量治理入口。
 - 现有用户、作文、题库、Rubric、审计页面仍可访问。
 - 没有权限的模块不展示入口，有权限但暂无实现的模块展示明确空状态。
 - 列表页和详情页遵循统一结构。
+- BI 页面可以先使用 Mock 数据，但必须显示数据来源并通过统一 API 层获取。
 - 危险操作有二次确认，关键操作写审计日志。
 - `web` 构建通过。
 - 文档站构建通过。

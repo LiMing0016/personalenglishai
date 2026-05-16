@@ -233,6 +233,34 @@
         ORDER BY p.sort_order ASC
     </select>
 
+    <select id="selectUserDiagnostics" resultType="java.util.LinkedHashMap">
+        SELECT
+            COUNT(1) AS databaseUserRows,
+            SUM(CASE WHEN u.status = 'active' THEN 1 ELSE 0 END) AS activeUsers,
+            SUM(CASE WHEN u.status = 'disabled' THEN 1 ELSE 0 END) AS disabledUsers,
+            COUNT(DISTINCT aur.user_id) AS adminUsers,
+            COUNT(1) - COUNT(DISTINCT aur.user_id) AS regularUsers,
+            MAX(u.created_at) AS latestUserCreatedAt
+        FROM users u
+        LEFT JOIN admin_user_role aur ON aur.user_id = u.id
+    </select>
+
+    <select id="selectAdminUserPreview" resultType="java.util.LinkedHashMap">
+        SELECT u.id AS userId,
+               u.email,
+               u.nickname,
+               u.status,
+               up.study_stage AS studyStage,
+               u.last_active_at AS lastActiveAt,
+               GROUP_CONCAT(aur.role ORDER BY aur.role SEPARATOR ',') AS adminRolesCsv
+        FROM users u
+        INNER JOIN admin_user_role aur ON aur.user_id = u.id
+        LEFT JOIN user_profile up ON up.user_id = u.id
+        GROUP BY u.id, u.email, u.nickname, u.status, up.study_stage, u.last_active_at, u.created_at
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT 6
+    </select>
+
     <select id="selectDailyStats" resultType="java.util.LinkedHashMap">
         WITH RECURSIVE dates AS (
             SELECT #{dateFrom} AS statDate

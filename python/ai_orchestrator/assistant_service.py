@@ -403,10 +403,8 @@ class AssistantAgentService:
         study_context = request.study_context
         client_meta = request.client_meta
         metadata = {
-            "app": "peai",
             "environment": os.getenv("APP_ENV") or os.getenv("ENV") or "local",
             "component": "assistant_agent_service",
-            "run_type": "live",
             "run_id": run_id,
             "trace_id": trace_id,
             "conversation_id": request.app_conversation_id,
@@ -416,14 +414,10 @@ class AssistantAgentService:
             "intent": request.intent,
             "scope": scope,
             "study_stage": study_context.study_stage if study_context is not None else None,
-            "cefr_level": study_context.cefr_level if study_context is not None else None,
             "target_exam": study_context.target_exam if study_context is not None else None,
-            "response_language": study_context.response_language if study_context is not None else None,
             "source_page": client_meta.source_page if client_meta is not None else None,
-            "timezone": client_meta.timezone if client_meta is not None else None,
             "attachment_count": len(request.attachments),
             "has_selection": request.selection is not None,
-            "has_attachments": bool(request.attachments),
             "route_decision_enabled": self._route_decision_enabled,
         }
         return {key: _trace_metadata_value(value) for key, value in metadata.items()}
@@ -438,17 +432,26 @@ class AssistantAgentService:
         agent_name: str,
         route_decision: RoutingDecision | None,
     ) -> dict[str, object]:
-        metadata = self._assistant_trace_metadata(request, run_id=run_id, trace_id=trace_id, scope=scope)
-        metadata.update(
-            {
-                "component": "assistant_target_agent",
-                "agent_name": agent_name,
-                "route_type": route_decision.route_type if route_decision is not None else "",
-                "workflow": route_decision.workflow if route_decision is not None else "",
-                "target_agent": route_decision.target_agent if route_decision is not None else "",
-                "route_confidence": route_decision.confidence if route_decision is not None else "",
-            }
-        )
+        study_context = request.study_context
+        client_meta = request.client_meta
+        metadata = {
+            "environment": os.getenv("APP_ENV") or os.getenv("ENV") or "local",
+            "component": "assistant_target_agent",
+            "run_id": run_id,
+            "trace_id": trace_id,
+            "conversation_id": request.app_conversation_id,
+            "client_message_id": request.client_message_id,
+            "model": self.model,
+            "mode": request.mode,
+            "intent": request.intent,
+            "scope": scope,
+            "study_stage": study_context.study_stage if study_context is not None else None,
+            "target_exam": study_context.target_exam if study_context is not None else None,
+            "source_page": client_meta.source_page if client_meta is not None else None,
+            "agent_name": agent_name,
+            "route_type": route_decision.route_type if route_decision is not None else "",
+            "target_agent": route_decision.target_agent if route_decision is not None else "",
+        }
         return {key: _trace_metadata_value(value) for key, value in metadata.items()}
 
     def _legacy_chat_trace_metadata(
@@ -498,6 +501,12 @@ class AssistantAgentService:
             flush_traces()
         except Exception:
             log.warning("Assistant workflow trace flush failed", exc_info=True)
+        try:
+            from python.ai_orchestrator.observability import flush_observability
+
+            flush_observability()
+        except Exception:
+            log.warning("Assistant observability flush failed", exc_info=True)
 
     async def run_assistant_request(
         self,

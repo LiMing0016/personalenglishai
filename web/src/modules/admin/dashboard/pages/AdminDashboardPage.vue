@@ -138,6 +138,7 @@ import DashboardKpiCard from '../components/DashboardKpiCard.vue'
 import DashboardSection from '../components/DashboardSection.vue'
 import ModelUsagePanel from '../components/ModelUsagePanel.vue'
 import SubscriptionMetricsPanel from '../components/SubscriptionMetricsPanel.vue'
+import { buildAdminDashboardQuickLinks } from '../adminQuickLinks.ts'
 import { adminDashboardApi } from '../api/adminDashboardApi'
 import type {
   AdminDashboardFilter,
@@ -198,13 +199,12 @@ const hiddenModules = computed(() => {
   return items
 })
 const quickLinks = computed(() => {
-  const links = [{ to: '/admin/dashboard', label: 'Dashboard' }]
-  if (canViewUsers.value) links.push({ to: '/admin/users', label: '用户列表' })
-  if (canViewWriting.value) links.push({ to: '/admin/essays', label: '作文排查' })
-  if (canViewContent.value) links.push({ to: '/admin/prompts', label: '题库管理' })
-  if (canViewContent.value) links.push({ to: '/admin/rubrics', label: 'Rubric 管理' })
-  if (canViewAudit.value) links.push({ to: '/admin/audit-logs', label: '审计日志' })
-  return links
+  return buildAdminDashboardQuickLinks({
+    canViewUsers: canViewUsers.value,
+    canViewWriting: canViewWriting.value,
+    canViewContent: canViewContent.value,
+    canViewAudit: canViewAudit.value,
+  })
 })
 const filterSummary = computed(() => {
   const meta = payload.value?.meta.filters

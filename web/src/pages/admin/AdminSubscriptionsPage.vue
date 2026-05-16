@@ -61,6 +61,58 @@
           </div>
         </div>
       </div>
+
+      <div class="admin-debug-grid">
+        <div class="admin-debug-panel">
+          <div class="admin-debug-heading">
+            <h2>数据库排查</h2>
+            <span>users / admin_user_role</span>
+          </div>
+          <div class="admin-debug-kpis">
+            <div>
+              <span>用户表行数</span>
+              <strong>{{ formatNumber(overview.userDiagnostics.databaseUserRows) }}</strong>
+            </div>
+            <div>
+              <span>管理员账号</span>
+              <strong>{{ formatNumber(overview.userDiagnostics.adminUsers) }}</strong>
+            </div>
+            <div>
+              <span>active</span>
+              <strong>{{ formatNumber(overview.userDiagnostics.activeUsers) }}</strong>
+            </div>
+            <div>
+              <span>disabled</span>
+              <strong>{{ formatNumber(overview.userDiagnostics.disabledUsers) }}</strong>
+            </div>
+          </div>
+          <div class="admin-debug-foot">
+            最新用户创建时间：{{ formatDateTime(overview.userDiagnostics.latestUserCreatedAt) }}
+          </div>
+        </div>
+
+        <div class="admin-debug-panel">
+          <div class="admin-debug-heading">
+            <h2>管理员账号</h2>
+            <span>{{ formatNumber(overview.userDiagnostics.adminUsers) }} 位</span>
+          </div>
+          <div class="admin-admin-preview">
+            <div v-for="admin in overview.adminUserPreview" :key="admin.userId" class="admin-admin-preview-row">
+              <div>
+                <strong>{{ admin.nickname || admin.email || `ID ${admin.userId}` }}</strong>
+                <span>{{ admin.email || '-' }}</span>
+              </div>
+              <div>
+                <span>{{ admin.adminRoles.join(', ') || '-' }}</span>
+                <span>{{ admin.status }} · {{ admin.studyStage || '-' }}</span>
+              </div>
+            </div>
+            <div v-if="overview.adminUserPreview.length === 0" class="admin-empty-small">
+              暂无管理员账号。
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="admin-card">
@@ -260,7 +312,9 @@ import {
   type AdminSubscriptionDailyStat,
   type AdminSubscriptionListItem,
   type AdminSubscriptionOverview,
+  type AdminSubscriptionAdminUserPreview,
   type AdminSubscriptionPlanDistribution,
+  type AdminSubscriptionUserDiagnostics,
   type AdminSubscriptionQuotaRule,
 } from '@/api/admin'
 import { showToast } from '@/utils/toast'
@@ -296,6 +350,8 @@ const overview = reactive<AdminSubscriptionOverview>({
   overLimitUsers: 0,
   sevenDaySubscriptionRate: 0,
   planDistribution: [],
+  userDiagnostics: emptyUserDiagnostics(),
+  adminUserPreview: [],
 })
 
 const filters = reactive({
@@ -421,6 +477,8 @@ function normalizeOverview(value: Partial<AdminSubscriptionOverview>): AdminSubs
     overLimitUsers: Number(value.overLimitUsers ?? 0),
     sevenDaySubscriptionRate: Number(value.sevenDaySubscriptionRate ?? 0),
     planDistribution: normalizePlanDistribution(value.planDistribution ?? []),
+    userDiagnostics: normalizeUserDiagnostics(value.userDiagnostics),
+    adminUserPreview: normalizeAdminUserPreview(value.adminUserPreview ?? []),
   }
 }
 
@@ -434,6 +492,40 @@ function normalizePlanDistribution(values: AdminSubscriptionPlanDistribution[]):
       sortOrder: Number(value.sortOrder ?? 0),
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+function emptyUserDiagnostics(): AdminSubscriptionUserDiagnostics {
+  return {
+    databaseUserRows: 0,
+    activeUsers: 0,
+    disabledUsers: 0,
+    adminUsers: 0,
+    regularUsers: 0,
+    latestUserCreatedAt: null,
+  }
+}
+
+function normalizeUserDiagnostics(value?: Partial<AdminSubscriptionUserDiagnostics>): AdminSubscriptionUserDiagnostics {
+  return {
+    databaseUserRows: Number(value?.databaseUserRows ?? 0),
+    activeUsers: Number(value?.activeUsers ?? 0),
+    disabledUsers: Number(value?.disabledUsers ?? 0),
+    adminUsers: Number(value?.adminUsers ?? 0),
+    regularUsers: Number(value?.regularUsers ?? 0),
+    latestUserCreatedAt: value?.latestUserCreatedAt ? String(value.latestUserCreatedAt) : null,
+  }
+}
+
+function normalizeAdminUserPreview(values: AdminSubscriptionAdminUserPreview[]): AdminSubscriptionAdminUserPreview[] {
+  return values.map((value) => ({
+    userId: Number(value.userId),
+    email: value.email ? String(value.email) : null,
+    nickname: value.nickname ? String(value.nickname) : null,
+    status: String(value.status ?? '-'),
+    studyStage: value.studyStage ? String(value.studyStage) : null,
+    adminRoles: Array.isArray(value.adminRoles) ? value.adminRoles.map(String) : [],
+    lastActiveAt: value.lastActiveAt ? String(value.lastActiveAt) : null,
+  }))
 }
 
 function normalizeDailyStat(value: AdminSubscriptionDailyStat): AdminSubscriptionDailyStat {
@@ -561,6 +653,96 @@ onBeforeUnmount(() => {
   margin-top: 14px;
 }
 
+.admin-debug-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.admin-debug-panel {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+}
+
+.admin-debug-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--admin-muted);
+}
+
+.admin-debug-heading h2 {
+  margin: 0;
+  color: var(--admin-text);
+  font-size: 18px;
+}
+
+.admin-debug-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-debug-kpis div {
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--admin-surface-alt);
+}
+
+.admin-debug-kpis span,
+.admin-debug-foot,
+.admin-admin-preview-row span {
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.admin-debug-kpis strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--admin-text);
+  font-size: 22px;
+}
+
+.admin-debug-foot {
+  margin-top: 12px;
+}
+
+.admin-admin-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-admin-preview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-admin-preview-row:last-child {
+  border-bottom: none;
+}
+
+.admin-admin-preview-row div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-admin-preview-row strong,
+.admin-admin-preview-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .admin-distribution-panel {
   border: 1px solid var(--admin-border);
   border-radius: 8px;
@@ -645,6 +827,10 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
+  .admin-debug-grid {
+    grid-template-columns: 1fr;
+  }
+
   .admin-grid-four {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -652,6 +838,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 680px) {
   .admin-grid-four {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-debug-kpis,
+  .admin-admin-preview-row {
     grid-template-columns: 1fr;
   }
 }

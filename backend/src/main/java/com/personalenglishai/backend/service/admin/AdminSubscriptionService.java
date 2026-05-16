@@ -100,6 +100,8 @@ public class AdminSubscriptionService {
                 now
         ));
         overview.put("planDistribution", subscriptionQueryMapper.selectPlanDistribution(now));
+        overview.put("userDiagnostics", subscriptionQueryMapper.selectUserDiagnostics());
+        overview.put("adminUserPreview", normalizeAdminUserPreview(subscriptionQueryMapper.selectAdminUserPreview()));
         return overview;
     }
 
@@ -173,6 +175,19 @@ public class AdminSubscriptionService {
         map.put("active", plan.getActive());
         map.put("sortOrder", plan.getSortOrder());
         return map;
+    }
+
+    private List<Map<String, Object>> normalizeAdminUserPreview(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        return rows.stream().map(row -> {
+            Map<String, Object> item = new LinkedHashMap<>(row);
+            Object csv = item.remove("adminRolesCsv");
+            item.put("adminRoles", csv == null || String.valueOf(csv).isBlank()
+                    ? List.of() : List.of(String.valueOf(csv).split(",")));
+            return item;
+        }).toList();
     }
 
     private static Long requirePositive(Long value, String message) {

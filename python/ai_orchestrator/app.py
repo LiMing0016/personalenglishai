@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 try:
     from .assistant_service import AssistantAgentService, AssistantConfigError
     from .env_loader import load_orchestrator_env
+    from .observability import configure_observability
     from .schemas.assistant_request import AssistantRequest
     from .schemas.chat import AssistantRunResponse
     from .schemas.chat import ChatResponse
@@ -24,6 +25,7 @@ try:
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
     from env_loader import load_orchestrator_env
+    from observability import configure_observability
     from schemas.assistant_request import AssistantRequest
     from schemas.chat import AssistantRunResponse
     from schemas.chat import ChatResponse
@@ -38,6 +40,7 @@ except ImportError:  # pragma: no cover - script mode fallback
 
 
 load_orchestrator_env()
+observability_status = configure_observability()
 
 app = FastAPI(title="PEAI Assistant Orchestrator", version="0.1.0")
 app.add_middleware(
@@ -61,6 +64,7 @@ def health() -> dict[str, object]:
         "configured": service.is_configured(),
         "promptSheetConfigured": prompt_sheet_service.is_configured(),
         "model": service.model,
+        "langfuseTracing": observability_status.configured,
     }
 
 

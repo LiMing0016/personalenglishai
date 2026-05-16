@@ -347,6 +347,15 @@ const routes: RouteRecordRaw[] = [
   },
 ]
 
+if (import.meta.env.DEV) {
+  routes.push({
+    path: '/dev/admin-login',
+    name: 'AdminDevLoginBridge',
+    component: () => import('@/pages/dev/AdminDevLoginBridge.vue'),
+    meta: { public: true },
+  })
+}
+
 const router = createRouter({
   history: createWebHistory(),
   routes,

@@ -188,6 +188,9 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | `ASSISTANT_ORCHESTRATOR_TIMEOUT_MS` | 后端调用 Python orchestrator 超时。 |
 | `AI_ASSISTANT_MODEL` | Python orchestrator 使用的助手模型。 |
 | `AI_ASSISTANT_SESSION_DB_PATH` | Python orchestrator 会话数据库路径。 |
+| `LANGFUSE_ENABLED` | 是否启用 Python OpenAI Agents SDK 到 Langfuse 的外部追踪导出，默认 `false`。 |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse 项目 API key。 |
+| `LANGFUSE_BASE_URL` | Langfuse Cloud 区域地址或自托管地址。兼容旧变量 `LANGFUSE_HOST`。 |
 | `AI_CONTEXT_CONVERSATION_PROCESSOR` | 对话上下文处理方式：`rule` / `python` / `hybrid`。 |
 | `AI_CONTEXT_CONVERSATION_PYTHON_ENABLED` | 是否启用 Python 上下文处理。 |
 | `AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL` | Python context sidecar 地址。 |

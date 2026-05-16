@@ -189,6 +189,7 @@ python\ai_orchestrator\.venv\Scripts\python.exe -m uvicorn python.ai_orchestrato
 | `REDIS_HOST` / `REDIS_PORT` | Redis 地址 |
 | `OPENAI_API_KEY` | Python orchestrator 调用 OpenAI 时使用 |
 | `AI_ASSISTANT_MODEL` | 学习助手模型，默认见 `docker-compose.yml` |
+| `LANGFUSE_ENABLED` / `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` | 可选 Langfuse 外部追踪导出 |
 
 完整变量说明见 [docs/runbooks/environment-variables.md](docs/runbooks/environment-variables.md)。
 

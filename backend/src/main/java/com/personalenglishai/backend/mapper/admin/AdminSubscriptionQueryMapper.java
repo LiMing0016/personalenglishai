@@ -38,6 +38,10 @@ public interface AdminSubscriptionQueryMapper {
 
     List<Map<String, Object>> selectPlanDistribution(@Param("now") LocalDateTime now);
 
+    Map<String, Object> selectUserDiagnostics();
+
+    List<Map<String, Object>> selectAdminUserPreview();
+
     List<Map<String, Object>> selectDailyStats(@Param("dateFrom") LocalDate dateFrom,
                                                @Param("dateTo") LocalDate dateTo);
 }

@@ -127,6 +127,7 @@ class AssistantRequest(BaseModel):
 
 class AssistantUsage(BaseModel):
     input_tokens: int | None = Field(default=None, alias="inputTokens")
+    cached_input_tokens: int | None = Field(default=None, alias="cachedInputTokens")
     output_tokens: int | None = Field(default=None, alias="outputTokens")
     total_tokens: int | None = Field(default=None, alias="totalTokens")
     requests: int | None = None
@@ -151,5 +152,12 @@ class AssistantRunMetadata(BaseModel):
     intent: AssistantIntent
     scope: InputScope
     finish_reason: str | None = Field(default=None, alias="finishReason")
+    usage: AssistantUsage | None = None
+    openai: AssistantOpenAIState | None = None
+    latency_ms: int | None = Field(default=None, alias="latencyMs")
+    route_request: dict | None = Field(default=None, alias="routeRequest")
+    routing_decision: dict | None = Field(default=None, alias="routingDecision")
+    steps: list[dict] = Field(default_factory=list)
+    prompt_snapshots: list[dict] = Field(default_factory=list, alias="promptSnapshots")
 
     model_config = {"populate_by_name": True}

@@ -2,7 +2,7 @@
 title: Agent 可观测性与调试中心
 status: draft
 owner: ai
-last_updated: 2026-05-14
+last_updated: 2026-05-16
 review_cycle: monthly
 related_code:
   - python/ai_orchestrator/
@@ -20,7 +20,7 @@ related_docs:
 
 PEAI 先建设自己的 Agent Debug Recorder 和管理员端 Agent Debug Center，把每次 Agent 请求的输入 JSON、Prompt、模型输出、usage、路由结果和 OpenAI trace 关联起来。
 
-DeepEval 和 Langfuse 不直接接管业务链路，而是作为二级能力接入：DeepEval 用于本地和 CI 评测，Langfuse 用于更完整的 LLM tracing、prompt 管理和实验分析。
+DeepEval、Model Sandbox 和 Langfuse 不直接接管业务链路，而是作为二级能力接入：Model Sandbox 用于模型迁移前的隔离试跑，DeepEval 用于本地和 CI 评测，Langfuse 用于更完整的 LLM tracing、prompt 管理和实验分析。
 
 ```mermaid
 flowchart LR
@@ -38,6 +38,7 @@ flowchart LR
   DB --> ADMIN["Admin Agent Debug Center"]
   DB --> BUILDER["Eval Dataset Builder"]
   BUILDER --> CASES[("Eval Cases")]
+  CASES --> SANDBOX["Model Sandbox"]
   CASES --> DEEPEVAL["DeepEval Runner"]
   DB --> EXPORTER["Langfuse Exporter"]
   EXPORTER --> LANGFUSE["Langfuse"]
@@ -50,6 +51,7 @@ flowchart LR
 - OpenAI Traces 偏运行时观测，不是 PEAI 自己的业务调试后台。
 - 学段、模式、题目、作文、路由输入、路由输出、模型名称和最终回复分散在不同层，不方便按业务维度排查。
 - 真实用户请求不能直接沉淀为 eval case，后续很难判断改 Prompt、换模型、调整 agent 编排后是否退化。
+- 缺少隔离的模型试跑能力，无法在不影响用户会话的情况下比较候选模型。
 - Langfuse、DeepEval、Phoenix、Braintrust 都有价值，但如果一开始让业务代码直接依赖这些平台，后续切换和数据权限会变复杂。
 
 因此第一阶段目标不是“接入所有观测平台”，而是先建立 PEAI 自己稳定的数据口径。
@@ -61,6 +63,7 @@ flowchart LR
 - Agent Debug Recorder：保存每次 Agent 请求全过程。
 - 管理员端 Agent Debug Center：查看请求、Prompt、模型输入输出、usage、路由结果和错误。
 - Eval Dataset Builder：从真实请求中挑选样本，转成 eval case。
+- Model Sandbox：用历史 run 或 eval case 对比不同模型、Prompt 或 Agent 目标的表现。
 - DeepEval：在本地或 CI 中评测路由、评分、反馈质量。
 - Langfuse：作为外部 tracing / prompt / eval 平台的异步导出目标。
 
@@ -79,6 +82,7 @@ flowchart LR
 | P0 | Agent Debug Recorder | 每次请求都能回放关键 JSON、Prompt、模型输出和 usage | 数据库记录 + Python 记录器 |
 | P0 | Admin Agent Debug Center | 管理员可以按业务维度排查 Agent 请求 | 后台列表页 + 详情页 |
 | P1 | Eval Dataset Builder | 从真实请求沉淀 eval case | 后台保存样本 + eval 数据表 |
+| P1 | Model Sandbox | 使用同一输入对比不同模型表现 | 后台模型试跑 + 对比结果 |
 | P1 | DeepEval | 自动评测路由、评分、反馈是否退化 | 本地脚本 + CI 可选 |
 | P2 | Langfuse | 外部可观测性、Prompt 管理、实验分析 | 异步 exporter |
 
@@ -91,6 +95,7 @@ flowchart LR
 | Backend Admin API | 查询 debug run、step、prompt、eval case，提供权限控制 | Database / Auth | P0 |
 | Admin Agent Debug Center | 展示请求列表、请求详情、Prompt、模型输出、usage、trace 链接 | Backend Admin API | P0 |
 | Eval Dataset Builder | 把真实请求转成可复用 eval case | Debug tables | P1 |
+| Model Sandbox | 对历史 run 或 eval case 使用候选模型重跑，比较输出、路由、tokens 和 latency | Debug tables / Python workflow | P1 |
 | DeepEval Runner | 执行 eval case，输出 pass/fail、指标和失败原因 | Eval cases / Python workflow | P1 |
 | Langfuse Exporter | 把内部 debug run 异步同步到 Langfuse | Langfuse API | P2 |
 
@@ -104,6 +109,7 @@ sequenceDiagram
   participant SDK as OpenAI Agents SDK
   participant DB as PEAI Database
   participant Admin as Admin Debug Center
+  participant Sandbox as Model Sandbox
   participant Eval as DeepEval Runner
   participant Langfuse as Langfuse
 
@@ -119,6 +125,9 @@ sequenceDiagram
   Py-->>Backend: 返回最终业务响应
   Backend-->>User: 展示结果
   Admin->>DB: 查询 run / step / prompt
+  Admin->>Sandbox: 选择历史 run 和候选模型
+  Sandbox->>Py: 隔离重跑 route agent 或目标 agent
+  Py->>DB: 写入 model_experiment debug run
   Eval->>DB: 读取 eval case 并回放
   DB-->>Langfuse: 异步导出 trace / span / generation
 ```
@@ -523,12 +532,14 @@ Langfuse 作为外部可观测平台，不替代内部 Debug Recorder。
 
 ```text
 LANGFUSE_ENABLED=false
-LANGFUSE_HOST=
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
 ```
 
 默认关闭 Langfuse。只有环境变量完整且 `LANGFUSE_ENABLED=true` 时才启动异步导出。
+兼容旧配置名 `LANGFUSE_HOST`；如果未设置 `LANGFUSE_BASE_URL`，Python orchestrator 会把 `LANGFUSE_HOST` 映射为 `LANGFUSE_BASE_URL`。
+当前接入方式使用 Langfuse 官方文档推荐的 `openinference-instrumentation-openai-agents`，在应用启动时对 OpenAI Agents SDK 自动埋点，同时保留 OpenAI Platform Traces。
 
 ### 失败策略
 

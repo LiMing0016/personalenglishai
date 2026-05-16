@@ -303,6 +303,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(trace.call_args.kwargs["metadata"]["target_exam"], "postgrad")
         self.assertEqual(trace.call_args.kwargs["metadata"]["source_page"], "assistant")
         self.assertEqual(trace.call_args.kwargs["metadata"]["environment"], "local")
+        self.assertLessEqual(len(trace.call_args.kwargs["metadata"]), 16)
 
         target_trace_metadata = run_agent_session.await_args.kwargs["trace_metadata"]
         self.assertEqual(target_trace_metadata["component"], "assistant_target_agent")
@@ -311,6 +312,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(target_trace_metadata["target_agent"], "polish")
         self.assertEqual(target_trace_metadata["agent_name"], "Polish Agent")
         self.assertEqual(target_trace_metadata["study_stage"], "postgrad")
+        self.assertLessEqual(len(target_trace_metadata), 16)
         self.assertTrue(fake_trace.entered)
         self.assertTrue(fake_trace.exited)
         self.assertEqual(route_runner.flush_values, [False])

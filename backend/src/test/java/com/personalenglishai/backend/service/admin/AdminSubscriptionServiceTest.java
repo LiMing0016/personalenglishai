@@ -60,6 +60,20 @@ class AdminSubscriptionServiceTest {
                         .isInstanceOf(Map.class)
                         .extracting(value -> ((Map<?, ?>) value).get("planCode"))
                         .isEqualTo("premium"));
+        assertThat(overview.get("userDiagnostics")).isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> diagnostics = (Map<String, Object>) overview.get("userDiagnostics");
+        assertThat(diagnostics)
+                .containsEntry("databaseUserRows", 120L)
+                .containsEntry("adminUsers", 4L)
+                .containsEntry("activeUsers", 118L)
+                .containsEntry("disabledUsers", 2L);
+        assertThat(overview.get("adminUserPreview")).asList()
+                .singleElement()
+                .satisfies(row -> assertThat(row)
+                        .isInstanceOf(Map.class)
+                        .extracting(value -> ((Map<?, ?>) value).get("email"))
+                        .isEqualTo("admin01@admin.com"));
     }
 
     @Test
@@ -130,6 +144,31 @@ class AdminSubscriptionServiceTest {
                     planDistributionRow("pro", "Pro", 10L, 8.33, 2),
                     planDistributionRow("premium", "Premium", 5L, 4.17, 3)
             );
+        }
+
+        @Override
+        public Map<String, Object> selectUserDiagnostics() {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("databaseUserRows", 120L);
+            map.put("activeUsers", 118L);
+            map.put("disabledUsers", 2L);
+            map.put("adminUsers", 4L);
+            map.put("regularUsers", 116L);
+            map.put("latestUserCreatedAt", LocalDateTime.parse("2026-05-14T03:20:00"));
+            return map;
+        }
+
+        @Override
+        public List<Map<String, Object>> selectAdminUserPreview() {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("userId", 29L);
+            row.put("email", "admin01@admin.com");
+            row.put("nickname", "Admin 01");
+            row.put("status", "active");
+            row.put("studyStage", "ielts");
+            row.put("adminRolesCsv", "super_admin");
+            row.put("lastActiveAt", LocalDateTime.parse("2026-05-14T03:20:00"));
+            return List.of(row);
         }
 
         @Override

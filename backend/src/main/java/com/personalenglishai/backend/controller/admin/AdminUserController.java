@@ -35,17 +35,25 @@ public class AdminUserController {
     @GetMapping
     public ResponseEntity<AdminPageResponse<Map<String, Object>>> list(
             @RequestAttribute("userId") Long adminUserId,
+            @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String role,
             @RequestParam(required = false) String registerSource,
             @RequestParam(required = false) String adminRole,
             @RequestParam(required = false) String studyStage,
             @RequestParam(required = false) String lastActiveFrom,
             @RequestParam(required = false) String lastActiveTo,
+            @RequestParam(required = false) String createdFrom,
+            @RequestParam(required = false) String createdTo,
+            @RequestParam(required = false) String planCode,
+            @RequestParam(required = false) String subscriptionStatus,
+            @RequestParam(required = false) Boolean overLimit,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
         adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.USERS_READ);
-        return ResponseEntity.ok(adminUserService.listUsers(keyword, status, registerSource, adminRole, studyStage, lastActiveFrom, lastActiveTo, page, size));
+        return ResponseEntity.ok(adminUserService.listUsers(userId, keyword, status, role, registerSource, adminRole, studyStage,
+                lastActiveFrom, lastActiveTo, createdFrom, createdTo, planCode, subscriptionStatus, overLimit, page, size));
     }
 
     @GetMapping("/{userId}")
@@ -54,6 +62,14 @@ public class AdminUserController {
         adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.USERS_READ);
         Map<String, Object> detail = adminUserService.getUserDetail(userId);
         return detail == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(detail);
+    }
+
+    @GetMapping("/{userId}/overview")
+    public ResponseEntity<Map<String, Object>> overview(@RequestAttribute("userId") Long adminUserId,
+                                                        @PathVariable Long userId) {
+        adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.USERS_READ);
+        Map<String, Object> overview = adminUserService.getUserOverview(userId);
+        return overview == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(overview);
     }
 
     @PatchMapping("/{userId}/status")

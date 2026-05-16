@@ -29,6 +29,20 @@
         <button class="admin-btn admin-btn--secondary" @click="saveRoles">保存角色</button>
       </div>
     </div>
+    <div class="admin-card">
+      <h2 class="admin-card-title">订阅与额度</h2>
+      <div class="admin-grid-three">
+        <div class="admin-kv"><span>当前套餐</span><strong>{{ detail.subscription?.planName || detail.subscription?.planCode || '-' }}</strong></div>
+        <div class="admin-kv"><span>订阅状态</span><strong>{{ detail.subscription?.subscriptionStatus || '-' }}</strong></div>
+        <div class="admin-kv"><span>额度周期</span><strong>{{ detail.subscription?.quotaPeriod || '-' }}</strong></div>
+        <div class="admin-kv"><span>已用 / 上限</span><strong>{{ formatQuota(detail.subscription?.tokenUsed) }} / {{ formatQuota(detail.subscription?.tokenLimit) }}</strong></div>
+        <div class="admin-kv"><span>剩余额度</span><strong>{{ formatQuota(detail.subscription?.tokenRemaining) }}</strong></div>
+        <div class="admin-kv"><span>是否超额</span><strong>{{ isOverLimit(detail.subscription?.overLimit) ? '是' : '否' }}</strong></div>
+        <div class="admin-kv"><span>周期开始</span><strong>{{ detail.subscription?.currentPeriodStart || '-' }}</strong></div>
+        <div class="admin-kv"><span>周期结束</span><strong>{{ detail.subscription?.currentPeriodEnd || '-' }}</strong></div>
+        <div class="admin-kv"><span>用量口径</span><strong>{{ detail.subscription?.usageDate || detail.subscription?.usageMonth || '-' }}</strong></div>
+      </div>
+    </div>
     <div class="admin-grid-two">
       <div class="admin-card">
         <h2 class="admin-card-title">能力画像</h2>
@@ -85,6 +99,14 @@ async function saveRoles() {
   } catch {
     showToast('更新角色失败', 'error')
   }
+}
+
+function formatQuota(value: number | string | null | undefined) {
+  return Number(value ?? 0).toLocaleString('zh-CN')
+}
+
+function isOverLimit(value: boolean | number | string | null | undefined) {
+  return value === true || value === 1 || value === '1' || value === 'true'
 }
 
 onMounted(load)

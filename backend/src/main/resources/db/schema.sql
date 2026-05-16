@@ -598,3 +598,72 @@ CREATE TABLE IF NOT EXISTS subscription_redeem_event (
         ON DELETE CASCADE
         ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='subscription redeem audit events';
+
+CREATE TABLE IF NOT EXISTS agent_debug_run (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_id VARCHAR(128) NOT NULL,
+    trace_id VARCHAR(128) NULL,
+    user_id BIGINT NULL,
+    conversation_id VARCHAR(128) NULL,
+    raw_user_message TEXT NULL,
+    intent VARCHAR(64) NULL,
+    route_type VARCHAR(64) NULL,
+    workflow VARCHAR(128) NULL,
+    target_agent VARCHAR(128) NULL,
+    agent_name VARCHAR(128) NULL,
+    model VARCHAR(128) NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'completed',
+    latency_ms BIGINT NULL,
+    response_id VARCHAR(128) NULL,
+    total_tokens INT NULL,
+    route_request_json JSON NULL,
+    routing_decision_json JSON NULL,
+    usage_json JSON NULL,
+    output_json JSON NULL,
+    error_message TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_agent_debug_run_run_id (run_id),
+    KEY idx_agent_debug_run_created_at (created_at),
+    KEY idx_agent_debug_run_user_id (user_id),
+    KEY idx_agent_debug_run_conversation_id (conversation_id),
+    KEY idx_agent_debug_run_status (status),
+    KEY idx_agent_debug_run_intent (intent),
+    KEY idx_agent_debug_run_target_agent (target_agent),
+    KEY idx_agent_debug_run_model (model)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI agent debug run';
+
+CREATE TABLE IF NOT EXISTS agent_debug_step (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_id VARCHAR(128) NOT NULL,
+    step_order INT NOT NULL DEFAULT 0,
+    step_type VARCHAR(64) NOT NULL,
+    agent_name VARCHAR(128) NULL,
+    input_json JSON NULL,
+    output_json JSON NULL,
+    usage_json JSON NULL,
+    error_message TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_agent_debug_step_run_id (run_id),
+    KEY idx_agent_debug_step_type (step_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI agent debug step';
+
+CREATE TABLE IF NOT EXISTS agent_prompt_snapshot (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_id VARCHAR(128) NOT NULL,
+    prompt_key VARCHAR(128) NULL,
+    prompt_version VARCHAR(128) NULL,
+    prompt_hash VARCHAR(128) NULL,
+    agent_name VARCHAR(128) NULL,
+    model VARCHAR(128) NULL,
+    system_prompt MEDIUMTEXT NULL,
+    developer_prompt MEDIUMTEXT NULL,
+    user_prompt MEDIUMTEXT NULL,
+    variables_json JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_agent_prompt_snapshot_run_id (run_id),
+    KEY idx_agent_prompt_snapshot_prompt_key (prompt_key),
+    KEY idx_agent_prompt_snapshot_hash (prompt_hash),
+    KEY idx_agent_prompt_snapshot_agent_model (agent_name, model),
+    KEY idx_agent_prompt_snapshot_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI agent prompt snapshot';

@@ -18,11 +18,13 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -34,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(AuthControllerV1.class)
 @AutoConfigureMockMvc(addFilters = false)
+@TestPropertySource(properties = "app.dev-admin-login.enabled=true")
 class AuthControllerV1Test {
 
     @Autowired
@@ -168,6 +171,47 @@ class AuthControllerV1Test {
                     .andExpect(jsonPath("$.code").value("403020"))
                     .andExpect(cookie().doesNotExist("refresh_token"))
                     .andExpect(header().doesNotExist("Set-Cookie"));
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/v1/auth/dev-login")
+    class DevLogin {
+
+        @Test
+        @DisplayName("returns token without captcha for local acceptance only")
+        void devLogin_success() throws Exception {
+            when(authService.login("superadmin@peai.local", "Admin123!"))
+                    .thenReturn(buildLoginResponse("admin-access-1", "admin-refresh-1"));
+
+            mockMvc.perform(post("/api/v1/auth/dev-login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"superadmin@peai.local","password":"Admin123!"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.token").value("admin-access-1"))
+                    .andExpect(cookie().exists("refresh_token"));
+
+            verify(captchaService, never()).validateToken(org.mockito.Mockito.any());
+            verify(authService).login("superadmin@peai.local", "Admin123!");
+        }
+
+        @Test
+        @DisplayName("is hidden from non-loopback requests")
+        void devLogin_rejectsNonLoopback() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/dev-login")
+                            .with(request -> {
+                                request.setRemoteAddr("203.0.113.8");
+                                return request;
+                            })
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"email":"superadmin@peai.local","password":"Admin123!"}
+                                    """))
+                    .andExpect(status().isNotFound());
+
+            verify(authService, never()).login("superadmin@peai.local", "Admin123!");
         }
     }
 
