@@ -129,6 +129,65 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route_runner.requests[0].conversation_id, "conv-route-1")
         self.assertEqual(route_runner.requests[0].assistant_mode, "daily_explain")
 
+    async def test_run_assistant_request_returns_debug_metadata_for_backend_recorder(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="polish",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="polish",
+                    confidence=0.94,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Polish request.",
+                )
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            route_decision_enabled=True,
+        )
+        service._specialist_agents["Polish Agent"] = object()
+        request = AssistantRequest(
+            appConversationId="conv-debug-1",
+            clientMessageId="client-debug-1",
+            mode="daily_explain",
+            intent="free_chat",
+            scope="message_only",
+            message={"text": "帮我润色这句话：I very like English."},
+            studyContext={"studyStage": "postgrad", "targetExam": "postgrad", "locale": "zh-CN", "responseLanguage": "zh-CN"},
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(
+                final_output="I really like English.",
+                agent_name="Polish Agent",
+                usage=AgentSessionUsage(
+                    requests=1,
+                    input_tokens=100,
+                    cached_input_tokens=20,
+                    output_tokens=30,
+                    total_tokens=130,
+                ),
+                run_items=AgentSessionRunItems(last_response_id="resp_123"),
+            ),
+        ):
+            reply = await service.run_assistant_request(request)
+
+        self.assertIsNotNone(reply.run)
+        self.assertEqual(reply.run.model, "test-model")
+        self.assertEqual(reply.run.usage.input_tokens, 100)
+        self.assertEqual(reply.run.usage.cached_input_tokens, 20)
+        self.assertEqual(reply.run.openai.response_id, "resp_123")
+        self.assertEqual(reply.run.route_request["message"], "帮我润色这句话：I very like English.")
+        self.assertEqual(reply.run.route_request["study_stage"], "postgrad")
+        self.assertEqual(reply.run.routing_decision["target_agent"], "polish")
+        self.assertGreaterEqual(reply.run.latency_ms, 0)
+
     async def test_run_assistant_request_uses_route_decision_target_agent(self) -> None:
         class FakeRouteDecisionRunner:
             async def route(self, route_request, *, flush_trace=True):
@@ -219,6 +278,8 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
             intent="free_chat",
             scope="message_only",
             message={"text": "润色这句话：I very like English."},
+            studyContext={"studyStage": "postgrad", "targetExam": "postgrad", "responseLanguage": "zh-CN"},
+            clientMeta={"sourcePage": "assistant", "timezone": "Asia/Shanghai"},
         )
 
         with (
@@ -226,7 +287,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
                 "python.ai_orchestrator.assistant_service.run_agent_session",
                 new_callable=AsyncMock,
                 return_value=AgentSessionResult(final_output="I really like English.", agent_name="Polish Agent"),
-            ),
+            ) as run_agent_session,
             patch("agents.trace", return_value=fake_trace) as trace,
             patch("agents.flush_traces") as flush_traces,
         ):
@@ -237,6 +298,21 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(trace.call_args.kwargs["group_id"], "conv-trace-1")
         self.assertEqual(trace.call_args.kwargs["metadata"]["component"], "assistant_agent_service")
         self.assertEqual(trace.call_args.kwargs["metadata"]["route_decision_enabled"], "true")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["client_message_id"], "client-trace-1")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["study_stage"], "postgrad")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["target_exam"], "postgrad")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["source_page"], "assistant")
+        self.assertEqual(trace.call_args.kwargs["metadata"]["environment"], "local")
+        self.assertLessEqual(len(trace.call_args.kwargs["metadata"]), 16)
+
+        target_trace_metadata = run_agent_session.await_args.kwargs["trace_metadata"]
+        self.assertEqual(target_trace_metadata["component"], "assistant_target_agent")
+        self.assertEqual(target_trace_metadata["run_id"][:4], "run_")
+        self.assertEqual(target_trace_metadata["route_type"], "run_workflow")
+        self.assertEqual(target_trace_metadata["target_agent"], "polish")
+        self.assertEqual(target_trace_metadata["agent_name"], "Polish Agent")
+        self.assertEqual(target_trace_metadata["study_stage"], "postgrad")
+        self.assertLessEqual(len(target_trace_metadata), 16)
         self.assertTrue(fake_trace.entered)
         self.assertTrue(fake_trace.exited)
         self.assertEqual(route_runner.flush_values, [False])

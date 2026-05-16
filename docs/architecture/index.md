@@ -1,7 +1,7 @@
 ---
 status: active
 owner: project
-last_updated: 2026-05-10
+last_updated: 2026-05-16
 related_code:
   - web/
   - backend/
@@ -27,4 +27,5 @@ Personal English AI 是一个全栈英语学习应用：
 - [鉴权](./auth.md)
 - [助手会话管理](./assistant-conversation-management.md)
 - [Oxford 词典集成](./dictionary-oxford.md)
+- [仓库结构规范](./repository-structure.md)
 - [写作任务元数据](./writing-task-metadata.md)

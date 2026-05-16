@@ -26,6 +26,7 @@ import com.personalenglishai.backend.mapper.assistant.AssistantConversationMappe
 import com.personalenglishai.backend.mapper.assistant.AssistantMessageMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantProjectMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantShareMapper;
+import com.personalenglishai.backend.service.ops.AgentDebugService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -71,6 +72,7 @@ public class AssistantConversationService {
     private final PythonAssistantClient pythonAssistantClient;
     private final AssistantRequestValidator assistantRequestValidator;
     private final ObjectMapper objectMapper;
+    private final AgentDebugService agentDebugService;
 
     public AssistantConversationService(
             AssistantProjectMapper projectMapper,
@@ -79,7 +81,8 @@ public class AssistantConversationService {
             AssistantShareMapper shareMapper,
             PythonAssistantClient pythonAssistantClient,
             AssistantRequestValidator assistantRequestValidator,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AgentDebugService agentDebugService) {
         this.projectMapper = projectMapper;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
@@ -87,6 +90,7 @@ public class AssistantConversationService {
         this.pythonAssistantClient = pythonAssistantClient;
         this.assistantRequestValidator = assistantRequestValidator;
         this.objectMapper = objectMapper;
+        this.agentDebugService = agentDebugService;
     }
 
     public List<AssistantProjectResponse> listProjects(Long userId) {
@@ -208,6 +212,7 @@ public class AssistantConversationService {
         if (replyText.isBlank()) {
             throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
         }
+        agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
 
         messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
@@ -231,6 +236,7 @@ public class AssistantConversationService {
 
         StringBuilder deltaContent = new StringBuilder();
         StringBuilder completedContent = new StringBuilder();
+        AssistantRunMetadataHolder runMetadataHolder = new AssistantRunMetadataHolder();
         AtomicBoolean failed = new AtomicBoolean(false);
 
         try {
@@ -240,7 +246,7 @@ public class AssistantConversationService {
                         if (normalized.isBlank()) {
                             return;
                         }
-                        captureAssistantStreamContent(normalized, deltaContent, completedContent, failed);
+                        captureAssistantStreamContent(normalized, deltaContent, completedContent, runMetadataHolder, failed);
                         writeSseEvent(outputStream, normalized);
                     })
                     .blockLast();
@@ -251,6 +257,7 @@ public class AssistantConversationService {
 
         String replyText = !completedContent.isEmpty() ? completedContent.toString() : deltaContent.toString();
         if (!failed.get() && !replyText.isBlank()) {
+            agentDebugService.recordAssistantRun(userId, conversationUid, prompt, runMetadataHolder.run, replyText);
             messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
             String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
             conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
@@ -276,7 +283,7 @@ public class AssistantConversationService {
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
         messageMapper.insert(userMessage);
 
-        PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.chat(
+            PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.chat(
                 new PythonAssistantClient.PythonAssistantChatRequest(
                         prompt,
                         conversationUid,
@@ -288,6 +295,7 @@ public class AssistantConversationService {
         if (replyText.isBlank()) {
             throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
         }
+        agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
 
         messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
@@ -496,6 +504,7 @@ public class AssistantConversationService {
             String eventJson,
             StringBuilder deltaContent,
             StringBuilder completedContent,
+            AssistantRunMetadataHolder runMetadataHolder,
             AtomicBoolean failed) {
         try {
             JsonNode event = objectMapper.readTree(eventJson);
@@ -505,6 +514,8 @@ public class AssistantConversationService {
             } else if ("message.completed".equals(type)) {
                 completedContent.setLength(0);
                 completedContent.append(event.path("content").asText(""));
+            } else if ("run.completed".equals(type) && event.has("run")) {
+                runMetadataHolder.run = objectMapper.treeToValue(event.get("run"), com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse.class);
             } else if ("run.failed".equals(type)) {
                 failed.set(true);
             }
@@ -538,6 +549,10 @@ public class AssistantConversationService {
     }
 
     private record StreamFailureError(String code, String message) {
+    }
+
+    private static final class AssistantRunMetadataHolder {
+        private com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse run;
     }
 
     private String generateShareToken() {

@@ -18,6 +18,9 @@ import com.personalenglishai.backend.mapper.admin.AdminUserRoleMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -66,22 +69,89 @@ public class AdminUserService {
         return response;
     }
 
-    public AdminPageResponse<Map<String, Object>> listUsers(String keyword, String status, String registerSource,
+    public AdminPageResponse<Map<String, Object>> listUsers(Long userId,
+                                                            String keyword, String status, String role, String registerSource,
                                                             String adminRole, String studyStage,
                                                             String lastActiveFrom, String lastActiveTo,
+                                                            String createdFrom, String createdTo,
+                                                            String planCode, String subscriptionStatus,
+                                                            Boolean overLimit,
                                                             int page, int size) {
         int normalizedPage = Math.max(page, 1);
         int normalizedSize = Math.min(Math.max(size, 1), 100);
         int offset = (normalizedPage - 1) * normalizedSize;
-        List<Map<String, Object>> items = adminUserQueryMapper.searchUsers(keyword, status, registerSource, adminRole,
-                studyStage, lastActiveFrom, lastActiveTo, offset, normalizedSize);
+        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+        String usageMonth = YearMonth.from(today).toString();
+        List<Map<String, Object>> items = adminUserQueryMapper.searchUsers(userId, keyword, status, role, registerSource, adminRole,
+                studyStage, lastActiveFrom, lastActiveTo, createdFrom, createdTo, planCode, subscriptionStatus,
+                overLimit, now, usageMonth, today, offset, normalizedSize);
         for (Map<String, Object> item : items) {
             Object csv = item.remove("adminRolesCsv");
             item.put("adminRoles", csv == null || String.valueOf(csv).isBlank()
                     ? List.of() : List.of(String.valueOf(csv).split(",")));
         }
-        long total = adminUserQueryMapper.countUsers(keyword, status, registerSource, adminRole, studyStage, lastActiveFrom, lastActiveTo);
+        long total = adminUserQueryMapper.countUsers(userId, keyword, status, role, registerSource, adminRole, studyStage,
+                lastActiveFrom, lastActiveTo, createdFrom, createdTo, planCode, subscriptionStatus, overLimit,
+                now, usageMonth, today);
         return new AdminPageResponse<>(items, total, normalizedPage, normalizedSize);
+    }
+
+    public Map<String, Object> getUserOverview(Long userId) {
+        Map<String, Object> detail = getUserDetail(userId);
+        if (detail == null) {
+            return null;
+        }
+
+        Map<String, Object> account = new LinkedHashMap<>();
+        account.put("id", detail.get("id"));
+        account.put("nickname", detail.get("nickname"));
+        account.put("email", detail.get("email"));
+        account.put("phoneMasked", maskPhone((String) detail.get("phone")));
+        account.put("status", detail.get("status"));
+        account.put("studyStage", detail.get("studyStage"));
+        account.put("role", detail.get("role"));
+        account.put("adminRoles", detail.get("adminRoles"));
+        account.put("lastActiveAt", detail.get("lastActiveAt"));
+
+        Map<String, Object> writing = new LinkedHashMap<>();
+        Object recentEvaluations = detail.get("recentEvaluations");
+        writing.put("recentEvaluations", recentEvaluations instanceof List<?> list ? list.stream().limit(3).toList() : List.of());
+        writing.put("stats", detail.get("stats"));
+
+        Map<String, Object> aiUsage = new LinkedHashMap<>();
+        Map<String, Object> subscription = safeMap(detail.get("subscription"));
+        aiUsage.put("todayTokens", subscription.getOrDefault("tokenUsed", 0));
+        aiUsage.put("monthTokens", subscription.getOrDefault("tokenUsed", 0));
+        aiUsage.put("recentFailedRequests", 0);
+
+        Map<String, Object> quickLinks = new LinkedHashMap<>();
+        quickLinks.put("detail", "/admin/users/" + userId);
+        quickLinks.put("essays", "/admin/essays?userId=" + userId);
+        quickLinks.put("subscriptions", "/admin/subscriptions?userId=" + userId);
+        quickLinks.put("aiUsage", "/admin/model-usage?userId=" + userId);
+        quickLinks.put("auditLogs", "/admin/audit-logs?targetUserId=" + userId);
+
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("account", account);
+        overview.put("subscription", detail.get("subscription"));
+        overview.put("writing", writing);
+        overview.put("aiUsage", aiUsage);
+        overview.put("audit", Map.of("recentLogs", List.of()));
+        overview.put("quickLinks", quickLinks);
+        return overview;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> safeMap(Object value) {
+        return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 7) {
+            return phone;
+        }
+        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
     }
 
     public Map<String, Object> getUserDetail(Long userId) {
@@ -105,6 +175,13 @@ public class AdminUserService {
         data.put("adminRoles", adminAuthorizationService.getRoles(userId));
         data.put("studyStage", profile != null ? profile.getStudyStage() : null);
         data.put("aiMode", profile != null ? profile.getAiMode() : null);
+        LocalDate today = LocalDate.now();
+        data.put("subscription", adminUserQueryMapper.selectUserSubscriptionSnapshot(
+                userId,
+                LocalDateTime.now(),
+                YearMonth.from(today).toString(),
+                today
+        ));
 
         Map<String, Object> abilityMap = new LinkedHashMap<>();
         if (ability != null) {

@@ -113,6 +113,25 @@ Query 参数：
       "ratio": 12.5,
       "sortOrder": 1
     }
+  ],
+  "userDiagnostics": {
+    "databaseUserRows": 120,
+    "activeUsers": 118,
+    "disabledUsers": 2,
+    "adminUsers": 6,
+    "regularUsers": 114,
+    "latestUserCreatedAt": "2026-05-15T21:57:20"
+  },
+  "adminUserPreview": [
+    {
+      "id": 31,
+      "nickname": "Admin 03",
+      "email": "admin03@admin.com",
+      "status": "active",
+      "studyStage": "ielts",
+      "adminRoles": ["super_admin"],
+      "lastActiveAt": "2026-05-15T21:57:20"
+    }
   ]
 }
 ```
@@ -122,6 +141,8 @@ Query 参数：
 - `planDistribution` 按当前有效套餐统计用户数量。无订阅、Free、过期付费订阅均归为 `free`。
 - `ratio` 是该套餐用户数占 `totalUsers` 的百分比。
 - 套餐顺序使用 `subscription_plan.sort_order`。
+- `userDiagnostics` 用于管理员端首屏排查数据接入问题，展示用户表行数、状态分布、管理员账号数和最新用户创建时间。
+- `adminUserPreview` 只返回最近的管理员账号摘要，不返回密码、密码哈希、登录凭证或数据库连接信息。
 
 ## GET /api/admin/subscriptions/daily-stats
 

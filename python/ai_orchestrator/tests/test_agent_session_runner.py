@@ -137,6 +137,35 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
         sqlite_session.assert_called_once()
         self.assertIs(runner_run.await_args.kwargs["context"], run_context)
 
+    async def test_run_agent_session_passes_trace_metadata_to_run_config(self) -> None:
+        agent = object()
+        fake_result = SimpleNamespace(final_output="Feedback", last_agent=None)
+
+        with (
+            patch.object(Path, "mkdir"),
+            patch("agents.SQLiteSession", return_value=object()),
+            patch("agents.Runner.run", new_callable=AsyncMock, return_value=fake_result) as runner_run,
+        ):
+            await run_agent_session(
+                agent=agent,
+                agent_input="Hi",
+                conversation_id="conv-1",
+                session_db_path="data/assistant.db",
+                trace_workflow_name="PEAI Target Agent",
+                trace_metadata={
+                    "component": "assistant_agent_service",
+                    "run_id": "run-1",
+                    "target_agent": "polish",
+                    "model": "gpt-test",
+                },
+            )
+
+        run_config = runner_run.await_args.kwargs["run_config"]
+        self.assertEqual(run_config.workflow_name, "PEAI Target Agent")
+        self.assertEqual(run_config.group_id, "conv-1")
+        self.assertEqual(run_config.trace_metadata["run_id"], "run-1")
+        self.assertEqual(run_config.trace_metadata["target_agent"], "polish")
+
     async def test_run_agent_session_can_skip_session_for_list_input_items(self) -> None:
         agent = object()
         agent_input = [{"role": "user", "content": [{"type": "input_text", "text": "Hi"}]}]
@@ -159,6 +188,39 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
         sqlite_session.assert_not_called()
         runner_run.assert_awaited_once_with(agent, agent_input)
         self.assertEqual(result.final_output, "Feedback")
+
+    async def test_stream_agent_session_passes_trace_metadata_to_run_config(self) -> None:
+        fake_stream_result = SimpleNamespace(final_output="hello", last_agent=None)
+
+        async def stream_events():
+            if False:
+                yield None
+
+        fake_stream_result.stream_events = stream_events
+
+        with (
+            patch.object(Path, "mkdir"),
+            patch("agents.SQLiteSession"),
+            patch("agents.Runner.run_streamed", return_value=fake_stream_result) as run_streamed,
+        ):
+            events = [
+                event
+                async for event in stream_agent_session(
+                    agent=object(),
+                    agent_input="Hi",
+                    conversation_id="conv-stream",
+                    session_db_path="data/assistant.db",
+                    use_session=False,
+                    trace_workflow_name="PEAI Target Agent Stream",
+                    trace_metadata={"run_id": "run-stream", "scope": "stream"},
+                )
+            ]
+
+        run_config = run_streamed.call_args.kwargs["run_config"]
+        self.assertEqual(run_config.workflow_name, "PEAI Target Agent Stream")
+        self.assertEqual(run_config.group_id, "conv-stream")
+        self.assertEqual(run_config.trace_metadata["run_id"], "run-stream")
+        self.assertEqual(events[-1].result.final_output, "hello")
 
     async def test_stream_agent_session_yields_text_deltas_and_completed_result(self) -> None:
         from agents.stream_events import RawResponsesStreamEvent

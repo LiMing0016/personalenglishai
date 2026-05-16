@@ -4,6 +4,61 @@
 
 ## 现有脚本
 
+### `dev/`
+
+本地开发入口脚本的真实实现目录。根目录保留同名 wrapper，便于继续使用旧命令：
+
+- `setup-local.ps1`
+- `start-local.bat`
+- `start-nginx.bat`
+- `stop.nginx.bat`
+- `admin-acceptance-login.mjs`
+
+### `dev/admin-acceptance-login.mjs`
+
+用途：
+
+- 本地管理员端验收时，用种子管理员账号换取真实 access token。
+- 调用 `/api/admin/auth/me` 校验 token 确实具备管理员身份。
+- 输出可写入浏览器 `localStorage.auth_token` 的 token 和目标地址。
+
+前提：
+
+- 后端已启动，并显式开启 `APP_DEV_ADMIN_LOGIN_ENABLED=true`。
+- 请求必须来自本机 loopback 地址；非本机请求会得到 `404`。
+- 使用 `scripts/dev/start-local.bat` 启动时会自动开启该本地验收开关。
+- 数据库已执行 `backend/src/main/resources/db/seed_admin_accounts.sql`。
+
+默认账号：
+
+- `admin01@admin.com`
+- `Kiss497.*`
+
+最简单用法：
+
+```powershell
+node scripts/dev/admin-acceptance-login.mjs
+```
+
+指定本地端口或账号：
+
+```powershell
+node scripts/dev/admin-acceptance-login.mjs `
+  --web-origin http://127.0.0.1:5173 `
+  --api-base http://127.0.0.1:5173/api `
+  --email admin01@admin.com `
+  --password 'Kiss497.*' `
+  --target-path /admin/users
+```
+
+输出中的 `token` 只用于本地验收，不要提交到文档、代码或聊天记录中。
+
+### `maintenance/`
+
+仓库维护和目录卫生检查脚本：
+
+- `check-repo-hygiene.ps1`：检查根目录是否残留 pytest 缓存、`.tmp-*`、`.tmp_pip`、运行日志和构建/依赖目录。
+
 ### `score-cache-diagnose.ps1`
 
 用途：

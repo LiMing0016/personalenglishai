@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.ops.AgentDebugMapper">
+    <insert id="insertRun" parameterType="java.util.Map">
+        INSERT INTO agent_debug_run (
+            run_id, trace_id, user_id, conversation_id, raw_user_message,
+            intent, route_type, workflow, target_agent, agent_name, model,
+            status, latency_ms, response_id, total_tokens,
+            route_request_json, routing_decision_json, usage_json, output_json, error_message
+        )
+        VALUES (
+            #{runId}, #{traceId}, #{userId}, #{conversationId}, #{rawUserMessage},
+            #{intent}, #{routeType}, #{workflow}, #{targetAgent}, #{agentName}, #{model},
+            #{status}, #{latencyMs}, #{responseId}, #{totalTokens},
+            #{routeRequestJson}, #{routingDecisionJson}, #{usageJson}, #{outputJson}, #{errorMessage}
+        )
+        ON DUPLICATE KEY UPDATE
+            trace_id = VALUES(trace_id),
+            user_id = VALUES(user_id),
+            conversation_id = VALUES(conversation_id),
+            raw_user_message = VALUES(raw_user_message),
+            intent = VALUES(intent),
+            route_type = VALUES(route_type),
+            workflow = VALUES(workflow),
+            target_agent = VALUES(target_agent),
+            agent_name = VALUES(agent_name),
+            model = VALUES(model),
+            status = VALUES(status),
+            latency_ms = VALUES(latency_ms),
+            response_id = VALUES(response_id),
+            total_tokens = VALUES(total_tokens),
+            route_request_json = VALUES(route_request_json),
+            routing_decision_json = VALUES(routing_decision_json),
+            usage_json = VALUES(usage_json),
+            output_json = VALUES(output_json),
+            error_message = VALUES(error_message),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <insert id="insertStep" parameterType="java.util.Map">
+        INSERT INTO agent_debug_step (
+            run_id, step_order, step_type, agent_name, input_json, output_json, usage_json, error_message
+        )
+        VALUES (
+            #{runId}, #{stepOrder}, #{stepType}, #{agentName}, #{inputJson}, #{outputJson}, #{usageJson}, #{errorMessage}
+        )
+    </insert>
+
+    <insert id="insertPromptSnapshot" parameterType="java.util.Map">
+        INSERT INTO agent_prompt_snapshot (
+            run_id, prompt_key, prompt_version, prompt_hash, agent_name, model,
+            system_prompt, developer_prompt, user_prompt, variables_json
+        )
+        VALUES (
+            #{runId}, #{promptKey}, #{promptVersion}, #{promptHash}, #{agentName}, #{model},
+            #{systemPrompt}, #{developerPrompt}, #{userPrompt}, #{variablesJson}
+        )
+    </insert>
+
+    <sql id="RunFilters">
+        WHERE 1 = 1
+          <if test="status != null and status != ''">AND status = #{status}</if>
+          <if test="intent != null and intent != ''">AND intent = #{intent}</if>
+          <if test="targetAgent != null and targetAgent != ''">AND target_agent = #{targetAgent}</if>
+          <if test="model != null and model != ''">AND model = #{model}</if>
+          <if test="userId != null">AND user_id = #{userId}</if>
+          <if test="conversationId != null and conversationId != ''">AND conversation_id = #{conversationId}</if>
+          <if test="createdFrom != null and createdFrom != ''">AND created_at &gt;= #{createdFrom}</if>
+          <if test="createdTo != null and createdTo != ''">AND created_at &lt;= #{createdTo}</if>
+    </sql>
+
+    <select id="searchRuns" resultType="java.util.LinkedHashMap">
+        SELECT
+            run_id AS runId,
+            trace_id AS traceId,
+            user_id AS userId,
+            conversation_id AS conversationId,
+            raw_user_message AS rawUserMessage,
+            intent,
+            route_type AS routeType,
+            workflow,
+            target_agent AS targetAgent,
+            agent_name AS agentName,
+            model,
+            status,
+            latency_ms AS latencyMs,
+            total_tokens AS totalTokens,
+            error_message AS errorMessage,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM agent_debug_run
+        <include refid="RunFilters"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countRuns" resultType="long">
+        SELECT COUNT(*)
+        FROM agent_debug_run
+        <include refid="RunFilters"/>
+    </select>
+
+    <select id="findRunByRunId" resultType="java.util.LinkedHashMap">
+        SELECT
+            run_id AS runId,
+            trace_id AS traceId,
+            user_id AS userId,
+            conversation_id AS conversationId,
+            raw_user_message AS rawUserMessage,
+            intent,
+            route_type AS routeType,
+            workflow,
+            target_agent AS targetAgent,
+            agent_name AS agentName,
+            model,
+            status,
+            latency_ms AS latencyMs,
+            response_id AS responseId,
+            total_tokens AS totalTokens,
+            route_request_json AS routeRequestJson,
+            routing_decision_json AS routingDecisionJson,
+            usage_json AS usageJson,
+            output_json AS outputJson,
+            error_message AS errorMessage,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM agent_debug_run
+        WHERE run_id = #{runId}
+    </select>
+
+    <select id="listSteps" resultType="java.util.LinkedHashMap">
+        SELECT
+            id,
+            run_id AS runId,
+            step_order AS stepOrder,
+            step_type AS stepType,
+            agent_name AS agentName,
+            input_json AS inputJson,
+            output_json AS outputJson,
+            usage_json AS usageJson,
+            error_message AS errorMessage,
+            created_at AS createdAt
+        FROM agent_debug_step
+        WHERE run_id = #{runId}
+        ORDER BY step_order ASC, id ASC
+    </select>
+
+    <select id="listPromptSnapshots" resultType="java.util.LinkedHashMap">
+        SELECT
+            id,
+            run_id AS runId,
+            prompt_key AS promptKey,
+            prompt_version AS promptVersion,
+            prompt_hash AS promptHash,
+            agent_name AS agentName,
+            model,
+            system_prompt AS systemPrompt,
+            developer_prompt AS developerPrompt,
+            user_prompt AS userPrompt,
+            variables_json AS variablesJson,
+            created_at AS createdAt
+        FROM agent_prompt_snapshot
+        WHERE run_id = #{runId}
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <sql id="PromptFilters">
+        WHERE 1 = 1
+          <if test="promptKey != null and promptKey != ''">AND prompt_key = #{promptKey}</if>
+          <if test="promptHash != null and promptHash != ''">AND prompt_hash = #{promptHash}</if>
+          <if test="agentName != null and agentName != ''">AND agent_name = #{agentName}</if>
+          <if test="model != null and model != ''">AND model = #{model}</if>
+          <if test="createdFrom != null and createdFrom != ''">AND created_at &gt;= #{createdFrom}</if>
+          <if test="createdTo != null and createdTo != ''">AND created_at &lt;= #{createdTo}</if>
+    </sql>
+
+    <select id="searchPromptSnapshots" resultType="java.util.LinkedHashMap">
+        SELECT
+            id,
+            run_id AS runId,
+            prompt_key AS promptKey,
+            prompt_version AS promptVersion,
+            prompt_hash AS promptHash,
+            agent_name AS agentName,
+            model,
+            LEFT(system_prompt, 240) AS systemPromptSummary,
+            LEFT(developer_prompt, 240) AS developerPromptSummary,
+            LEFT(user_prompt, 240) AS userPromptSummary,
+            created_at AS createdAt
+        FROM agent_prompt_snapshot
+        <include refid="PromptFilters"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPromptSnapshots" resultType="long">
+        SELECT COUNT(*)
+        FROM agent_prompt_snapshot
+        <include refid="PromptFilters"/>
+    </select>
+</mapper>

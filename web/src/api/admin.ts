@@ -28,6 +28,33 @@ export interface AdminUserListItem {
   adminRoles: string[]
   lastActiveAt: string | null
   createdAt: string | null
+  planCode: string
+  planName: string | null
+  subscriptionStatus: 'active' | 'free' | 'expired' | string
+  quotaPeriod: 'daily' | 'monthly' | string
+  tokenLimit: number
+  tokenUsed: number
+  tokenRemaining: number
+  overLimit: boolean | number
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  usageMonth: string | null
+  usageDate: string | null
+}
+
+export interface AdminUserSubscriptionSnapshot {
+  planCode: string
+  planName: string | null
+  subscriptionStatus: 'active' | 'free' | 'expired' | string
+  quotaPeriod: 'daily' | 'monthly' | string
+  tokenLimit: number
+  tokenUsed: number
+  tokenRemaining: number
+  overLimit: boolean | number
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  usageMonth: string | null
+  usageDate: string | null
 }
 
 export interface AdminUserDetail {
@@ -44,9 +71,44 @@ export interface AdminUserDetail {
   adminRoles: string[]
   studyStage: string | null
   aiMode: number | null
+  subscription: AdminUserSubscriptionSnapshot | null
   ability: Record<string, unknown>
   stats: Record<string, unknown>
   recentEvaluations: any[]
+}
+
+export interface AdminUserOverview {
+  account: {
+    id: number
+    nickname: string | null
+    email: string | null
+    phoneMasked: string | null
+    status: string
+    studyStage: string | null
+    role: string
+    adminRoles: string[]
+    lastActiveAt: string | null
+  }
+  subscription: AdminUserSubscriptionSnapshot | null
+  writing: {
+    recentEvaluations: any[]
+    stats?: Record<string, unknown>
+  }
+  aiUsage: {
+    todayTokens: number
+    monthTokens: number
+    recentFailedRequests: number
+  }
+  audit: {
+    recentLogs: Array<Record<string, unknown>>
+  }
+  quickLinks: {
+    detail: string
+    essays: string
+    subscriptions: string
+    aiUsage: string
+    auditLogs: string
+  }
 }
 
 export interface AdminEssayListItem {
@@ -171,6 +233,8 @@ export interface AdminSubscriptionOverview {
   overLimitUsers: number
   sevenDaySubscriptionRate: number
   planDistribution: AdminSubscriptionPlanDistribution[]
+  userDiagnostics: AdminSubscriptionUserDiagnostics
+  adminUserPreview: AdminSubscriptionAdminUserPreview[]
 }
 
 export interface AdminSubscriptionPlanDistribution {
@@ -179,6 +243,25 @@ export interface AdminSubscriptionPlanDistribution {
   userCount: number
   ratio: number
   sortOrder: number
+}
+
+export interface AdminSubscriptionUserDiagnostics {
+  databaseUserRows: number
+  activeUsers: number
+  disabledUsers: number
+  adminUsers: number
+  regularUsers: number
+  latestUserCreatedAt: string | null
+}
+
+export interface AdminSubscriptionAdminUserPreview {
+  userId: number
+  email: string | null
+  nickname: string | null
+  status: string
+  studyStage: string | null
+  adminRoles: string[]
+  lastActiveAt: string | null
 }
 
 export interface AdminSubscriptionDailyStat {
@@ -229,6 +312,9 @@ export const adminApi = {
   },
   getUserDetail(userId: number) {
     return http.get<AdminUserDetail>(`/admin/users/${userId}`).then((r) => r.data)
+  },
+  getUserOverview(userId: number) {
+    return http.get<AdminUserOverview>(`/admin/users/${userId}/overview`).then((r) => r.data)
   },
   updateUserStatus(userId: number, payload: { status: 'active' | 'disabled'; reason?: string }) {
     return http.patch(`/admin/users/${userId}/status`, payload)

@@ -1,5 +1,8 @@
 package com.personalenglishai.backend.controller.dto.assistant;
 
+import java.util.List;
+import java.util.Map;
+
 public class AssistantRunMetadataResponse {
     private String runId;
     private String traceId;
@@ -11,6 +14,11 @@ public class AssistantRunMetadataResponse {
     private String finishReason;
     private Usage usage;
     private OpenAiState openai;
+    private Long latencyMs;
+    private Map<String, Object> routeRequest;
+    private Map<String, Object> routingDecision;
+    private List<Map<String, Object>> steps;
+    private List<Map<String, Object>> promptSnapshots;
 
     public String getRunId() {
         return runId;
@@ -92,8 +100,49 @@ public class AssistantRunMetadataResponse {
         this.openai = openai;
     }
 
+    public Long getLatencyMs() {
+        return latencyMs;
+    }
+
+    public void setLatencyMs(Long latencyMs) {
+        this.latencyMs = latencyMs;
+    }
+
+    public Map<String, Object> getRouteRequest() {
+        return routeRequest;
+    }
+
+    public void setRouteRequest(Map<String, Object> routeRequest) {
+        this.routeRequest = routeRequest;
+    }
+
+    public Map<String, Object> getRoutingDecision() {
+        return routingDecision;
+    }
+
+    public void setRoutingDecision(Map<String, Object> routingDecision) {
+        this.routingDecision = routingDecision;
+    }
+
+    public List<Map<String, Object>> getSteps() {
+        return steps;
+    }
+
+    public void setSteps(List<Map<String, Object>> steps) {
+        this.steps = steps;
+    }
+
+    public List<Map<String, Object>> getPromptSnapshots() {
+        return promptSnapshots;
+    }
+
+    public void setPromptSnapshots(List<Map<String, Object>> promptSnapshots) {
+        this.promptSnapshots = promptSnapshots;
+    }
+
     public static class Usage {
         private Integer inputTokens;
+        private Integer cachedInputTokens;
         private Integer outputTokens;
         private Integer totalTokens;
         private Integer requests;
@@ -104,6 +153,14 @@ public class AssistantRunMetadataResponse {
 
         public void setInputTokens(Integer inputTokens) {
             this.inputTokens = inputTokens;
+        }
+
+        public Integer getCachedInputTokens() {
+            return cachedInputTokens;
+        }
+
+        public void setCachedInputTokens(Integer cachedInputTokens) {
+            this.cachedInputTokens = cachedInputTokens;
         }
 
         public Integer getOutputTokens() {

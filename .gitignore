@@ -11,11 +11,15 @@ node_modules/
 dist/
 .vite/
 docs/.vitepress/cache/
+docs/.vitepress/dist/
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
+.pytest_cache/
+pytest-cache-files-*/
+.tmp_pip/
 python/ai_orchestrator/data/
 
 # Maven local repository cache
@@ -25,11 +29,16 @@ backend/.m2home/
 
 # Unrelated tools
 apps/
+tools/**/node_modules/
+tools/**/.venv/
+tools/**/.npm-cache/
 
 # Local temp/debug artifacts
 .tmp-*/
 .tmp-peai/
 .tmp-*.log
+.tmp_ctx_*.json
+tmp[0-9a-zA-Z_]*/
 
 # Claude Code local settings
 .claude/settings.local.json

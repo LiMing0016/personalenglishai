@@ -175,6 +175,36 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/admin/dashboard/pages/AdminDashboardPage.vue'),
       },
       {
+        path: 'analytics',
+        name: 'AdminAnalyticsOverview',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsOverviewPage.vue'),
+      },
+      {
+        path: 'analytics/users',
+        name: 'AdminAnalyticsUsers',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsUsersPage.vue'),
+      },
+      {
+        path: 'analytics/subscriptions',
+        name: 'AdminAnalyticsSubscriptions',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsSubscriptionsPage.vue'),
+      },
+      {
+        path: 'analytics/writing',
+        name: 'AdminAnalyticsWriting',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsWritingPage.vue'),
+      },
+      {
+        path: 'analytics/ai-usage',
+        name: 'AdminAnalyticsAiUsage',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsAiUsagePage.vue'),
+      },
+      {
+        path: 'analytics/funnel',
+        name: 'AdminAnalyticsFunnel',
+        component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsFunnelPage.vue'),
+      },
+      {
         path: 'users',
         name: 'AdminUsers',
         component: () => import('@/pages/admin/AdminUsersPage.vue'),
@@ -316,6 +346,15 @@ const routes: RouteRecordRaw[] = [
     redirect: () => ({ path: '/app/me' }),
   },
 ]
+
+if (import.meta.env.DEV) {
+  routes.push({
+    path: '/dev/admin-login',
+    name: 'AdminDevLoginBridge',
+    component: () => import('@/pages/dev/AdminDevLoginBridge.vue'),
+    meta: { public: true },
+  })
+}
 
 const router = createRouter({
   history: createWebHistory(),

@@ -13,6 +13,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.InetAddress;
 import java.util.Map;
 
 /**
@@ -40,19 +42,22 @@ public class AuthControllerV1 {
     private final SmsVerificationService smsVerificationService;
     private final CaptchaService captchaService;
     private final boolean cookieSecure;
+    private final boolean devAdminLoginEnabled;
 
     public AuthControllerV1(AuthService authService,
                             EmailVerificationService emailVerificationService,
                             PasswordResetService passwordResetService,
                             SmsVerificationService smsVerificationService,
                             CaptchaService captchaService,
-                            @org.springframework.beans.factory.annotation.Value("${app.cookie.secure:false}") boolean cookieSecure) {
+                            @Value("${app.cookie.secure:false}") boolean cookieSecure,
+                            @Value("${app.dev-admin-login.enabled:false}") boolean devAdminLoginEnabled) {
         this.authService = authService;
         this.emailVerificationService = emailVerificationService;
         this.passwordResetService = passwordResetService;
         this.smsVerificationService = smsVerificationService;
         this.captchaService = captchaService;
         this.cookieSecure = cookieSecure;
+        this.devAdminLoginEnabled = devAdminLoginEnabled;
     }
 
     /**
@@ -135,6 +140,33 @@ public class AuthControllerV1 {
             audit.warn("[LOGIN_FAIL] email={} ip={} ua={} reason={}", email, ip, ua, e.getMessage());
             throw e;
         }
+    }
+
+    /**
+     * 本地验收登录。仅在显式开启 app.dev-admin-login.enabled 且请求来自 loopback 时可用。
+     * 该接口用于本地管理员端验收脚本绕过滑块验证码，不应在生产环境开启。
+     */
+    @PostMapping("/dev-login")
+    public ResponseEntity<ApiResponse<LoginResponse>> devLogin(
+            @RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response) {
+        if (!devAdminLoginEnabled || !isLocalRequest(httpRequest)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String email = request.getOrDefault("email", "");
+        String password = request.getOrDefault("password", "");
+        if (email.isBlank() || password.isBlank()) {
+            throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR);
+        }
+
+        LoginResponse data = authService.login(email, password);
+        setRefreshCookie(response, data.getRefreshToken(), (int) data.getRefreshTokenMaxAge());
+        audit.info("[DEV_LOGIN_OK] email={} ip={}", email, resolveClientIp(httpRequest));
+        ApiResponse<LoginResponse> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
     }
 
     /**
@@ -332,5 +364,28 @@ public class AuthControllerV1 {
             return realIp.trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private static boolean isLocalRequest(HttpServletRequest request) {
+        return isLoopback(request.getRemoteAddr()) && isLocalHostName(request.getServerName());
+    }
+
+    private static boolean isLoopback(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+        try {
+            return InetAddress.getByName(remoteAddr).isLoopbackAddress();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isLocalHostName(String serverName) {
+        if (serverName == null || serverName.isBlank()) {
+            return false;
+        }
+        String normalized = serverName.toLowerCase();
+        return normalized.equals("localhost") || normalized.equals("127.0.0.1") || normalized.equals("::1");
     }
 }

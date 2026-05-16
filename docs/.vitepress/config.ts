@@ -76,6 +76,7 @@ export default defineConfig({
             { text: '架构总览', link: '/architecture/' },
             { text: '鉴权', link: '/architecture/auth' },
             { text: '助手会话管理', link: '/architecture/assistant-conversation-management' },
+            { text: '仓库结构规范', link: '/architecture/repository-structure' },
             { text: '词典集成', link: '/architecture/dictionary-oxford' },
             { text: '写作任务元数据', link: '/architecture/writing-task-metadata' }
           ]
@@ -86,6 +87,8 @@ export default defineConfig({
           text: '接口',
           items: [
             { text: '接口总览', link: '/api/' },
+            { text: 'Agent Debug', link: '/api/agent-debug' },
+            { text: 'Admin 用户', link: '/api/admin-users' },
             { text: 'Admin 订阅与额度', link: '/api/admin-subscription' },
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
@@ -121,7 +124,10 @@ export default defineConfig({
         {
           text: 'Admin',
           items: [
-            { text: 'Admin 后台体验改造', link: '/admin/' }
+            { text: 'Admin 后台体验改造', link: '/admin/' },
+            { text: '当前管理员端产品说明', link: '/admin/current-admin-product-design' },
+            { text: '用户中心设计方案', link: '/admin/user-center-design' },
+            { text: 'BI 分析后台方案', link: '/admin/bi-analytics-design' }
           ]
         }
       ],
@@ -145,6 +151,7 @@ export default defineConfig({
             { text: '本地开发', link: '/runbooks/local-dev' },
             { text: '启动环境检查', link: '/runbooks/startup-env-checklist' },
             { text: '本地脚本', link: '/runbooks/local-scripts' },
+            { text: '仓库目录卫生治理', link: '/runbooks/repo-hygiene' },
             { text: '环境变量', link: '/runbooks/environment-variables' },
             { text: '部署', link: '/runbooks/deploy' }
           ]

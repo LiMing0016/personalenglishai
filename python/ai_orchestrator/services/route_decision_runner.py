@@ -78,3 +78,9 @@ class RouteDecisionRunner:
             flush_traces()
         except Exception:
             log.warning("RouteAgent trace flush failed", exc_info=True)
+        try:
+            from python.ai_orchestrator.observability import flush_observability
+
+            flush_observability()
+        except Exception:
+            log.warning("RouteAgent observability flush failed", exc_info=True)

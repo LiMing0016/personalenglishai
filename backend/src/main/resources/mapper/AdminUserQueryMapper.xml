@@ -1,6 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.personalenglishai.backend.mapper.admin.AdminUserQueryMapper">
+    <sql id="EffectivePlanCase">
+        CASE
+            WHEN us.id IS NOT NULL
+             AND us.status = 'active'
+             AND us.current_period_end IS NOT NULL
+             AND us.current_period_end <![CDATA[>]]> #{now}
+             AND us.plan_code != 'free'
+            THEN us.plan_code
+            ELSE 'free'
+        END
+    </sql>
+
+    <sql id="EffectiveStatusCase">
+        CASE
+            WHEN us.id IS NOT NULL
+             AND us.status = 'active'
+             AND us.current_period_end IS NOT NULL
+             AND us.current_period_end <![CDATA[>]]> #{now}
+             AND us.plan_code != 'free'
+            THEN 'active'
+            WHEN us.id IS NULL THEN 'free'
+            ELSE 'expired'
+        END
+    </sql>
+
+    <sql id="QuotaPeriodCase">
+        CASE
+            WHEN <include refid="EffectivePlanCase"/> = 'free' THEN 'daily'
+            ELSE 'monthly'
+        END
+    </sql>
+
+    <sql id="TokenLimitCase">
+        CASE
+            WHEN <include refid="EffectivePlanCase"/> = 'free' THEN COALESCE(free_plan.daily_token_limit, 0)
+            ELSE COALESCE(paid_plan.monthly_token_limit, 0)
+        END
+    </sql>
+
+    <sql id="TokenUsedCase">
+        CASE
+            WHEN <include refid="EffectivePlanCase"/> = 'free' THEN COALESCE(daily_usage.token_used, 0)
+            ELSE COALESCE(monthly_usage.token_used, 0)
+        END
+    </sql>
+
+    <sql id="UserAssetFilter">
+        WHERE 1 = 1
+          <if test="userId != null">AND u.id = #{userId}</if>
+          <if test="keyword != null and keyword != ''">
+            AND (
+              u.email LIKE CONCAT('%', #{keyword}, '%')
+              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            )
+          </if>
+          <if test="status != null and status != ''">AND u.status = #{status}</if>
+          <if test="role != null and role != ''">AND u.role = #{role}</if>
+          <if test="registerSource != null and registerSource != ''">AND u.register_source = #{registerSource}</if>
+          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
+          <if test="lastActiveFrom != null and lastActiveFrom != ''">AND u.last_active_at <![CDATA[>=]]> #{lastActiveFrom}</if>
+          <if test="lastActiveTo != null and lastActiveTo != ''">AND u.last_active_at <![CDATA[<=]]> #{lastActiveTo}</if>
+          <if test="createdFrom != null and createdFrom != ''">AND u.created_at <![CDATA[>=]]> #{createdFrom}</if>
+          <if test="createdTo != null and createdTo != ''">AND u.created_at <![CDATA[<=]]> #{createdTo}</if>
+          <if test="adminRole != null and adminRole != ''">AND aur.role = #{adminRole}</if>
+          <if test="planCode != null and planCode != ''">AND <include refid="EffectivePlanCase"/> = #{planCode}</if>
+          <if test="subscriptionStatus != null and subscriptionStatus != ''">AND <include refid="EffectiveStatusCase"/> = #{subscriptionStatus}</if>
+          <if test="overLimit != null and overLimit">
+            AND <include refid="TokenUsedCase"/> <![CDATA[>=]]> <include refid="TokenLimitCase"/>
+          </if>
+    </sql>
+
     <select id="searchUsers" resultType="java.util.LinkedHashMap">
         SELECT u.id,
                u.email,
@@ -12,25 +84,37 @@
                up.study_stage AS studyStage,
                u.last_active_at AS lastActiveAt,
                u.created_at AS createdAt,
+               <include refid="EffectivePlanCase"/> AS planCode,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN free_plan.name
+                   ELSE paid_plan.name
+               END AS planName,
+               <include refid="EffectiveStatusCase"/> AS subscriptionStatus,
+               <include refid="QuotaPeriodCase"/> AS quotaPeriod,
+               <include refid="TokenLimitCase"/> AS tokenLimit,
+               <include refid="TokenUsedCase"/> AS tokenUsed,
+               GREATEST(0, <include refid="TokenLimitCase"/> - <include refid="TokenUsedCase"/>) AS tokenRemaining,
+               <include refid="TokenUsedCase"/> <![CDATA[>=]]> <include refid="TokenLimitCase"/> AS overLimit,
+               us.current_period_start AS currentPeriodStart,
+               us.current_period_end AS currentPeriodEnd,
+               #{usageMonth} AS usageMonth,
+               #{usageDate} AS usageDate,
                GROUP_CONCAT(aur.role ORDER BY aur.role SEPARATOR ',') AS adminRolesCsv
         FROM users u
         LEFT JOIN user_profile up ON up.user_id = u.id
         LEFT JOIN admin_user_role aur ON aur.user_id = u.id
-        WHERE 1 = 1
-          <if test="keyword != null and keyword != ''">
-            AND (
-              u.email LIKE CONCAT('%', #{keyword}, '%')
-              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
-              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
-            )
-          </if>
-          <if test="status != null and status != ''">AND u.status = #{status}</if>
-          <if test="registerSource != null and registerSource != ''">AND u.register_source = #{registerSource}</if>
-          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
-          <if test="lastActiveFrom != null and lastActiveFrom != ''">AND u.last_active_at <![CDATA[>=]]> #{lastActiveFrom}</if>
-          <if test="lastActiveTo != null and lastActiveTo != ''">AND u.last_active_at <![CDATA[<=]]> #{lastActiveTo}</if>
-          <if test="adminRole != null and adminRole != ''">AND aur.role = #{adminRole}</if>
-        GROUP BY u.id, u.email, u.phone, u.nickname, u.status, u.register_source, u.role, up.study_stage, u.last_active_at, u.created_at
+        LEFT JOIN user_subscription us ON us.user_id = u.id
+        LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+        LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+        LEFT JOIN user_ai_token_usage_monthly monthly_usage
+               ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+        LEFT JOIN user_ai_token_usage_daily daily_usage
+               ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
+        <include refid="UserAssetFilter"/>
+        GROUP BY u.id, u.email, u.phone, u.nickname, u.status, u.register_source, u.role, up.study_stage,
+                 u.last_active_at, u.created_at, us.id, us.status, us.current_period_start, us.current_period_end,
+                 us.plan_code, free_plan.name, free_plan.daily_token_limit, paid_plan.name,
+                 paid_plan.monthly_token_limit, monthly_usage.token_used, daily_usage.token_used
         ORDER BY u.created_at DESC, u.id DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -40,19 +124,40 @@
         FROM users u
         LEFT JOIN user_profile up ON up.user_id = u.id
         LEFT JOIN admin_user_role aur ON aur.user_id = u.id
-        WHERE 1 = 1
-          <if test="keyword != null and keyword != ''">
-            AND (
-              u.email LIKE CONCAT('%', #{keyword}, '%')
-              OR u.phone LIKE CONCAT('%', #{keyword}, '%')
-              OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
-            )
-          </if>
-          <if test="status != null and status != ''">AND u.status = #{status}</if>
-          <if test="registerSource != null and registerSource != ''">AND u.register_source = #{registerSource}</if>
-          <if test="studyStage != null and studyStage != ''">AND up.study_stage = #{studyStage}</if>
-          <if test="lastActiveFrom != null and lastActiveFrom != ''">AND u.last_active_at <![CDATA[>=]]> #{lastActiveFrom}</if>
-          <if test="lastActiveTo != null and lastActiveTo != ''">AND u.last_active_at <![CDATA[<=]]> #{lastActiveTo}</if>
-          <if test="adminRole != null and adminRole != ''">AND aur.role = #{adminRole}</if>
+        LEFT JOIN user_subscription us ON us.user_id = u.id
+        LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+        LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+        LEFT JOIN user_ai_token_usage_monthly monthly_usage
+               ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+        LEFT JOIN user_ai_token_usage_daily daily_usage
+               ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
+        <include refid="UserAssetFilter"/>
+    </select>
+
+    <select id="selectUserSubscriptionSnapshot" resultType="java.util.LinkedHashMap">
+        SELECT <include refid="EffectivePlanCase"/> AS planCode,
+               CASE
+                   WHEN <include refid="EffectivePlanCase"/> = 'free' THEN free_plan.name
+                   ELSE paid_plan.name
+               END AS planName,
+               <include refid="EffectiveStatusCase"/> AS subscriptionStatus,
+               <include refid="QuotaPeriodCase"/> AS quotaPeriod,
+               <include refid="TokenLimitCase"/> AS tokenLimit,
+               <include refid="TokenUsedCase"/> AS tokenUsed,
+               GREATEST(0, <include refid="TokenLimitCase"/> - <include refid="TokenUsedCase"/>) AS tokenRemaining,
+               <include refid="TokenUsedCase"/> <![CDATA[>=]]> <include refid="TokenLimitCase"/> AS overLimit,
+               us.current_period_start AS currentPeriodStart,
+               us.current_period_end AS currentPeriodEnd,
+               #{usageMonth} AS usageMonth,
+               #{usageDate} AS usageDate
+        FROM users u
+        LEFT JOIN user_subscription us ON us.user_id = u.id
+        LEFT JOIN subscription_plan paid_plan ON paid_plan.plan_code = us.plan_code AND paid_plan.active = 1
+        LEFT JOIN subscription_plan free_plan ON free_plan.plan_code = 'free' AND free_plan.active = 1
+        LEFT JOIN user_ai_token_usage_monthly monthly_usage
+               ON monthly_usage.user_id = u.id AND monthly_usage.usage_month = #{usageMonth}
+        LEFT JOIN user_ai_token_usage_daily daily_usage
+               ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
+        WHERE u.id = #{userId}
     </select>
 </mapper>
