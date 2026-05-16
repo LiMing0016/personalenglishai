@@ -134,8 +134,10 @@ async def run_agent_session(
     session_db_path: str,
     use_session: bool = True,
     run_context: Any | None = None,
+    trace_workflow_name: str | None = None,
+    trace_metadata: dict[str, Any] | None = None,
 ) -> AgentSessionResult:
-    from agents import Runner, SQLiteSession
+    from agents import RunConfig, Runner, SQLiteSession
 
     session = None
     if use_session:
@@ -148,6 +150,12 @@ async def run_agent_session(
         runner_kwargs["session"] = session
     if run_context is not None:
         runner_kwargs["context"] = run_context
+    if trace_workflow_name is not None or trace_metadata is not None:
+        runner_kwargs["run_config"] = RunConfig(
+            workflow_name=trace_workflow_name or "PEAI Agent Session",
+            group_id=conversation_id,
+            trace_metadata=trace_metadata,
+        )
 
     result = await Runner.run(agent, agent_input, **runner_kwargs)
 
@@ -168,8 +176,10 @@ async def stream_agent_session(
     session_db_path: str,
     use_session: bool = True,
     run_context: Any | None = None,
+    trace_workflow_name: str | None = None,
+    trace_metadata: dict[str, Any] | None = None,
 ):
-    from agents import Runner, SQLiteSession
+    from agents import RunConfig, Runner, SQLiteSession
     from agents.stream_events import RawResponsesStreamEvent
     from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
@@ -184,6 +194,12 @@ async def stream_agent_session(
         runner_kwargs["session"] = session
     if run_context is not None:
         runner_kwargs["context"] = run_context
+    if trace_workflow_name is not None or trace_metadata is not None:
+        runner_kwargs["run_config"] = RunConfig(
+            workflow_name=trace_workflow_name or "PEAI Agent Session",
+            group_id=conversation_id,
+            trace_metadata=trace_metadata,
+        )
 
     result = Runner.run_streamed(agent, agent_input, **runner_kwargs)
     async for event in result.stream_events():
