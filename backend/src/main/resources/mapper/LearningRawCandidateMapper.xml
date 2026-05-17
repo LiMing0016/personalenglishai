@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.learning.LearningRawCandidateMapper">
+
+    <resultMap id="LearningRawCandidateResultMap" type="com.personalenglishai.backend.entity.learning.LearningRawCandidate">
+        <id column="id" property="id"/>
+        <result column="candidate_uid" property="candidateUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="message_uid" property="messageUid"/>
+        <result column="source_role" property="sourceRole"/>
+        <result column="candidate_type" property="candidateType"/>
+        <result column="text" property="text"/>
+        <result column="normalized_text" property="normalizedText"/>
+        <result column="extractor_type" property="extractorType"/>
+        <result column="extraction_run_uid" property="extractionRunUid"/>
+        <result column="source_excerpt" property="sourceExcerpt"/>
+        <result column="source_heading" property="sourceHeading"/>
+        <result column="local_signals_json" property="localSignalsJson"/>
+        <result column="local_feature_json" property="localFeatureJson"/>
+        <result column="model_confidence" property="modelConfidence"/>
+        <result column="comparison_status" property="comparisonStatus"/>
+        <result column="local_prefilter_score" property="localPrefilterScore"/>
+        <result column="embedding_score" property="embeddingScore"/>
+        <result column="judge_score" property="judgeScore"/>
+        <result column="final_candidate_score" property="finalCandidateScore"/>
+        <result column="occurrence_count" property="occurrenceCount"/>
+        <result column="first_seen_at" property="firstSeenAt"/>
+        <result column="last_seen_at" property="lastSeenAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id,
+        candidate_uid,
+        user_id,
+        conversation_uid,
+        message_uid,
+        source_role,
+        candidate_type,
+        text,
+        normalized_text,
+        extractor_type,
+        extraction_run_uid,
+        source_excerpt,
+        source_heading,
+        local_signals_json,
+        local_feature_json,
+        model_confidence,
+        comparison_status,
+        local_prefilter_score,
+        embedding_score,
+        judge_score,
+        final_candidate_score,
+        occurrence_count,
+        first_seen_at,
+        last_seen_at,
+        created_at,
+        updated_at
+    </sql>
+
+    <insert id="insertOrUpdateOccurrence" parameterType="com.personalenglishai.backend.entity.learning.LearningRawCandidate"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_raw_candidate (
+            candidate_uid,
+            user_id,
+            conversation_uid,
+            message_uid,
+            source_role,
+            candidate_type,
+            text,
+            normalized_text,
+            extractor_type,
+            extraction_run_uid,
+            source_excerpt,
+            source_heading,
+            local_signals_json,
+            local_feature_json,
+            model_confidence,
+            comparison_status,
+            local_prefilter_score,
+            embedding_score,
+            judge_score,
+            final_candidate_score,
+            occurrence_count,
+            first_seen_at,
+            last_seen_at
+        ) VALUES (
+            #{candidateUid},
+            #{userId},
+            #{conversationUid},
+            #{messageUid},
+            #{sourceRole},
+            #{candidateType},
+            #{text},
+            #{normalizedText},
+            #{extractorType},
+            #{extractionRunUid},
+            #{sourceExcerpt},
+            #{sourceHeading},
+            #{localSignalsJson},
+            #{localFeatureJson},
+            #{modelConfidence},
+            #{comparisonStatus},
+            #{localPrefilterScore},
+            #{embeddingScore},
+            #{judgeScore},
+            #{finalCandidateScore},
+            COALESCE(#{occurrenceCount}, 1),
+            COALESCE(#{firstSeenAt}, CURRENT_TIMESTAMP),
+            COALESCE(#{lastSeenAt}, CURRENT_TIMESTAMP)
+        )
+        ON DUPLICATE KEY UPDATE
+            occurrence_count = occurrence_count + COALESCE(VALUES(occurrence_count), 1),
+            message_uid = VALUES(message_uid),
+            conversation_uid = VALUES(conversation_uid),
+            source_role = VALUES(source_role),
+            extraction_run_uid = VALUES(extraction_run_uid),
+            source_excerpt = COALESCE(VALUES(source_excerpt), source_excerpt),
+            source_heading = COALESCE(VALUES(source_heading), source_heading),
+            local_signals_json = COALESCE(VALUES(local_signals_json), local_signals_json),
+            local_feature_json = COALESCE(VALUES(local_feature_json), local_feature_json),
+            model_confidence = COALESCE(VALUES(model_confidence), model_confidence),
+            local_prefilter_score = COALESCE(VALUES(local_prefilter_score), local_prefilter_score),
+            embedding_score = COALESCE(VALUES(embedding_score), embedding_score),
+            judge_score = COALESCE(VALUES(judge_score), judge_score),
+            final_candidate_score = COALESCE(VALUES(final_candidate_score), final_candidate_score),
+            last_seen_at = VALUES(last_seen_at),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="findByCandidateUid" resultMap="LearningRawCandidateResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_raw_candidate
+        WHERE candidate_uid = #{candidateUid}
+        LIMIT 1
+    </select>
+
+    <select id="findByDedupeKey" resultMap="LearningRawCandidateResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_raw_candidate
+        WHERE user_id = #{userId}
+          AND candidate_type = #{candidateType}
+          AND normalized_text = #{normalizedText}
+          AND extractor_type = #{extractorType}
+        LIMIT 1
+    </select>
+
+    <select id="selectByMessageUid" resultMap="LearningRawCandidateResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_raw_candidate
+        WHERE message_uid = #{messageUid}
+        ORDER BY final_candidate_score DESC, id DESC
+    </select>
+
+    <select id="selectByMessageUidAndExtractor" resultMap="LearningRawCandidateResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_raw_candidate
+        WHERE message_uid = #{messageUid}
+          AND extractor_type = #{extractorType}
+        ORDER BY final_candidate_score DESC, id DESC
+    </select>
+
+    <select id="selectByUserAndDateRange" resultMap="LearningRawCandidateResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_raw_candidate
+        WHERE user_id = #{userId}
+          AND last_seen_at &gt;= #{from}
+          AND last_seen_at &lt; #{to}
+        ORDER BY final_candidate_score DESC, occurrence_count DESC, last_seen_at DESC
+    </select>
+
+    <update id="updateComparisonStatus">
+        UPDATE learning_raw_candidate
+        SET comparison_status = #{comparisonStatus},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE candidate_uid = #{candidateUid}
+    </update>
+</mapper>

@@ -143,6 +143,7 @@ export default defineConfig({
             { text: '路由 Agent 设计', link: '/agent/路由Agent设计' },
             { text: 'Agent 可观测性与调试中心', link: '/agent/Agent可观测性与调试中心' },
             { text: 'AI 调试端设计', link: '/agent/AI调试端设计' },
+            { text: '对话词句采集清洗方案', link: '/agent/数据清洗/对话词句采集清洗方案' },
             { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/OpenAI Agents SDK中文学习笔记' }
           ]
         }

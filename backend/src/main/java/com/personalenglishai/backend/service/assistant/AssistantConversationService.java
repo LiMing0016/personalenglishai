@@ -26,7 +26,10 @@ import com.personalenglishai.backend.mapper.assistant.AssistantConversationMappe
 import com.personalenglishai.backend.mapper.assistant.AssistantMessageMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantProjectMapper;
 import com.personalenglishai.backend.mapper.assistant.AssistantShareMapper;
+import com.personalenglishai.backend.service.learning.LearningCaptureService;
 import com.personalenglishai.backend.service.ops.AgentDebugService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -47,6 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class AssistantConversationService {
+    private static final Logger log = LoggerFactory.getLogger(AssistantConversationService.class);
     private static final String DEFAULT_TITLE = "新对话";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int MAX_ATTACHMENT_COUNT = 5;
@@ -73,6 +77,7 @@ public class AssistantConversationService {
     private final AssistantRequestValidator assistantRequestValidator;
     private final ObjectMapper objectMapper;
     private final AgentDebugService agentDebugService;
+    private final LearningCaptureService learningCaptureService;
 
     public AssistantConversationService(
             AssistantProjectMapper projectMapper,
@@ -82,7 +87,8 @@ public class AssistantConversationService {
             PythonAssistantClient pythonAssistantClient,
             AssistantRequestValidator assistantRequestValidator,
             ObjectMapper objectMapper,
-            AgentDebugService agentDebugService) {
+            AgentDebugService agentDebugService,
+            LearningCaptureService learningCaptureService) {
         this.projectMapper = projectMapper;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
@@ -91,6 +97,7 @@ public class AssistantConversationService {
         this.assistantRequestValidator = assistantRequestValidator;
         this.objectMapper = objectMapper;
         this.agentDebugService = agentDebugService;
+        this.learningCaptureService = learningCaptureService;
     }
 
     public List<AssistantProjectResponse> listProjects(Long userId) {
@@ -205,7 +212,7 @@ public class AssistantConversationService {
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
-        messageMapper.insert(userMessage);
+        persistAndCaptureMessage(userMessage);
 
         PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.run(request, authorization);
         String replyText = reply == null ? "" : reply.text();
@@ -214,7 +221,7 @@ public class AssistantConversationService {
         }
         agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
 
-        messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+        persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
         conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         return getConversation(userId, conversationUid);
@@ -232,7 +239,7 @@ public class AssistantConversationService {
 
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
-        messageMapper.insert(buildMessage(userId, conversationUid, "user", prompt, nextOrder));
+        persistAndCaptureMessage(buildMessage(userId, conversationUid, "user", prompt, nextOrder));
 
         StringBuilder deltaContent = new StringBuilder();
         StringBuilder completedContent = new StringBuilder();
@@ -258,7 +265,7 @@ public class AssistantConversationService {
         String replyText = !completedContent.isEmpty() ? completedContent.toString() : deltaContent.toString();
         if (!failed.get() && !replyText.isBlank()) {
             agentDebugService.recordAssistantRun(userId, conversationUid, prompt, runMetadataHolder.run, replyText);
-            messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+            persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
             String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
             conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         }
@@ -281,7 +288,7 @@ public class AssistantConversationService {
         int nextOrder = nextSortOrder(conversationUid);
 
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
-        messageMapper.insert(userMessage);
+        persistAndCaptureMessage(userMessage);
 
             PythonAssistantClient.PythonAssistantReply reply = pythonAssistantClient.chat(
                 new PythonAssistantClient.PythonAssistantChatRequest(
@@ -297,7 +304,7 @@ public class AssistantConversationService {
         }
         agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
 
-        messageMapper.insert(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+        persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
         conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         return getConversation(userId, conversationUid);
@@ -456,6 +463,25 @@ public class AssistantConversationService {
         message.setStatus("done");
         message.setSortOrder(sortOrder);
         return message;
+    }
+
+    private void persistAndCaptureMessage(AssistantMessage message) {
+        messageMapper.insert(message);
+        try {
+            learningCaptureService.captureMessage(
+                    message.getUserId(),
+                    message.getConversationUid(),
+                    message.getMessageUid(),
+                    message.getRole(),
+                    message.getContent());
+        } catch (Exception e) {
+            log.warn("learning capture failed. userId={} conversationUid={} messageUid={} role={}",
+                    message.getUserId(),
+                    message.getConversationUid(),
+                    message.getMessageUid(),
+                    message.getRole(),
+                    e);
+        }
     }
 
     private int nextSortOrder(String conversationUid) {
