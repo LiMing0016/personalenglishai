@@ -75,6 +75,23 @@ export interface AdminUserDetail {
   ability: Record<string, unknown>
   stats: Record<string, unknown>
   recentEvaluations: any[]
+  aiUsageRecords?: AdminUserAiUsageRecord[]
+  auditLogs?: Array<Record<string, unknown>>
+  quickLinks?: AdminUserOverview['quickLinks']
+}
+
+export interface AdminUserAiUsageRecord {
+  id?: string
+  featureKey?: string | null
+  provider?: string | null
+  model?: string | null
+  inputTokens?: number | null
+  cachedInputTokens?: number | null
+  outputTokens?: number | null
+  reasoningTokens?: number | null
+  totalTokens?: number | null
+  traceId?: string | null
+  occurredAt?: string | null
 }
 
 export interface AdminUserOverview {
@@ -109,6 +126,48 @@ export interface AdminUserOverview {
     aiUsage: string
     auditLogs: string
   }
+}
+
+export interface AdminDataCatalogTable {
+  tableName: string
+  title: string | null
+  module: string | null
+  rowCount: number
+  sensitivity: 'low' | 'medium' | 'high' | 'critical' | string
+  latestAt: string | null
+  adminRoute: string | null
+  description: string | null
+}
+
+export interface AdminDataCatalogColumn {
+  name: string
+  type: string | null
+  nullable: boolean
+  defaultValue: string | null
+  primaryKey: boolean
+  sensitive: boolean
+  comment: string | null
+}
+
+export interface AdminDataCatalogIndex {
+  name: string
+  columns: string | null
+  uniqueIndex: boolean
+}
+
+export interface AdminDataCatalogForeignKey {
+  name: string
+  columnName: string | null
+  referencedTableName: string | null
+  referencedColumnName: string | null
+}
+
+export interface AdminDataCatalogTableDetail extends AdminDataCatalogTable {
+  columns: AdminDataCatalogColumn[]
+  indexes: AdminDataCatalogIndex[]
+  foreignKeys: AdminDataCatalogForeignKey[]
+  sensitiveColumns: string[]
+  securityNotes: string[]
 }
 
 export interface AdminEssayListItem {
@@ -378,6 +437,12 @@ export const adminApi = {
   },
   updateSubscriptionQuotaRule(planCode: string, payload: { dailyTokenLimit?: number; monthlyTokenLimit?: number }) {
     return http.put<AdminSubscriptionQuotaRule>(`/admin/subscription/quota-rules/${planCode}`, payload).then((r) => r.data)
+  },
+  listDataCatalogTables(params: Record<string, unknown>) {
+    return http.get<AdminDataCatalogTable[]>('/admin/data-catalog/tables', { params }).then((r) => r.data)
+  },
+  getDataCatalogTable(tableName: string) {
+    return http.get<AdminDataCatalogTableDetail>(`/admin/data-catalog/tables/${encodeURIComponent(tableName)}`).then((r) => r.data)
   },
 }
 

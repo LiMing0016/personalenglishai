@@ -2,13 +2,14 @@
 title: 当前管理员端产品说明与设计方案
 status: draft
 owner: product
-last_updated: 2026-05-16
+last_updated: 2026-05-17
 review_cycle: on-change
 related_code:
   - web/src/layouts/AdminLayout.vue
   - web/src/layouts/adminNav.ts
   - web/src/modules/admin/dashboard/
   - web/src/pages/admin/
+  - web/src/pages/admin/AdminDocsPage.vue
   - web/src/pages/ops/agent/
   - web/src/api/admin.ts
   - web/src/api/opsAgent.ts
@@ -18,6 +19,7 @@ related_docs:
   - docs/admin/index.md
   - docs/admin/user-center-design.md
   - docs/admin/bi-analytics-design.md
+  - docs/admin/data-catalog-design.md
   - docs/api/admin-users.md
   - docs/api/admin-subscription.md
   - docs/api/agent-debug.md
@@ -33,9 +35,9 @@ related_docs:
 
 1. 后台壳和导航已经按业务域分组。
 2. 用户、订阅和 Agent Debug 已经接入真实接口或真实运行数据。
-3. BI 分析、内容资产扩展项和模型用量等模块已有前端骨架或导航入口，但还不是完整生产能力。
+3. 文档首页、数据地图、BI 分析、内容资产扩展项和模型用量等模块已有前端骨架或导航入口，其中数据地图已接入只读元数据接口。
 
-后续设计不应推翻现有实现，而应在当前基础上补齐产品闭环：用户中心补摘要抽屉和 360 详情页；订阅模块继续保持用户资产视角；Agent Debug 保持排查支持定位；BI 分析逐步从 Mock 和复用接口迁移到真实聚合接口。
+后续设计不应推翻现有实现，而应在当前基础上补齐产品闭环：用户中心补摘要抽屉和 360 详情页；订阅模块继续保持用户资产视角；Agent Debug 保持排查支持定位；数据地图保持只读数据目录边界；BI 分析逐步从 Mock 和复用接口迁移到真实聚合接口。
 
 ## 产品定位
 
@@ -59,7 +61,8 @@ Admin 后台面向三类内部角色：
 - `adminNav.ts` 集中维护导航分组、路由、权限和实现状态。
 - 左侧导航按总览、用户运营、订阅与权益、作文与评测、内容资产、AI 与 Agent、数据分析、审计与系统分组。
 - 导航入口按管理员权限裁剪。
-- 顶部提供返回主站和 AI 调试端入口。
+- 顶部提供文档首页、返回主站和 AI 调试端入口。
+- `/admin/docs` 提供项目文档站快捷入口，默认打开本地 VitePress 文档站。
 
 当前限制：
 
@@ -145,6 +148,25 @@ Admin 后台面向三类内部角色：
 - 真实聚合 API 尚未完整实现。
 - 成本估算、留存、漏斗等指标还需要统一数据口径。
 
+### 数据地图
+
+当前已有：
+
+- `/admin/data-catalog` 数据表列表。
+- `/admin/data-catalog/:tableName` 数据表详情。
+- 后端 `GET /api/admin/data-catalog/tables` 和 `GET /api/admin/data-catalog/tables/{tableName}` 只读接口。
+- 后端通过 `information_schema` 读取表、字段、索引和外键元数据。
+- `admin-data-catalog.yml` 维护中文名、所属模块、敏感级别、业务入口和安全说明。
+- `super_admin` 通过 `admin.data_catalog.read` 权限查看数据地图。
+- 页面只展示表结构、表级状态和业务入口，不展示业务表原始行数据。
+
+当前限制：
+
+- 首版不提供任意 SQL 查询。
+- 首版不展示脱敏样例行。
+- 表级行数使用 MySQL 近似值，不对大表实时 `COUNT(*)`。
+- 数据健康异常提示和跨模块排查建议仍需继续增强。
+
 ## 目标视觉和交互方向
 
 当前视觉稿确认后台应采用主流 SaaS 管理工具风格：
@@ -179,6 +201,7 @@ flowchart LR
 | 用户详情 | 基础详情页 | 360 顶部摘要 + 标签页 + 模块化数据表 | P1 |
 | 订阅模块 | 已接真实数据 | 支持从用户中心带 `userId` 反查，补兑换码和权益流水 | P1 |
 | Agent Debug | 已接真实 run | 补导出权限、访问审计和更明确的调试数据边界 | P1 |
+| 数据地图 | 已接只读元数据接口 | 补数据健康异常提示、排查建议和脱敏样例权限 | P1 |
 | BI 分析 | 前端骨架 / Mock | 逐步接真实聚合接口 | P2 |
 | 模型用量 | 导航占位 | 模型、workflow、token、成本和失败率聚合 | P2 |
 | 原始数据 | 未实现 | `super_admin` 脱敏查看，访问写审计 | P3 |
@@ -285,6 +308,8 @@ P1 先交付概览、账号资料、学习画像、订阅与额度；P2 再接�
 | `GET /api/admin/audit-logs?targetUserId=:id` | 用户审计反查 | 待补用户中心联动 |
 | `GET /api/ops/agent/runs` | Agent run 查询 | 已实现 |
 | `GET /api/ops/agent/prompts` | Prompt snapshot 查询 | 已实现 |
+| `GET /api/admin/data-catalog/tables` | 数据地图表列表 | 已实现 |
+| `GET /api/admin/data-catalog/tables/{tableName}` | 数据地图表详情 | 已实现 |
 
 ## 后续实施计划
 
@@ -330,4 +355,3 @@ P1 先交付概览、账号资料、学习画像、订阅与额度；P2 再接�
 - 所有高风险字段默认脱敏或折叠。
 - 导出、原始数据和管理员角色修改有权限控制和审计记录。
 - `web` 构建、`backend` 测试和 `docs` 构建通过。
-

@@ -14,7 +14,7 @@ related_docs:
   - docs/admin/current-admin-product-design.md
   - docs/admin/user-center-design.md
   - docs/admin/bi-analytics-design.md
-  - docs/agent/agent-observability-center.md
+  - docs/agent/Agent可观测性与调试中心.md
   - docs/ai-debug/index.md
   - docs/product/subscription/subscription-token-quota.md
 ---
@@ -30,6 +30,8 @@ related_docs:
 用户中心的后续演进采用“用户索引页 + 用户摘要抽屉 + 用户 360 详情页 + 独立业务模块反查”的结构，详见 [Admin 用户中心设计方案](./user-center-design.md)。
 
 BI 分析后台作为 `/admin` 下的独立数据分析模块演进，不塞进用户中心或普通 Dashboard。首版采用“固定指标看板 + Mock 数据 + API 契约预留”的前端先行方案，详见 [Admin BI 分析后台前端方案](./bi-analytics-design.md)。
+
+数据地图作为 `/admin` 下的系统数据目录演进，用于解释核心表、字段、敏感级别、表级健康状态和对应业务排查入口，不做任意 SQL 查询器，详见 [Admin 数据地图设计方案](./data-catalog-design.md)。
 
 当前分支已实现的后台壳、用户中心、订阅与权益、Agent Debug 和 BI 骨架状态，统一记录在 [当前管理员端产品说明与设计方案](./current-admin-product-design.md)。该文档用于区分“已经可用的能力”和“基于视觉稿继续补齐的目标形态”。
 
@@ -135,6 +137,7 @@ flowchart TB
 | 数据分析 | 转化漏斗 | `/admin/analytics/funnel` | 注册到订阅漏斗 |
 | 审计与系统 | 审计日志 | `/admin/audit-logs` | 管理员操作追踪 |
 | 审计与系统 | 管理员权限 | `/admin/admin-users` | 角色和权限分配 |
+| 审计与系统 | 数据地图 | `/admin/data-catalog` | 数据表、字段、敏感级别和业务入口 |
 
 当前已有路由优先复用：`/admin/users`、`/admin/essays`、`/admin/prompts`、`/admin/rubrics`、`/admin/audit-logs`。新模块首期可以先做空状态或只读列表，不阻塞已有能力。
 
@@ -272,6 +275,8 @@ AI 与 Agent 是排查和质量治理入口。
 
 系统配置首期只作为入口，不急于实现复杂配置中心。
 
+数据地图用于解释系统核心数据资产，帮助管理员理解表结构、业务含义、敏感字段、行数和排查入口。它不替代数据库客户端，不提供任意 SQL 查询，也不展示密码、token、验证码、密钥等敏感值。详细方案见 [Admin 数据地图设计方案](./data-catalog-design.md)。
+
 ## 权限模型
 
 复用现有角色：
@@ -311,6 +316,8 @@ AI 与 Agent 是排查和质量治理入口。
 | `admin.analytics.read` | 查看 BI 看板 |
 | `admin.analytics.export` | 导出 BI 数据 |
 | `admin.analytics.cost.read` | 查看成本估算 |
+| `admin.data_catalog.read` | 查看数据地图 |
+| `admin.data_catalog.sample_read` | 查看脱敏样例，后续阶段启用 |
 
 前端根据权限裁剪导航和按钮；后端仍必须在 controller 或 service 层执行权限校验。
 
