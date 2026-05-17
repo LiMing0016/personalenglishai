@@ -115,6 +115,11 @@ ai:
         base-url: ${AI_PROVIDER_QWEN_BASE_URL:${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}}
         model: ${AI_PROVIDER_QWEN_MODEL:${QWEN_MODEL:qwen-plus}}
         image-model: ${AI_PROVIDER_QWEN_IMAGE_MODEL:}
+      deepseek:
+        api-key: ${AI_PROVIDER_DEEPSEEK_API_KEY:${DEEPSEEK_API_KEY:}}
+        base-url: ${AI_PROVIDER_DEEPSEEK_BASE_URL:${DEEPSEEK_BASE_URL:https://api.deepseek.com}}
+        model: ${AI_PROVIDER_DEEPSEEK_MODEL:${DEEPSEEK_MODEL:deepseek-chat}}
+        image-model: ${AI_PROVIDER_DEEPSEEK_IMAGE_MODEL:}
   prompt:
     debug: ${AI_PROMPT_DEBUG:false}
     log-raw-enabled: ${AI_PROMPT_LOG_RAW_ENABLED:false}
@@ -134,6 +139,15 @@ ai:
         fallback-enabled: ${AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED:true}
   repair:
     enabled: ${AI_REPAIR_ENABLED:false}
+
+learning:
+  capture:
+    deepseek:
+      model: ${LEARNING_CAPTURE_DEEPSEEK_MODEL:${DEEPSEEK_MODEL:deepseek-chat}}
+      scheduler:
+        enabled: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_ENABLED:false}
+        fixed-delay-ms: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_FIXED_DELAY_MS:60000}
+        batch-size: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_BATCH_SIZE:10}
 
 languagetool:
   enabled: ${LANGUAGETOOL_ENABLED:false}

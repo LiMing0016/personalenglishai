@@ -22,6 +22,13 @@
         ORDER BY sort_order ASC, id ASC
     </select>
 
+    <select id="findByMessageUid" resultMap="AssistantMessageResultMap">
+        SELECT id, message_uid, conversation_uid, user_id, role, content, status, sort_order, created_at
+        FROM assistant_message
+        WHERE message_uid = #{messageUid}
+        LIMIT 1
+    </select>
+
     <select id="selectMaxSortOrder" resultType="java.lang.Integer">
         SELECT MAX(sort_order)
         FROM assistant_message

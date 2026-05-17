@@ -10,6 +10,8 @@ import java.util.List;
 public interface AssistantMessageMapper {
     List<AssistantMessage> selectByConversationUid(@Param("conversationUid") String conversationUid);
 
+    AssistantMessage findByMessageUid(@Param("messageUid") String messageUid);
+
     Integer selectMaxSortOrder(@Param("conversationUid") String conversationUid);
 
     int insert(AssistantMessage message);
