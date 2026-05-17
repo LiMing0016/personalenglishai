@@ -175,6 +175,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/modules/admin/dashboard/pages/AdminDashboardPage.vue'),
       },
       {
+        path: 'docs',
+        name: 'AdminDocs',
+        component: () => import('@/pages/admin/AdminDocsPage.vue'),
+      },
+      {
         path: 'analytics',
         name: 'AdminAnalyticsOverview',
         component: () => import('@/modules/admin/analytics/pages/AdminAnalyticsOverviewPage.vue'),
@@ -300,11 +305,25 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/admin/AdminAuditLogsPage.vue'),
       },
       {
+        path: 'data-catalog',
+        name: 'AdminDataCatalog',
+        component: () => import('@/pages/admin/AdminDataCatalogPage.vue'),
+      },
+      {
+        path: 'data-catalog/:tableName',
+        name: 'AdminDataCatalogDetail',
+        component: () => import('@/pages/admin/AdminDataCatalogDetailPage.vue'),
+      },
+      {
         path: 'admin-users',
         name: 'AdminAdminUsers',
         component: () => import('@/pages/admin/AdminAdminUsersPage.vue'),
       },
     ],
+  },
+  {
+    path: '/agent/agent-observability-center',
+    redirect: OPS_AGENT_HOME,
   },
   {
     path: '/ops/agent',

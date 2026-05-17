@@ -17,6 +17,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     label: '总览',
     items: [
       { to: '/admin/dashboard', label: 'Dashboard', status: 'implemented' },
+      { to: '/admin/docs', label: '文档首页', status: 'implemented' },
     ],
   },
   {
@@ -72,6 +73,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     items: [
       { to: '/admin/audit-logs', label: '审计日志', permission: 'admin.audit.read', status: 'implemented' },
       { to: '/admin/admin-users', label: '管理员权限', permission: 'admin.users.write', status: 'placeholder' },
+      { to: '/admin/data-catalog', label: '数据地图', permission: 'admin.data_catalog.read', status: 'implemented' },
     ],
   },
 ]

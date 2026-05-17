@@ -11,6 +11,14 @@ test('admin navigation links Agent Debug to the standalone AI ops console', () =
   assert.equal(agentDebug?.status, 'implemented')
 })
 
+test('admin navigation exposes the documentation home entry', () => {
+  const overviewGroup = adminNavGroups.find((group) => group.label === '总览')
+  const docsHome = overviewGroup?.items.find((item) => item.label === '文档首页')
+
+  assert.equal(docsHome?.to, '/admin/docs')
+  assert.equal(docsHome?.status, 'implemented')
+})
+
 test('admin navigation exposes BI analytics pages with explicit placeholder states', () => {
   const analyticsGroup = adminNavGroups.find((group) => group.label === '数据分析')
 
@@ -25,4 +33,13 @@ test('admin navigation exposes BI analytics pages with explicit placeholder stat
       ['转化漏斗', '/admin/analytics/funnel', 'placeholder'],
     ],
   )
+})
+
+test('admin navigation exposes the data catalog system entry', () => {
+  const systemGroup = adminNavGroups.find((group) => group.label === '审计与系统')
+  const dataCatalog = systemGroup?.items.find((item) => item.label === '数据地图')
+
+  assert.equal(dataCatalog?.to, '/admin/data-catalog')
+  assert.equal(dataCatalog?.permission, 'admin.data_catalog.read')
+  assert.equal(dataCatalog?.status, 'implemented')
 })

@@ -1,0 +1,364 @@
+users:
+  title: 用户账号
+  module: 用户中心
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: updated_at
+  description: 存储用户账号基础信息，是用户中心和权限判断的基础表。
+  sensitiveColumns: [email, phone, password_hash]
+  securityNotes:
+    - 不展示 password_hash、refresh token、验证码等敏感值。
+    - 邮箱和手机号在样例数据阶段必须脱敏。
+
+email_verification_token:
+  title: 邮箱验证令牌
+  module: 用户中心
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: created_at
+  description: 存储注册、登录或找回密码过程中的邮箱验证令牌。
+  sensitiveColumns: [token, code]
+  securityNotes:
+    - 验证令牌和验证码永不在管理员端展示原值。
+
+user_profile:
+  title: 用户学习资料
+  module: 用户中心
+  sensitivity: medium
+  adminRoute: /admin/users
+  timeColumn: updated_at
+  description: 存储用户学段、学习偏好和画像相关基础资料。
+  sensitiveColumns: []
+  securityNotes:
+    - 学习画像用于业务排查，不作为数据库客户端展示入口。
+
+admin_user_role:
+  title: 管理员角色关系
+  module: 审计与系统
+  sensitivity: medium
+  adminRoute: /admin/admin-users
+  timeColumn: updated_at
+  description: 存储管理员账号和后台角色的绑定关系，用于计算管理员权限。
+  sensitiveColumns: []
+  securityNotes:
+    - 角色调整必须通过管理员权限页面，并写入审计日志。
+
+documents:
+  title: 作文文档
+  module: 作文与评测
+  sensitivity: high
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储用户写作草稿、作文文档和编辑状态。
+  sensitiveColumns: [content]
+  securityNotes:
+    - 作文正文属于用户内容，数据地图只展示结构，不展示原文。
+
+document_revisions:
+  title: 文档修订历史
+  module: 作文与评测
+  sensitivity: high
+  adminRoute: /admin/essays
+  timeColumn: created_at
+  description: 存储作文文档的历史版本，用于恢复和追踪编辑过程。
+  sensitiveColumns: [content]
+  securityNotes:
+    - 历史正文同样属于用户内容，不能在数据地图展示原值。
+
+document_pins:
+  title: 置顶作文文档
+  module: 作文与评测
+  sensitivity: low
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储用户置顶作文文档的关系，用于作文列表排序和快捷访问。
+  sensitiveColumns: []
+  securityNotes:
+    - 该表只记录置顶关系，不展示作文正文。
+
+user_ability_profile:
+  title: 用户能力画像
+  module: 用户中心
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: updated_at
+  description: 存储基于作文评测生成的用户能力画像、维度分和样本统计。
+  sensitiveColumns: [profile_json]
+  securityNotes:
+    - 能力画像属于学习诊断数据，需按用户隐私数据处理。
+
+essay_evaluation:
+  title: 作文评测结果
+  module: 作文与评测
+  sensitivity: high
+  adminRoute: /admin/essays
+  timeColumn: created_at
+  description: 存储作文评测结果、分数和结构化反馈。
+  sensitiveColumns: [essay_text, result_json]
+  securityNotes:
+    - 作文正文和完整评分 JSON 属于高敏业务内容，首版不在数据地图展示原值。
+
+essay_evaluation_dimension:
+  title: 评测维度明细
+  module: 作文与评测
+  sensitivity: medium
+  adminRoute: /admin/essays
+  timeColumn: created_at
+  description: 存储作文评分各维度的分数、等级和反馈明细。
+  sensitiveColumns: [feedback]
+  securityNotes:
+    - 维度反馈通过作文排查页面查看，数据地图只展示结构。
+
+document_score_summary:
+  title: 文档评分摘要
+  module: 作文与评测
+  sensitivity: medium
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储作文文档最新评分摘要，用于列表快速展示。
+  sensitiveColumns: []
+  securityNotes:
+    - 完整评分详情仍以 essay_evaluation 为准。
+
+essay_favorite:
+  title: 作文收藏关系
+  module: 作文与评测
+  sensitivity: low
+  adminRoute: /admin/essays
+  timeColumn: created_at
+  description: 存储用户收藏作文或评测记录的关系。
+  sensitiveColumns: []
+  securityNotes:
+    - 该表只记录收藏关系，不展示作文内容。
+
+evaluate_task:
+  title: 异步评测任务
+  module: 作文与评测
+  sensitivity: medium
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储作文异步评分任务状态、失败原因和任务流转信息。
+  sensitiveColumns: [error_message]
+  securityNotes:
+    - 失败原因可能包含排障上下文，展示时需要控制长度。
+
+assistant_project:
+  title: 学习助手项目
+  module: 学习助手
+  sensitivity: medium
+  adminRoute: /admin/users
+  timeColumn: updated_at
+  description: 存储学习助手项目空间，用于组织会话和学习材料。
+  sensitiveColumns: []
+  securityNotes:
+    - 项目内容下钻应通过用户或助手业务页面，不在数据地图展开。
+
+assistant_conversation:
+  title: 学习助手会话
+  module: 学习助手
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: updated_at
+  description: 存储用户与学习助手的会话头、上下文状态和所属项目。
+  sensitiveColumns: [title, summary]
+  securityNotes:
+    - 会话内容可能包含用户学习隐私，首版不展示原始消息。
+
+assistant_message:
+  title: 学习助手消息
+  module: 学习助手
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: created_at
+  description: 存储学习助手会话中的用户消息、助手回复和运行结果。
+  sensitiveColumns: [content, metadata_json]
+  securityNotes:
+    - 消息正文和模型输出属于高敏内容，数据地图只展示表结构。
+
+assistant_share:
+  title: 助手公开分享快照
+  module: 学习助手
+  sensitivity: high
+  adminRoute: /admin/users
+  timeColumn: created_at
+  description: 存储学习助手公开分享链接的快照数据。
+  sensitiveColumns: [share_token, snapshot_json]
+  securityNotes:
+    - 分享 token 和快照内容不得在数据地图展示原值。
+
+writing_stage:
+  title: 写作学段配置
+  module: 内容资产
+  sensitivity: low
+  adminRoute: /admin/scoring-config
+  timeColumn: updated_at
+  description: 存储写作学段、考试类型和基础展示配置。
+  sensitiveColumns: []
+  securityNotes:
+    - 该表是公开业务配置，不含用户隐私。
+
+essay_prompt:
+  title: 作文题库
+  module: 内容资产
+  sensitivity: medium
+  adminRoute: /admin/prompts
+  timeColumn: updated_at
+  description: 存储作文题目、题干、材料、图片说明和考试配置。
+  sensitiveColumns: [prompt_text, material_text]
+  securityNotes:
+    - 题库内容通过题库页面管理，数据地图不提供编辑能力。
+
+writing_prompt_sheet:
+  title: AI 题单素材库
+  module: 内容资产
+  sensitivity: medium
+  adminRoute: /admin/prompt-assets
+  timeColumn: updated_at
+  description: 存储 AI 生成或整理的写作题单、题组和画布素材。
+  sensitiveColumns: [payload_json]
+  securityNotes:
+    - 题单 JSON 可能包含较长内容，首版不展示原值。
+
+writing_metadata:
+  title: 写作通用元数据
+  module: 作文与评测
+  sensitivity: medium
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储作文文档的通用写作上下文、题目和模式信息。
+  sensitiveColumns: [task_prompt]
+  securityNotes:
+    - 题目和上下文通过作文排查页面查看。
+
+writing_exam_metadata:
+  title: 考试写作元数据
+  module: 作文与评测
+  sensitivity: medium
+  adminRoute: /admin/essays
+  timeColumn: updated_at
+  description: 存储考试写作专用元数据，例如考试类型、任务类型和评分口径。
+  sensitiveColumns: []
+  securityNotes:
+    - 该表为考试写作上下文补充信息。
+
+subscription_plan:
+  title: 订阅套餐配置
+  module: 订阅与权益
+  sensitivity: low
+  adminRoute: /admin/subscriptions
+  timeColumn: updated_at
+  description: 存储 Free、Basic、Pro、Premium 等套餐及 token 额度规则。
+  sensitiveColumns: []
+  securityNotes:
+    - 套餐配置修改必须通过订阅与权益页面。
+
+user_subscription:
+  title: 用户当前订阅
+  module: 订阅与权益
+  sensitivity: medium
+  adminRoute: /admin/subscriptions
+  timeColumn: updated_at
+  description: 存储用户当前套餐、订阅状态和周期信息。
+  sensitiveColumns: []
+  securityNotes:
+    - 权益调整必须走订阅与权益业务页面和审计流程。
+
+ai_token_usage_event:
+  title: AI Token 消耗明细
+  module: AI 用量
+  sensitivity: medium
+  adminRoute: /admin/model-usage
+  timeColumn: occurred_at
+  description: 每次可统计 usage 的 AI 调用明细流水，是 token 对账的明细账本。
+  sensitiveColumns: [trace_id]
+  securityNotes:
+    - 首版只展示字段和统计，不展示原始模型输入输出。
+    - trace_id 用于排查链路，按敏感排障字段处理。
+
+user_ai_token_usage_monthly:
+  title: 用户月 Token 聚合
+  module: 订阅与权益
+  sensitivity: medium
+  adminRoute: /admin/subscriptions
+  timeColumn: updated_at
+  description: 有效付费用户的自然月 token 聚合，用于快速额度判断。
+  sensitiveColumns: []
+  securityNotes:
+    - 聚合表只用于额度判断，明细以 ai_token_usage_event 为准。
+
+user_ai_token_usage_daily:
+  title: 用户日 Token 聚合
+  module: 订阅与权益
+  sensitivity: medium
+  adminRoute: /admin/subscriptions
+  timeColumn: updated_at
+  description: Free、未订阅或过期订阅用户的自然日 token 聚合，用于快速额度判断。
+  sensitiveColumns: []
+  securityNotes:
+    - 聚合表只用于额度判断，明细以 ai_token_usage_event 为准。
+
+subscription_redeem_code:
+  title: 订阅兑换码
+  module: 订阅与权益
+  sensitivity: high
+  adminRoute: /admin/subscription/redeem-codes
+  timeColumn: updated_at
+  description: 存储订阅兑换码、套餐、有效期、使用次数和状态。
+  sensitiveColumns: [code]
+  securityNotes:
+    - 兑换码原值属于敏感权益凭证，列表展示时应脱敏或按权限控制。
+
+subscription_redeem_event:
+  title: 兑换码使用记录
+  module: 订阅与权益
+  sensitivity: medium
+  adminRoute: /admin/subscription/redeem-codes
+  timeColumn: created_at
+  description: 记录兑换码被哪个用户使用、何时使用以及兑换结果。
+  sensitiveColumns: []
+  securityNotes:
+    - 兑换记录用于对账和审计，不在数据地图展示用户明细。
+
+admin_audit_log:
+  title: 管理员操作审计
+  module: 审计与系统
+  sensitivity: high
+  adminRoute: /admin/audit-logs
+  timeColumn: created_at
+  description: 记录管理员关键操作，用于追踪权限、治理和配置变更。
+  sensitiveColumns: [before_json, after_json, ip, user_agent]
+  securityNotes:
+    - 审计详情应通过审计日志页面查看，敏感字段按权限控制。
+
+agent_debug_run:
+  title: Agent 调试运行记录
+  module: AI 与 Agent
+  sensitivity: high
+  adminRoute: /ops/agent/runs
+  timeColumn: created_at
+  description: 存储每次 Agent 请求的运行摘要、路由决策、模型输出和 usage。
+  sensitiveColumns: [route_request_json, routing_decision_json, final_output_json, error_message]
+  securityNotes:
+    - Agent 输入输出可能包含用户内容和 prompt，上线展示需脱敏。
+
+agent_debug_step:
+  title: Agent 调试步骤
+  module: AI 与 Agent
+  sensitivity: high
+  adminRoute: /ops/agent/runs
+  timeColumn: created_at
+  description: 存储 Agent run 内部步骤、工具调用、模型输入输出和 usage 片段。
+  sensitiveColumns: [input_json, output_json, error_message]
+  securityNotes:
+    - 步骤详情用于工程排障，不作为普通运营数据展示。
+
+agent_prompt_snapshot:
+  title: Agent Prompt 快照
+  module: AI 与 Agent
+  sensitivity: high
+  adminRoute: /ops/agent/prompts
+  timeColumn: created_at
+  description: 存储 Agent 运行时使用的 prompt key、版本、hash 和快照内容。
+  sensitiveColumns: [prompt_text]
+  securityNotes:
+    - Prompt 快照属于 AI 系统资产，查看和导出需要权限控制。

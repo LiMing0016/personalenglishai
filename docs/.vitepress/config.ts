@@ -116,6 +116,7 @@ export default defineConfig({
             { text: '润色', link: '/ai/polish-feature' },
             { text: '学习助手', link: '/ai/learning-assistant-architecture' },
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
+            { text: 'Prompt 管理', link: '/ai/prompt-management' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
           ]
         }
@@ -127,7 +128,8 @@ export default defineConfig({
             { text: 'Admin 后台体验改造', link: '/admin/' },
             { text: '当前管理员端产品说明', link: '/admin/current-admin-product-design' },
             { text: '用户中心设计方案', link: '/admin/user-center-design' },
-            { text: 'BI 分析后台方案', link: '/admin/bi-analytics-design' }
+            { text: 'BI 分析后台方案', link: '/admin/bi-analytics-design' },
+            { text: '数据地图设计方案', link: '/admin/data-catalog-design' }
           ]
         }
       ],
@@ -136,10 +138,12 @@ export default defineConfig({
           text: 'Agent',
           items: [
             { text: 'Agent 设计总览', link: '/agent/' },
-            { text: '路由 Agent', link: '/agent/路由agent' },
-            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/openai-agents-sdk-study-notes' },
-            { text: 'Agent 可观测性与调试中心', link: '/agent/agent-observability-center' },
-            { text: 'AI 调试端设计', link: '/agent/ai-debug-console' }
+            { text: 'Agent 产品现状与路线图', link: '/agent/Agent产品现状与路线图' },
+            { text: 'Agent 能力清单', link: '/agent/Agent能力清单' },
+            { text: '路由 Agent 设计', link: '/agent/路由Agent设计' },
+            { text: 'Agent 可观测性与调试中心', link: '/agent/Agent可观测性与调试中心' },
+            { text: 'AI 调试端设计', link: '/agent/AI调试端设计' },
+            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/OpenAI Agents SDK中文学习笔记' }
           ]
         }
       ],
