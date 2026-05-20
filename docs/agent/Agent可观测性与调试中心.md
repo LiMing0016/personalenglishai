@@ -2,15 +2,16 @@
 title: Agent 可观测性与调试中心
 status: draft
 owner: ai
-last_updated: 2026-05-16
+last_updated: 2026-05-17
 review_cycle: monthly
 related_code:
   - python/ai_orchestrator/
   - backend/
   - web/
 related_docs:
-  - docs/agent/路由agent.md
-  - docs/agent/openai-agents-sdk-study-notes.md
+  - docs/agent/路由Agent设计.md
+  - docs/agent/OpenAI Agents SDK中文学习笔记.md
+  - docs/agent/Agent产品现状与路线图.md
   - docs/ai/openai-agents-request-architecture.md
 ---
 
@@ -673,7 +674,7 @@ P2 通过标准：
 
 ## 相关资料
 
-- [路由 Agent](./路由agent.md)
-- [OpenAI Agents SDK 中文学习笔记](./openai-agents-sdk-study-notes.md)
+- [路由 Agent 设计](./路由Agent设计.md)
+- [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md)
 - [OpenAI Agents 请求架构](../ai/openai-agents-request-architecture.md)
 - [OpenAI Agents SDK Tracing 官方文档](https://openai.github.io/openai-agents-python/tracing/)

@@ -22,8 +22,7 @@ assert.ok(pageSource.includes('展开更多'), 'vocabulary page should allow exp
 assert.ok(pageSource.includes('收起'), 'vocabulary page should allow collapsing expanded entries')
 assert.ok(pageSource.includes('Oxford Dictionaries'), 'vocabulary page should show the result source')
 assert.ok(pageSource.includes('import.meta.env.DEV'), 'vocabulary page should show debug details only in development')
-assert.ok(!pageSource.includes('认识'), 'first version should not include learning action buttons')
-assert.ok(!pageSource.includes('模糊'), 'first version should not include learning action buttons')
-assert.ok(!pageSource.includes('不认识'), 'first version should not include learning action buttons')
+assert.ok(pageSource.includes('加入复习'), 'vocabulary page should expose learning review actions')
+assert.ok(pageSource.includes('标记已掌握'), 'vocabulary page should expose mastery actions')
 
 console.log('vocabulary-dictionary-page-ok')

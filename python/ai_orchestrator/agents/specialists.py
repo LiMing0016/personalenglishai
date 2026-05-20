@@ -8,7 +8,7 @@ from agents import Agent
 from agents import RunContextWrapper
 from agents import handoff
 
-from ..prompts.agents import load_agent_instructions
+from ..prompts.resolver import resolve_agent_prompt_kwargs
 from ..schemas.routing import HandoffRoutingMetadata
 
 
@@ -85,11 +85,12 @@ SPECIALIST_AGENT_SPECS: tuple[SpecialistAgentSpec, ...] = (
 
 
 def create_specialist_agent(spec: SpecialistAgentSpec, model: str) -> Agent:
+    prompt_kwargs = resolve_agent_prompt_kwargs(spec.prompt_key, dynamic=True)
     return Agent(
         name=spec.name,
         model=model,
         handoff_description=spec.handoff_description,
-        instructions=load_agent_instructions(spec.prompt_key),
+        **prompt_kwargs,
     )
 
 

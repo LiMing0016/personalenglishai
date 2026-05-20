@@ -13,6 +13,14 @@ class AssistantOutputFormatPromptTest(unittest.TestCase):
         self.assertIn("message.delta", instructions)
         self.assertIn("不要输出大段无标题长文本", instructions)
 
+    def test_structured_agents_do_not_include_markdown_learning_output_rules(self) -> None:
+        for agent_key in ("route_decision", "prompt_sheet_canvas"):
+            with self.subTest(agent_key=agent_key):
+                instructions = load_agent_instructions(agent_key)
+
+                self.assertNotIn("Markdown 输出规范", instructions)
+                self.assertNotIn("message.delta", instructions)
+
 
 if __name__ == "__main__":
     unittest.main()

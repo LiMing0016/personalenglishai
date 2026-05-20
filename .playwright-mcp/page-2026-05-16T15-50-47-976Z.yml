@@ -1,0 +1,229 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e7]:
+      - button "P personalenglishai" [ref=e8] [cursor=pointer]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: P
+          - generic [ref=e13]: personalenglishai
+        - img [ref=e15]
+      - generic [ref=e17]: /
+      - button "Default project" [ref=e18] [cursor=pointer]:
+        - generic [ref=e20]: Default project
+        - img [ref=e22]
+    - generic [ref=e25]:
+      - generic [ref=e27]:
+        - navigation [ref=e28]:
+          - link "Dashboard" [ref=e29] [cursor=pointer]:
+            - /url: /home
+            - generic [ref=e30]: Dashboard
+          - link "API Docs" [ref=e31] [cursor=pointer]:
+            - /url: https://developers.openai.com/api/docs
+            - generic [ref=e32]: API Docs
+        - link [ref=e34] [cursor=pointer]:
+          - /url: /settings
+          - generic:
+            - img [ref=e35]
+            - img [ref=e38]
+      - button "明" [ref=e42] [cursor=pointer]:
+        - generic [ref=e43]: 明
+  - main [ref=e44]:
+    - complementary [ref=e45]:
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - link "Home" [ref=e54] [cursor=pointer]:
+            - /url: /home
+            - generic [ref=e55]:
+              - img [ref=e57]
+              - generic [ref=e59]: Home
+          - generic [ref=e60]:
+            - heading "Create" [level=3] [ref=e61]
+            - link "Chat" [ref=e62]:
+              - /url: /chat
+              - generic [ref=e63]:
+                - img [ref=e65]
+                - generic [ref=e67]: Chat
+            - link "Agent Builder" [ref=e68] [cursor=pointer]:
+              - /url: /agent-builder
+              - generic [ref=e69]:
+                - img [ref=e71]
+                - generic [ref=e73]: Agent Builder
+            - link "Audio" [ref=e74] [cursor=pointer]:
+              - /url: /audio
+              - generic [ref=e75]:
+                - img [ref=e77]
+                - generic [ref=e79]: Audio
+            - link "Images" [ref=e80] [cursor=pointer]:
+              - /url: /playground/images
+              - generic [ref=e81]:
+                - img [ref=e83]
+                - generic [ref=e85]: Images
+            - link "Videos" [ref=e86] [cursor=pointer]:
+              - /url: /playground/videos
+              - generic [ref=e87]:
+                - img [ref=e89]
+                - generic [ref=e92]: Videos
+            - link "Assistants" [ref=e93] [cursor=pointer]:
+              - /url: /assistants
+              - generic [ref=e94]:
+                - img [ref=e96]
+                - generic [ref=e100]: Assistants
+            - link "Codex" [ref=e101] [cursor=pointer]:
+              - /url: /codex
+              - generic [ref=e102]:
+                - img [ref=e104]
+                - generic [ref=e106]: Codex
+          - generic [ref=e107]:
+            - heading "Manage" [level=3] [ref=e108]
+            - link "Usage" [ref=e109] [cursor=pointer]:
+              - /url: /usage
+              - generic [ref=e110]:
+                - img [ref=e112]
+                - generic [ref=e114]: Usage
+            - link "API keys" [ref=e115] [cursor=pointer]:
+              - /url: /api-keys
+              - generic [ref=e116]:
+                - img [ref=e118]
+                - generic [ref=e121]: API keys
+            - link "ChatGPT Apps" [ref=e122] [cursor=pointer]:
+              - /url: /apps-manage
+              - generic [ref=e123]:
+                - img [ref=e125]
+                - generic [ref=e127]: ChatGPT Apps
+            - link "Logs" [ref=e128] [cursor=pointer]:
+              - /url: /logs
+              - generic [ref=e129]:
+                - img [ref=e131]
+                - generic [ref=e133]: Logs
+            - link "Storage" [ref=e134] [cursor=pointer]:
+              - /url: /storage
+              - generic [ref=e135]:
+                - img [ref=e137]
+                - generic [ref=e139]: Storage
+            - link "Batches" [ref=e140] [cursor=pointer]:
+              - /url: /batches
+              - generic [ref=e141]:
+                - img [ref=e143]
+                - generic [ref=e146]: Batches
+          - generic [ref=e147]:
+            - heading "Optimize" [level=3] [ref=e148]
+            - link "Evaluation" [ref=e149] [cursor=pointer]:
+              - /url: /evaluation
+              - generic [ref=e150]:
+                - img [ref=e152]
+                - generic [ref=e154]: Evaluation
+            - link "Fine-tuning" [ref=e155] [cursor=pointer]:
+              - /url: /finetune
+              - generic [ref=e156]:
+                - img [ref=e158]
+                - generic [ref=e160]: Fine-tuning
+        - button [ref=e163] [cursor=pointer]:
+          - img [ref=e166]
+    - generic [ref=e275]:
+      - generic [ref=e276]:
+        - generic [ref=e277]:
+          - link "View all prompts" [ref=e278] [cursor=pointer]:
+            - /url: /chat
+            - img [ref=e280]
+          - generic [ref=e282]:
+            - button "New prompt" [ref=e283] [cursor=pointer]:
+              - generic [ref=e285]: New prompt
+              - img [ref=e287]
+            - generic [ref=e289]:
+              - img [ref=e290]
+              - text: Draft
+        - generic [ref=e292]:
+          - button "Actions" [ref=e293] [cursor=pointer]:
+            - img [ref=e295]
+          - button "Compare" [ref=e297] [cursor=pointer]:
+            - generic [ref=e298]:
+              - img [ref=e299]
+              - generic [ref=e302]: Compare
+          - button "Optimize" [disabled] [ref=e303]:
+            - generic [ref=e304]:
+              - img [ref=e305]
+              - generic [ref=e307]: Optimize
+          - button "Evaluate" [disabled] [ref=e308]:
+            - generic [ref=e309]:
+              - img [ref=e310]
+              - generic [ref=e312]: Evaluate
+          - button "Save" [ref=e313] [cursor=pointer]:
+            - generic [ref=e314]: Save
+      - generic [ref=e316]:
+        - generic [ref=e321]:
+          - generic [ref=e322]:
+            - generic [ref=e323]: Model
+            - generic [ref=e325]:
+              - generic [ref=e326]:
+                - button "gpt-5.5" [disabled] [ref=e329]:
+                  - generic [ref=e335]: gpt-5.5
+                  - img [ref=e337]
+                - generic [ref=e339]:
+                  - generic [ref=e340]: "text.format: text"
+                  - generic [ref=e341]: "effort: medium"
+                  - generic [ref=e342]: "verbosity: medium"
+                  - generic [ref=e343]: "summary: auto"
+                  - generic [ref=e344]: "store: true"
+              - button "Configure" [ref=e345] [cursor=pointer]:
+                - generic [ref=e346]:
+                  - img [ref=e348]
+                  - generic [ref=e350]: Configure
+          - generic [ref=e351]:
+            - generic [ref=e352]: Variables
+            - button "Add" [ref=e355] [cursor=pointer]:
+              - generic [ref=e356]:
+                - img [ref=e357]
+                - generic [ref=e359]: Add
+          - generic [ref=e360]:
+            - generic [ref=e361]: Tools
+            - button "Add" [ref=e364] [cursor=pointer]:
+              - generic [ref=e365]:
+                - img [ref=e366]
+                - generic [ref=e368]: Add
+          - generic [ref=e369]:
+            - generic [ref=e370]: Developer message
+            - button "Generate" [ref=e374] [cursor=pointer]:
+              - img [ref=e377]
+          - paragraph [ref=e389]: Describe desired model behavior (tone, tool usage, response style)
+          - generic [ref=e391]: Prompt messages
+          - generic [ref=e393]:
+            - generic [ref=e395]:
+              - generic [ref=e396]:
+                - button "User" [ref=e399] [cursor=pointer]:
+                  - generic [ref=e401]:
+                    - generic [ref=e402]: User
+                    - img [ref=e403]
+                - generic [ref=e405]:
+                  - button [ref=e406] [cursor=pointer]:
+                    - img [ref=e408]
+                  - button [ref=e410] [cursor=pointer]:
+                    - img [ref=e412]
+              - generic [ref=e414]:
+                - paragraph [ref=e422]: "Enter task specifics. Use {{template variables}} for dynamic inputs"
+                - generic:
+                  - button "Expand":
+                    - generic:
+                      - generic: Expand
+                      - img
+            - button "Add message" [ref=e424] [cursor=pointer]:
+              - generic [ref=e425]:
+                - img [ref=e426]
+                - generic [ref=e428]: Add message
+        - generic [ref=e429]:
+          - generic [ref=e432]:
+            - img [ref=e434]
+            - generic [ref=e439]: Your conversation will appear here
+          - generic [ref=e447]:
+            - button "Choose File" [ref=e448]
+            - textbox "Chat with your prompt..." [active] [ref=e451]
+            - generic [ref=e454]:
+              - generic [ref=e455]:
+                - button "Choose File" [ref=e456]
+                - button [ref=e457] [cursor=pointer]:
+                  - img [ref=e459]
+              - generic [ref=e461]:
+                - button "Auto-clear" [ref=e462] [cursor=pointer]:
+                  - generic [ref=e464]:
+                    - img [ref=e465]
+                    - generic [ref=e467]: Auto-clear
+                - button "Run" [disabled] [ref=e468]:
+                  - img [ref=e470]

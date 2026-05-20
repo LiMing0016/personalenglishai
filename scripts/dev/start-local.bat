@@ -4,6 +4,7 @@ setlocal enabledelayedexpansion
 for %%I in ("%~dp0..\..") do set "ROOT=%%~fI\"
 set "BACKEND_DIR=%ROOT%backend"
 set "WEB_DIR=%ROOT%web"
+set "DOCS_DIR=%ROOT%docs"
 set "PYTHON_EXE=%ROOT%python\ai_orchestrator\.venv\Scripts\python.exe"
 set "LOCAL_PORTS_FILE=%ROOT%local-ports.env"
 set "LOCAL_PORTS_TEMPLATE=%ROOT%local-ports.env.example"
@@ -27,18 +28,33 @@ if "%~1"=="--check" (
   exit /b 0
 )
 
-echo [PEAI] Starting backend on http://localhost:%BACKEND_PORT%
+echo [PEAI] Starting backend on http://127.0.0.1:%BACKEND_PORT%
 start "PEAI Backend %BACKEND_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Command "$env:SERVER_PORT='%BACKEND_PORT%'; $env:APP_BASE_URL='http://localhost:%WEB_PORT%'; $env:APP_DEV_ADMIN_LOGIN_ENABLED='true'; $env:ASSISTANT_ORCHESTRATOR_BASE_URL='http://%PYTHON_HOST%:%PYTHON_PORT%'; $env:VITE_ASSISTANT_API_BASE_URL='http://%PYTHON_HOST%:%PYTHON_PORT%'; $env:AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL='http://%PYTHON_HOST%:%PYTHON_PORT%'; Set-Location -LiteralPath '%BACKEND_DIR%'; .\mvnw.cmd spring-boot:run"
 
-echo [PEAI] Starting web on http://localhost:%WEB_PORT%
-start "PEAI Web %WEB_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Command "$env:VITE_API_BASE_URL='http://localhost:%BACKEND_PORT%'; $env:VITE_ASSISTANT_API_BASE_URL='http://%PYTHON_HOST%:%PYTHON_PORT%'; Set-Location -LiteralPath '%WEB_DIR%'; npm run dev -- --host 127.0.0.1 --port %WEB_PORT%"
+echo [PEAI] Starting docs on http://127.0.0.1:%DOCS_PORT%
+start "PEAI Docs %DOCS_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%DOCS_DIR%'; npx vitepress dev . --host 127.0.0.1 --port %DOCS_PORT% --strictPort"
 
 echo [PEAI] Starting Python orchestrator on http://%PYTHON_HOST%:%PYTHON_PORT%
 start "PEAI Python %PYTHON_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%'; & '%PYTHON_EXE%' -m uvicorn python.ai_orchestrator.app:app --host %PYTHON_HOST% --port %PYTHON_PORT% --ws none"
 
+call :wait_for_tcp "Backend" "127.0.0.1" "%BACKEND_PORT%" "90"
+if errorlevel 1 (
+  echo [ERROR] Backend did not become reachable. Check the PEAI Backend window before starting Web.
+  call :wait_for_enter
+  exit /b 1
+)
+call :wait_for_tcp "Python" "%PYTHON_HOST%" "%PYTHON_PORT%" "30"
+if errorlevel 1 echo [WARN] Python orchestrator is not reachable yet. Some assistant APIs may fail until it finishes starting.
+call :wait_for_tcp "Docs" "127.0.0.1" "%DOCS_PORT%" "30"
+if errorlevel 1 echo [WARN] Docs server is not reachable yet. The admin docs link may fail until it finishes starting.
+
+echo [PEAI] Starting web on http://127.0.0.1:%WEB_PORT%
+start "PEAI Web %WEB_PORT%" powershell -NoExit -ExecutionPolicy Bypass -Command "$env:VITE_API_BASE_URL='http://127.0.0.1:%BACKEND_PORT%'; $env:VITE_ASSISTANT_API_BASE_URL='http://%PYTHON_HOST%:%PYTHON_PORT%'; $env:VITE_DOCS_BASE_URL='http://127.0.0.1:%DOCS_PORT%/'; Set-Location -LiteralPath '%WEB_DIR%'; npm run dev -- --host 127.0.0.1 --port %WEB_PORT%"
+
 echo.
 echo [PEAI] Startup windows opened.
-echo [PEAI] Frontend: http://localhost:%WEB_PORT%
+echo [PEAI] Frontend: http://127.0.0.1:%WEB_PORT%
+echo [PEAI] Docs: http://127.0.0.1:%DOCS_PORT%
 echo [PEAI] If backend fails, check backend/.env for datasource and JWT settings.
 call :wait_for_enter
 exit /b 0
@@ -68,6 +84,8 @@ if not defined WEB_PORT call :derive_port "WEB_PORT" "%WEB_BASE_PORT%" "%PORT_OF
 if errorlevel 1 exit /b 1
 if not defined PYTHON_PORT call :derive_port "PYTHON_PORT" "%PYTHON_BASE_PORT%" "%PORT_OFFSET%"
 if errorlevel 1 exit /b 1
+if not defined DOCS_PORT call :derive_port "DOCS_PORT" "%DOCS_BASE_PORT%" "%PORT_OFFSET%"
+if errorlevel 1 exit /b 1
 exit /b 0
 
 :derive_port
@@ -90,6 +108,20 @@ exit /b 0
 set /p "_peai_wait=[PEAI] Press Enter to close this window..."
 exit /b 0
 
+:wait_for_tcp
+set "_wait_name=%~1"
+set "_wait_host=%~2"
+set "_wait_port=%~3"
+set "_wait_seconds=%~4"
+echo [PEAI] Waiting for %_wait_name% at %_wait_host%:%_wait_port% ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$deadline=(Get-Date).AddSeconds([int]'%_wait_seconds%'); while((Get-Date) -lt $deadline){ $client=$null; try { $client=[Net.Sockets.TcpClient]::new(); $connect=$client.BeginConnect('%_wait_host%', [int]'%_wait_port%', $null, $null); if($connect.AsyncWaitHandle.WaitOne(500)){ $client.EndConnect($connect); exit 0 } } catch {} finally { if($client){ $client.Close() } }; Start-Sleep -Milliseconds 500 }; exit 1"
+if errorlevel 1 (
+  echo [WARN] %_wait_name% did not accept TCP connections within %_wait_seconds%s.
+  exit /b 1
+)
+echo [PEAI] %_wait_name% is reachable.
+exit /b 0
+
 :check_prerequisites
 if not exist "%BACKEND_DIR%\mvnw.cmd" (
   echo [ERROR] Missing backend Maven wrapper: %BACKEND_DIR%\mvnw.cmd
@@ -103,6 +135,16 @@ if not exist "%WEB_DIR%\package.json" (
 
 if not exist "%WEB_DIR%\node_modules\" (
   echo [ERROR] Missing web dependencies. Run: cd web ^&^& npm install
+  exit /b 1
+)
+
+if not exist "%DOCS_DIR%\package.json" (
+  echo [ERROR] Missing docs package.json: %DOCS_DIR%\package.json
+  exit /b 1
+)
+
+if not exist "%DOCS_DIR%\node_modules\" (
+  echo [ERROR] Missing docs dependencies. Run: cd docs ^&^& npm install
   exit /b 1
 )
 
@@ -124,6 +166,8 @@ if errorlevel 1 exit /b 1
 call :ensure_one_port "WEB_PORT" "%WEB_PORT%" "Web"
 if errorlevel 1 exit /b 1
 call :ensure_one_port "PYTHON_PORT" "%PYTHON_PORT%" "Python"
+if errorlevel 1 exit /b 1
+call :ensure_one_port "DOCS_PORT" "%DOCS_PORT%" "Docs"
 if errorlevel 1 exit /b 1
 exit /b 0
 

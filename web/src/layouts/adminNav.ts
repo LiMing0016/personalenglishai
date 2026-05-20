@@ -54,7 +54,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     label: 'AI 与 Agent',
     items: [
       { to: '/ops/agent/runs', label: 'Agent Debug', status: 'implemented' },
-      { to: '/admin/model-usage', label: '模型用量', status: 'placeholder' },
+      { to: '/admin/model-usage', label: '模型用量', status: 'implemented' },
     ],
   },
   {

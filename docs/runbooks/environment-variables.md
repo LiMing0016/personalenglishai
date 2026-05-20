@@ -188,6 +188,11 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | `ASSISTANT_ORCHESTRATOR_TIMEOUT_MS` | 后端调用 Python orchestrator 超时。 |
 | `AI_ASSISTANT_MODEL` | Python orchestrator 使用的助手模型。 |
 | `AI_ASSISTANT_SESSION_DB_PATH` | Python orchestrator 会话数据库路径。 |
+| `AI_ASSISTANT_PROMPT_SOURCE` | Python Agents SDK prompt 来源：`local` / `hybrid` / `remote`。默认 `local`。 |
+| `AI_ASSISTANT_REMOTE_PROMPT_STRICT` | 远程 Prompt 配置缺失或 base URL 非 OpenAI 平台时是否直接报错，默认 `false`。 |
+| `AI_PROMPT_<AGENT_KEY>_ID` | OpenAI 远程 Prompt ID，例如 `AI_PROMPT_ROUTER_ID`、`AI_PROMPT_ROUTE_DECISION_ID`。 |
+| `AI_PROMPT_<AGENT_KEY>_VERSION` | OpenAI 远程 Prompt 固定版本。生产建议填写，避免远程 Prompt 静默升级。 |
+| `AI_PROMPT_<AGENT_KEY>_VARIABLES_JSON` | 可选 Prompt 变量 JSON 对象，例如 `{"release":"smoke"}`。 |
 | `LANGFUSE_ENABLED` | 是否启用 Python OpenAI Agents SDK 到 Langfuse 的外部追踪导出，默认 `false`。 |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Langfuse 项目 API key。 |
 | `LANGFUSE_BASE_URL` | Langfuse Cloud 区域地址或自托管地址。兼容旧变量 `LANGFUSE_HOST`。 |

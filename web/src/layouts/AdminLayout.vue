@@ -28,7 +28,8 @@
           <div class="admin-subtitle">运营治理、用户权益、作文排查、内容资产与 AI 调试</div>
         </div>
         <div class="admin-topbar__actions">
-          <router-link to="/ops/agent/runs" class="admin-btn">AI 调试端</router-link>
+          <router-link to="/admin/docs" class="admin-btn">文档首页</router-link>
+          <router-link to="/admin/agent-debug/runs" class="admin-btn">AI 调试端</router-link>
           <router-link to="/app" class="admin-back-link">返回主站</router-link>
         </div>
       </header>

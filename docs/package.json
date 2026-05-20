@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vitepress dev .",
+    "dev": "vitepress dev . --host 127.0.0.1 --port 5174 --strictPort",
     "build": "vitepress build .",
-    "preview": "vitepress preview ."
+    "preview": "vitepress preview . --host 127.0.0.1 --port 4174 --strictPort"
   },
   "devDependencies": {
     "mermaid": "^11.15.0",

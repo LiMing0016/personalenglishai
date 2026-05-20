@@ -68,6 +68,12 @@ class UserContextTest(unittest.TestCase):
         self.assertIn("[对话模式上下文]", message)
         self.assertIn("- 当前模式: 考试模式", message)
 
+    def test_exam_boost_mode_is_normalized_to_exam_context(self) -> None:
+        message = build_contextual_user_message("Evaluate this essay.", assistant_mode="exam_boost")
+
+        self.assertIn("[对话模式上下文]", message)
+        self.assertIn("- 当前模式: 考试模式", message)
+
     def test_stage_standards_are_loaded_from_prompt_asset(self) -> None:
         prompt_asset = files(prompts).joinpath("shared/stage_output_standards.md")
 

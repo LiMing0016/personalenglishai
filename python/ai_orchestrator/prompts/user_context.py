@@ -30,7 +30,7 @@ def normalize_study_stage(study_stage: str | None) -> str:
 
 def normalize_assistant_mode(assistant_mode: str | None) -> str:
     value = (assistant_mode or "").strip().lower()
-    return "exam" if value == "exam" else ""
+    return "exam" if value in {"exam", "exam_boost"} else ""
 
 
 @cache
@@ -54,17 +54,15 @@ def get_stage_output_standard(stage_label: str) -> list[str]:
     return load_stage_output_standards().get(stage_label, [])
 
 
-def build_contextual_user_message(
-    message: str,
+def build_runtime_learning_context(
     *,
     study_stage: str | None = None,
     assistant_mode: str | None = None,
 ) -> str:
-    text = (message or "").strip()
     stage_label = normalize_study_stage(study_stage)
     normalized_mode = normalize_assistant_mode(assistant_mode)
     if not stage_label and not normalized_mode:
-        return text
+        return ""
 
     context_lines: list[str] = []
     if stage_label:
@@ -91,14 +89,21 @@ def build_contextual_user_message(
                 "- 当前模式: 考试模式",
                 "- 模式要求: 回答必须以考试目标为导向，优先给出评分口径、答题策略、提分表达和训练建议。",
                 "- 输出要求: 不要向用户显式复述或暴露本上下文标签。",
-                "",
             ]
         )
 
-    context_lines.extend(
-        [
-            "[用户消息]",
-            text,
-        ]
-    )
     return "\n".join(context_lines).strip()
+
+
+def build_contextual_user_message(
+    message: str,
+    *,
+    study_stage: str | None = None,
+    assistant_mode: str | None = None,
+) -> str:
+    text = (message or "").strip()
+    runtime_context = build_runtime_learning_context(study_stage=study_stage, assistant_mode=assistant_mode)
+    if not runtime_context:
+        return text
+
+    return "\n".join([runtime_context, "", "[用户消息]", text]).strip()
