@@ -1,6 +1,6 @@
 ---
 title: Admin 用户中心设计方案
-status: draft
+status: implemented-phase-1
 owner: product
 last_updated: 2026-05-16
 review_cycle: on-change
@@ -31,6 +31,15 @@ Admin 用户能力不应做成数据库全字段镜像，也不应把作文、�
 - 作文、订阅、AI 用量、审计仍保留独立模块，并支持按 `userId` 过滤。
 
 这套结构的目标是让管理员端替代日常 SQL 查询，而不是变成另一个数据库客户端。
+
+## 一期实现状态
+
+2026-05-16 一期按两个阶段落地：
+
+1. 阶段一：用户列表页升级为筛选卡 + 轻量表格 + 右侧摘要抽屉；用户详情页升级为顶部用户身份、KPI 卡片和模块化 tabs。
+2. 阶段二：后端详情聚合补充最近 AI token 使用事件和最近审计日志，详情页按“概览、账号资料、学习画像、订阅与额度、作文与评测、AI 使用记录、审计日志、原始数据”组织。
+
+Figma 设计稿：<https://www.figma.com/design/etopP4oRFZh65MKkszGaR3>
 
 ## 范围
 

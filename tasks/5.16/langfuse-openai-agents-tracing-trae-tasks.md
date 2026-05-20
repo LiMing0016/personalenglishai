@@ -298,7 +298,7 @@ LANGFUSE_BASE_URL
 ```text
 README.md
 docs/runbooks/environment-variables.md
-docs/agent/agent-observability-center.md
+docs/agent/Agent可观测性与调试中心.md
 ```
 
 文档需要说明：
@@ -344,4 +344,3 @@ python\ai_orchestrator\.venv\Scripts\python.exe -c "from langfuse import get_cli
 - Langfuse/OpenInference 导入验证通过。
 - 测试不依赖真实 Langfuse key。
 - 测试不向真实 Langfuse 服务发送数据。
-

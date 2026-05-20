@@ -1,0 +1,50 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - progressbar [ref=e6]
+    - main [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e17]:
+          - generic [ref=e18]:
+            - img [ref=e20]
+            - generic [ref=e25]: 使用 Google 账号登录
+          - img "OpenAI" [ref=e26]
+        - generic [ref=e27]:
+          - heading "登录" [level=1] [ref=e28]
+          - generic [ref=e30]:
+            - text: 继续前往
+            - button "OpenAI" [ref=e31] [cursor=pointer]
+      - generic [ref=e34]:
+        - generic [ref=e39]:
+          - generic [ref=e44]:
+            - textbox "邮箱或电话号码" [ref=e45]: gery0025a@gmail.com
+            - generic: 邮箱或电话号码
+          - button "忘记了邮箱？" [ref=e49] [cursor=pointer]
+        - generic [ref=e52]:
+          - text: 建议您在使用“OpenAI”之前，先阅读此应用的
+          - link "《隐私权政策》" [ref=e53] [cursor=pointer]:
+            - /url: https://openai.com/policies/privacy-policy
+          - text: 和
+          - link "《服务条款》" [ref=e54] [cursor=pointer]:
+            - /url: https://openai.com/policies/terms-of-use
+          - text: 。
+      - generic [ref=e56]:
+        - button "下一步" [active] [ref=e60] [cursor=pointer]:
+          - generic [ref=e63]: 下一步
+        - button "创建账号" [ref=e68]:
+          - generic [ref=e71]: 创建账号
+  - contentinfo [ref=e75]:
+    - combobox "更改语言 简体中文" [ref=e79] [cursor=pointer]:
+      - generic:
+        - generic: 简体中文
+      - generic:
+        - img
+    - list [ref=e81]:
+      - listitem [ref=e82]:
+        - link "帮助" [ref=e83] [cursor=pointer]:
+          - /url: https://support.google.com/accounts?hl=zh-CN&p=account_iph
+      - listitem [ref=e84]:
+        - link "隐私权" [ref=e85] [cursor=pointer]:
+          - /url: https://accounts.google.com/TOS?loc=US&hl=zh-CN&privacy=true
+      - listitem [ref=e86]:
+        - link "条款" [ref=e87] [cursor=pointer]:
+          - /url: https://accounts.google.com/TOS?loc=US&hl=zh-CN

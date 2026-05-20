@@ -82,6 +82,8 @@ log = logging.getLogger("uvicorn.error")
 @dataclass(frozen=True, slots=True)
 class AssistantRunContext:
     conversation_id: str
+    study_stage: str | None = None
+    assistant_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +162,10 @@ def _build_continuation_routing_message(
             message,
         ]
     )
+
+
+def _should_use_sdk_session_for_request(request: AssistantRequest) -> bool:
+    return len(request.attachments) == 0
 
 
 class AssistantAgentService:
@@ -246,6 +252,14 @@ class AssistantAgentService:
         agent = create_specialist_agent(spec, self.model)
         self._specialist_agents[agent_name] = agent
         return agent
+
+    def _build_run_context(self, request: AssistantRequest, *, conversation_id: str) -> AssistantRunContext:
+        study_context = request.study_context
+        return AssistantRunContext(
+            conversation_id=conversation_id,
+            study_stage=study_context.study_stage if study_context else None,
+            assistant_mode=request.mode,
+        )
 
     def _get_route_decision_runner(self):
         if self._route_decision_runner is None:
@@ -553,13 +567,14 @@ class AssistantAgentService:
 
                 agent = self._get_agent_by_name(resolved_agent_name)
                 agent_input = build_assistant_input_items(request)
+                use_session = _should_use_sdk_session_for_request(request)
                 result = await run_agent_session(
                     agent=agent,
                     agent_input=agent_input,
                     conversation_id=conversation_id,
                     session_db_path=self.session_db_path,
-                    use_session=False,
-                    run_context=AssistantRunContext(conversation_id=conversation_id),
+                    use_session=use_session,
+                    run_context=self._build_run_context(request, conversation_id=conversation_id),
                     trace_workflow_name="PEAI Target Agent",
                     trace_metadata=self._target_agent_trace_metadata(
                         request,
@@ -679,14 +694,15 @@ class AssistantAgentService:
 
                 agent = self._get_agent_by_name(resolved_agent_name)
                 agent_input = build_assistant_input_items(request)
+                use_session = _should_use_sdk_session_for_request(request)
                 final_result = None
                 async for event in stream_agent_session(
                     agent=agent,
                     agent_input=agent_input,
                     conversation_id=conversation_id,
                     session_db_path=self.session_db_path,
-                    use_session=False,
-                    run_context=AssistantRunContext(conversation_id=conversation_id),
+                    use_session=use_session,
+                    run_context=self._build_run_context(request, conversation_id=conversation_id),
                     trace_workflow_name="PEAI Target Agent",
                     trace_metadata=self._target_agent_trace_metadata(
                         request,
@@ -841,7 +857,11 @@ class AssistantAgentService:
                 conversation_id=conversation_id,
                 session_db_path=self.session_db_path,
                 use_session=use_session,
-                run_context=AssistantRunContext(conversation_id=conversation_id),
+                run_context=AssistantRunContext(
+                    conversation_id=conversation_id,
+                    study_stage=study_stage,
+                    assistant_mode=assistant_mode,
+                ),
                 trace_workflow_name="PEAI Legacy Assistant Chat",
                 trace_metadata=self._legacy_chat_trace_metadata(
                     conversation_id=conversation_id,

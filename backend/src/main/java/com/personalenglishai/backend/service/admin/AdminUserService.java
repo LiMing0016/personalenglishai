@@ -125,20 +125,13 @@ public class AdminUserService {
         aiUsage.put("monthTokens", subscription.getOrDefault("tokenUsed", 0));
         aiUsage.put("recentFailedRequests", 0);
 
-        Map<String, Object> quickLinks = new LinkedHashMap<>();
-        quickLinks.put("detail", "/admin/users/" + userId);
-        quickLinks.put("essays", "/admin/essays?userId=" + userId);
-        quickLinks.put("subscriptions", "/admin/subscriptions?userId=" + userId);
-        quickLinks.put("aiUsage", "/admin/model-usage?userId=" + userId);
-        quickLinks.put("auditLogs", "/admin/audit-logs?targetUserId=" + userId);
-
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("account", account);
         overview.put("subscription", detail.get("subscription"));
         overview.put("writing", writing);
         overview.put("aiUsage", aiUsage);
-        overview.put("audit", Map.of("recentLogs", List.of()));
-        overview.put("quickLinks", quickLinks);
+        overview.put("audit", Map.of("recentLogs", adminUserQueryMapper.selectRecentAuditLogs(userId, 3)));
+        overview.put("quickLinks", buildQuickLinks(userId));
         return overview;
     }
 
@@ -212,7 +205,20 @@ public class AdminUserService {
                 ))
                 .toList();
         data.put("recentEvaluations", recentItems);
+        data.put("aiUsageRecords", adminUserQueryMapper.selectRecentAiUsageEvents(userId, 10));
+        data.put("auditLogs", adminUserQueryMapper.selectRecentAuditLogs(userId, 10));
+        data.put("quickLinks", buildQuickLinks(userId));
         return data;
+    }
+
+    private Map<String, Object> buildQuickLinks(Long userId) {
+        Map<String, Object> quickLinks = new LinkedHashMap<>();
+        quickLinks.put("detail", "/admin/users/" + userId);
+        quickLinks.put("essays", "/admin/essays?userId=" + userId);
+        quickLinks.put("subscriptions", "/admin/subscriptions?userId=" + userId);
+        quickLinks.put("aiUsage", "/admin/model-usage?userId=" + userId);
+        quickLinks.put("auditLogs", "/admin/audit-logs?targetUserId=" + userId);
+        return quickLinks;
     }
 
     public void updateUserStatus(Long adminUserId, Long userId, AdminUserStatusUpdateRequest request, HttpServletRequest httpRequest) {

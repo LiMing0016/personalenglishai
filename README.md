@@ -33,6 +33,8 @@ npm install
 npm run dev
 ```
 
+本地文档站默认地址为 `http://127.0.0.1:5174/`，避免和前端应用开发端口冲突。
+
 构建验证：
 
 ```powershell
@@ -128,9 +130,10 @@ start-local.bat
 
 | 服务 | 默认地址 |
 |------|----------|
-| Web | `http://localhost:3300` |
-| Backend | `http://localhost:18080` |
+| Web | `http://127.0.0.1:3300` |
+| Backend | `http://127.0.0.1:18080` |
 | Python orchestrator | `http://127.0.0.1:8011` |
+| Docs | `http://127.0.0.1:5174` |
 
 同一仓库跑多个 agent/worktree 时，复制 `local-ports.env.example` 为 `local-ports.env`，只改 `PORT_OFFSET` 即可。脚本会在端口被占用时提示更换端口、结束占用进程或取消启动。
 
@@ -159,6 +162,14 @@ Python orchestrator：
 py -3.12 -m venv python\ai_orchestrator\.venv
 python\ai_orchestrator\.venv\Scripts\python.exe -m pip install -r python\ai_orchestrator\requirements.txt
 python\ai_orchestrator\.venv\Scripts\python.exe -m uvicorn python.ai_orchestrator.app:app --host 127.0.0.1 --port 8011 --ws none
+```
+
+文档站：
+
+```powershell
+cd docs
+npm install
+npm run dev
 ```
 
 ## 环境变量

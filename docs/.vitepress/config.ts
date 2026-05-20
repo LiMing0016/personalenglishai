@@ -114,7 +114,7 @@ export default defineConfig({
             { text: '评分规则', link: '/ai/scoring-rules/' },
             { text: '语法检查', link: '/ai/grammar-check' },
             { text: '润色', link: '/ai/polish-feature' },
-            { text: '学习助手', link: '/ai/learning-assistant-architecture' },
+            { text: '学习助手 Agent 编排', link: '/agent/学习助手Agent编排架构' },
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
             { text: 'Prompt 管理', link: '/ai/prompt-management' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
@@ -139,11 +139,21 @@ export default defineConfig({
           items: [
             { text: 'Agent 设计总览', link: '/agent/' },
             { text: 'Agent 产品现状与路线图', link: '/agent/Agent产品现状与路线图' },
+            { text: '学习助手 Agent 编排架构', link: '/agent/学习助手Agent编排架构' },
             { text: 'Agent 能力清单', link: '/agent/Agent能力清单' },
             { text: '路由 Agent 设计', link: '/agent/路由Agent设计' },
             { text: 'Agent 可观测性与调试中心', link: '/agent/Agent可观测性与调试中心' },
             { text: 'AI 调试端设计', link: '/agent/AI调试端设计' },
-            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/OpenAI Agents SDK中文学习笔记' }
+            { text: '对话词句采集清洗方案', link: '/agent/数据清洗/对话词句采集清洗方案' },
+            { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/OpenAI Agents SDK中文学习笔记' },
+            {
+              text: 'Agent Builder 学习资料',
+              collapsed: false,
+              items: [
+                { text: 'Agent Builder 总览', link: '/agent/agent-builder/' },
+                { text: 'Node reference 学习笔记', link: '/agent/agent-builder/node-reference' }
+              ]
+            }
           ]
         }
       ],

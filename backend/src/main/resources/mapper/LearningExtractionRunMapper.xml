@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.learning.LearningExtractionRunMapper">
+
+    <resultMap id="LearningExtractionRunResultMap" type="com.personalenglishai.backend.entity.learning.LearningExtractionRun">
+        <id column="id" property="id"/>
+        <result column="run_uid" property="runUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="message_uid" property="messageUid"/>
+        <result column="extractor_type" property="extractorType"/>
+        <result column="status" property="status"/>
+        <result column="model" property="model"/>
+        <result column="input_token_count" property="inputTokenCount"/>
+        <result column="output_token_count" property="outputTokenCount"/>
+        <result column="result_json" property="resultJson"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id,
+        run_uid,
+        user_id,
+        conversation_uid,
+        message_uid,
+        extractor_type,
+        status,
+        model,
+        input_token_count,
+        output_token_count,
+        result_json,
+        error_message,
+        created_at,
+        updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.learning.LearningExtractionRun"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_extraction_run (
+            run_uid,
+            user_id,
+            conversation_uid,
+            message_uid,
+            extractor_type,
+            status,
+            model,
+            input_token_count,
+            output_token_count,
+            result_json,
+            error_message
+        ) VALUES (
+            #{runUid},
+            #{userId},
+            #{conversationUid},
+            #{messageUid},
+            #{extractorType},
+            COALESCE(#{status}, 'pending'),
+            #{model},
+            #{inputTokenCount},
+            #{outputTokenCount},
+            #{resultJson},
+            #{errorMessage}
+        )
+    </insert>
+
+    <select id="findByRunUid" resultMap="LearningExtractionRunResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_extraction_run
+        WHERE run_uid = #{runUid}
+        LIMIT 1
+    </select>
+
+    <select id="findByMessageAndExtractor" resultMap="LearningExtractionRunResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_extraction_run
+        WHERE message_uid = #{messageUid}
+          AND extractor_type = #{extractorType}
+        LIMIT 1
+    </select>
+
+    <select id="selectPendingByExtractor" resultMap="LearningExtractionRunResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_extraction_run
+        WHERE extractor_type = #{extractorType}
+          AND status = 'pending'
+        ORDER BY created_at ASC, id ASC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <select id="selectPendingByExtractorAndUserCreatedRange" resultMap="LearningExtractionRunResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_extraction_run
+        WHERE extractor_type = #{extractorType}
+          AND status = 'pending'
+          AND user_id = #{userId}
+          AND created_at &gt;= #{from}
+          AND created_at &lt; #{to}
+        ORDER BY created_at ASC, id ASC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <update id="markProcessing">
+        UPDATE learning_extraction_run
+        SET status = 'processing',
+            error_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE run_uid = #{runUid}
+    </update>
+
+    <update id="updateCompleted">
+        UPDATE learning_extraction_run
+        SET status = 'completed',
+            model = #{model},
+            input_token_count = #{inputTokenCount},
+            output_token_count = #{outputTokenCount},
+            result_json = #{resultJson},
+            error_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE run_uid = #{runUid}
+    </update>
+
+    <update id="updateFailed">
+        UPDATE learning_extraction_run
+        SET status = 'failed',
+            error_message = #{errorMessage},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE run_uid = #{runUid}
+    </update>
+</mapper>

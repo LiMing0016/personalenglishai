@@ -4,10 +4,14 @@ import base64
 from typing import Iterable
 
 try:
+    from ..prompts.user_context import get_stage_output_standard
+    from ..prompts.user_context import normalize_study_stage
     from ..schemas.assistant_request import AssistantAttachmentRef
     from ..schemas.assistant_request import AssistantRequest
     from ..schemas.chat import UploadedAttachment
 except ImportError:  # pragma: no cover - script mode fallback
+    from prompts.user_context import get_stage_output_standard
+    from prompts.user_context import normalize_study_stage
     from schemas.assistant_request import AssistantAttachmentRef
     from schemas.assistant_request import AssistantRequest
     from schemas.chat import UploadedAttachment
@@ -84,7 +88,14 @@ def _build_assistant_context_text(request: AssistantRequest) -> str:
     context = request.study_context
     if context:
         if context.study_stage:
-            lines.append(f"- 学段/目标: {context.study_stage}")
+            stage_label = normalize_study_stage(context.study_stage)
+            lines.append(f"- 学段/目标: {stage_label}")
+            stage_standard = get_stage_output_standard(stage_label)
+            if stage_standard:
+                lines.extend(["", "[学段输出标准]"])
+                lines.extend(f"- {rule}" for rule in stage_standard)
+            else:
+                lines.append("- 个性化要求: 回答难度、例句、评分口径和训练建议要匹配该学段。")
         if context.cefr_level:
             lines.append(f"- CEFR 水平: {context.cefr_level}")
         if context.target_exam:

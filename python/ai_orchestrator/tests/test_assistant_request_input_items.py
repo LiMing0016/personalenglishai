@@ -38,7 +38,8 @@ class AssistantRequestInputItemsTest(unittest.TestCase):
 
         self.assertIn("- 当前模式: 考试提分模式", text)
         self.assertIn("- 用户意图: 翻译", text)
-        self.assertIn("- 学段/目标: postgrad", text)
+        self.assertIn("- 学段/目标: 考研", text)
+        self.assertIn("[学段输出标准]", text)
         self.assertIn("- 目标考试: postgrad", text)
         self.assertIn("- 回答语言: zh-CN", text)
 

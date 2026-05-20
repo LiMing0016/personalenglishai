@@ -9,7 +9,7 @@ from importlib.resources import files
 
 from agents import Agent, Runner, RunContextWrapper, function_tool
 
-from ..prompts.agents import load_agent_instructions
+from ..prompts.resolver import resolve_agent_prompt_kwargs
 from ..services.agent_session_runner import extract_run_items
 from ..services.agent_session_runner import extract_usage
 from ..schemas.prompt_sheet import GenerateExamPromptRequest
@@ -107,23 +107,25 @@ class PromptSheetWorkflowService:
     def _get_canvas_agent(self):
         self._require_configured()
         if self._canvas_agent is None:
+            prompt_kwargs = resolve_agent_prompt_kwargs("prompt_sheet_canvas")
             self._canvas_agent = Agent(
                 name="Prompt Sheet Canvas Agent",
                 model=self.model,
-                instructions=load_agent_instructions("prompt_sheet_canvas"),
                 output_type=GenerateExamPromptResponse,
+                **prompt_kwargs,
             )
         return self._canvas_agent
 
     def _get_chat_agent(self):
         self._require_configured()
         if self._chat_agent is None:
+            prompt_kwargs = resolve_agent_prompt_kwargs("prompt_sheet_chat")
             self._chat_agent = Agent(
                 name="Prompt Sheet Chat Agent",
                 model=self.model,
-                instructions=load_agent_instructions("prompt_sheet_chat"),
                 tools=[self._get_canvas_tool()],
                 output_type=PromptSheetChatResponse,
+                **prompt_kwargs,
             )
         return self._chat_agent
 

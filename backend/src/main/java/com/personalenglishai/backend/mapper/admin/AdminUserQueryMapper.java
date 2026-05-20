@@ -49,4 +49,10 @@ public interface AdminUserQueryMapper {
                                                        @Param("now") java.time.LocalDateTime now,
                                                        @Param("usageMonth") String usageMonth,
                                                        @Param("usageDate") java.time.LocalDate usageDate);
+
+    List<Map<String, Object>> selectRecentAiUsageEvents(@Param("userId") Long userId,
+                                                        @Param("limit") int limit);
+
+    List<Map<String, Object>> selectRecentAuditLogs(@Param("userId") Long userId,
+                                                    @Param("limit") int limit);
 }

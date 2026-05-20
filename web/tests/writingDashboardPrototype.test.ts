@@ -12,7 +12,13 @@ for (const expectedCopy of [
   'PEAI Writing / Practice',
   'Dashboard',
   '每日推荐作文',
+  '写作总览',
   '成长 / 激励',
+  '成长激励',
+  '能力曲线',
+  '错误分析',
+  '主题风格',
+  '练习记录',
   '单篇得分趋势',
   '得分分布',
   '作文落点',
@@ -42,9 +48,30 @@ for (const expectedClass of [
   'dashboard-chart--distribution',
   'dashboard-chart--scatter',
   'dashboard-chart--ability',
+  'dashboard-tab-shell',
+  'dashboard-tab-list',
+  'dashboard-tab-button',
+  'dashboard-tab-panel',
 ]) {
   assert.ok(writingPageSource.includes(expectedClass), `writing dashboard should render ${expectedClass}`)
 }
+
+assert.ok(writingPageSource.includes('type WritingDashboardTabKey'), 'dashboard should define a typed tab key union')
+assert.ok(writingPageSource.includes('const dashboardTabs'), 'dashboard should define tab metadata in one place')
+assert.ok(writingPageSource.includes("const activeDashboardTab = ref<WritingDashboardTabKey>('overview')"), 'dashboard should default to overview tab')
+for (const expectedTab of ["key: 'overview'", "key: 'growth'", "key: 'ability'", "key: 'errors'", "key: 'topic'", "key: 'practice'", "key: 'ai'"]) {
+  assert.ok(writingPageSource.includes(expectedTab), `dashboard tabs should include ${expectedTab}`)
+}
+assert.ok(writingPageSource.includes('aria-selected'), 'dashboard tab menu should expose selected state')
+assert.ok(writingPageSource.includes('setActiveDashboardTab'), 'dashboard tabs should switch through a dedicated handler')
+assert.ok(writingPageSource.includes("tab: nextTab === 'overview' ? undefined : nextTab"), 'dashboard tab changes should sync to URL query')
+assert.ok(writingPageSource.includes('normalizeDashboardTab'), 'dashboard should sanitize invalid tab query values')
+assert.ok(writingPageSource.includes("activeDashboardTab === 'growth'"), 'growth modules should render only in the growth tab')
+assert.ok(writingPageSource.includes("activeDashboardTab === 'ability'"), 'ability modules should render only in the ability tab')
+assert.ok(writingPageSource.includes("activeDashboardTab === 'topic'"), 'topic modules should render only in the topic tab')
+assert.ok(writingPageSource.includes("activeDashboardTab === 'practice'"), 'practice modules should render only in the practice tab')
+assert.ok(writingPageSource.includes("activeDashboardTab === 'ai'"), 'AI advice modules should render only in the AI tab')
+assert.ok(writingPageSource.includes('isDashboardChartVisible'), 'chart rendering should check the active dashboard tab before initializing ECharts')
 
 assert.ok(routerSource.includes("path: 'writing/dashboard'"), 'writing dashboard should have an explicit route')
 assert.ok(writingPageSource.includes("phase === 'doc-list' || phase === 'dashboard'"), 'home and dashboard should share the writing page shell')

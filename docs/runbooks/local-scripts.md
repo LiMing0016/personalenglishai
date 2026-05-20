@@ -100,14 +100,15 @@ start-local.bat
 
 | 服务 | 地址 | 说明 |
 | --- | --- | --- |
-| 后端 Spring Boot | `http://localhost:${BACKEND_PORT}` | Java 后端 API |
-| 前端 Vite | `http://localhost:${WEB_PORT}` | Vue 前端页面 |
+| 后端 Spring Boot | `http://127.0.0.1:${BACKEND_PORT}` | Java 后端 API |
+| 前端 Vite | `http://127.0.0.1:${WEB_PORT}` | Vue 前端页面 |
+| 文档 VitePress | `http://127.0.0.1:${DOCS_PORT}` | 项目文档站 |
 | Python orchestrator | `http://${PYTHON_HOST}:${PYTHON_PORT}` | Python AI 编排服务 |
 
 它启动后会提示前端访问地址：
 
 ```text
-http://localhost:${WEB_PORT}
+http://127.0.0.1:${WEB_PORT}
 ```
 
 如果没有 `local-ports.env`，脚本会使用 `local-ports.env.example` 里的基准端口和 `PORT_OFFSET=0`：
@@ -115,11 +116,16 @@ http://localhost:${WEB_PORT}
 ```text
 BACKEND_BASE_PORT=18080
 WEB_BASE_PORT=3300
+DOCS_BASE_PORT=5174
 PYTHON_HOST=127.0.0.1
 PYTHON_BASE_PORT=8011
 ```
 
-启动前端时，脚本会把 `VITE_API_BASE_URL` 设置成当前后端地址。这样前端页面和 Vite `/api` 代理都会打到当前项目自己的后端端口。
+启动脚本会先打开后端、Python 和文档站窗口，并等待后端端口可连接，再启动前端。这样可以减少 Vite 先启动完成、但 `/api` 代理还连不上后端时产生的 `ECONNREFUSED` 错误。
+
+启动前端时，脚本会把 `VITE_API_BASE_URL` 设置成当前后端地址。这样前端页面和 Vite `/api` 代理都会打到当前项目自己的后端端口。地址固定使用 `127.0.0.1`，避免 Windows/Node 对 `localhost` 同时解析 IPv4/IPv6 时出现连接抖动。
+
+启动前端时，脚本也会把 `VITE_DOCS_BASE_URL` 设置成当前文档站地址。这样管理员端 `/admin/docs` 的“打开文档首页”会进入同一次本地启动打开的 VitePress 文档站，而不是误回到前端应用端口。
 
 启动后端和前端时，脚本也会把学习助手 Python 地址同步成当前 `PYTHON_HOST + PYTHON_PORT`：
 
@@ -138,6 +144,8 @@ AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL=http://${PYTHON_HOST}:${PYTHON_PORT}
 - `backend/mvnw.cmd` 是否存在
 - `web/package.json` 是否存在
 - `web/node_modules/` 是否存在
+- `docs/package.json` 是否存在
+- `docs/node_modules/` 是否存在
 - `python/ai_orchestrator/.venv/Scripts/python.exe` 是否存在
 - `backend/.env` 是否存在
 
@@ -145,6 +153,13 @@ AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL=http://${PYTHON_HOST}:${PYTHON_PORT}
 
 ```powershell
 cd web
+npm install
+```
+
+如果缺少 `docs/node_modules/`，需要先运行：
+
+```powershell
+cd docs
 npm install
 ```
 

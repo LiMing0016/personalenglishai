@@ -9,7 +9,7 @@ related_code:
   - backend/src/main/java/com/personalenglishai/backend/service/ops/AgentDebugService.java
   - backend/src/main/resources/mapper/AgentDebugMapper.xml
 related_docs:
-  - docs/agent/ai-debug-console.md
+  - docs/agent/AI调试端设计.md
 ---
 
 # Agent Debug API

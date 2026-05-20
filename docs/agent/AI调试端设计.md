@@ -2,7 +2,7 @@
 title: AI 调试端设计
 status: draft
 owner: ai
-last_updated: 2026-05-16
+last_updated: 2026-05-17
 review_cycle: monthly
 related_code:
   - web/src/layouts/OpsAgentLayout.vue
@@ -10,9 +10,9 @@ related_code:
   - web/src/router/index.ts
   - python/ai_orchestrator/
 related_docs:
-  - docs/agent/agent-observability-center.md
-  - docs/agent/路由agent.md
-  - docs/agent/openai-agents-sdk-study-notes.md
+  - docs/agent/Agent可观测性与调试中心.md
+  - docs/agent/路由Agent设计.md
+  - docs/agent/OpenAI Agents SDK中文学习笔记.md
 ---
 
 # AI 调试端设计
@@ -546,9 +546,9 @@ Agent Debug Recorder
 
 ## 相关资料
 
-- [Agent 可观测性与调试中心](./agent-observability-center.md)
-- [路由 Agent](./路由agent.md)
-- [OpenAI Agents SDK 中文学习笔记](./openai-agents-sdk-study-notes.md)
+- [Agent 可观测性与调试中心](./Agent可观测性与调试中心.md)
+- [路由 Agent 设计](./路由Agent设计.md)
+- [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md)
 - [Agent Debug API](../api/agent-debug.md)
 - [OpenAI Agents SDK Tracing](https://openai.github.io/openai-agents-python/tracing/)
 - [OpenAI Agents SDK Usage](https://openai.github.io/openai-agents-python/usage/)

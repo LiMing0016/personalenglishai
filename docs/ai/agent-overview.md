@@ -4,7 +4,7 @@
 
 当前文档：
 
-- [learning-assistant-architecture.md](./learning-assistant-architecture.md)：学习助手 8 Agent 架构、handoff/tool-agent 边界、路由策略和验证方式。
+- [学习助手Agent编排架构.md](../agent/学习助手Agent编排架构.md)：学习助手 8 Agent 架构、handoff/tool-agent 边界、路由策略和验证方式。
 - [active-task-state-design.md](./active-task-state-design.md)：Active Task State、续问判定、状态生命周期和 classifier 设计。
 - [grammar-skills-profile-impact.md](./grammar-skills-profile-impact.md)：grammar-check / grammar-explain Skill 边界、事件字段、统计口径和用户画像影响。
 - [grammar-learning-events-persistence.md](./grammar-learning-events-persistence.md)：语法学习事件从 Python Orchestrator 到 Backend API、MySQL 和画像聚合的持久化方案。

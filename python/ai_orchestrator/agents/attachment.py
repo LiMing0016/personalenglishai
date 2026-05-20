@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from agents import Agent
 
-from ..prompts.agents import load_agent_instructions
+from ..prompts.resolver import resolve_agent_prompt_kwargs
 
 
 def create_attachment_agent(model: str) -> Agent:
+    prompt_kwargs = resolve_agent_prompt_kwargs("attachment", dynamic=True)
     return Agent(
         name="Attachment Agent",
         model=model,
-        instructions=load_agent_instructions("attachment"),
+        **prompt_kwargs,
     )

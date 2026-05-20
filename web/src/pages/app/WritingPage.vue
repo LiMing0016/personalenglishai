@@ -41,15 +41,30 @@
       </button>
     </section>
 
-    <WritingOverviewCard
-      v-if="phase === 'dashboard'"
-      v-model:range="dashboardRange"
-      v-model:mode="dashboardMode"
-      v-model:custom-range="dashboardCustomRange"
-      :range-options="dashboardRangeOptions"
-      :mode-options="dashboardModeOptions"
-      :overview="dashboardOverview"
-    />
+    <nav v-if="phase === 'dashboard'" class="dashboard-tab-shell" aria-label="写作看板板块菜单">
+      <div class="dashboard-tab-list" role="tablist" aria-label="写作 Dashboard 板块">
+        <button
+          v-for="tab in dashboardTabs"
+          :key="tab.key"
+          :id="`dashboard-tab-${tab.key}`"
+          class="dashboard-tab-button"
+          :class="{ active: activeDashboardTab === tab.key }"
+          type="button"
+          role="tab"
+          :aria-selected="activeDashboardTab === tab.key"
+          :aria-controls="`dashboard-tab-panel-${tab.key}`"
+          @click="setActiveDashboardTab(tab.key)"
+        >
+          <span class="dashboard-tab-icon" aria-hidden="true">{{ tab.short }}</span>
+          <span class="dashboard-tab-copy">
+            <strong>{{ tab.label }}</strong>
+            <em>{{ tab.eyebrow }}</em>
+          </span>
+        </button>
+      </div>
+      <p class="dashboard-tab-summary">{{ activeDashboardTabMeta.description }}</p>
+    </nav>
+
     <div v-if="phase === 'dashboard' && dashboardLoading" class="dashboard-state">
       Dashboard 数据加载中…
     </div>
@@ -57,7 +72,30 @@
       {{ dashboardError }}
     </div>
 
-    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="growth-title">
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'overview'"
+      id="dashboard-tab-panel-overview"
+      class="dashboard-tab-panel dashboard-tab-panel--overview"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-overview"
+    >
+      <WritingOverviewCard
+        v-model:range="dashboardRange"
+        v-model:mode="dashboardMode"
+        v-model:custom-range="dashboardCustomRange"
+        :range-options="dashboardRangeOptions"
+        :mode-options="dashboardModeOptions"
+        :overview="dashboardOverview"
+      />
+    </section>
+
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'growth'"
+      id="dashboard-tab-panel-growth"
+      class="dashboard-section dashboard-tab-panel"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-growth"
+    >
       <div class="section-heading">
         <span class="section-kicker">Growth</span>
         <h3 id="growth-title">成长 / 激励</h3>
@@ -147,7 +185,13 @@
       </div>
     </section>
 
-    <section v-if="phase === 'dashboard'" class="dashboard-section practice-progress-section" aria-labelledby="practice-progress-title">
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'practice'"
+      id="dashboard-tab-panel-practice"
+      class="dashboard-section dashboard-tab-panel practice-progress-section"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-practice"
+    >
       <div class="section-heading">
         <span class="section-kicker">Practice</span>
         <h3 id="practice-progress-title">练习进度</h3>
@@ -166,9 +210,43 @@
           <span>最长记录 {{ dashboardGrowth.streak.bestDays }} 天</span>
         </div>
       </article>
+      <article class="report-card practice-list-card">
+        <div class="card-header">
+          <div>
+            <span class="card-eyebrow">Recent Practice</span>
+            <h4>练习记录</h4>
+            <p>最近作文和评分状态集中在这里查看。</p>
+          </div>
+          <button type="button" class="dashboard-light-action" @click="navigateToPhase('doc-list')">查看历史作文</button>
+        </div>
+        <div v-if="displayDocs.length" class="practice-doc-list">
+          <button
+            v-for="doc in displayDocs.slice(0, 5)"
+            :key="doc.docId"
+            class="practice-doc-row"
+            type="button"
+            @click="openDocument(doc)"
+          >
+            <span>
+              <strong>{{ doc.title || '未命名作文' }}</strong>
+              <em>{{ doc.updatedAt }}</em>
+            </span>
+            <b>{{ doc.latestScore != null ? `${doc.latestScore} 分` : '未评分' }}</b>
+          </button>
+        </div>
+        <div v-else class="dashboard-empty-panel">
+          还没有练习记录，先新建一篇作文后这里会展示最近进度。
+        </div>
+      </article>
     </section>
 
-    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="ability-title">
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'ability'"
+      id="dashboard-tab-panel-ability"
+      class="dashboard-section dashboard-tab-panel"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-ability"
+    >
       <div class="section-heading">
         <span class="section-kicker">Ability</span>
         <h3 id="ability-title">写作能力</h3>
@@ -244,7 +322,51 @@
       </div>
     </section>
 
-    <section v-if="phase === 'dashboard'" class="dashboard-section" aria-labelledby="topic-style-title">
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'errors'"
+      id="dashboard-tab-panel-errors"
+      class="dashboard-section dashboard-tab-panel"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-errors"
+    >
+      <div class="section-heading">
+        <span class="section-kicker">Error Analysis</span>
+        <h3 id="error-analysis-title">错误分析</h3>
+      </div>
+      <div class="error-analysis-layout">
+        <article class="report-card">
+          <h4>高频错误</h4>
+          <div class="error-bars">
+            <div v-for="item in mockAbilityDashboard.diagnostics" :key="item.label" class="error-row">
+              <div>
+                <span>{{ item.label }}</span>
+                <strong>{{ item.count }} 次</strong>
+              </div>
+              <em><i :class="item.tone" :style="{ width: `${item.count}%` }"></i></em>
+            </div>
+          </div>
+        </article>
+        <article class="report-card error-action-card">
+          <span class="card-eyebrow">Next Fix</span>
+          <h4>下一步修正建议</h4>
+          <p>优先处理冠词、时态和主谓一致。每次评分后选择一个高频错误做专项复写，避免同时改太多问题。</p>
+          <div class="focus-tags">
+            <span>冠词检查</span>
+            <span>时态统一</span>
+            <span>主谓一致</span>
+          </div>
+          <button type="button" @click="navigateToPhase('mode-select')">开始专项练习</button>
+        </article>
+      </div>
+    </section>
+
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'topic'"
+      id="dashboard-tab-panel-topic"
+      class="dashboard-section dashboard-tab-panel"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-topic"
+    >
       <div class="section-heading">
         <span class="section-kicker">Topic & Style</span>
         <h3 id="topic-style-title">写作主题和风格</h3>
@@ -264,6 +386,38 @@
               <em><i :style="{ width: `${genre.percent}%` }"></i></em>
               <strong>{{ genre.percent }}%</strong>
             </div>
+          </div>
+        </article>
+        <article class="report-card next-prompt-card">
+          <span class="card-eyebrow">Recommended</span>
+          <h4>推荐下一篇</h4>
+          <strong>{{ mockTopicStyleDashboard.nextPrompt.title }}</strong>
+          <p>{{ mockTopicStyleDashboard.nextPrompt.reason }}</p>
+          <span class="difficulty">难度：{{ mockTopicStyleDashboard.nextPrompt.level }}</span>
+          <button type="button" @click="navigateToPhase('mode-select')">开始练习</button>
+        </article>
+      </div>
+    </section>
+
+    <section
+      v-if="phase === 'dashboard' && activeDashboardTab === 'ai'"
+      id="dashboard-tab-panel-ai"
+      class="dashboard-section dashboard-tab-panel"
+      role="tabpanel"
+      aria-labelledby="dashboard-tab-ai"
+    >
+      <div class="section-heading">
+        <span class="section-kicker">AI Coach</span>
+        <h3 id="ai-advice-title">AI建议</h3>
+      </div>
+      <div class="ai-dashboard-layout">
+        <article class="report-card ai-primary-card">
+          <span class="card-eyebrow">Current Insight</span>
+          <h4>当前训练建议</h4>
+          <p>{{ dashboardOverview.insight }}</p>
+          <div class="overview-insight growth-insight">
+            <strong>成长建议</strong>
+            <span>{{ dashboardGrowth.insight }}</span>
           </div>
         </article>
         <article class="report-card next-prompt-card">
@@ -768,6 +922,25 @@ type RoutePhase = Exclude<Phase, 'loading'>
 type NewTaskMode = 'free' | 'exam'
 type NewTaskSource = 'past_prompt' | 'ai_design'
 type ExamSetupInitialTab = 'manual' | 'ai' | 'past'
+type WritingDashboardTabKey = 'overview' | 'growth' | 'ability' | 'errors' | 'topic' | 'practice' | 'ai'
+
+const dashboardTabs: Array<{
+  key: WritingDashboardTabKey
+  label: string
+  eyebrow: string
+  description: string
+  short: string
+}> = [
+  { key: 'overview', label: '写作总览', eyebrow: 'Overview', description: '查看近 30 天作文数量、评分趋势和总览建议。', short: '总' },
+  { key: 'growth', label: '成长激励', eyebrow: 'Growth', description: '聚焦单篇得分趋势、得分分布和成长反馈。', short: '长' },
+  { key: 'ability', label: '能力曲线', eyebrow: 'Ability', description: '查看 CEFR 能力曲线、近期成长点和词汇句式表现。', short: '能' },
+  { key: 'errors', label: '错误分析', eyebrow: 'Errors', description: '集中查看高频错误和下一步修正动作。', short: '错' },
+  { key: 'topic', label: '主题风格', eyebrow: 'Topic', description: '查看常练主题、体裁分布和下一篇推荐。', short: '题' },
+  { key: 'practice', label: '练习记录', eyebrow: 'Practice', description: '查看本月目标、连续写作和最近练习记录。', short: '练' },
+  { key: 'ai', label: 'AI建议', eyebrow: 'Coach', description: '汇总当前训练建议和推荐动作。', short: 'AI' },
+]
+
+const dashboardTabKeys = new Set<WritingDashboardTabKey>(dashboardTabs.map(tab => tab.key))
 
 const router = useRouter()
 const route = useRoute()
@@ -907,6 +1080,7 @@ const dashboardCustomRange = ref<WritingDashboardCustomRange>({
   start: formatDateInput(addDays(new Date(), -30)),
   end: formatDateInput(new Date()),
 })
+const activeDashboardTab = ref<WritingDashboardTabKey>('overview')
 const dashboardData = ref<WritingDashboardResponse | null>(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
@@ -924,6 +1098,9 @@ const filterOptions = [
 const scoredDocs = computed(() => docList.value.filter(d => d.latestScore != null))
 const dashboardOverview = computed(() => dashboardData.value?.overview ?? emptyDashboardOverview)
 const dashboardGrowth = computed(() => dashboardData.value?.growth ?? emptyDashboardGrowth)
+const activeDashboardTabMeta = computed(() => {
+  return dashboardTabs.find(tab => tab.key === activeDashboardTab.value) ?? dashboardTabs[0]
+})
 const monthlyGoalPercent = computed(() => {
   const target = dashboardGrowth.value.monthlyGoal.target || 1
   return Math.round((dashboardGrowth.value.monthlyGoal.done / target) * 100)
@@ -1001,6 +1178,30 @@ const paginationPages = computed(() => {
 watch([filterMode, sortBy, searchQuery], () => { currentPage.value = 1 })
 
 let dashboardRequestSeq = 0
+
+function normalizeDashboardTab(value: unknown): WritingDashboardTabKey {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw === 'string' && dashboardTabKeys.has(raw as WritingDashboardTabKey)) {
+    return raw as WritingDashboardTabKey
+  }
+  return 'overview'
+}
+
+async function setActiveDashboardTab(nextTab: WritingDashboardTabKey) {
+  activeDashboardTab.value = nextTab
+  if (phase.value !== 'dashboard') return
+  await router.push({
+    name: 'WritingDashboard',
+    query: {
+      ...route.query,
+      tab: nextTab === 'overview' ? undefined : nextTab,
+    },
+  })
+}
+
+watch(() => route.query.tab, (tab) => {
+  activeDashboardTab.value = normalizeDashboardTab(tab)
+}, { immediate: true })
 
 watch([phase, dashboardRange, dashboardMode, dashboardCustomRange], () => {
   if (phase.value === 'dashboard') {
@@ -1090,7 +1291,7 @@ const dashboardTooltipStyle = {
   },
 }
 
-watch([phase, dashboardRange, dashboardMode, dashboardCustomRange, dashboardGrowth], async () => {
+watch([phase, activeDashboardTab, dashboardRange, dashboardMode, dashboardCustomRange, dashboardGrowth], async () => {
   await nextTick()
   if (phase.value !== 'dashboard') return
   renderDashboardCharts()
@@ -1103,20 +1304,58 @@ useEventListener(window, 'resize', () => {
   abilityChartInstance?.resize()
 })
 
+function isDashboardChartVisible(chart: 'scoreTrend' | 'scoreDistribution' | 'scoreScatter' | 'ability') {
+  if (phase.value !== 'dashboard') return false
+  if (chart === 'ability') return activeDashboardTab.value === 'ability'
+  return activeDashboardTab.value === 'growth'
+}
+
 function renderDashboardCharts() {
-  renderScoreTrendChart()
-  renderScoreDistributionChart()
-  renderScoreScatterChart()
-  renderAbilityChart()
+  if (isDashboardChartVisible('scoreTrend')) renderScoreTrendChart()
+  else disposeScoreTrendChart()
+
+  if (isDashboardChartVisible('scoreDistribution')) renderScoreDistributionChart()
+  else disposeScoreDistributionChart()
+
+  if (isDashboardChartVisible('scoreScatter')) renderScoreScatterChart()
+  else disposeScoreScatterChart()
+
+  if (isDashboardChartVisible('ability')) renderAbilityChart()
+  else disposeAbilityChart()
+}
+
+function disposeScoreTrendChart() {
+  if (scoreTrendChartInstance) {
+    scoreTrendChartInstance.dispose()
+    scoreTrendChartInstance = null
+  }
+}
+
+function disposeScoreDistributionChart() {
+  if (scoreDistributionChartInstance) {
+    scoreDistributionChartInstance.dispose()
+    scoreDistributionChartInstance = null
+  }
+}
+
+function disposeScoreScatterChart() {
+  if (scoreScatterChartInstance) {
+    scoreScatterChartInstance.dispose()
+    scoreScatterChartInstance = null
+  }
+}
+
+function disposeAbilityChart() {
+  if (abilityChartInstance) {
+    abilityChartInstance.dispose()
+    abilityChartInstance = null
+  }
 }
 
 function renderScoreTrendChart() {
   const trend = dashboardGrowth.value.essayScoreTrend
   if (!scoreTrendChartRef.value || trend.length < 2) {
-    if (scoreTrendChartInstance) {
-      scoreTrendChartInstance.dispose()
-      scoreTrendChartInstance = null
-    }
+    disposeScoreTrendChart()
     return
   }
   if (!scoreTrendChartInstance) {
@@ -1230,7 +1469,10 @@ function renderScoreTrendChart() {
 }
 
 function renderScoreDistributionChart() {
-  if (!scoreDistributionChartRef.value) return
+  if (!scoreDistributionChartRef.value) {
+    disposeScoreDistributionChart()
+    return
+  }
   if (!scoreDistributionChartInstance) {
     scoreDistributionChartInstance = echarts.init(scoreDistributionChartRef.value)
   }
@@ -1280,10 +1522,7 @@ function renderScoreDistributionChart() {
 function renderScoreScatterChart() {
   const points = dashboardGrowth.value.scoreScatter
   if (!scoreScatterChartRef.value || points.length === 0) {
-    if (scoreScatterChartInstance) {
-      scoreScatterChartInstance.dispose()
-      scoreScatterChartInstance = null
-    }
+    disposeScoreScatterChart()
     return
   }
   if (!scoreScatterChartInstance) {
@@ -1363,7 +1602,10 @@ function renderScoreScatterChart() {
 }
 
 function renderAbilityChart() {
-  if (!abilityChartRef.value) return
+  if (!abilityChartRef.value) {
+    disposeAbilityChart()
+    return
+  }
   if (!abilityChartInstance) {
     abilityChartInstance = echarts.init(abilityChartRef.value)
   }
@@ -1446,10 +1688,10 @@ function renderAbilityChart() {
 }
 
 function disposeDashboardCharts() {
-  if (scoreTrendChartInstance) { scoreTrendChartInstance.dispose(); scoreTrendChartInstance = null }
-  if (scoreDistributionChartInstance) { scoreDistributionChartInstance.dispose(); scoreDistributionChartInstance = null }
-  if (scoreScatterChartInstance) { scoreScatterChartInstance.dispose(); scoreScatterChartInstance = null }
-  if (abilityChartInstance) { abilityChartInstance.dispose(); abilityChartInstance = null }
+  disposeScoreTrendChart()
+  disposeScoreDistributionChart()
+  disposeScoreScatterChart()
+  disposeAbilityChart()
 }
 
 // Immersive toggle: only editor is immersive
@@ -3225,6 +3467,105 @@ function formatTime(dateStr: string) {
   background: rgba(255, 255, 255, 0.18);
 }
 
+.dashboard-tab-shell {
+  position: sticky;
+  top: 12px;
+  z-index: 8;
+  margin: 0 0 22px;
+  padding: 10px;
+  border: 1px solid rgba(212, 204, 190, 0.92);
+  border-radius: 18px;
+  background: rgba(255, 254, 250, 0.88);
+  box-shadow: 0 16px 36px rgba(31, 28, 21, 0.07);
+  backdrop-filter: blur(14px);
+}
+
+.dashboard-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.dashboard-tab-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 7px 13px 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #514c43;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.dashboard-tab-button:hover {
+  background: #edf8f1;
+  border-color: #d3eadb;
+  color: #064e3b;
+}
+
+.dashboard-tab-button.active {
+  background: #047857;
+  border-color: #047857;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(4, 120, 87, 0.22);
+}
+
+.dashboard-tab-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #f2eee6;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.dashboard-tab-button.active .dashboard-tab-icon {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.dashboard-tab-copy {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+}
+
+.dashboard-tab-copy strong {
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.dashboard-tab-copy em {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0;
+  opacity: 0.72;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dashboard-tab-summary {
+  margin: 8px 8px 0;
+  color: #6f6a60;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
 .writing-home-layout {
   --writing-home-panel-min-height: 860px;
   display: grid;
@@ -3393,6 +3734,25 @@ function formatTime(dateStr: string) {
 
 .dashboard-section {
   margin-top: 30px;
+}
+
+.dashboard-tab-panel {
+  animation: dashboard-panel-in 0.18s ease-out;
+}
+
+.dashboard-tab-panel--overview {
+  margin-top: 0;
+}
+
+@keyframes dashboard-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dashboard-state {
@@ -3815,6 +4175,7 @@ function formatTime(dateStr: string) {
 .practice-progress-section .goal-card {
   grid-template-columns: minmax(240px, 0.42fr) minmax(0, 1fr) auto;
   align-items: center;
+  margin-bottom: 18px;
 }
 
 .practice-progress-section .goal-progress {
@@ -3865,6 +4226,85 @@ function formatTime(dateStr: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.practice-list-card {
+  min-height: 300px;
+}
+
+.dashboard-light-action {
+  padding: 8px 12px;
+  border: 1px solid #d6e7dc;
+  border-radius: 999px;
+  background: #edf8f1;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.practice-doc-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.practice-doc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #eee9df;
+  border-radius: 12px;
+  background: #fbfaf7;
+  text-align: left;
+  cursor: pointer;
+}
+
+.practice-doc-row span {
+  min-width: 0;
+}
+
+.practice-doc-row strong,
+.practice-doc-row em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-doc-row strong {
+  color: #191919;
+  font-size: 13px;
+}
+
+.practice-doc-row em {
+  margin-top: 4px;
+  color: #8b8579;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.practice-doc-row b {
+  color: #047857;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dashboard-empty-panel {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  margin-top: 16px;
+  border: 1px dashed #ded9ce;
+  border-radius: 14px;
+  background: #fbfaf7;
+  color: #7a746a;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: center;
 }
 
 .ability-summary {
@@ -4032,7 +4472,9 @@ function formatTime(dateStr: string) {
 .ability-line.coherence { stroke: #7c3aed; }
 
 .diagnostics-grid,
-.topic-layout {
+.topic-layout,
+.error-analysis-layout,
+.ai-dashboard-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
@@ -4040,6 +4482,11 @@ function formatTime(dateStr: string) {
 
 .diagnostics-grid {
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+}
+
+.error-analysis-layout,
+.ai-dashboard-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
 }
 
 .error-bars,
@@ -4141,6 +4588,27 @@ function formatTime(dateStr: string) {
   padding: 0;
   border: none;
   background: transparent;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.error-action-card p,
+.ai-primary-card p {
+  margin: 10px 0 0;
+  color: #514c43;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.error-action-card button {
+  display: inline-flex;
+  margin-top: 18px;
+  padding: 9px 13px;
+  border: 1px solid #d6e7dc;
+  border-radius: 999px;
+  background: #edf8f1;
   color: #047857;
   font-size: 13px;
   font-weight: 800;
@@ -4294,7 +4762,9 @@ function formatTime(dateStr: string) {
   }
   .growth-layout,
   .ability-summary,
-  .diagnostics-grid {
+  .diagnostics-grid,
+  .error-analysis-layout,
+  .ai-dashboard-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -4303,6 +4773,24 @@ function formatTime(dateStr: string) {
   .hub-page { padding: 24px 16px 44px; }
   .dashboard-hero { grid-template-columns: 1fr; }
   .hub-title { font-size: 34px; }
+  .dashboard-tab-shell {
+    top: 8px;
+    margin-inline: -4px;
+    border-radius: 14px;
+  }
+  .dashboard-tab-button {
+    min-height: 44px;
+    padding-right: 11px;
+  }
+  .dashboard-tab-copy em {
+    display: none;
+  }
+  .practice-progress-section .goal-card {
+    grid-template-columns: 1fr;
+  }
+  .practice-progress-section .goal-progress {
+    min-width: 0;
+  }
   .doc-grid,
   .writing-home-layout .doc-grid,
   .topic-layout { grid-template-columns: 1fr; }

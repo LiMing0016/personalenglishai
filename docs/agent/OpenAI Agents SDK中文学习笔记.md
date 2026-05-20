@@ -2,7 +2,7 @@
 title: OpenAI Agents SDK 中文学习笔记
 status: draft
 owner: ai
-last_updated: 2026-05-14
+last_updated: 2026-05-17
 review_cycle: monthly
 related_code:
   - python/ai_orchestrator/agents/
@@ -11,7 +11,7 @@ related_code:
   - python/ai_orchestrator/assistant_service.py
   - python/ai_orchestrator/services/prompt_sheet_workflow.py
 related_docs:
-  - docs/agent/路由agent.md
+  - docs/agent/路由Agent设计.md
   - docs/ai/openai-agents-request-architecture.md
 ---
 

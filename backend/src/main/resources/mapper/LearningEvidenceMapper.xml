@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.learning.LearningEvidenceMapper">
+
+    <resultMap id="LearningEvidenceResultMap" type="com.personalenglishai.backend.entity.learning.LearningEvidence">
+        <id column="id" property="id"/>
+        <result column="evidence_uid" property="evidenceUid"/>
+        <result column="candidate_uid" property="candidateUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="evidence_type" property="evidenceType"/>
+        <result column="text" property="text"/>
+        <result column="score" property="score"/>
+        <result column="signals_json" property="signalsJson"/>
+        <result column="model_judgement_json" property="modelJudgementJson"/>
+        <result column="extractor_sources_json" property="extractorSourcesJson"/>
+        <result column="comparison_status" property="comparisonStatus"/>
+        <result column="source_message_ids_json" property="sourceMessageIdsJson"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="BaseColumns">
+        id,
+        evidence_uid,
+        candidate_uid,
+        user_id,
+        evidence_type,
+        text,
+        score,
+        signals_json,
+        model_judgement_json,
+        extractor_sources_json,
+        comparison_status,
+        source_message_ids_json,
+        status,
+        created_at,
+        updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.learning.LearningEvidence"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_evidence (
+            evidence_uid,
+            candidate_uid,
+            user_id,
+            evidence_type,
+            text,
+            score,
+            signals_json,
+            model_judgement_json,
+            extractor_sources_json,
+            comparison_status,
+            source_message_ids_json,
+            status
+        ) VALUES (
+            #{evidenceUid},
+            #{candidateUid},
+            #{userId},
+            #{evidenceType},
+            #{text},
+            COALESCE(#{score}, 0),
+            #{signalsJson},
+            #{modelJudgementJson},
+            #{extractorSourcesJson},
+            #{comparisonStatus},
+            #{sourceMessageIdsJson},
+            COALESCE(#{status}, 'pending')
+        )
+    </insert>
+
+    <select id="findByEvidenceUid" resultMap="LearningEvidenceResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_evidence
+        WHERE evidence_uid = #{evidenceUid}
+        LIMIT 1
+    </select>
+
+    <select id="findByCandidateUid" resultMap="LearningEvidenceResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_evidence
+        WHERE candidate_uid = #{candidateUid}
+        LIMIT 1
+    </select>
+
+    <select id="selectPendingByUserAndDateRange" resultMap="LearningEvidenceResultMap">
+        SELECT <include refid="BaseColumns"/>
+        FROM learning_evidence
+        WHERE user_id = #{userId}
+          AND status = 'pending'
+          AND created_at &gt;= #{from}
+          AND created_at &lt; #{to}
+        ORDER BY score DESC, created_at DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <update id="updateStatus">
+        UPDATE learning_evidence
+        SET status = #{status},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE evidence_uid = #{evidenceUid}
+    </update>
+</mapper>

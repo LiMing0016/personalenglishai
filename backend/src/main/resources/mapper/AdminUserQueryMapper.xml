@@ -160,4 +160,38 @@
                ON daily_usage.user_id = u.id AND daily_usage.usage_date = #{usageDate}
         WHERE u.id = #{userId}
     </select>
+
+    <select id="selectRecentAiUsageEvents" resultType="java.util.LinkedHashMap">
+        SELECT e.usage_event_id AS id,
+               e.feature_key AS featureKey,
+               e.provider,
+               e.model,
+               e.input_tokens AS inputTokens,
+               e.cached_input_tokens AS cachedInputTokens,
+               e.output_tokens AS outputTokens,
+               e.reasoning_tokens AS reasoningTokens,
+               e.total_tokens AS totalTokens,
+               e.trace_id AS traceId,
+               e.occurred_at AS occurredAt
+        FROM ai_token_usage_event e
+        WHERE e.user_id = #{userId}
+        ORDER BY e.occurred_at DESC, e.usage_event_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRecentAuditLogs" resultType="java.util.LinkedHashMap">
+        SELECT l.id,
+               l.admin_user_id AS adminUserId,
+               admin.nickname AS adminNickname,
+               l.action,
+               l.resource_type AS resourceType,
+               l.resource_id AS resourceId,
+               l.target_user_id AS targetUserId,
+               l.created_at AS createdAt
+        FROM admin_audit_log l
+        LEFT JOIN users admin ON admin.id = l.admin_user_id
+        WHERE l.target_user_id = #{userId}
+        ORDER BY l.created_at DESC, l.id DESC
+        LIMIT #{limit}
+    </select>
 </mapper>

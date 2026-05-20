@@ -341,6 +341,14 @@ workflow 是业务链路，不是 prompt 堆叠容器。
 2. prompt 改动必须至少配一组最小回归样例。
 3. 主链路 prompt 需要保留 smoke case。
 
+### OpenAI 远程 Prompt
+
+1. 仓库内 `prompts/` 仍是 prompt 权威源，OpenAI 远程 Prompt 只作为运行时发布版本。
+2. 使用正式 prompt 资产的 agent 创建必须通过 `prompts.resolver.resolve_agent_prompt_kwargs` 接入 prompt，不要在 agent 构造点自行判断环境变量。
+3. 默认使用本地 `instructions`；远程 Prompt 只能通过显式环境变量启用，并必须保留本地回退路径。
+4. 生产启用远程 Prompt 时应固定 OpenAI Prompt version，避免远程最新版本静默改变线上行为。
+5. Kimi、Qwen 或其他非 `api.openai.com` base URL 不应使用 OpenAI 远程 Prompt。
+
 ---
 
 ## Schema 与契约规则

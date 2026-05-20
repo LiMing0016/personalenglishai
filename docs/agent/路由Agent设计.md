@@ -2,7 +2,7 @@
 title: 路由 Agent 设计
 status: draft
 owner: ai
-last_updated: 2026-05-14
+last_updated: 2026-05-17
 review_cycle: monthly
 related_code:
   - python/ai_orchestrator/agents/router.py
@@ -13,8 +13,9 @@ related_code:
   - python/ai_orchestrator/prompts/agent_instructions/route_decision.md
   - python/ai_orchestrator/services/route_decision_runner.py
 related_docs:
-  - docs/ai/agent-overview.md
-  - docs/ai/learning-assistant-architecture.md
+  - docs/agent/Agent产品现状与路线图.md
+  - docs/agent/Agent能力清单.md
+  - docs/agent/学习助手Agent编排架构.md
   - docs/ai/openai-agents-request-architecture.md
 ---
 

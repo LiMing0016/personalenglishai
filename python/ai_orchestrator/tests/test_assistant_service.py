@@ -218,6 +218,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
             intent="free_chat",
             scope="message_only",
             message={"text": "润色这句话：I very like English."},
+            studyContext={"studyStage": "postgrad"},
         )
 
         with patch(
@@ -228,6 +229,9 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
             reply = await service.run_assistant_request(request)
 
         self.assertIs(run_agent_session.await_args.kwargs["agent"], polish_agent)
+        run_context = run_agent_session.await_args.kwargs["run_context"]
+        self.assertEqual(run_context.study_stage, "postgrad")
+        self.assertEqual(run_context.assistant_mode, "daily_explain")
         self.assertEqual(reply.agent_name, "Polish Agent")
         self.assertEqual(reply.run.agent_name, "Polish Agent")
 
@@ -663,6 +667,9 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("评分口径", agent_input)
         self.assertIn("[用户消息]", agent_input)
         self.assertIn("Evaluate this sentence.", agent_input)
+        run_context = run_agent_session.await_args.kwargs["run_context"]
+        self.assertEqual(run_context.study_stage, "postgrad")
+        self.assertEqual(run_context.assistant_mode, "exam")
 
     async def test_chat_disables_session_for_attachment_input_items(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
@@ -745,7 +752,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- 学段: 雅思", content[0]["text"])
         self.assertEqual(content[1]["type"], "input_image")
 
-    async def test_run_assistant_request_disables_session_for_structured_input_items(self) -> None:
+    async def test_run_assistant_request_uses_session_for_text_only_input_items(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
 
@@ -768,10 +775,48 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
             reply = await service.run_assistant_request(request)
 
         run_agent_session.assert_awaited_once()
-        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
+        self.assertTrue(run_agent_session.await_args.kwargs["use_session"])
         self.assertIsInstance(run_agent_session.await_args.kwargs["agent_input"], list)
         self.assertEqual(reply.reply, "pong")
         self.assertEqual(reply.run.scope, "message_only")
+
+    async def test_run_assistant_request_disables_session_for_attachment_input_items(self) -> None:
+        service = AssistantAgentService(model="test-model", session_db_path="unused.db")
+        service._router_agent = object()
+        service._attachment_agent = SimpleNamespace(name="Attachment Agent")
+
+        request = AssistantRequest.model_validate(
+            {
+                "appConversationId": "conv-attachment-1",
+                "clientMessageId": "client-attachment-1",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "attachments_and_message",
+                "message": {"text": "看一下这个附件"},
+                "attachments": [
+                    {
+                        "attachmentId": "att-1",
+                        "provider": "external_url",
+                        "kind": "image",
+                        "name": "draft.png",
+                        "mimeType": "image/png",
+                        "sizeBytes": 128,
+                        "url": "https://example.test/draft.png",
+                        "processing": {"status": "ready"},
+                    }
+                ],
+            }
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="done", agent_name="Attachment Agent"),
+        ) as run_agent_session:
+            await service.run_assistant_request(request)
+
+        run_agent_session.assert_awaited_once()
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
 
     async def test_stream_assistant_request_emits_delta_and_completion_events(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")

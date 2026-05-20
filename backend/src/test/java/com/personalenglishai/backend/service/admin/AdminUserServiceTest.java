@@ -141,5 +141,15 @@ class AdminUserServiceTest {
                                                                   LocalDate usageDate) {
             return Map.of();
         }
+
+        @Override
+        public List<Map<String, Object>> selectRecentAiUsageEvents(Long userId, int limit) {
+            return List.of();
+        }
+
+        @Override
+        public List<Map<String, Object>> selectRecentAuditLogs(Long userId, int limit) {
+            return List.of();
+        }
     }
 }
