@@ -9,6 +9,7 @@ function renderInline(text: string): string {
   return escapeHtml(text)
     .replace(/`([^`]+?)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
 }
 
 function renderParagraph(lines: string[]): string {
@@ -34,6 +35,16 @@ function renderOrderedList(lines: string[]): string {
 function renderBlockquote(lines: string[]): string {
   const quoteLines = lines.map((line) => line.replace(/^>\s?/, ''))
   return `<blockquote>${renderParagraph(quoteLines)}</blockquote>`
+}
+
+function renderCodeBlock(language: string, code: string): string {
+  const label = language.trim() || 'text'
+  return [
+    '<div class="markdown-code-block">',
+    `<div class="markdown-code-header"><span>${escapeHtml(label)}</span></div>`,
+    `<pre><code>${escapeHtml(code)}</code></pre>`,
+    '</div>',
+  ].join('')
 }
 
 function splitTableRow(line: string): string[] {
@@ -136,6 +147,19 @@ export function renderAssistantMarkdown(markdown: string): string {
     const line = rawLine.trimEnd()
     const trimmed = line.trim()
 
+    const codeFence = /^```([A-Za-z0-9_+.-]+)?\s*$/.exec(trimmed)
+    if (codeFence) {
+      flushAll()
+      const codeLines: string[] = []
+      index += 1
+      while (index < lines.length && !/^```\s*$/.test(lines[index]!.trim())) {
+        codeLines.push(lines[index]!)
+        index += 1
+      }
+      blocks.push(renderCodeBlock(codeFence[1] ?? 'text', codeLines.join('\n')))
+      continue
+    }
+
     if (!trimmed) {
       flushAll()
       continue
@@ -160,7 +184,7 @@ export function renderAssistantMarkdown(markdown: string): string {
       continue
     }
 
-    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed)
+    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed)
     if (heading) {
       flushAll()
       const level = heading[1].length
