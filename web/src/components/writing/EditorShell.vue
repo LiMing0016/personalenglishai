@@ -14,7 +14,7 @@
           :submitting="evaluateStore.submitting"
           :writing-mode="draftStore.writingMode"
           :cursor-placement="cursorPlacement"
-          :selection-capture-enabled="panelStore.assistantOpen"
+          :selection-capture-enabled="true"
           :errors="grammarStore.displayEditorErrors"
           :active-error-id="activeErrorId"
           :highlight-range="sentenceHighlightRange"
@@ -110,6 +110,8 @@
           @start-grammar-check="onStartGrammarCheck"
           @dismiss-selection="onDismissSelection"
           @replace-selection-with="onReplaceSelectionWith"
+          @writing-coach-apply="onWritingCoachApply"
+          @writing-coach-edit-action="onWritingCoachEditAction"
           @update:ai-note="draftStore.aiNote = $event"
           @update:ai-provider="onAiProviderChange"
           @update:writing-mode="draftStore.writingMode = $event"
@@ -177,7 +179,9 @@ import RightPanel from './RightPanel.vue'
 import ToolRail from './ToolRail.vue'
 import Splitter from './Splitter.vue'
 import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
-import { aiCommand } from '@/api/ai'
+import { assistantApi, assistantChatStream } from '@/api/assistant'
+import type { AssistantWritingCoachContext } from '@/api/assistant'
+import type { WritingCoachEditAction } from '@/types/assistantRequest'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
@@ -188,7 +192,7 @@ import { useWritingDraftStore } from '@/stores/writingDraftStore'
 import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
-import { getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
+import { getActiveRubric, getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
 import type {
   PolishTier,
   WritingAiProvider,
@@ -209,12 +213,15 @@ const aiProviderLabels: Record<WritingAiProvider, string> = {
 }
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
+type WritingCoachToolDto = { key: string; label: string; prompt: string }
 
 const leftPaneRef = ref<HTMLElement | null>(null)
 const rightPanelRef = ref<{
+  setAiComposerText?: (text: string) => boolean
   focusAiComposer: () => boolean
   getAiRecentMessages?: (max?: number) => RecentMessageDto[]
   isIncludeDraft?: () => boolean
+  getAiSelectedTool?: () => WritingCoachToolDto
 } | null>(null)
 const selectionState = ref<{ text: string; start: number; end: number } | null>(null)
 const selectionDismissed = ref(false)
@@ -575,13 +582,40 @@ function onApplySuggestion(payload: { original: string; suggestion: string }) {
   showToast('已替换', 'success')
 }
 
-function onBubbleAction(action: 'explain' | 'rewrite' | 'translate') {
-  const panelMap: Record<string, import('./ToolRail.vue').PanelMode> = {
-    explain: 'explain',
-    rewrite: 'rewrite',
-    translate: 'translate',
+type EditorBubbleAction =
+  | 'explain'
+  | 'rewrite'
+  | 'translate'
+  | 'topic_check'
+  | 'polish_expression'
+  | 'expand_segment'
+  | 'simplify_segment'
+  | 'replace_suggestion'
+
+function onBubbleAction(action: EditorBubbleAction) {
+  if (action === 'explain' || action === 'rewrite' || action === 'translate') {
+    const panelMap: Record<typeof action, import('./ToolRail.vue').PanelMode> = {
+      explain: 'explain',
+      rewrite: 'rewrite',
+      translate: 'translate',
+    }
+    panelStore.activePanel = panelMap[action]
+    return
   }
-  panelStore.activePanel = panelMap[action] ?? 'aiNote'
+
+  panelStore.activePanel = 'aiNote'
+  const selectedText = selectionState.value?.text?.trim() || selectionStore.selectedText.value.trim()
+  const instructionMap: Record<Exclude<EditorBubbleAction, 'explain' | 'rewrite' | 'translate'>, string> = {
+    topic_check: `请检查这段内容是否偏题，并说明它是否服务于题目中心任务：\n\n${selectedText}`,
+    polish_expression: `请在不改变原意和题目方向的前提下，润色这段表达：\n\n${selectedText}`,
+    expand_segment: `请扩写这段内容，让理由或例子更充分，但不要偏离题目：\n\n${selectedText}`,
+    simplify_segment: `请把这段内容改得更适合当前学段，表达更清楚，不要改变原意：\n\n${selectedText}`,
+    replace_suggestion: `请给出一版可以替换当前选区的建议，并说明为什么更切题：\n\n${selectedText}`,
+  }
+  nextTick(() => {
+    rightPanelRef.value?.setAiComposerText?.(instructionMap[action])
+    rightPanelRef.value?.focusAiComposer()
+  })
 }
 
 function onParagraphClick(offset: number) {
@@ -845,6 +879,122 @@ function onReplaceSelectionWith(resultText: string) {
   showToast('已替换选中内容', 'success')
 }
 
+function onWritingCoachApply(payload: { type: 'replace_selection' | 'append_text' | 'replace_all'; text: string }) {
+  const text = payload.text.trim()
+  if (!text) {
+    showToast('建议内容为空', 'info')
+    return
+  }
+  if (payload.type === 'replace_selection') {
+    onReplaceSelectionWith(text)
+    return
+  }
+  if (payload.type === 'append_text') {
+    const current = draftStore.draftText
+    const separator = current.trim() ? '\n\n' : ''
+    draftStore.draftText = `${current}${separator}${text}`
+    cursorPlacement.value = { at: draftStore.draftText.length }
+    showToast('已追加到正文末尾', 'success')
+    return
+  }
+  const confirmed = window.confirm('替换全文会覆盖当前正文，确定应用这版终稿吗？')
+  if (!confirmed) return
+  draftStore.draftText = text
+  cursorPlacement.value = { at: text.length }
+  showToast('已替换全文', 'success')
+}
+
+function onWritingCoachEditAction(action: WritingCoachEditAction) {
+  const actionText = action.text.trim()
+  if (!actionText) {
+    showToast('建议内容为空', 'info')
+    return
+  }
+
+  if (action.type === 'append_paragraph') {
+    appendParagraphToDraft(actionText)
+    showToast('已追加为新段落', 'success')
+    return
+  }
+
+  const targetRange = resolveWritingCoachActionRange(action)
+  if (!targetRange) {
+    showToast('无法定位要修改的句子，请先选中正文里的目标句子', 'info')
+    return
+  }
+
+  if (action.type === 'replace_selection') {
+    replaceDraftRange(targetRange.start, targetRange.end, actionText)
+    showToast('已替换选中内容', 'success')
+    return
+  }
+
+  insertAfterDraftRange(targetRange.end, actionText)
+  showToast('已插入到选中句子后', 'success')
+}
+
+function appendParagraphToDraft(text: string) {
+  const current = draftStore.draftText
+  const separator = current.trim() ? '\n\n' : ''
+  draftStore.draftText = `${current}${separator}${text}`
+  cursorPlacement.value = { at: draftStore.draftText.length }
+  lastChatResult.value = null
+}
+
+function replaceDraftRange(start: number, end: number, replacement: string) {
+  const draft = draftStore.draftText
+  const normalized = normalizeDraftRange(start, end, draft.length)
+  draftStore.draftText = draft.slice(0, normalized.start) + replacement + draft.slice(normalized.end)
+  cursorPlacement.value = { at: normalized.start + replacement.length }
+  lastChatResult.value = null
+}
+
+function insertAfterDraftRange(end: number, insertion: string) {
+  const draft = draftStore.draftText
+  const at = Math.max(0, Math.min(end, draft.length))
+  const separator = resolveInlineInsertSeparator(draft, at)
+  const inserted = `${separator}${insertion}`
+  draftStore.draftText = draft.slice(0, at) + inserted + draft.slice(at)
+  cursorPlacement.value = { at: at + inserted.length }
+  lastChatResult.value = null
+}
+
+function resolveWritingCoachActionRange(action: WritingCoachEditAction): { start: number; end: number } | null {
+  const draft = draftStore.draftText
+  const range = action.target?.range
+  const targetText = action.target?.selectedText?.trim() || selectedTextPinned.value.trim()
+  if (range) {
+    const normalized = normalizeDraftRange(range.start, range.end, draft.length)
+    if (!targetText || draft.slice(normalized.start, normalized.end) === targetText) {
+      return normalized
+    }
+  }
+
+  if (!targetText) return selectedSpanPinned.value ? normalizeDraftRange(selectedSpanPinned.value.start, selectedSpanPinned.value.end, draft.length) : null
+
+  const index = draft.indexOf(targetText)
+  if (index >= 0) return { start: index, end: index + targetText.length }
+  const fallback = findClosestMatch(draft, targetText, selectedSpanPinned.value?.start ?? 0, true, shouldUseWordBoundary(targetText))
+  if (fallback < 0) return null
+  return { start: fallback, end: fallback + targetText.length }
+}
+
+function normalizeDraftRange(start: number, end: number, max: number) {
+  const safeStart = Math.max(0, Math.min(start, max))
+  const safeEnd = Math.max(0, Math.min(end, max))
+  return safeStart <= safeEnd
+    ? { start: safeStart, end: safeEnd }
+    : { start: safeEnd, end: safeStart }
+}
+
+function resolveInlineInsertSeparator(text: string, at: number): string {
+  if (at <= 0) return ''
+  const before = text[at - 1] ?? ''
+  const after = text[at] ?? ''
+  if (!before || /\s/u.test(before) || /\s/u.test(after)) return ''
+  return ' '
+}
+
 function getRecentAiMessages(max = 8): RecentMessageDto[] {
   return rightPanelRef.value?.getAiRecentMessages?.(max) ?? []
 }
@@ -867,29 +1017,162 @@ function onAiProviderChange(provider: WritingAiProvider) {
   showToast(`已切换到 ${aiProviderLabels[provider] ?? provider}`, 'success')
 }
 
+async function ensureWritingAssistantConversation(): Promise<string> {
+  const current = draftStore.aiConversationId.trim()
+  if (current.startsWith('conv-')) return current
+  const title = draftStore.writingMode === 'exam' ? '写作教练：考试写作' : '写作教练：自由写作'
+  const conversation = await assistantApi.createConversation({ title })
+  draftStore.aiConversationId = conversation.id
+  return conversation.id
+}
+
+function buildWritingCoachPrompt(options: {
+  instruction: string
+  selectedTool: WritingCoachToolDto
+  includeDraft: boolean
+  taskPrompt?: string
+  selectedText?: string
+  recentMessages: RecentMessageDto[]
+}) {
+  const lines: string[] = [
+    '[写作教练 Copilot 请求]',
+    `- 入口: writing_copilot`,
+    `- 当前能力: ${options.selectedTool.label} (${options.selectedTool.key})`,
+    `- 写作模式: ${draftStore.writingMode === 'exam' ? '考试写作' : '自由写作'}`,
+    `- 学段/目标: ${props.studyStage || '未指定'}`,
+  ]
+  if (options.taskPrompt) {
+    lines.push('', '[作文题目]', truncateForAssistant(options.taskPrompt, 1200))
+  }
+  if (options.selectedText) {
+    lines.push('', '[用户当前选区]', truncateForAssistant(options.selectedText, 1200))
+  }
+  if (options.includeDraft && draftStore.draftText.trim()) {
+    lines.push('', '[当前作文全文]', truncateForAssistant(draftStore.draftText, 6000))
+  }
+  if (options.recentMessages.length > 0) {
+    lines.push('', '[写作教练面板近期对话]')
+    for (const message of options.recentMessages) {
+      lines.push(`${message.role === 'user' ? '用户' : '教练'}: ${truncateForAssistant(message.content, 600)}`)
+    }
+  }
+  lines.push('', '[用户本轮问题]', options.instruction)
+  return lines.join('\n')
+}
+
+function truncateForAssistant(text: string, max: number): string {
+  const normalized = text.trim()
+  if (normalized.length <= max) return normalized
+  return `${normalized.slice(0, max).trimEnd()}\n...[已截断 ${normalized.length - max} 字]`
+}
+
+function hasPriorTopicAnalysis(messages: RecentMessageDto[]): boolean {
+  return messages.some((message) =>
+    message.role === 'assistant'
+    && /题目主旨|中心任务|必答点|偏题风险/.test(message.content),
+  )
+}
+
+function buildWritingCoachContext(options: {
+  selectedTool: WritingCoachToolDto
+  includeDraft: boolean
+  taskPrompt?: string
+  selectedText?: string
+  recentMessages: RecentMessageDto[]
+  rubric?: NonNullable<AssistantWritingCoachContext['rubric']>
+}): AssistantWritingCoachContext {
+  const metadata = options.taskPrompt ? parseExamPromptMetadata(options.taskPrompt) : null
+  const questionMaterials = [metadata?.imageDescription, metadata?.materialText].filter(Boolean).join('\n')
+  const imageDescriptions = [metadata?.imageDescription].filter((value): value is string => Boolean(value?.trim()))
+  const includeDraftText = options.includeDraft && draftStore.draftText.trim()
+  return {
+    schemaVersion: 'writing_coach_input_v1',
+    action: options.selectedTool.key as AssistantWritingCoachContext['action'],
+    writingMode: draftStore.writingMode === 'exam' ? 'exam' : 'free',
+    studyStage: props.studyStage ?? null,
+    taskType: sessionMetadata.value?.taskType ?? null,
+    essayQuestion: options.taskPrompt ?? metadata?.topicTitle ?? null,
+    questionMaterials: questionMaterials || metadata?.topicContent || null,
+    imageDescriptions,
+    essayGenre: sessionMetadata.value?.genre ?? metadata?.genre ?? null,
+    minWords: effectiveExamMinWords.value,
+    maxWords: effectiveExamRecommendedMaxWords.value,
+    draftText: includeDraftText ? draftStore.draftText : null,
+    selectedText: options.selectedText ?? null,
+    includeDraft: options.includeDraft,
+    topicAnalysisDone: hasPriorTopicAnalysis(options.recentMessages),
+    rubric: options.rubric ?? {
+      rubricKey: '',
+      rubricVersion: '',
+      rubricText: '',
+      rubricFocus: [],
+    },
+  }
+}
+
+async function resolveWritingCoachRubricContext(
+  mode: 'free' | 'exam',
+): Promise<NonNullable<AssistantWritingCoachContext['rubric']>> {
+  try {
+    const rubric = await getActiveRubric({
+      stage: props.studyStage ?? undefined,
+      mode,
+    })
+    const rubricFocus = rubric.dimensions
+      .map((dimension) => dimension.display_name || dimension.dimension_key)
+      .filter((value) => value.trim().length > 0)
+    const rubricText = rubric.dimensions
+      .map((dimension) => {
+        const criteria = dimension.levels
+          .map((level) => `${level.level}: ${level.criteria}`)
+          .filter(Boolean)
+          .slice(0, 2)
+          .join(' / ')
+        return criteria ? `${dimension.display_name || dimension.dimension_key}: ${criteria}` : ''
+      })
+      .filter(Boolean)
+      .slice(0, 4)
+      .join('\n')
+    return {
+      rubricKey: rubric.rubric_key,
+      rubricVersion: '',
+      rubricFocus,
+      rubricText,
+    }
+  } catch (error) {
+    console.warn('[WritingCoach] load active rubric failed', error)
+    return {
+      rubricKey: '',
+      rubricVersion: '',
+      rubricText: '',
+      rubricFocus: [],
+    }
+  }
+}
+
 async function onAiNoteSend() {
   if (aiGenerating.value) return
   const instruction = draftStore.aiNote.trim()
   const selectedText = selectionStore.selectedText.value.trim()
   const hasSelectedText = Boolean(selectedText)
   const wantsDraft = rightPanelRef.value?.isIncludeDraft?.() ?? false
+  const selectedTool = rightPanelRef.value?.getAiSelectedTool?.() ?? { key: 'coach', label: '写作教练', prompt: '' }
   const hasDraftText = Boolean(draftStore.draftText.trim())
   const normalizedMode = draftStore.writingMode === 'exam' ? 'exam' : 'free'
   const examTaskPrompt =
     normalizedMode === 'exam' ? effectiveExamTaskPrompt.value || undefined : undefined
-  const contextScope = hasSelectedText ? 'selection' : 'auto'
-  const actionOrigin = 'chat_input'
+  const contextScope = hasSelectedText ? 'selection_and_message' : 'message_only'
   const recentMessages = getRecentAiMessages(8)
   console.log('[AI SEND]', {
     docId: aiDocId.value,
     instruction,
+    selectedTool,
     hasSelectedText,
     hasDraftText,
     wantsDraft,
     writingMode: normalizedMode,
     hasTaskPrompt: Boolean(examTaskPrompt),
     contextScope,
-    actionOrigin,
     recentMessagesCount: recentMessages.length,
     conversationId: draftStore.aiConversationId,
   })
@@ -911,34 +1194,52 @@ async function onAiNoteSend() {
       aiDocId.value = created.docId
     }
 
-    const res = await aiCommand({
-      apiVersion: 1,
-      intent: 'chat',
-      mode: 'md',
-      aiProvider: draftStore.aiProvider,
+    const conversationId = await ensureWritingAssistantConversation()
+    const prompt = buildWritingCoachPrompt({
       instruction,
-      constraints: {
-        contextScope,
-        actionOrigin,
-        includeDraft: wantsDraft ? true : undefined,
-        mode: normalizedMode,
-        taskPrompt: examTaskPrompt,
-        conversationId: draftStore.aiConversationId,
-        selectedText: selectedText || undefined,
-        draftText: wantsDraft ? (draftStore.draftText || undefined) : undefined,
-        recentMessages: recentMessages.length ? recentMessages : undefined,
-      },
-      contextRefs: {
-        docId: aiDocId.value,
-      },
-    }, {
-      signal: aiAbortController.signal,
+      selectedTool,
+      includeDraft: wantsDraft,
+      taskPrompt: examTaskPrompt,
+      selectedText: selectedText || undefined,
+      recentMessages,
     })
+    const rubric = await resolveWritingCoachRubricContext(normalizedMode)
+    const writingCoachContext = buildWritingCoachContext({
+      selectedTool,
+      includeDraft: wantsDraft,
+      taskPrompt: examTaskPrompt,
+      selectedText: selectedText || undefined,
+      recentMessages,
+      rubric,
+    })
+    const res = await assistantChatStream(
+      {
+        input: prompt,
+        conversationId,
+        studyStage: props.studyStage ?? undefined,
+        assistantMode: normalizedMode === 'exam' ? 'exam' : 'default',
+        intent: 'first_draft_coach',
+        scope: contextScope,
+        selection: hasSelectedText
+          ? {
+              text: selectedText,
+              source: 'writing_editor',
+              documentId: aiDocId.value,
+              range: selectedSpanPinned.value
+                ? { start: selectedSpanPinned.value.start, end: selectedSpanPinned.value.end }
+                : undefined,
+            }
+          : undefined,
+        writingCoachContext,
+        attachments: [],
+      },
+      {},
+      { signal: aiAbortController.signal },
+    )
 
-    if (res.apply !== '') {
+    if (res.reply.trim() !== '') {
       lastChatResult.value = {
-        displayText: res.apply,
-        replaceText: res.replaceSelectionText,
+        displayText: res.reply,
       }
     } else {
       lastChatResult.value = null

@@ -7,6 +7,7 @@ export type AssistantIntent =
   | 'polish'
   | 'summarize'
   | 'grade_writing'
+  | 'first_draft_coach'
   | 'generate_examples'
   | 'analyze_question'
 
@@ -78,6 +79,57 @@ export interface AssistantSelection {
   }
 }
 
+export interface AssistantWritingCoachContext {
+  schemaVersion?: string
+  action?: 'coach' | 'analyze' | 'outline' | 'next' | 'topic' | 'polish' | 'draft'
+  writingMode?: 'free' | 'exam'
+  studyStage?: string | null
+  taskType?: string | null
+  essayQuestion?: string | null
+  questionMaterials?: string | null
+  imageDescriptions?: string[]
+  attachments?: AssistantAttachmentRef[]
+  essayGenre?: string | null
+  minWords?: number | null
+  maxWords?: number | null
+  draftText?: string | null
+  selectedText?: string | null
+  includeDraft?: boolean
+  topicAnalysisDone?: boolean
+  topicBrief?: string | null
+  centralTask?: string | null
+  mustAnswerPoints?: string[]
+  riskPoints?: string[]
+  recommendedStructure?: string[]
+  rubric?: {
+    rubricKey?: string
+    rubricVersion?: string
+    rubricText?: string
+    rubricFocus?: string[]
+  }
+}
+
+export type WritingCoachEditActionType =
+  | 'replace_selection'
+  | 'insert_after_selection'
+  | 'append_paragraph'
+
+export interface WritingCoachEditAction {
+  id: string
+  type: WritingCoachEditActionType
+  title: string
+  text: string
+  reason?: string
+  target?: {
+    mode: 'selected_range' | 'semantic_match' | 'document_end'
+    selectedText?: string
+    range?: {
+      start: number
+      end: number
+    }
+  }
+}
+
 export interface AssistantRequest {
   appConversationId?: string
   clientMessageId: string
@@ -97,6 +149,7 @@ export interface AssistantRequest {
     locale?: 'zh-CN' | 'en-US'
     responseLanguage?: ResponseLanguage
   }
+  writingCoachContext?: AssistantWritingCoachContext
   clientMeta?: {
     sourcePage?: string
     timezone?: string

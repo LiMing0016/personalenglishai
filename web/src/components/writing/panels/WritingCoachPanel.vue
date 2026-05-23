@@ -101,19 +101,36 @@
           <button type="button" class="apply-btn" @click="onApplySuggestion">应用到正文</button>
         </div>
       </article>
+
+      <article
+        v-for="action in activeEditActions"
+        :key="action.id"
+        class="edit-action-card"
+      >
+        <div class="suggestion-meta">
+          <span class="suggestion-type">{{ action.title }}</span>
+          <span class="suggestion-state">待确认</span>
+        </div>
+        <p v-if="action.reason" class="edit-action-reason">{{ action.reason }}</p>
+        <pre class="edit-action-text">{{ action.text }}</pre>
+        <div class="suggestion-actions">
+          <button type="button" class="ghost-btn" @click="dismissEditAction(action.id)">取消</button>
+          <button type="button" class="apply-btn" @click="onApplyEditAction(action)">应用到正文</button>
+        </div>
+      </article>
     </section>
 
     <footer class="composer">
       <div class="composer-shell" :class="{ 'tool-menu-open': toolMenuOpen }">
-        <div v-if="selectedText" class="selected-line">
+        <div v-if="visibleSelectedText" class="selected-line">
           <span class="selected-label">选区</span>
-          <SelectedTextChip :text="selectedText" :max-chars="72" @dismiss="clearSelectedText" />
+          <SelectedTextChip :text="visibleSelectedText" :max-chars="72" @dismiss="clearSelectedText" />
         </div>
         <textarea
           ref="composerInputRef"
           :value="modelValue"
           class="composer-input"
-          :class="{ 'has-selection': !!selectedText }"
+          :class="{ 'has-selection': !!visibleSelectedText }"
           rows="3"
           :placeholder="composerPlaceholder"
           @input="onInput"
@@ -183,6 +200,8 @@ import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from '@/components/assistant/markdown'
 import type { WritingAiProvider } from '@/api/writing'
+import type { WritingCoachEditAction } from '@/types/assistantRequest'
+import { extractWritingCoachEditActions } from '../writingCoachEditActions'
 
 type WritingMode = 'free' | 'exam'
 type CoachStage = 'idle' | 'analyzing' | 'idea_confirmed' | 'outlined' | 'paragraphing' | 'drafted'
@@ -262,6 +281,7 @@ const emit = defineEmits<{
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
   'apply-suggestion': [payload: SafeApplySuggestion]
+  'apply-edit-action': [payload: WritingCoachEditAction]
   close: []
   cleared: []
 }>()
@@ -275,10 +295,23 @@ const selectedToolKey = ref<CoachToolKey>('coach')
 const coachStage = ref<CoachStage>('idle')
 const activeFlowKey = ref<WritingFlowKey>('analysis')
 const activeSuggestion = ref<SafeApplySuggestion | null>(null)
+const activeEditActions = ref<WritingCoachEditAction[]>([])
 const lastAssistantPayload = ref('')
+const hiddenSelectionKeyAfterSend = ref('')
 const messages = ref<ChatMessage[]>([{ role: 'assistant', text: DEFAULT_HINT, at: Date.now() }])
 
 const selectedText = computed(() => selectionStore?.selectedText.value || props.selectedTextPinned || '')
+const selectedSelectionKey = computed(() => {
+  const text = selectedText.value
+  if (!text) return ''
+  const span = props.selectedSpanPinned
+  return span ? `${span.start}:${span.end}:${text}` : text
+})
+const visibleSelectedText = computed(() => {
+  return selectedText.value && selectedSelectionKey.value !== hiddenSelectionKeyAfterSend.value
+    ? selectedText.value
+    : ''
+})
 const canSend = computed(() => props.modelValue.trim().length > 0)
 const studyStageLabel = computed(() => props.studyStage?.trim() || '')
 const wordRangeLabel = computed(() => {
@@ -508,6 +541,12 @@ watch(
         text: props.lastChatResult.replaceText,
       }
     }
+    activeEditActions.value = extractWritingCoachEditActions({
+      markdown: value,
+      selectedText: selectedText.value,
+      selectedSpan: props.selectedSpanPinned,
+      selectedToolKey: selectedTool.value.key,
+    })
     scrollToBottom()
   },
 )
@@ -516,6 +555,14 @@ watch(
   () => props.conversationId ?? '',
   (conversationId) => restoreMessages(conversationId),
   { immediate: true },
+)
+
+watch(
+  selectedSelectionKey,
+  (value) => {
+    if (value && value !== hiddenSelectionKeyAfterSend.value) return
+    if (!value) hiddenSelectionKeyAfterSend.value = ''
+  },
 )
 
 watch(
@@ -530,6 +577,7 @@ function selectTool(item: CoachTool) {
   activeFlowKey.value = item.flowStage
   toolMenuOpen.value = false
   activeSuggestion.value = null
+  activeEditActions.value = []
   if (item.prompt) {
     setComposerText(item.prompt)
   } else {
@@ -544,6 +592,7 @@ function selectFlowStep(step: WritingFlowStep) {
   coachStage.value = step.coachStage
   toolMenuOpen.value = false
   activeSuggestion.value = null
+  activeEditActions.value = []
   setComposerText(step.prompt)
   scrollToBottom()
 }
@@ -562,6 +611,7 @@ function onInput(event: Event) {
 function onSend() {
   const text = props.modelValue.trim()
   if (!text) return
+  hiddenSelectionKeyAfterSend.value = selectedSelectionKey.value
   messages.value.push({ role: 'user', text, at: Date.now() })
   toolMenuOpen.value = false
   emit('send')
@@ -595,7 +645,18 @@ function onApplySuggestion() {
   activeSuggestion.value = null
 }
 
+function onApplyEditAction(action: WritingCoachEditAction) {
+  emit('apply-edit-action', action)
+  messages.value.push({ role: 'assistant', text: `已准备${action.title}。`, at: Date.now() })
+  dismissEditAction(action.id)
+}
+
+function dismissEditAction(actionId: string) {
+  activeEditActions.value = activeEditActions.value.filter((action) => action.id !== actionId)
+}
+
 function clearSelectedText() {
+  hiddenSelectionKeyAfterSend.value = ''
   selectionStore?.clear()
   emit('dismiss-selection')
 }
@@ -1161,6 +1222,12 @@ onMounted(() => {
   background: #f0fdfa;
   padding: 12px;
 }
+.edit-action-card {
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 12px;
+}
 .suggestion-meta,
 .suggestion-actions {
   display: flex;
@@ -1182,6 +1249,26 @@ onMounted(() => {
   color: #1f2937;
   font-size: 13px;
   line-height: 1.55;
+  white-space: pre-wrap;
+}
+.edit-action-reason {
+  margin: 8px 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.edit-action-text {
+  max-height: 160px;
+  overflow: auto;
+  margin: 8px 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  color: #111827;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 .ghost-btn,
