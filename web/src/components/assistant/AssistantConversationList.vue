@@ -54,11 +54,11 @@
         <span class="conversation-menu-icon">⇧</span>
         <span>分享</span>
       </button>
-      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('rename', openConversation.id)">
+      <button v-if="!archived" type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('rename', openConversation.id)">
         <span class="conversation-menu-icon">✎</span>
         <span>重命名</span>
       </button>
-      <span class="conversation-menu-nested">
+      <span v-if="!archived" class="conversation-menu-nested">
         <button
           type="button"
           class="conversation-menu-item"
@@ -108,13 +108,17 @@
         </span>
       </span>
       <span class="conversation-menu-separator" aria-hidden="true" />
-      <button type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(openConversation.id, !openConversation.pinned)">
+      <button v-if="!archived" type="button" class="conversation-menu-item" role="menuitem" @click="runPinAction(openConversation.id, !openConversation.pinned)">
         <span class="conversation-menu-icon">⌖</span>
         <span>{{ openConversation.pinned ? '取消置顶' : '置顶聊天' }}</span>
       </button>
-      <button type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('archive', openConversation.id)">
+      <button v-if="!archived" type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('archive', openConversation.id)">
         <span class="conversation-menu-icon">▤</span>
         <span>归档</span>
+      </button>
+      <button v-else type="button" class="conversation-menu-item" role="menuitem" @click="runMenuAction('restore', openConversation.id)">
+        <span class="conversation-menu-icon">↩</span>
+        <span>取消归档</span>
       </button>
       <button type="button" class="conversation-menu-item conversation-menu-item--danger" role="menuitem" @click="runMenuAction('delete', openConversation.id)">
         <span class="conversation-menu-icon">⌫</span>
@@ -143,12 +147,14 @@ const props = defineProps<{
   groups: ConversationGroup[]
   activeConversationId: string
   folders: FolderOption[]
+  archived?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [id: string]
   rename: [id: string]
   archive: [id: string]
+  restore: [id: string]
   delete: [id: string]
   share: [id: string]
   pin: [id: string, pinned: boolean]
@@ -156,7 +162,7 @@ const emit = defineEmits<{
   createFolderAndMove: [id: string]
 }>()
 
-type MenuAction = 'share' | 'rename' | 'archive' | 'delete'
+type MenuAction = 'share' | 'rename' | 'archive' | 'restore' | 'delete'
 
 const MENU_GAP = 8
 const VIEWPORT_MARGIN = 8
@@ -255,6 +261,9 @@ function runMenuAction(action: MenuAction, id: string) {
       break
     case 'archive':
       emit('archive', id)
+      break
+    case 'restore':
+      emit('restore', id)
       break
     case 'delete':
       emit('delete', id)

@@ -131,6 +131,66 @@
             />
           </div>
         </section>
+
+        <section class="sidebar-folder">
+          <button
+            type="button"
+            class="sidebar-folder-header"
+            :aria-expanded="archiveFolderOpen"
+            @click="archiveFolderOpen = !archiveFolderOpen"
+          >
+            <span>归档</span>
+            <span class="conversation-folder-meta">
+              <span>{{ archivedConversationCount }}</span>
+              <span class="folder-chevron" :class="{ 'folder-chevron--open': archiveFolderOpen }">›</span>
+            </span>
+          </button>
+
+          <div v-if="archiveFolderOpen" class="sidebar-folder-content">
+            <form class="archive-setting-card" @submit.prevent="submitArchiveDir">
+              <label class="archive-setting-label" for="assistant-archive-dir">本地归档目录</label>
+              <input
+                id="assistant-archive-dir"
+                v-model="archiveDirDraft"
+                class="archive-setting-input"
+                type="text"
+                placeholder="默认保存到 Documents"
+              />
+              <p class="archive-setting-hint">
+                归档后会生成 Markdown、JSON 和元数据文件。
+              </p>
+              <div class="archive-setting-actions">
+                <button
+                  type="button"
+                  class="archive-setting-button"
+                  :disabled="archiveDirSaving || !defaultArchiveDir"
+                  @click="resetArchiveDir"
+                >
+                  默认
+                </button>
+                <button
+                  type="submit"
+                  class="archive-setting-button archive-setting-button--primary"
+                  :disabled="archiveDirSaving"
+                >
+                  {{ archiveDirSaving ? '保存中' : '保存' }}
+                </button>
+              </div>
+            </form>
+            <p v-if="archivedConversationCount === 0" class="folder-empty">暂无归档对话</p>
+            <AssistantConversationList
+              v-else
+              archived
+              :groups="archivedGroups"
+              :active-conversation-id="activeConversationId"
+              :folders="folders"
+              @select="$emit('selectConversation', $event)"
+              @restore="$emit('restoreConversation', $event)"
+              @delete="$emit('deleteConversation', $event)"
+              @share="$emit('shareConversation', $event)"
+            />
+          </div>
+        </section>
       </div>
 
       <RouterLink to="/app/me" class="sidebar-profile-link">
@@ -145,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import AssistantConversationList from './AssistantConversationList.vue'
 import type { AssistantConversation } from '@/pages/app/assistantMock.ts'
@@ -169,30 +229,50 @@ interface FolderConversationGroup {
 
 const projectFolderOpen = ref(false)
 const recentFolderOpen = ref(true)
+const archiveFolderOpen = ref(false)
 const openConversationFolderIds = ref<Set<number>>(new Set())
 
-defineProps<{
+const props = defineProps<{
   searchValue: string
   groups: ConversationGroup[]
+  archivedGroups: ConversationGroup[]
   folderGroups: FolderConversationGroup[]
   activeConversationId: string
   folders: FolderOption[]
+  archiveDir: string
+  defaultArchiveDir: string
+  archiveDirSaving: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   newConversation: []
   closeSidebar: []
   'update:searchValue': [value: string]
   selectConversation: [id: string]
   renameConversation: [id: string]
   archiveConversation: [id: string]
+  restoreConversation: [id: string]
   deleteConversation: [id: string]
   shareConversation: [id: string]
   pinConversation: [id: string, pinned: boolean]
   moveConversationToFolder: [id: string, folderId: number | null]
   createFolder: []
   createFolderAndMove: [id: string]
+  saveArchiveDir: [value: string]
 }>()
+
+const archiveDirDraft = ref(props.archiveDir)
+
+const archivedConversationCount = computed(() =>
+  props.archivedGroups.reduce((total, group) => total + group.conversations.length, 0),
+)
+
+watch(
+  () => props.archiveDir,
+  (value) => {
+    archiveDirDraft.value = value
+  },
+)
 
 function isConversationFolderOpen(id: number) {
   return openConversationFolderIds.value.has(id)
@@ -206,6 +286,15 @@ function toggleConversationFolder(id: number) {
     next.add(id)
   }
   openConversationFolderIds.value = next
+}
+
+function submitArchiveDir() {
+  emit('saveArchiveDir', archiveDirDraft.value)
+}
+
+function resetArchiveDir() {
+  archiveDirDraft.value = props.defaultArchiveDir
+  emit('saveArchiveDir', props.defaultArchiveDir)
 }
 </script>
 
@@ -469,6 +558,73 @@ function toggleConversationFolder(id: number) {
   padding: 8px 10px;
   color: #94a3b8;
   font-size: 12px;
+}
+
+.archive-setting-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe3ea;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.archive-setting-label {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.archive-setting-input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #dbe3ea;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 12px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.archive-setting-input:focus {
+  border-color: #10b981;
+}
+
+.archive-setting-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.archive-setting-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.archive-setting-button {
+  border: 1px solid #dbe3ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.archive-setting-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.archive-setting-button--primary {
+  border-color: #047857;
+  background: #047857;
+  color: #ffffff;
 }
 
 .sidebar-profile-link {

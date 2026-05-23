@@ -1,3 +1,17 @@
+---
+title: 学习助手对话管理设计
+status: active
+owner: project
+last_updated: 2026-05-23
+review_cycle: monthly
+related_code:
+  - backend/src/main/java/com/personalenglishai/backend/controller/AssistantController.java
+  - backend/src/main/java/com/personalenglishai/backend/service/assistant/
+  - web/src/pages/app/AssistantPage.vue
+  - web/src/components/assistant/
+related_docs: []
+---
+
 # 学习助手对话管理设计
 
 ## 1. 目标
@@ -22,12 +36,13 @@
 - 发送纯文本消息时，前端调用 Java API，Java 保存用户消息后代理到 Python `/chat`，再保存助手回复。
 - 侧栏支持重命名、置顶、分享、移动到项目、归档、删除。
 - 分享采用公开只读快照页：`/assistant/share/:shareToken`。
-- 删除为软删除；归档从默认列表隐藏；分享快照不会随原对话后续消息自动变化。
+- 删除为软删除；归档会同时写入本地 Markdown/JSON 文件、保存归档记录，并从默认列表隐藏；分享快照不会随原对话后续消息自动变化。
+- 归档目录默认使用当前系统用户的 `Documents/PEAI/assistant-archives`，用户可在学习助手侧栏修改目录。
 
 当前限制：
 
 - 第一版 Java 代理只支持纯文本聊天；附件消息仍保留在前端类型中，但不会通过 Java 代理发送到 Python。
-- 归档列表已在状态层保存，当前 UI 入口先覆盖“归档”动作，后续可补归档管理页或筛选。
+- 前端只能配置服务端可访问的本地路径；浏览器自身不能直接弹系统文件夹选择器并让后端写入该目录。
 
 ## 2. 已确认决策
 
@@ -38,7 +53,7 @@
 | 第一版功能 | 分享、重命名、删除、归档、置顶、移动到项目 |
 | 项目类型 | 学习助手专用项目 |
 | 删除语义 | 软删除 |
-| 归档语义 | 从默认列表隐藏 |
+| 归档语义 | 写本地归档文件 + 写归档记录表 + 从默认列表隐藏 |
 
 ## 3. 总体架构
 
@@ -122,11 +137,39 @@ erDiagram
     datetime revoked_at
   }
 
+  assistant_archive_setting {
+    bigint user_id PK
+    string archive_dir
+    datetime created_at
+    datetime updated_at
+  }
+
+  assistant_conversation_archive {
+    bigint id PK
+    string archive_uid UK
+    string conversation_uid FK
+    bigint user_id FK
+    string title
+    string summary
+    int message_count
+    string archive_dir
+    string markdown_path
+    string json_path
+    string metadata_path
+    string checksum
+    string status
+    datetime archived_at
+    datetime restored_at
+  }
+
   users ||--o{ assistant_project : owns
   users ||--o{ assistant_conversation : owns
+  users ||--o| assistant_archive_setting : configures
+  users ||--o{ assistant_conversation_archive : creates
   assistant_project ||--o{ assistant_conversation : groups
   assistant_conversation ||--o{ assistant_message : contains
   assistant_conversation ||--o{ assistant_share : shared_as
+  assistant_conversation ||--o{ assistant_conversation_archive : archived_as
 ```
 
 ### 4.1 assistant_project
@@ -213,6 +256,55 @@ AND archived_at IS NOT NULL
 - 后续原对话继续修改，不影响已分享页面。
 - 撤销分享只需要写入 `revoked_at`。
 
+### 4.5 assistant_archive_setting
+
+用户级归档目录配置表。没有配置时使用默认目录。
+
+| 字段 | 含义 |
+| --- | --- |
+| `user_id` | 所属用户，主键 |
+| `archive_dir` | 后端本机可写的归档根目录 |
+| `created_at` | 创建时间 |
+| `updated_at` | 更新时间 |
+
+默认目录规则：
+
+```text
+{user.home}/Documents/PEAI/assistant-archives
+```
+
+### 4.6 assistant_conversation_archive
+
+每次归档生成一条归档记录，用来追踪导出的 Markdown、JSON 和元数据文件。
+
+| 字段 | 含义 |
+| --- | --- |
+| `archive_uid` | 稳定归档 ID |
+| `conversation_uid` | 来源对话 ID |
+| `user_id` | 所属用户 |
+| `title` | 归档时标题快照 |
+| `summary` | 归档时摘要快照 |
+| `message_count` | 归档时消息数 |
+| `archive_dir` | 本次归档文件夹 |
+| `markdown_path` | Markdown 文件路径 |
+| `json_path` | JSON 快照路径 |
+| `metadata_path` | 元数据文件路径 |
+| `checksum` | JSON 快照 SHA-256 |
+| `status` | `archived` / `restored` / `failed` |
+| `archived_at` | 归档时间 |
+| `restored_at` | 取消归档时间 |
+
+本地归档文件结构：
+
+```text
+Documents/PEAI/assistant-archives/
+  2026-05/
+    对话标题-20260523-205000-archive-xxx/
+      conversation.md
+      conversation.json
+      metadata.json
+```
+
 ## 5. 状态流转
 
 ```mermaid
@@ -255,7 +347,7 @@ DELETE /api/assistant/conversations/{conversationUid}
 
 ```text
 POST /api/assistant/conversations/{conversationUid}/archive
-POST /api/assistant/conversations/{conversationUid}/unarchive
+POST /api/assistant/conversations/{conversationUid}/restore
 POST /api/assistant/conversations/{conversationUid}/pin
 POST /api/assistant/conversations/{conversationUid}/unpin
 POST /api/assistant/conversations/{conversationUid}/move
@@ -274,6 +366,31 @@ POST /api/assistant/conversations/{conversationUid}/move
 ```json
 {
   "projectId": null
+}
+```
+
+归档目录配置：
+
+```text
+GET   /api/assistant/archive/settings
+PATCH /api/assistant/archive/settings
+```
+
+`PATCH /api/assistant/archive/settings` 请求体：
+
+```json
+{
+  "archiveDir": "C:\\Users\\Catalina\\Documents\\PEAI\\assistant-archives"
+}
+```
+
+返回：
+
+```json
+{
+  "archiveDir": "C:\\Users\\Catalina\\Documents\\PEAI\\assistant-archives",
+  "defaultArchiveDir": "C:\\Users\\Catalina\\Documents\\PEAI\\assistant-archives",
+  "custom": false
 }
 ```
 
@@ -395,6 +512,9 @@ flowchart TD
 - 点击“归档”后从默认列表消失。
 - 可以在“已归档”列表中查看。
 - 已归档对话支持取消归档。
+- 点击“归档”时后端会生成 `conversation.md`、`conversation.json`、`metadata.json`。
+- 归档列表使用 `assistant_conversation.archived_at` 判断可见性；归档记录表负责记录本地文件位置和校验信息。
+- 取消归档只恢复 UI 可见性并把最新归档记录标记为 `restored`，不会删除已经生成的本地文件。
 
 ### 7.4 置顶
 

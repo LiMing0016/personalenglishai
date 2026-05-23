@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.assistant.AssistantConversationArchiveMapper">
+    <resultMap id="AssistantConversationArchiveResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantConversationArchive">
+        <id column="id" property="id"/>
+        <result column="archive_uid" property="archiveUid"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="title" property="title"/>
+        <result column="summary" property="summary"/>
+        <result column="message_count" property="messageCount"/>
+        <result column="archive_dir" property="archiveDir"/>
+        <result column="markdown_path" property="markdownPath"/>
+        <result column="json_path" property="jsonPath"/>
+        <result column="metadata_path" property="metadataPath"/>
+        <result column="checksum" property="checksum"/>
+        <result column="status" property="status"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="archived_at" property="archivedAt"/>
+        <result column="restored_at" property="restoredAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.assistant.AssistantConversationArchive"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO assistant_conversation_archive (
+            archive_uid, conversation_uid, user_id, title, summary, message_count,
+            archive_dir, markdown_path, json_path, metadata_path, checksum,
+            status, error_message, archived_at, restored_at, created_at, updated_at
+        )
+        VALUES (
+            #{archiveUid}, #{conversationUid}, #{userId}, #{title}, #{summary}, #{messageCount},
+            #{archiveDir}, #{markdownPath}, #{jsonPath}, #{metadataPath}, #{checksum},
+            #{status}, #{errorMessage}, #{archivedAt}, #{restoredAt}, NOW(), NOW()
+        )
+    </insert>
+
+    <select id="findLatestActive" resultMap="AssistantConversationArchiveResultMap">
+        SELECT id, archive_uid, conversation_uid, user_id, title, summary, message_count,
+               archive_dir, markdown_path, json_path, metadata_path, checksum,
+               status, error_message, archived_at, restored_at, created_at, updated_at
+        FROM assistant_conversation_archive
+        WHERE user_id = #{userId}
+          AND conversation_uid = #{conversationUid}
+          AND status = 'archived'
+        ORDER BY archived_at DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <update id="markRestored">
+        UPDATE assistant_conversation_archive
+        SET status = 'restored',
+            restored_at = NOW(),
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = 'archived'
+    </update>
+</mapper>

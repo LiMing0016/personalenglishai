@@ -1,18 +1,24 @@
 package com.personalenglishai.backend.controller;
 
 import com.personalenglishai.backend.common.response.ApiResponse;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantArchiveSettingsResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantConversationDetailResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantConversationSummaryResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantProjectResponse;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantShareResponse;
+import com.personalenglishai.backend.controller.dto.assistant.ChatKitSessionRequest;
+import com.personalenglishai.backend.controller.dto.assistant.ChatKitSessionResponse;
 import com.personalenglishai.backend.controller.dto.assistant.CreateAssistantConversationRequest;
 import com.personalenglishai.backend.controller.dto.assistant.MoveAssistantConversationRequest;
 import com.personalenglishai.backend.controller.dto.assistant.SendAssistantMessageRequest;
 import com.personalenglishai.backend.controller.dto.assistant.SetPinnedAssistantConversationRequest;
+import com.personalenglishai.backend.controller.dto.assistant.UpdateAssistantArchiveSettingsRequest;
 import com.personalenglishai.backend.controller.dto.assistant.UpdateAssistantConversationRequest;
+import com.personalenglishai.backend.service.assistant.AssistantConversationArchiveService;
 import com.personalenglishai.backend.service.assistant.AssistantConversationService;
+import com.personalenglishai.backend.service.assistant.ChatKitSessionService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.http.MediaType;
@@ -38,9 +44,16 @@ import java.util.List;
 @RequestMapping("/api/assistant")
 public class AssistantController {
     private final AssistantConversationService assistantConversationService;
+    private final AssistantConversationArchiveService assistantConversationArchiveService;
+    private final ChatKitSessionService chatKitSessionService;
 
-    public AssistantController(AssistantConversationService assistantConversationService) {
+    public AssistantController(
+            AssistantConversationService assistantConversationService,
+            AssistantConversationArchiveService assistantConversationArchiveService,
+            ChatKitSessionService chatKitSessionService) {
         this.assistantConversationService = assistantConversationService;
+        this.assistantConversationArchiveService = assistantConversationArchiveService;
+        this.chatKitSessionService = chatKitSessionService;
     }
 
     @GetMapping("/projects")
@@ -165,14 +178,27 @@ public class AssistantController {
     public ResponseEntity<ApiResponse<AssistantConversationSummaryResponse>> archiveConversation(
             @RequestAttribute("userId") Long userId,
             @PathVariable String conversationUid) {
-        return ok(assistantConversationService.archiveConversation(userId, conversationUid));
+        return ok(assistantConversationArchiveService.archiveConversation(userId, conversationUid));
     }
 
     @PostMapping("/conversations/{conversationUid}/restore")
     public ResponseEntity<ApiResponse<AssistantConversationSummaryResponse>> restoreConversation(
             @RequestAttribute("userId") Long userId,
             @PathVariable String conversationUid) {
-        return ok(assistantConversationService.restoreConversation(userId, conversationUid));
+        return ok(assistantConversationArchiveService.restoreConversation(userId, conversationUid));
+    }
+
+    @GetMapping("/archive/settings")
+    public ResponseEntity<ApiResponse<AssistantArchiveSettingsResponse>> getArchiveSettings(
+            @RequestAttribute("userId") Long userId) {
+        return ok(assistantConversationArchiveService.getArchiveSettings(userId));
+    }
+
+    @PatchMapping("/archive/settings")
+    public ResponseEntity<ApiResponse<AssistantArchiveSettingsResponse>> updateArchiveSettings(
+            @RequestAttribute("userId") Long userId,
+            @Valid @RequestBody UpdateAssistantArchiveSettingsRequest request) {
+        return ok(assistantConversationArchiveService.updateArchiveSettings(userId, request));
     }
 
     @PostMapping("/conversations/{conversationUid}/pin")
@@ -204,6 +230,13 @@ public class AssistantController {
             @RequestAttribute("userId") Long userId,
             @PathVariable String conversationUid) {
         return ok(assistantConversationService.shareConversation(userId, conversationUid));
+    }
+
+    @PostMapping(value = "/chatkit/writing-coach/session", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiResponse<ChatKitSessionResponse>> createWritingCoachChatKitSession(
+            @RequestAttribute("userId") Long userId,
+            @RequestBody ChatKitSessionRequest request) {
+        return ok(chatKitSessionService.createWritingCoachSession(userId, request));
     }
 
     @DeleteMapping("/shares/{shareToken}")

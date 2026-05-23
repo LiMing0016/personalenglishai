@@ -65,6 +65,12 @@ export interface AssistantShareDto {
   createdAt?: string | null
 }
 
+export interface AssistantArchiveSettingsDto {
+  archiveDir: string
+  defaultArchiveDir: string
+  custom: boolean
+}
+
 export interface PublicAssistantShareDto {
   title: string
   messages: AssistantMessageDto[]
@@ -251,6 +257,16 @@ export const assistantApi = {
 
   async restoreConversation(conversationId: string): Promise<AssistantConversationDto> {
     const res = await http.post<ApiEnvelope<AssistantConversationDto>>(`/assistant/conversations/${conversationId}/restore`)
+    return unwrap(res.data)
+  },
+
+  async getArchiveSettings(): Promise<AssistantArchiveSettingsDto> {
+    const res = await http.get<ApiEnvelope<AssistantArchiveSettingsDto>>('/assistant/archive/settings')
+    return unwrap(res.data)
+  },
+
+  async updateArchiveSettings(archiveDir: string): Promise<AssistantArchiveSettingsDto> {
+    const res = await http.patch<ApiEnvelope<AssistantArchiveSettingsDto>>('/assistant/archive/settings', { archiveDir })
     return unwrap(res.data)
   },
 
