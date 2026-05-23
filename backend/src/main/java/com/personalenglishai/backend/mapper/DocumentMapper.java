@@ -59,7 +59,8 @@ public interface DocumentMapper {
             @Param("tenantId") String tenantId,
             @Param("workspaceId") String workspaceId,
             @Param("offset") int offset,
-            @Param("limit") int limit);
+            @Param("limit") int limit,
+            @Param("archived") Boolean archived);
 
     int updateTitle(@Param("id") Long documentId, @Param("title") String title);
 
@@ -68,5 +69,6 @@ public interface DocumentMapper {
     long countByOwnerUserId(
             @Param("ownerUserId") Long ownerUserId,
             @Param("tenantId") String tenantId,
-            @Param("workspaceId") String workspaceId);
+            @Param("workspaceId") String workspaceId,
+            @Param("archived") Boolean archived);
 }

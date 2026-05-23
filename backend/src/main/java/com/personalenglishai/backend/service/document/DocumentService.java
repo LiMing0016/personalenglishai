@@ -28,6 +28,9 @@ public class DocumentService {
 
     private static final String WORKSPACE_DEFAULT = "default";
 
+    private static final int STATUS_ACTIVE = 1;
+    private static final int STATUS_ARCHIVED = 2;
+
     private static final int WRITING_METADATA_TITLE_MAX_LEN = 255;
 
     private final DocumentMapper documentMapper;
@@ -155,6 +158,16 @@ public class DocumentService {
         if (doc == null) throw new BizException(ErrorCode.DOC_NOT_FOUND, "document not found");
         if (!doc.getOwnerUserId().equals(userId)) throw new BizException(ErrorCode.DOC_FORBIDDEN, "not owner");
         documentMapper.softDelete(doc.getId(), LocalDateTime.now());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void archiveDocument(String tenantId, String workspaceId, String publicDocId, Long userId) {
+        updateArchiveStatus(tenantId, workspaceId, publicDocId, userId, STATUS_ARCHIVED);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void unarchiveDocument(String tenantId, String workspaceId, String publicDocId, Long userId) {
+        updateArchiveStatus(tenantId, workspaceId, publicDocId, userId, STATUS_ACTIVE);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -379,12 +392,30 @@ public class DocumentService {
     }
     public List<Document> listByOwner(String tenantId, String workspaceId, Long ownerUserId, int offset, int limit) {
         return documentMapper.listByOwnerUserId(ownerUserId, tenantId,
-                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit);
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit, null);
+    }
+
+    public List<Document> listByOwner(String tenantId, String workspaceId, Long ownerUserId, int offset, int limit, boolean archived) {
+        return documentMapper.listByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit, archived);
     }
 
     public long countByOwner(String tenantId, String workspaceId, Long ownerUserId) {
         return documentMapper.countByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, null);
+    }
+
+    public long countByOwner(String tenantId, String workspaceId, Long ownerUserId, boolean archived) {
+        return documentMapper.countByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, archived);
+    }
+
+    private void updateArchiveStatus(String tenantId, String workspaceId, String publicDocId, Long userId, int status) {
+        Document doc = documentMapper.findByPublicIdAndTenantAndWorkspace(publicDocId, tenantId,
                 workspaceId != null ? workspaceId : WORKSPACE_DEFAULT);
+        if (doc == null) throw new BizException(ErrorCode.DOC_NOT_FOUND, "document not found");
+        if (!doc.getOwnerUserId().equals(userId)) throw new BizException(ErrorCode.DOC_FORBIDDEN, "not owner");
+        documentMapper.updateStatus(doc.getId(), status);
     }
 
     private static String sha256(String input) {

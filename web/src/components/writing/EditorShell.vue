@@ -61,6 +61,9 @@
           :width="panelStore.dockWidth"
           :essay="draftStore.draftText"
           :doc-id="draftStore.docId"
+          :document-title="archiveDocumentTitle"
+          :document-archived="draftStore.archived"
+          :archive-busy="archiveBusy"
           :selection-state="selectionState"
           :selection-dismissed="selectionDismissed"
           :selected-text-pinned="selectedTextPinned"
@@ -116,6 +119,8 @@
           @update:ai-provider="onAiProviderChange"
           @update:writing-mode="draftStore.writingMode = $event"
           @update:task-prompt="draftStore.taskPrompt = $event"
+          @archive-document="onArchiveDocument"
+          @unarchive-document="onUnarchiveDocument"
           @ai-note-send="onAiNoteSend"
           @ai-note-stop="onAiNoteStop"
           @ai-chat-cleared="onAiChatCleared"
@@ -153,6 +158,7 @@ import { useEventListener } from '@vueuse/core'
 
 const emit = defineEmits<{
   back: []
+  'archive-status-change': [payload: { docId: string; archived: boolean }]
 }>()
 
 const props = withDefaults(defineProps<{
@@ -162,6 +168,8 @@ const props = withDefaults(defineProps<{
   initialExistingContent?: string | null
   examMaxScore?: number | null
   initialSubmitCount?: number
+  initialArchived?: boolean
+  initialTitle?: string
   studyStage?: string | null
 }>(), {
   initialWritingMode: undefined,
@@ -170,6 +178,8 @@ const props = withDefaults(defineProps<{
   initialExistingContent: null,
   examMaxScore: null,
   initialSubmitCount: 0,
+  initialArchived: false,
+  initialTitle: '',
   studyStage: null,
 })
 
@@ -182,7 +192,7 @@ import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
 import { assistantApi, assistantChatStream } from '@/api/assistant'
 import type { AssistantWritingCoachContext } from '@/api/assistant'
 import type { WritingCoachEditAction, WritingPatch } from '@/types/assistantRequest'
-import { createDocument } from '@/api/document'
+import { archiveDocument, createDocument, saveDocumentContent, unarchiveDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
 import { resolveErrorSpan, findClosestMatch, shouldUseWordBoundary } from './errorSpanResolver'
@@ -233,6 +243,7 @@ const lastChatResult = ref<{ displayText: string; replaceText?: string } | null>
 const aiDocId = ref('')
 const cursorPlacement = ref<{ at: number } | null>(null)
 const showHandwritingImportDialog = ref(false)
+const archiveBusy = ref(false)
 const aiGenerating = ref(false)
 let aiAbortController: AbortController | null = null
 const {
@@ -263,6 +274,13 @@ const effectiveExamTopicContent = computed(() => {
   if (metadataTopic) return metadataTopic
   const parsed = effectiveExamTaskPrompt.value ? parseExamPromptMetadata(effectiveExamTaskPrompt.value) : null
   return parsed?.topicContent?.trim() || parsed?.topicTitle?.trim() || ''
+})
+const archiveDocumentTitle = computed(() => {
+  const title = draftStore.title?.trim()
+  if (title) return title
+  const topic = effectiveExamTopicContent.value.trim()
+  if (topic) return topic
+  return draftStore.taskPrompt.trim().split(/\n/)[0] || '未命名作文'
 })
 const effectiveExamPromptMetadata = computed(() => {
   const prompt = effectiveExamTaskPrompt.value
@@ -359,7 +377,9 @@ onMounted(async () => {
       initialWritingMode: props.initialWritingMode,
       initialTaskPrompt: props.initialTaskPrompt,
       initialDocId: props.initialDocId,
+      initialTitle: props.initialTitle,
       initialSubmitCount: props.initialSubmitCount,
+      initialArchived: props.initialArchived,
     })
     if (props.initialExistingContent && (!draftStore.draftText || !draftStore.draftText.trim())) {
       draftStore.draftText = props.initialExistingContent
@@ -778,20 +798,58 @@ function onBack() {
   }
 }
 
-async function onExitSave() {
-  showExitDialog.value = false
-  // 保存内容到后端
+async function saveCurrentDocumentContent() {
   const docId = draftStore.docId
   const content = draftStore.draftText ?? ''
   const revision = draftStore.docRevision ?? 1
   if (docId && content.trim()) {
-    try {
-      const { saveDocumentContent } = await import('@/api/document')
-      const res = await saveDocumentContent(docId, content, revision)
-      draftStore.docRevision = res.latestRevision
-    } catch (e) {
-      console.warn('[EditorShell] save to backend failed', e)
-    }
+    const res = await saveDocumentContent(docId, content, revision)
+    draftStore.docRevision = res.latestRevision
+  }
+}
+
+async function onArchiveDocument() {
+  if (!draftStore.docId) {
+    showToast('当前作文尚未创建文档，无法归档', 'info')
+    return
+  }
+  archiveBusy.value = true
+  try {
+    await saveCurrentDocumentContent()
+    await archiveDocument(draftStore.docId)
+    draftStore.archived = true
+    emit('archive-status-change', { docId: draftStore.docId, archived: true })
+    showToast('已归档到作文资产', 'success')
+  } catch (e) {
+    console.warn('[EditorShell] archive document failed', e)
+    showToast('归档失败，请稍后重试', 'error')
+  } finally {
+    archiveBusy.value = false
+  }
+}
+
+async function onUnarchiveDocument() {
+  if (!draftStore.docId) return
+  archiveBusy.value = true
+  try {
+    await unarchiveDocument(draftStore.docId)
+    draftStore.archived = false
+    emit('archive-status-change', { docId: draftStore.docId, archived: false })
+    showToast('已取消归档', 'success')
+  } catch (e) {
+    console.warn('[EditorShell] unarchive document failed', e)
+    showToast('取消归档失败，请稍后重试', 'error')
+  } finally {
+    archiveBusy.value = false
+  }
+}
+
+async function onExitSave() {
+  showExitDialog.value = false
+  try {
+    await saveCurrentDocumentContent()
+  } catch (e) {
+    console.warn('[EditorShell] save to backend failed', e)
   }
 
   const scope = draftStore.docId

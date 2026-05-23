@@ -108,6 +108,15 @@
         v-else-if="panel === 'translate'"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
+      <WritingArchivePanel
+        v-else-if="panel === 'archive'"
+        :doc-id="docId"
+        :title="documentTitle"
+        :archived="!!documentArchived"
+        :busy="!!archiveBusy"
+        @archive="$emit('archive-document')"
+        @unarchive="$emit('unarchive-document')"
+      />
       <TaskPromptPanel
         v-else-if="panel === 'taskPrompt'"
         :writing-mode="writingMode"
@@ -139,6 +148,7 @@ const PolishPanel = defineAsyncComponent(() => import('./panels/PolishPanel.vue'
 const ExplainPanel = defineAsyncComponent(() => import('./panels/ExplainPanel.vue'))
 const TranslatePanel = defineAsyncComponent(() => import('./panels/TranslatePanel.vue'))
 const TaskPromptPanel = defineAsyncComponent(() => import('./panels/TaskPromptPanel.vue'))
+const WritingArchivePanel = defineAsyncComponent(() => import('./panels/WritingArchivePanel.vue'))
 
 const props = defineProps<{
   panel: PanelMode
@@ -146,6 +156,9 @@ const props = defineProps<{
   width: number
   essay: string
   docId?: string | null
+  documentTitle?: string | null
+  documentArchived?: boolean
+  archiveBusy?: boolean
   selectionState: { text: string; start: number; end: number } | null
   selectionDismissed: boolean
   selectedTextPinned: string
@@ -208,6 +221,8 @@ defineEmits<{
   'ai-chat-cleared': []
   'update:writingMode': [value: 'free' | 'exam']
   'update:taskPrompt': [value: string]
+  'archive-document': []
+  'unarchive-document': []
 }>()
 
 const scorePanelTitle = computed(() => {
@@ -218,6 +233,7 @@ const scorePanelTitle = computed(() => {
   if (props.panel === 'improve') return '写作模版'
   if (props.panel === 'explain') return '写作素材'
   if (props.panel === 'translate') return '翻译'
+  if (props.panel === 'archive') return '作文归档'
   if (props.panel === 'taskPrompt') return '题单'
   return props.title
 })

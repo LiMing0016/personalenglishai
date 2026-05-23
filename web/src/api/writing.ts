@@ -1202,6 +1202,7 @@ export interface WritingDocumentItem {
   latestScore: number | null
   submitCount: number
   status: number
+  archived?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -1211,9 +1212,15 @@ export interface WritingDocumentsResponse {
   total: number
 }
 
-export function getWritingDocuments(page = 0, size = 10): Promise<WritingDocumentsResponse> {
+export function getWritingDocuments(
+  page = 0,
+  size = 10,
+  options?: { archived?: boolean },
+): Promise<WritingDocumentsResponse> {
   return http
-    .get<WritingDocumentsResponse>('/writing/documents', { params: { page, size } })
+    .get<WritingDocumentsResponse>('/writing/documents', {
+      params: { page, size, ...(options?.archived === true ? { archived: true } : {}) },
+    })
     .then((res) => res.data)
 }
 

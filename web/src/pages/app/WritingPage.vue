@@ -514,6 +514,10 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
                 重命名
               </button>
+              <button class="doc-menu-item" @click="toggleArchive(doc)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 012-2h5l2 3h7a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M9 14l2 2 4-4"/></svg>
+                {{ isArchivedDoc(doc) ? '取消归档' : '归档' }}
+              </button>
               <button class="doc-menu-item doc-menu-danger" @click="confirmDelete(doc)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                 删除
@@ -857,11 +861,14 @@
     :initial-writing-mode="chosenMode"
     :initial-task-prompt="initialTaskPrompt"
     :initial-doc-id="initialDocId"
+    :initial-title="initialTitle"
+    :initial-archived="initialArchived"
     :initial-existing-content="initialExistingContent"
     :exam-max-score="examMaxScore"
     :initial-submit-count="initialSubmitCount"
     :study-stage="currentStage ?? ''"
     @back="onEditorBack"
+    @archive-status-change="onArchiveStatusChange"
   />
 </template>
 
@@ -906,7 +913,7 @@ import type {
   WritingSessionMetadataResponse,
   WritingStatsResponse,
 } from '@/api/writing'
-import { renameDocument, deleteDocument } from '@/api/document'
+import { archiveDocument, deleteDocument, renameDocument, unarchiveDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import {
   dashboardModeOptions,
@@ -951,6 +958,8 @@ const currentStage = ref<string | null>(null)
 const chosenMode = useSessionStorage<'free' | 'exam'>('peai:writing:chosenMode', 'free')
 const initialTaskPrompt = ref<string | undefined>(undefined)
 const initialDocId = useSessionStorage<string | null>('peai:writing:docId', null)
+const initialTitle = ref('')
+const initialArchived = ref(false)
 const initialExistingContent = ref<string | null>(null)
 const examMaxScore = useSessionStorage<number | null>('peai:writing:examMaxScore', null)
 const initialSubmitCount = ref(0)
@@ -1945,6 +1954,8 @@ async function createFreeDoc(seed?: { title?: string; initialTaskPrompt?: string
       topicTitle: freeTitle,
     })
     initialDocId.value = session.docId
+    initialTitle.value = freeTitle
+    initialArchived.value = false
     initialExistingContent.value = session.existingContent ?? null
     initialSubmitCount.value = session.submitCount ?? 0
     const sessionMetadata = await getWritingSessionMetadata(session.docId).catch((err) => {
@@ -1957,6 +1968,8 @@ async function createFreeDoc(seed?: { title?: string; initialTaskPrompt?: string
   } catch (e) {
     console.warn('[WritingPage] create free doc failed', e)
     initialDocId.value = null
+    initialTitle.value = ''
+    initialArchived.value = false
     initialExistingContent.value = null
     showToast('创建写作会话失败，请重试', 'error')
     return
@@ -2126,6 +2139,8 @@ async function onExamConfirm(info: ExamTopicInfo) {
       maxScore: info.maxScore,
     })
     initialDocId.value = session.docId
+    initialTitle.value = info.topic || '考试作文'
+    initialArchived.value = false
     initialExistingContent.value = session.existingContent ?? null
     initialSubmitCount.value = session.submitCount ?? 0
     const sessionMetadata = await getWritingSessionMetadata(session.docId).catch((err) => {
@@ -2138,6 +2153,8 @@ async function onExamConfirm(info: ExamTopicInfo) {
   } catch (e) {
     console.warn('[WritingPage] create exam doc failed', e)
     initialDocId.value = null
+    initialTitle.value = ''
+    initialArchived.value = false
     initialExistingContent.value = null
     showToast('创建考试写作会话失败，请重试', 'error')
     return
@@ -2149,6 +2166,8 @@ async function openDocument(doc: WritingDocumentItem) {
   chosenMode.value = doc.taskPrompt ? 'exam' : 'free'
   initialTaskPrompt.value = doc.taskPrompt ?? undefined
   initialDocId.value = doc.docId
+  initialTitle.value = doc.title || ''
+  initialArchived.value = Boolean(doc.archived ?? doc.status === 2)
   initialExistingContent.value = null
   examMaxScore.value = null
   initialSubmitCount.value = doc.submitCount ?? 0
@@ -2191,10 +2210,19 @@ async function onExamSetupSwitchMode(payload: { mode: 'free' | 'exam'; info?: Ex
 
 async function onEditorBack() {
   initialDocId.value = null
+  initialTitle.value = ''
+  initialArchived.value = false
   initialExistingContent.value = null
   initialTaskPrompt.value = undefined
   examMaxScore.value = null
   await navigateToPhase('doc-list')
+}
+
+function onArchiveStatusChange(payload: { docId: string; archived: boolean }) {
+  const item = docList.value.find((doc) => doc.docId === payload.docId)
+  if (!item) return
+  item.archived = payload.archived
+  item.status = payload.archived ? 2 : 1
 }
 
 async function onExamSaveDraft() {
@@ -2256,6 +2284,30 @@ async function doDelete() {
   deleteDialog.value.visible = false
 }
 
+function isArchivedDoc(doc: WritingDocumentItem) {
+  return Boolean(doc.archived ?? doc.status === 2)
+}
+
+async function toggleArchive(doc: WritingDocumentItem) {
+  openMenuId.value = null
+  try {
+    if (isArchivedDoc(doc)) {
+      await unarchiveDocument(doc.docId)
+      doc.status = 1
+      doc.archived = false
+      showToast('已取消归档', 'success')
+    } else {
+      await archiveDocument(doc.docId)
+      doc.status = 2
+      doc.archived = true
+      showToast('已归档到作文资产', 'success')
+    }
+  } catch (e) {
+    console.warn('[WritingPage] toggle archive failed', e)
+    showToast('归档操作失败，请稍后重试', 'error')
+  }
+}
+
 function scoreColor(score: number) {
   if (score >= 80) return 'high'
   if (score >= 60) return 'mid'
@@ -2263,6 +2315,7 @@ function scoreColor(score: number) {
 }
 
 function docStatusLabel(doc: WritingDocumentItem) {
+  if (isArchivedDoc(doc)) return '已归档'
   if (doc.status === 0 && doc.taskPrompt) return '题目草稿'
   if (doc.latestScore != null) return '已评分'
   if ((doc.submitCount ?? 0) > 0) return '待查看'
@@ -2270,6 +2323,7 @@ function docStatusLabel(doc: WritingDocumentItem) {
 }
 
 function docStatusClass(doc: WritingDocumentItem) {
+  if (isArchivedDoc(doc)) return 'archived'
   if (doc.status === 0 && doc.taskPrompt) return 'draft'
   if (doc.latestScore != null) return 'scored'
   if ((doc.submitCount ?? 0) > 0) return 'review'
@@ -4692,6 +4746,7 @@ function formatTime(dateStr: string) {
 .doc-status-pill.pending { background: #f2eee6; color: #6f6a60; }
 .doc-status-pill.review { background: #eef2ff; color: #4f46e5; }
 .doc-status-pill.draft { background: #fff7ed; color: #c2410c; }
+.doc-status-pill.archived { background: #f0fdfa; color: #0f766e; }
 
 .doc-card-prompt {
   min-height: 38px;

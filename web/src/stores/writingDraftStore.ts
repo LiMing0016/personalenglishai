@@ -32,8 +32,10 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
   const aiConversationId = ref(createConversationId())
   const aiProvider = ref<WritingAiProvider>(DEFAULT_AI_PROVIDER)
   const docId = ref<string | null>(null)
+  const title = ref('')
   const docRevision = ref<number | null>(null)
   const submitCount = ref(0)
+  const archived = ref(false)
 
   /** When true, watches that clear evaluateResult / schedule grammar should be skipped. */
   const isHydrating = ref(false)
@@ -134,11 +136,15 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     initialWritingMode?: 'free' | 'exam'
     initialTaskPrompt?: string
     initialDocId?: string | null
+    initialTitle?: string
     initialSubmitCount?: number
+    initialArchived?: boolean
   }) {
     writingMode.value = options?.initialWritingMode ?? loadWritingMode()
     taskPrompt.value = options?.initialTaskPrompt ?? loadTaskPrompt()
     submitCount.value = options?.initialSubmitCount ?? 0
+    archived.value = Boolean(options?.initialArchived)
+    title.value = options?.initialTitle ?? ''
 
     const incomingDocId = options?.initialDocId?.trim() || null
     if (incomingDocId) {
@@ -180,9 +186,11 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
 
       // Atomic write: set all fields without triggering clearing watches
       writingMode.value = doc.mode ?? (doc.taskPrompt ? 'exam' : 'free')
+      title.value = doc.title ?? ''
       taskPrompt.value = doc.taskPrompt ?? ''
       docRevision.value = doc.latestRevision
       submitCount.value = doc.submitCount ?? 0
+      archived.value = Boolean(doc.archived ?? doc.status === 2)
 
       // Local draft takes precedence (user may have typed since last backend save)
       const scope = id.trim() || null
@@ -233,7 +241,9 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     } catch (_) {}
     aiProvider.value = DEFAULT_AI_PROVIDER
     docId.value = null
+    title.value = ''
     docRevision.value = null
+    archived.value = false
   }
 
   function resetConversation() {
@@ -254,8 +264,10 @@ export const useWritingDraftStore = defineStore('writingDraft', () => {
     aiConversationId,
     aiProvider,
     docId,
+    title,
     docRevision,
     submitCount,
+    archived,
     isHydrating,
     init,
     hydrateByDocId,

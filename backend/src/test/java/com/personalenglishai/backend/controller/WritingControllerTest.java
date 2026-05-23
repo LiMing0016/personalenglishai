@@ -42,6 +42,7 @@ import com.personalenglishai.backend.dto.writing.WritingMaterialResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamPromptResponse;
 import com.personalenglishai.backend.dto.writing.WritingModelEssayResponse;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
+import com.personalenglishai.backend.entity.Document;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -875,6 +876,44 @@ class WritingControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/writing/documents")
+    class WritingDocuments {
+
+        @Test
+        @DisplayName("returns archived flag for regular document list")
+        void documents_returnsArchivedFlag() throws Exception {
+            Document doc = buildDocument("doc-archived", 2);
+            when(documentService.listByOwner("1", "default", 1L, 0, 10)).thenReturn(List.of(doc));
+            when(documentService.countByOwner("1", "default", 1L)).thenReturn(1L);
+
+            mockMvc.perform(get("/api/writing/documents")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items[0].docId").value("doc-archived"))
+                    .andExpect(jsonPath("$.items[0].status").value(2))
+                    .andExpect(jsonPath("$.items[0].archived").value(true));
+        }
+
+        @Test
+        @DisplayName("filters archived documents when archived query is true")
+        void documents_filtersArchivedOnly() throws Exception {
+            Document doc = buildDocument("doc-archived", 2);
+            when(documentService.listByOwner("1", "default", 1L, 0, 10, true)).thenReturn(List.of(doc));
+            when(documentService.countByOwner("1", "default", 1L, true)).thenReturn(1L);
+
+            mockMvc.perform(get("/api/writing/documents")
+                            .queryParam("archived", "true")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.items.length()").value(1))
+                    .andExpect(jsonPath("$.items[0].archived").value(true));
+
+            verify(documentService).listByOwner("1", "default", 1L, 0, 10, true);
+            verify(documentService).countByOwner("1", "default", 1L, true);
+        }
+    }
+
+    @Nested
     @DisplayName("GET /api/writing/documents/{docId}/metadata")
     class SessionMetadata {
 
@@ -1080,6 +1119,18 @@ class WritingControllerTest {
         req.setEssay(essay);
         req.setMode(mode);
         return req;
+    }
+
+    private Document buildDocument(String publicId, int status) {
+        Document doc = new Document();
+        doc.setPublicId(publicId);
+        doc.setTitle("My Doc");
+        doc.setTaskPrompt("Write about learning.");
+        doc.setSubmitCount(2);
+        doc.setStatus(status);
+        doc.setCreatedAt(LocalDateTime.of(2026, 5, 1, 10, 0));
+        doc.setUpdatedAt(LocalDateTime.of(2026, 5, 2, 10, 0));
+        return doc;
     }
 
     private Map<String, Object> writingDashboardResponse() {

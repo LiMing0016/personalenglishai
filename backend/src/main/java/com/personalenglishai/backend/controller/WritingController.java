@@ -615,6 +615,7 @@ public class WritingController {
     public ResponseEntity<java.util.Map<String, Object>> getWritingDocuments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Boolean archived,
             HttpServletRequest httpRequest) {
         Long userId = (Long) httpRequest.getAttribute("userId");
         if (userId == null) return ResponseEntity.status(401).build();
@@ -622,8 +623,12 @@ public class WritingController {
         String tenantId = String.valueOf(userId);
         int safeSize = Math.min(size, 50);
         int offset = page * safeSize;
-        var docs = documentService.listByOwner(tenantId, "default", userId, offset, safeSize);
-        long total = documentService.countByOwner(tenantId, "default", userId);
+        var docs = Boolean.TRUE.equals(archived)
+                ? documentService.listByOwner(tenantId, "default", userId, offset, safeSize, true)
+                : documentService.listByOwner(tenantId, "default", userId, offset, safeSize);
+        long total = Boolean.TRUE.equals(archived)
+                ? documentService.countByOwner(tenantId, "default", userId, true)
+                : documentService.countByOwner(tenantId, "default", userId);
 
         var items = docs.stream().map(d -> {
             var item = new java.util.LinkedHashMap<String, Object>();
@@ -634,6 +639,7 @@ public class WritingController {
             item.put("latestScore", d.getLatestScore());
             item.put("submitCount", d.getSubmitCount());
             item.put("status", d.getStatus());
+            item.put("archived", d.getStatus() != null && d.getStatus() == 2);
             item.put("createdAt", d.getCreatedAt());
             item.put("updatedAt", d.getUpdatedAt());
             return item;

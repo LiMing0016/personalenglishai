@@ -68,6 +68,8 @@ public class DocumentController {
                         resp.put("submitCount", docEntity.getSubmitCount() != null ? docEntity.getSubmitCount() : 0);
                         resp.put("initialScore", docEntity.getInitialScore());
                         resp.put("latestScore", docEntity.getLatestScore());
+                        resp.put("status", docEntity.getStatus());
+                        resp.put("archived", docEntity.getStatus() != null && docEntity.getStatus() == 2);
                         // mode: 有 taskPrompt 则为 exam，否则 free
                         resp.put("mode", docEntity.getTaskPrompt() != null && !docEntity.getTaskPrompt().isBlank() ? "exam" : "free");
                     }
@@ -110,6 +112,24 @@ public class DocumentController {
             HttpServletRequest request) {
         Long userId = requireUserId(request);
         documentService.softDelete(String.valueOf(userId), "default", docId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{docId}/archive")
+    public ResponseEntity<Void> archive(
+            @PathVariable String docId,
+            HttpServletRequest request) {
+        Long userId = requireUserId(request);
+        documentService.archiveDocument(String.valueOf(userId), "default", docId, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{docId}/unarchive")
+    public ResponseEntity<Void> unarchive(
+            @PathVariable String docId,
+            HttpServletRequest request) {
+        Long userId = requireUserId(request);
+        documentService.unarchiveDocument(String.valueOf(userId), "default", docId, userId);
         return ResponseEntity.noContent().build();
     }
 

@@ -27,6 +27,8 @@ export interface DocContentResponse {
   submitCount?: number
   initialScore?: number | null
   latestScore?: number | null
+  status?: number
+  archived?: boolean
   mode?: 'free' | 'exam'
 }
 
@@ -62,5 +64,17 @@ export function renameDocument(docId: string, title: string): Promise<void> {
 export function deleteDocument(docId: string): Promise<void> {
   return http
     .delete(`/docs/${encodeURIComponent(docId)}`)
+    .then(() => {})
+}
+
+export function archiveDocument(docId: string): Promise<void> {
+  return http
+    .patch(`/docs/${encodeURIComponent(docId)}/archive`)
+    .then(() => {})
+}
+
+export function unarchiveDocument(docId: string): Promise<void> {
+  return http
+    .patch(`/docs/${encodeURIComponent(docId)}/unarchive`)
     .then(() => {})
 }
