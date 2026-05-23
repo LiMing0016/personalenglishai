@@ -6,6 +6,7 @@ import type {
   AssistantIntent,
   AssistantRequest as AssistantAgentRequest,
   AssistantSelection,
+  AssistantWritingCoachContext,
   InputScope,
   LearningMode,
 } from '../types/assistantRequest'
@@ -13,6 +14,7 @@ export type {
   AssistantAttachmentRef,
   AssistantErrorPayload,
   AssistantIntent,
+  AssistantWritingCoachContext,
   AssistantMessageResponse as AssistantAgentMessageResponse,
   AssistantRequest,
   AssistantRunMetadata,
@@ -77,6 +79,7 @@ export interface AssistantChatPayload {
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection
+  writingCoachContext?: AssistantWritingCoachContext
   attachments: AssistantAttachment[]
 }
 
@@ -88,6 +91,38 @@ export interface AssistantChatResult {
 export interface AssistantChatStreamHandlers {
   onDelta?: (delta: string) => void
   onCompleted?: (content: string) => void
+}
+
+export interface AssistantChatStreamOptions {
+  signal?: AbortSignal
+}
+
+export interface WritingCoachChatKitContext {
+  inputAsText: string
+  writingMode: 'free' | 'exam'
+  studyStage?: string | null
+  taskType?: string | null
+  essayQuestion?: string | null
+  questionMaterials?: string | null
+  essayGenre?: string | null
+  minWords?: number | null
+  maxWords?: number | null
+  includeDraft: boolean
+  essayText?: string | null
+  selectedText?: string | null
+}
+
+export interface WritingCoachChatKitSessionPayload {
+  workflowId?: string
+  conversationId?: string
+  writingContext: WritingCoachChatKitContext
+  stateVariables?: Record<string, string | number | boolean>
+}
+
+export interface WritingCoachChatKitSessionResult {
+  clientSecret: string
+  sessionId?: string | null
+  expiresAt?: number | null
 }
 
 function createClientMessageId() {
@@ -144,6 +179,7 @@ function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentR
       locale: 'zh-CN',
       responseLanguage: 'zh-CN',
     },
+    writingCoachContext: payload.writingCoachContext,
   }
 }
 
@@ -257,6 +293,7 @@ export async function assistantChat(payload: AssistantChatPayload): Promise<Assi
 export async function assistantChatStream(
   payload: AssistantChatPayload,
   handlers: AssistantChatStreamHandlers = {},
+  options: AssistantChatStreamOptions = {},
 ): Promise<AssistantChatResult> {
   if (payload.attachments.length > 0) {
     return assistantChat(payload)
@@ -289,8 +326,12 @@ export async function assistantChatStream(
           failedMessage = error.message || '学习助手暂时不可用'
         }
       },
+      { signal: options.signal },
     )
   } catch (error) {
+    if (isAbortError(error)) {
+      throw Object.assign(new Error('已停止生成'), { canceled: true })
+    }
     if (!seenEvent) {
       return assistantChat(payload)
     }
@@ -306,6 +347,10 @@ export async function assistantChatStream(
     throw new Error('学习助手没有返回内容')
   }
   return { reply }
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
 }
 
 export async function sendAssistantMessage(payload: AssistantChatPayload): Promise<AssistantConversationDto> {
@@ -345,6 +390,17 @@ export async function sendAssistantAgentMessage(payload: AssistantAgentRequest):
   }
   const res = await http.post<ApiEnvelope<AssistantConversationDto>>(
     `/assistant/conversations/${appConversationId}/messages/run`,
+    payload,
+    { timeout: ASSISTANT_REQUEST_TIMEOUT_MS },
+  )
+  return unwrap(res.data)
+}
+
+export async function createWritingCoachChatKitSession(
+  payload: WritingCoachChatKitSessionPayload,
+): Promise<WritingCoachChatKitSessionResult> {
+  const res = await http.post<ApiEnvelope<WritingCoachChatKitSessionResult>>(
+    '/assistant/chatkit/writing-coach/session',
     payload,
     { timeout: ASSISTANT_REQUEST_TIMEOUT_MS },
   )

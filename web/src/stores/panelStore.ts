@@ -34,7 +34,7 @@ export const usePanelStore = defineStore('panel', () => {
       improve: '作文模板',
       explain: '解释',
       translate: '翻译',
-      aiNote: 'AI 助手',
+      aiNote: '写作教练',
       taskPrompt: '题单',
     }
     return activePanel.value != null ? t[activePanel.value] : ''

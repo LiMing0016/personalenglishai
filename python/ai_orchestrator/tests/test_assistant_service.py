@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
 from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
 from python.ai_orchestrator.schemas.routing import RoutingDecision
+from python.ai_orchestrator.schemas.writing_coach import WritingCoachRouteDecision
 from python.ai_orchestrator.schemas.routing_state import ActiveTaskState
 from python.ai_orchestrator.schemas.routing_state import ContinuationDecision
 from python.ai_orchestrator.services.active_task_state import InMemoryActiveTaskStateStore
@@ -234,6 +235,179 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run_context.assistant_mode, "daily_explain")
         self.assertEqual(reply.agent_name, "Polish Agent")
         self.assertEqual(reply.run.agent_name, "Polish Agent")
+
+    async def test_run_assistant_request_prefers_structured_writing_coach_stage_agent(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="first_draft_coach",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="first_draft_coach",
+                    confidence=0.91,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Writing coach stage request.",
+                )
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            route_decision_enabled=True,
+        )
+        stage_agent = SimpleNamespace(name="Writing Coach Topic Analysis Agent")
+        service._writing_coach_stage_agents["analyze"] = stage_agent
+        request = AssistantRequest(
+            appConversationId="conv-writing-stage-1",
+            clientMessageId="client-writing-stage-1",
+            mode="exam_boost",
+            intent="first_draft_coach",
+            scope="message_only",
+            message={"text": "请先帮我审题。"},
+            writingCoachContext={
+                "action": "analyze",
+                "writingMode": "exam",
+                "essayQuestion": "Write an essay about whether AI is beneficial to education.",
+            },
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="## 审题结果", agent_name=stage_agent.name),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        self.assertIs(run_agent_session.await_args.kwargs["agent"], stage_agent)
+        self.assertEqual(reply.agent_name, stage_agent.name)
+        self.assertEqual(reply.run.agent_name, stage_agent.name)
+        self.assertEqual(run_agent_session.await_args.kwargs["trace_metadata"]["agent_name"], stage_agent.name)
+
+    async def test_run_assistant_request_uses_writing_coach_route_for_generic_coach_action(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="first_draft_coach",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="first_draft_coach",
+                    confidence=0.91,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Writing coach request.",
+                )
+
+        class FakeWritingCoachRouteRunner:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def route(self, request, *, flush_trace=True):
+                self.calls += 1
+                return WritingCoachRouteDecision(
+                    routeType="run_stage",
+                    targetAction="polish",
+                    editIntent="replace_selection",
+                    contextPolicy={
+                        "includeTopic": True,
+                        "includeRubric": True,
+                        "includeSelection": True,
+                        "includeDraft": False,
+                        "includeRecentMessages": True,
+                    },
+                    confidence=0.9,
+                    missingInputs=[],
+                    reason="Polish selected text.",
+                )
+
+        writing_route_runner = FakeWritingCoachRouteRunner()
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            writing_coach_route_runner=writing_route_runner,
+            route_decision_enabled=True,
+        )
+        stage_agent = SimpleNamespace(name="Writing Coach Polish Agent")
+        service._writing_coach_stage_agents["polish"] = stage_agent
+        request = AssistantRequest(
+            appConversationId="conv-writing-route-stage-1",
+            clientMessageId="client-writing-route-stage-1",
+            mode="exam_boost",
+            intent="first_draft_coach",
+            scope="selection_and_message",
+            message={"text": "帮我润色选中的句子。"},
+            selection={"text": "This sentence is not good.", "source": "writing_editor"},
+            writingCoachContext={
+                "action": "coach",
+                "writingMode": "exam",
+                "essayQuestion": "Should College Chinese be compulsory?",
+                "selectedText": "This sentence is not good.",
+            },
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="## 润色建议", agent_name=stage_agent.name),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        self.assertEqual(writing_route_runner.calls, 1)
+        self.assertIs(run_agent_session.await_args.kwargs["agent"], stage_agent)
+        self.assertEqual(reply.agent_name, stage_agent.name)
+        self.assertEqual(reply.run.agent_name, stage_agent.name)
+
+    async def test_run_assistant_request_skips_writing_coach_route_for_explicit_stage_action(self) -> None:
+        class FakeRouteDecisionRunner:
+            async def route(self, route_request, *, flush_trace=True):
+                return RoutingDecision(
+                    intent="first_draft_coach",
+                    route_type="run_workflow",
+                    workflow="specialist_single_turn",
+                    target_agent="first_draft_coach",
+                    confidence=0.91,
+                    required_inputs=[],
+                    missing_inputs=[],
+                    reason="Writing coach request.",
+                )
+
+        class FakeWritingCoachRouteRunner:
+            async def route(self, request, *, flush_trace=True):
+                raise AssertionError("explicit stage action should not call writing coach route")
+
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            route_decision_runner=FakeRouteDecisionRunner(),
+            writing_coach_route_runner=FakeWritingCoachRouteRunner(),
+            route_decision_enabled=True,
+        )
+        stage_agent = SimpleNamespace(name="Writing Coach Outline Agent")
+        service._writing_coach_stage_agents["outline"] = stage_agent
+        request = AssistantRequest(
+            appConversationId="conv-writing-route-skip-1",
+            clientMessageId="client-writing-route-skip-1",
+            mode="exam_boost",
+            intent="first_draft_coach",
+            scope="message_only",
+            message={"text": "请搭提纲。"},
+            writingCoachContext={
+                "action": "outline",
+                "writingMode": "exam",
+                "essayQuestion": "Should College Chinese be compulsory?",
+            },
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="## 提纲", agent_name=stage_agent.name),
+        ) as run_agent_session:
+            reply = await service.run_assistant_request(request)
+
+        self.assertIs(run_agent_session.await_args.kwargs["agent"], stage_agent)
+        self.assertEqual(reply.agent_name, stage_agent.name)
 
     async def test_run_assistant_request_wraps_route_and_target_agent_in_single_trace(self) -> None:
         class FakeTrace:
@@ -752,7 +926,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- 学段: 雅思", content[0]["text"])
         self.assertEqual(content[1]["type"], "input_image")
 
-    async def test_run_assistant_request_uses_session_for_text_only_input_items(self) -> None:
+    async def test_run_assistant_request_disables_session_for_text_only_input_items(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")
         service._router_agent = object()
 
@@ -775,7 +949,7 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
             reply = await service.run_assistant_request(request)
 
         run_agent_session.assert_awaited_once()
-        self.assertTrue(run_agent_session.await_args.kwargs["use_session"])
+        self.assertFalse(run_agent_session.await_args.kwargs["use_session"])
         self.assertIsInstance(run_agent_session.await_args.kwargs["agent_input"], list)
         self.assertEqual(reply.reply, "pong")
         self.assertEqual(reply.run.scope, "message_only")

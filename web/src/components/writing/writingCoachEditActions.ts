@@ -1,4 +1,4 @@
-import type { WritingCoachEditAction, WritingCoachEditActionType } from '../../types/assistantRequest'
+import type { WritingCoachEditAction, WritingCoachEditActionType, WritingPatch } from '../../types/assistantRequest'
 
 type ToolKey = 'coach' | 'analyze' | 'outline' | 'next' | 'topic' | 'polish' | 'draft' | string
 
@@ -24,6 +24,7 @@ export function extractWritingCoachEditActions(options: ExtractEditActionOptions
     title: actionTitle(type),
     text,
     reason: actionReason(type),
+    patch: buildPatch(type, text, options.selectedText, options.selectedSpan),
     target: buildTarget(type, options.selectedText, options.selectedSpan),
   }]
 }
@@ -75,6 +76,36 @@ function buildTarget(
   return {
     mode: 'semantic_match',
     selectedText,
+  }
+}
+
+function buildPatch(
+  type: WritingCoachEditActionType,
+  text: string,
+  selectedText: string | undefined,
+  selectedSpan: { start: number; end: number } | null | undefined,
+): WritingPatch {
+  if (type === 'replace_selection' && selectedSpan) {
+    return {
+      op: 'replace_selection',
+      range: selectedSpan,
+      originalText: selectedText ?? '',
+      newText: text,
+      reason: actionReason(type),
+    }
+  }
+  if (type === 'insert_after_selection' && selectedText?.trim()) {
+    return {
+      op: 'insert_after_anchor',
+      anchorText: selectedText.trim(),
+      insertText: text,
+      reason: actionReason(type),
+    }
+  }
+  return {
+    op: 'append_paragraph',
+    text,
+    reason: actionReason(type),
   }
 }
 

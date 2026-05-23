@@ -36,6 +36,9 @@ def _resolve_route(request: AssistantRequest) -> tuple[str, str]:
     if request.intent == "grade_writing":
         return "writingCoachAgent", "Scoring Agent"
 
+    if request.intent == "first_draft_coach":
+        return "writingCoachAgent", "Prompt Design Agent"
+
     if request.intent == "analyze_question":
         # The existing Prompt Design Agent owns practice prompt and question/task analysis.
         return "questionAnalysisAgent", "Prompt Design Agent"

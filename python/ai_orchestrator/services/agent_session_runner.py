@@ -52,6 +52,26 @@ class AgentSessionStreamEvent:
     result: AgentSessionResult | None = None
 
 
+def _format_final_output(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+
+    to_markdown = getattr(value, "to_markdown", None)
+    if callable(to_markdown):
+        return str(to_markdown() or "").strip()
+
+    model_dump_json = getattr(value, "model_dump_json", None)
+    if callable(model_dump_json):
+        try:
+            return str(model_dump_json(by_alias=True, exclude_none=True)).strip()
+        except TypeError:
+            return str(model_dump_json()).strip()
+
+    return str(value or "").strip()
+
+
 def _as_int(value: Any) -> int:
     if value is None:
         return 0
@@ -161,7 +181,7 @@ async def run_agent_session(
 
     final_agent = getattr(result, "last_agent", None)
     return AgentSessionResult(
-        final_output=str(getattr(result, "final_output", "") or "").strip(),
+        final_output=_format_final_output(getattr(result, "final_output", None)),
         agent_name=getattr(final_agent, "name", None),
         usage=extract_usage(result),
         run_items=extract_run_items(result),
@@ -210,7 +230,7 @@ async def stream_agent_session(
     yield AgentSessionStreamEvent(
         type="completed",
         result=AgentSessionResult(
-            final_output=str(getattr(result, "final_output", "") or "").strip(),
+            final_output=_format_final_output(getattr(result, "final_output", None)),
             agent_name=getattr(final_agent, "name", None),
             usage=extract_usage(result),
             run_items=extract_run_items(result),

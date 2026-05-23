@@ -178,6 +178,16 @@ class AgentStructureTest(unittest.TestCase):
         self.assertNotIn("小学、初中阶段", instructions)
         self.assertNotIn("雅思、托福、考研等考试场景", instructions)
 
+    def test_prompt_design_prompt_defines_writing_coach_topic_state_flow(self) -> None:
+        instructions = load_agent_instructions("prompt_design")
+
+        self.assertIn("写作教练状态流", instructions)
+        self.assertIn("第一轮审题", instructions)
+        self.assertIn("topicAnalysisDone=false", instructions)
+        self.assertIn("题目主旨", instructions)
+        self.assertIn("不要重新生成题意", instructions)
+        self.assertIn("essayGenre", instructions)
+
     def test_service_does_not_define_agents_or_prompt_bodies_inline(self) -> None:
         from python.ai_orchestrator import assistant_service
 

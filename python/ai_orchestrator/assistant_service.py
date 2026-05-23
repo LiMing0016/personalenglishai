@@ -17,6 +17,9 @@ try:
     from .agents.router import create_router_agent
     from .agents.specialists import SPECIALIST_AGENT_SPECS
     from .agents.specialists import create_specialist_agent
+    from .agents.writing_coach import create_writing_coach_stage_agent
+    from .agents.writing_coach import structured_writing_coach_action
+    from .agents.writing_coach import writing_coach_stage_agent_name
     from .prompts.user_context import build_contextual_user_message
     from .schemas.assistant_request import AssistantRequest
     from .schemas.assistant_request import AssistantRunMetadata
@@ -39,6 +42,7 @@ try:
     from .services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from .services.continuation_classifier import ContinuationClassifier
     from .services.route_decision_runner import RouteDecisionRunner
+    from .services.writing_coach_route_runner import WritingCoachRouteRunner
 except ImportError:  # pragma: no cover - script mode fallback
     from adapters.openai_input_items import build_assistant_input_items
     from adapters.openai_input_items import build_input_items
@@ -48,6 +52,9 @@ except ImportError:  # pragma: no cover - script mode fallback
     from agents.router import create_router_agent
     from agents.specialists import SPECIALIST_AGENT_SPECS
     from agents.specialists import create_specialist_agent
+    from agents.writing_coach import create_writing_coach_stage_agent
+    from agents.writing_coach import structured_writing_coach_action
+    from agents.writing_coach import writing_coach_stage_agent_name
     from prompts.user_context import build_contextual_user_message
     from schemas.assistant_request import AssistantRequest
     from schemas.assistant_request import AssistantRunMetadata
@@ -70,6 +77,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.continuation_classifier import AgentsSdkContinuationClassifierClient
     from services.continuation_classifier import ContinuationClassifier
     from services.route_decision_runner import RouteDecisionRunner
+    from services.writing_coach_route_runner import WritingCoachRouteRunner
 
 
 class AssistantConfigError(RuntimeError):
@@ -165,7 +173,10 @@ def _build_continuation_routing_message(
 
 
 def _should_use_sdk_session_for_request(request: AssistantRequest) -> bool:
-    return len(request.attachments) == 0
+    # AssistantRequest is converted to Responses API input item lists so it can
+    # carry text, selections, and attachments consistently. Agents SDK session
+    # memory only accepts plain string input, not list input items.
+    return False
 
 
 class AssistantAgentService:
@@ -177,6 +188,7 @@ class AssistantAgentService:
         active_task_store: ActiveTaskStateStore | None = None,
         continuation_classifier=None,
         route_decision_runner=None,
+        writing_coach_route_runner=None,
         route_decision_enabled: bool = False,
     ) -> None:
         self.model = model
@@ -184,11 +196,13 @@ class AssistantAgentService:
         self._router_agent = None
         self._attachment_agent = None
         self._specialist_agents = {}
+        self._writing_coach_stage_agents = {}
         self._active_task_store = active_task_store or InMemoryActiveTaskStateStore()
         self._continuation_classifier = continuation_classifier or ContinuationClassifier(
             AgentsSdkContinuationClassifierClient(model)
         )
         self._route_decision_runner = route_decision_runner
+        self._writing_coach_route_runner = writing_coach_route_runner
         self._route_decision_enabled = route_decision_enabled
 
     @classmethod
@@ -253,6 +267,17 @@ class AssistantAgentService:
         self._specialist_agents[agent_name] = agent
         return agent
 
+    def _get_writing_coach_stage_agent(self, action):
+        if action in self._writing_coach_stage_agents:
+            return self._writing_coach_stage_agents[action]
+
+        if not self.is_configured():
+            raise AssistantConfigError("OPENAI_API_KEY 未配置，写作教练暂时不可用。")
+
+        agent = create_writing_coach_stage_agent(action, self.model)
+        self._writing_coach_stage_agents[action] = agent
+        return agent
+
     def _build_run_context(self, request: AssistantRequest, *, conversation_id: str) -> AssistantRunContext:
         study_context = request.study_context
         return AssistantRunContext(
@@ -267,6 +292,59 @@ class AssistantAgentService:
                 raise AssistantConfigError("OPENAI_API_KEY 未配置，学习助手暂时不可用。")
             self._route_decision_runner = RouteDecisionRunner(model=self.model)
         return self._route_decision_runner
+
+    def _get_writing_coach_route_runner(self):
+        if self._writing_coach_route_runner is None:
+            if not self.is_configured():
+                raise AssistantConfigError("OPENAI_API_KEY 未配置，写作教练暂时不可用。")
+            self._writing_coach_route_runner = WritingCoachRouteRunner(model=self.model)
+        return self._writing_coach_route_runner
+
+    async def _resolve_writing_coach_action(
+        self,
+        request: AssistantRequest,
+        *,
+        run_id: str,
+        trace_id: str,
+        flush_trace: bool = False,
+    ):
+        explicit_action = structured_writing_coach_action(request)
+        if explicit_action is not None:
+            return explicit_action
+        if request.intent != "first_draft_coach":
+            return None
+
+        context_action = request.writing_coach_context.action if request.writing_coach_context else None
+        if context_action not in {None, "coach"}:
+            return None
+
+        try:
+            decision = await self._get_writing_coach_route_runner().route(request, flush_trace=flush_trace)
+        except Exception:
+            log.error(
+                "[WRITING_COACH_ROUTE_ERROR] run_id=%s trace_id=%s conversation_id=%s",
+                run_id,
+                trace_id,
+                request.app_conversation_id or request.client_message_id,
+                exc_info=True,
+            )
+            return None
+
+        log.info(
+            "[WRITING_COACH_ROUTE_DONE] run_id=%s trace_id=%s conversation_id=%s route_type=%s "
+            "target_action=%s edit_intent=%s confidence=%.2f missing_inputs=%s",
+            run_id,
+            trace_id,
+            request.app_conversation_id or request.client_message_id,
+            decision.route_type,
+            decision.target_action or "",
+            decision.edit_intent,
+            decision.confidence,
+            decision.missing_inputs,
+        )
+        if decision.route_type == "run_stage":
+            return decision.target_action
+        return None
 
     async def route_assistant_request(
         self,
@@ -548,7 +626,17 @@ class AssistantAgentService:
                     trace_id=trace_id,
                     flush_trace=False,
                 )
-                resolved_agent_name = self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
+                writing_coach_action = await self._resolve_writing_coach_action(
+                    request,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    flush_trace=False,
+                )
+                resolved_agent_name = (
+                    writing_coach_stage_agent_name(writing_coach_action)
+                    if writing_coach_action is not None
+                    else self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
+                )
 
                 log.info(
                     "[ASSISTANT_RUN_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
@@ -565,7 +653,11 @@ class AssistantAgentService:
                     bool(authorization),
                 )
 
-                agent = self._get_agent_by_name(resolved_agent_name)
+                agent = (
+                    self._get_writing_coach_stage_agent(writing_coach_action)
+                    if writing_coach_action is not None
+                    else self._get_agent_by_name(resolved_agent_name)
+                )
                 agent_input = build_assistant_input_items(request)
                 use_session = _should_use_sdk_session_for_request(request)
                 result = await run_agent_session(
@@ -661,7 +753,17 @@ class AssistantAgentService:
                     trace_id=trace_id,
                     flush_trace=False,
                 )
-                resolved_agent_name = self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
+                writing_coach_action = await self._resolve_writing_coach_action(
+                    request,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    flush_trace=False,
+                )
+                resolved_agent_name = (
+                    writing_coach_stage_agent_name(writing_coach_action)
+                    if writing_coach_action is not None
+                    else self._resolve_agent_name_from_route_decision(route_decision) or route.agent_name
+                )
 
                 log.info(
                     "[ASSISTANT_STREAM_START] run_id=%s trace_id=%s conversation_id=%s model=%s mode=%s "
@@ -692,7 +794,11 @@ class AssistantAgentService:
                     "role": "assistant",
                 }
 
-                agent = self._get_agent_by_name(resolved_agent_name)
+                agent = (
+                    self._get_writing_coach_stage_agent(writing_coach_action)
+                    if writing_coach_action is not None
+                    else self._get_agent_by_name(resolved_agent_name)
+                )
                 agent_input = build_assistant_input_items(request)
                 use_session = _should_use_sdk_session_for_request(request)
                 final_result = None

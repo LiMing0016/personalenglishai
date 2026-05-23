@@ -7,7 +7,7 @@ export function buildToolRailItems(input: { showTaskPrompt: boolean }) {
     { mode: 'improve', label: '模版', title: '写作模版' },
     { mode: 'explain', label: '素材', title: '写作素材' },
     { mode: 'translate', label: '翻译', title: '翻译' },
-    { mode: 'aiNote', label: 'AI助手', title: 'AI 助手' },
+    { mode: 'aiNote', label: '教练', title: '写作教练' },
   ] as const
 
   if (!input.showTaskPrompt) return [...baseItems]

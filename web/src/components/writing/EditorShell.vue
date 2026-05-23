@@ -181,7 +181,7 @@ import Splitter from './Splitter.vue'
 import { useEvaluateSubmission } from '@/composables/useEvaluateSubmission'
 import { assistantApi, assistantChatStream } from '@/api/assistant'
 import type { AssistantWritingCoachContext } from '@/api/assistant'
-import type { WritingCoachEditAction } from '@/types/assistantRequest'
+import type { WritingCoachEditAction, WritingPatch } from '@/types/assistantRequest'
 import { createDocument } from '@/api/document'
 import { showToast } from '@/utils/toast'
 import { createWritingSelectionStore, writingSelectionStoreKey } from './useWritingSelectionStore'
@@ -199,6 +199,7 @@ import type {
   WritingSessionMetadataResponse,
 } from '@/api/writing'
 import { resolveTaskPromptViewerState } from './taskPromptViewerState'
+import { applyWritingPatch } from './writingPatchApplicator'
 
 const panelStore = usePanelStore()
 const draftStore = useWritingDraftStore()
@@ -905,94 +906,67 @@ function onWritingCoachApply(payload: { type: 'replace_selection' | 'append_text
 }
 
 function onWritingCoachEditAction(action: WritingCoachEditAction) {
-  const actionText = action.text.trim()
-  if (!actionText) {
+  const patch = action.patch ?? legacyEditActionToPatch(action)
+  if (!patch) {
     showToast('建议内容为空', 'info')
     return
   }
 
+  if (patch.op === 'replace_document') {
+    const confirmed = window.confirm('替换全文会覆盖当前正文，确定应用这版终稿吗？')
+    if (!confirmed) return
+  }
+
+  const result = applyWritingPatch(draftStore.draftText, patch)
+  if (result.status === 'success') {
+    draftStore.draftText = result.nextText
+    cursorPlacement.value = { at: result.cursorAt }
+    lastChatResult.value = null
+    showToast(`已${result.preview.operationLabel}`, 'success')
+  } else if (result.status === 'ambiguous') {
+    showToast(result.message, 'info')
+  } else {
+    showToast(result.message, result.status === 'duplicate' ? 'info' : 'error')
+  }
+}
+
+function legacyEditActionToPatch(action: WritingCoachEditAction): WritingPatch | null {
+  const text = action.text.trim()
+  if (!text) return null
+
   if (action.type === 'append_paragraph') {
-    appendParagraphToDraft(actionText)
-    showToast('已追加为新段落', 'success')
-    return
-  }
-
-  const targetRange = resolveWritingCoachActionRange(action)
-  if (!targetRange) {
-    showToast('无法定位要修改的句子，请先选中正文里的目标句子', 'info')
-    return
-  }
-
-  if (action.type === 'replace_selection') {
-    replaceDraftRange(targetRange.start, targetRange.end, actionText)
-    showToast('已替换选中内容', 'success')
-    return
-  }
-
-  insertAfterDraftRange(targetRange.end, actionText)
-  showToast('已插入到选中句子后', 'success')
-}
-
-function appendParagraphToDraft(text: string) {
-  const current = draftStore.draftText
-  const separator = current.trim() ? '\n\n' : ''
-  draftStore.draftText = `${current}${separator}${text}`
-  cursorPlacement.value = { at: draftStore.draftText.length }
-  lastChatResult.value = null
-}
-
-function replaceDraftRange(start: number, end: number, replacement: string) {
-  const draft = draftStore.draftText
-  const normalized = normalizeDraftRange(start, end, draft.length)
-  draftStore.draftText = draft.slice(0, normalized.start) + replacement + draft.slice(normalized.end)
-  cursorPlacement.value = { at: normalized.start + replacement.length }
-  lastChatResult.value = null
-}
-
-function insertAfterDraftRange(end: number, insertion: string) {
-  const draft = draftStore.draftText
-  const at = Math.max(0, Math.min(end, draft.length))
-  const separator = resolveInlineInsertSeparator(draft, at)
-  const inserted = `${separator}${insertion}`
-  draftStore.draftText = draft.slice(0, at) + inserted + draft.slice(at)
-  cursorPlacement.value = { at: at + inserted.length }
-  lastChatResult.value = null
-}
-
-function resolveWritingCoachActionRange(action: WritingCoachEditAction): { start: number; end: number } | null {
-  const draft = draftStore.draftText
-  const range = action.target?.range
-  const targetText = action.target?.selectedText?.trim() || selectedTextPinned.value.trim()
-  if (range) {
-    const normalized = normalizeDraftRange(range.start, range.end, draft.length)
-    if (!targetText || draft.slice(normalized.start, normalized.end) === targetText) {
-      return normalized
+    return {
+      op: 'append_paragraph',
+      text,
+      reason: action.reason,
     }
   }
 
-  if (!targetText) return selectedSpanPinned.value ? normalizeDraftRange(selectedSpanPinned.value.start, selectedSpanPinned.value.end, draft.length) : null
+  const selectedText = action.target?.selectedText?.trim() || selectedTextPinned.value.trim()
+  if (action.type === 'replace_selection' && action.target?.range) {
+    return {
+      op: 'replace_selection',
+      range: action.target.range,
+      originalText: selectedText,
+      newText: text,
+      reason: action.reason,
+    }
+  }
 
-  const index = draft.indexOf(targetText)
-  if (index >= 0) return { start: index, end: index + targetText.length }
-  const fallback = findClosestMatch(draft, targetText, selectedSpanPinned.value?.start ?? 0, true, shouldUseWordBoundary(targetText))
-  if (fallback < 0) return null
-  return { start: fallback, end: fallback + targetText.length }
-}
+  if (action.type === 'insert_after_selection' && selectedText) {
+    return {
+      op: 'insert_after_anchor',
+      anchorText: selectedText,
+      insertText: text,
+      reason: action.reason,
+    }
+  }
 
-function normalizeDraftRange(start: number, end: number, max: number) {
-  const safeStart = Math.max(0, Math.min(start, max))
-  const safeEnd = Math.max(0, Math.min(end, max))
-  return safeStart <= safeEnd
-    ? { start: safeStart, end: safeEnd }
-    : { start: safeEnd, end: safeStart }
-}
-
-function resolveInlineInsertSeparator(text: string, at: number): string {
-  if (at <= 0) return ''
-  const before = text[at - 1] ?? ''
-  const after = text[at] ?? ''
-  if (!before || /\s/u.test(before) || /\s/u.test(after)) return ''
-  return ' '
+  return {
+    op: 'append_paragraph',
+    text,
+    reason: action.reason,
+  }
 }
 
 function getRecentAiMessages(max = 8): RecentMessageDto[] {

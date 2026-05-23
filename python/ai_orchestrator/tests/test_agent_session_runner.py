@@ -3,12 +3,21 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from pydantic import BaseModel
+
 from python.ai_orchestrator.services.agent_session_runner import (
     AgentSessionRunItems,
     AgentSessionUsage,
     run_agent_session,
     stream_agent_session,
 )
+
+
+class MarkdownOutput(BaseModel):
+    value: str
+
+    def to_markdown(self) -> str:
+        return f"## {self.value}"
 
 
 class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
@@ -188,6 +197,27 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
         sqlite_session.assert_not_called()
         runner_run.assert_awaited_once_with(agent, agent_input)
         self.assertEqual(result.final_output, "Feedback")
+
+    async def test_run_agent_session_renders_structured_output_with_markdown_hook(self) -> None:
+        agent = object()
+        fake_result = SimpleNamespace(
+            final_output=MarkdownOutput(value="审题结果"),
+            last_agent=SimpleNamespace(name="Writing Coach Topic Analysis Agent"),
+        )
+
+        with (
+            patch.object(Path, "mkdir"),
+            patch("agents.SQLiteSession", return_value=object()),
+            patch("agents.Runner.run", new_callable=AsyncMock, return_value=fake_result),
+        ):
+            result = await run_agent_session(
+                agent=agent,
+                agent_input="Hi",
+                conversation_id="conv-1",
+                session_db_path="data/assistant.db",
+            )
+
+        self.assertEqual(result.final_output, "## 审题结果")
 
     async def test_stream_agent_session_passes_trace_metadata_to_run_config(self) -> None:
         fake_stream_result = SimpleNamespace(final_output="hello", last_agent=None)

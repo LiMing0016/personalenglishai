@@ -20,12 +20,16 @@ _PROMPT_FILES = {
     "translation": "agent_instructions/translation.md",
     "translate_vocab": "agent_instructions/translate_vocab.md",
     "vocab": "agent_instructions/vocab.md",
+    "writing_coach_stage": "agent_instructions/writing_coach_stage.md",
+    "writing_coach_route": "agent_instructions/writing_coach_route.md",
 }
 
 _STRUCTURED_OUTPUT_ONLY_AGENT_KEYS = frozenset(
     {
         "prompt_sheet_canvas",
         "route_decision",
+        "writing_coach_stage",
+        "writing_coach_route",
     }
 )
 

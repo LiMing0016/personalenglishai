@@ -114,12 +114,44 @@ export type WritingCoachEditActionType =
   | 'insert_after_selection'
   | 'append_paragraph'
 
+export type WritingPatch =
+  | {
+      op: 'replace_selection'
+      range: { start: number; end: number }
+      originalText: string
+      newText: string
+      reason?: string
+    }
+  | {
+      op: 'search_replace'
+      searchText: string
+      replaceText: string
+      reason?: string
+    }
+  | {
+      op: 'insert_after_anchor'
+      anchorText: string
+      insertText: string
+      reason?: string
+    }
+  | {
+      op: 'append_paragraph'
+      text: string
+      reason?: string
+    }
+  | {
+      op: 'replace_document'
+      text: string
+      reason?: string
+    }
+
 export interface WritingCoachEditAction {
   id: string
   type: WritingCoachEditActionType
   title: string
   text: string
   reason?: string
+  patch?: WritingPatch
   target?: {
     mode: 'selected_range' | 'semantic_match' | 'document_end'
     selectedText?: string

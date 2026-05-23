@@ -23,6 +23,12 @@ class AssistantRoutingTest(unittest.TestCase):
         self.assertEqual(route.to_agent, "writingCoachAgent")
         self.assertEqual(route.agent_name, "Scoring Agent")
 
+    def test_first_draft_coach_routes_to_prompt_design_agent(self) -> None:
+        route = route_assistant_agent(self._request(intent="first_draft_coach", mode="exam_boost"))
+
+        self.assertEqual(route.to_agent, "writingCoachAgent")
+        self.assertEqual(route.agent_name, "Prompt Design Agent")
+
     def test_analyze_question_routes_to_question_analysis_agent(self) -> None:
         route = route_assistant_agent(self._request(intent="analyze_question"))
 

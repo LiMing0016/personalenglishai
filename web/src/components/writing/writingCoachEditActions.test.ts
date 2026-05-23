@@ -36,6 +36,13 @@ test('extractWritingCoachEditActions creates replace action for polish with a se
   assert.equal(actions[0]?.type, 'replace_selection')
   assert.equal(actions[0]?.target?.mode, 'selected_range')
   assert.deepEqual(actions[0]?.target?.range, { start: 10, end: 32 })
+  assert.deepEqual(actions[0]?.patch, {
+    op: 'replace_selection',
+    range: { start: 10, end: 32 },
+    originalText: 'This course is useful.',
+    newText: 'This course can improve students\' language skills.',
+    reason: '适合把当前选中的表达直接改成这一版。',
+  })
 })
 
 test('extractWritingCoachEditActions creates insert action for next paragraph after selected range', () => {
@@ -54,6 +61,7 @@ test('extractWritingCoachEditActions creates insert action for next paragraph af
 
   assert.equal(actions.length, 1)
   assert.equal(actions[0]?.type, 'insert_after_selection')
+  assert.equal(actions[0]?.patch?.op, 'insert_after_anchor')
 })
 
 test('extractWritingCoachEditActions creates append action when no selection is available for next', () => {
@@ -71,4 +79,5 @@ test('extractWritingCoachEditActions creates append action when no selection is 
   assert.equal(actions.length, 1)
   assert.equal(actions[0]?.type, 'append_paragraph')
   assert.equal(actions[0]?.target?.mode, 'document_end')
+  assert.equal(actions[0]?.patch?.op, 'append_paragraph')
 })

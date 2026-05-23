@@ -57,6 +57,22 @@
         <button type="button" class="bubble-btn" @click="onBubbleAction('translate')">
           <span class="bubble-icon">⇄</span> 翻译
         </button>
+        <span class="bubble-separator" aria-hidden="true"></span>
+        <button type="button" class="bubble-btn" @click="onBubbleAction('topic_check')">
+          <span class="bubble-icon">◎</span> 检查偏题
+        </button>
+        <button type="button" class="bubble-btn" @click="onBubbleAction('polish_expression')">
+          <span class="bubble-icon">✎</span> 润色
+        </button>
+        <button type="button" class="bubble-btn" @click="onBubbleAction('expand_segment')">
+          <span class="bubble-icon">＋</span> 扩写
+        </button>
+        <button type="button" class="bubble-btn" @click="onBubbleAction('simplify_segment')">
+          <span class="bubble-icon">↓</span> 降低难度
+        </button>
+        <button type="button" class="bubble-btn" @click="onBubbleAction('replace_suggestion')">
+          <span class="bubble-icon">↔</span> 替换建议
+        </button>
       </div>
     </Teleport>
 
@@ -129,7 +145,7 @@ const emit = defineEmits<{
   'fix-error': [errorId: string]
   'dismiss-error': [errorId: string]
   back: []
-  'bubble-action': [action: 'explain' | 'rewrite' | 'translate']
+  'bubble-action': [action: 'explain' | 'rewrite' | 'translate' | 'topic_check' | 'polish_expression' | 'expand_segment' | 'simplify_segment' | 'replace_suggestion']
 }>()
 
 const popupEl = ref<HTMLDivElement | null>(null)
@@ -162,7 +178,7 @@ function updateBubbleMenu() {
   const end = view.coordsAtPos(to)
   const top = Math.min(start.top, end.top) + window.scrollY - 44
   let left = (start.left + end.left) / 2 + window.scrollX - 80
-  left = Math.max(8, Math.min(left, window.innerWidth - 240))
+  left = Math.max(8, Math.min(left, window.innerWidth - 520))
   bubblePos.value = { top, left }
   bubbleVisible.value = true
 }
@@ -605,7 +621,7 @@ function textOffsetToPos(ed: Editor, offset: number): number {
   return textOffsetToDocPos(ed.state.doc, offset)
 }
 
-function onBubbleAction(action: 'explain' | 'rewrite' | 'translate') {
+function onBubbleAction(action: 'explain' | 'rewrite' | 'translate' | 'topic_check' | 'polish_expression' | 'expand_segment' | 'simplify_segment' | 'replace_suggestion') {
   bubbleVisible.value = false
   emit('bubble-action', action)
 }
@@ -963,7 +979,9 @@ function closeToolbarMenu() {
   position: absolute;
   z-index: 1000;
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
+  max-width: min(720px, calc(100vw - 16px));
   background: #1f2937;
   border-radius: 8px;
   padding: 4px;
@@ -989,6 +1007,12 @@ function closeToolbarMenu() {
 .bubble-btn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
+}
+.bubble-separator {
+  width: 1px;
+  min-height: 24px;
+  margin: 3px 4px;
+  background: rgba(255, 255, 255, 0.18);
 }
 .bubble-icon {
   font-size: 14px;

@@ -103,7 +103,111 @@ def _build_assistant_context_text(request: AssistantRequest) -> str:
         if context.response_language:
             lines.append(f"- 回答语言: {context.response_language}")
 
+    writing_coach_lines = _build_writing_coach_context_lines(request)
+    if writing_coach_lines:
+        lines.extend(["", *writing_coach_lines])
+
     return "\n".join(lines)
+
+
+def _build_writing_coach_context_lines(request: AssistantRequest) -> list[str]:
+    if request.intent != "first_draft_coach" and not _looks_like_writing_copilot_request(request):
+        return []
+
+    lines = [
+        "[写作教练运行规则]",
+        "- 这是写作窗口内的 Copilot 请求，必须围绕当前作文题目与正文辅导用户写作。",
+        "- 如果 action=analyze，或 topicAnalysisDone=false 且存在作文题目，第一轮必须先稳定返回题目主旨分析。",
+        "- 第一轮题目主旨分析必须包含：题目主旨、中心任务、必答点、偏题风险、推荐结构、下一步写作建议。",
+        "- 如果 topicAnalysisDone=true，或已有 topicBrief / centralTask / mustAnswerPoints，不要重新生成题意，不要改写题目主旨；必须复用已有分析结果。",
+        "- 检查偏题、搭提纲、写下一段和润色时，都要对齐同一个题目主旨。",
+    ]
+
+    context = request.writing_coach_context
+    if context is None:
+        return lines
+
+    lines.extend(["", "[写作教练结构化上下文]"])
+    _append_optional_line(lines, "schemaVersion", context.schema_version)
+    _append_optional_line(lines, "action", context.action)
+    _append_optional_line(lines, "writingMode", context.writing_mode)
+    _append_optional_line(lines, "studyStage", context.study_stage)
+    _append_optional_line(lines, "taskType", context.task_type)
+    _append_optional_line(lines, "essayGenre", context.essay_genre)
+    _append_optional_line(lines, "minWords", context.min_words)
+    _append_optional_line(lines, "maxWords", context.max_words)
+    _append_optional_line(lines, "includeDraft", context.include_draft)
+    _append_optional_line(lines, "topicAnalysisDone", context.topic_analysis_done)
+    _append_optional_line(lines, "essayQuestion", context.essay_question)
+    _append_optional_line(lines, "questionMaterials", context.question_materials)
+    _append_list(lines, "imageDescriptions", context.image_descriptions)
+    _append_optional_line(lines, "selectedText", context.selected_text)
+    if context.include_draft:
+        _append_optional_line(lines, "draftText", context.draft_text)
+    _append_writing_coach_rubric(lines, context.rubric)
+    _append_optional_line(lines, "topicBrief", context.topic_brief)
+    _append_optional_line(lines, "centralTask", context.central_task)
+    _append_list(lines, "mustAnswerPoints", context.must_answer_points)
+    _append_list(lines, "riskPoints", context.risk_points)
+    _append_list(lines, "recommendedStructure", context.recommended_structure)
+    return lines
+
+
+def _looks_like_writing_copilot_request(request: AssistantRequest) -> bool:
+    message = (request.message.text if request.message else "") or ""
+    return "[写作教练 Copilot 请求]" in message or "writing_copilot" in message
+
+
+def _append_optional_line(lines: list[str], label: str, value: object) -> None:
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    lines.append(f"- {label}: {value}")
+
+
+def _append_list(lines: list[str], label: str, values: list[str]) -> None:
+    normalized = [value.strip() for value in values if value and value.strip()]
+    if not normalized:
+        return
+    lines.append(f"- {label}:")
+    lines.extend(f"  - {value}" for value in normalized)
+
+
+def _append_writing_coach_rubric(lines: list[str], rubric) -> None:
+    if rubric is None:
+        return
+    has_rubric = any(
+        [
+            getattr(rubric, "rubric_key", ""),
+            getattr(rubric, "rubric_version", ""),
+            getattr(rubric, "rubric_text", ""),
+            getattr(rubric, "rubric_focus", []),
+        ]
+    )
+    if not has_rubric:
+        return
+    lines.append("- rubric:")
+    _append_nested_optional_line(lines, "rubricKey", rubric.rubric_key)
+    _append_nested_optional_line(lines, "rubricVersion", rubric.rubric_version)
+    _append_nested_list(lines, "rubricFocus", rubric.rubric_focus)
+    _append_nested_optional_line(lines, "rubricText", rubric.rubric_text)
+
+
+def _append_nested_optional_line(lines: list[str], label: str, value: object) -> None:
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    lines.append(f"  - {label}: {value}")
+
+
+def _append_nested_list(lines: list[str], label: str, values: list[str]) -> None:
+    normalized = [value.strip() for value in values if value and value.strip()]
+    if not normalized:
+        return
+    lines.append(f"  - {label}:")
+    lines.extend(f"    - {value}" for value in normalized)
 
 
 def _mode_label(mode: str) -> str:
@@ -121,6 +225,7 @@ def _intent_label(intent: str) -> str:
         "polish": "润色",
         "summarize": "总结",
         "grade_writing": "作文评分",
+        "first_draft_coach": "写作初稿教练",
         "generate_examples": "生成例句",
         "analyze_question": "题目分析",
     }.get(intent, intent)
