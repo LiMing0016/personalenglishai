@@ -15,16 +15,32 @@
       <span class="status-chip status-chip-strong">{{ stageLabel }}</span>
     </section>
 
-    <section class="flow-shell" aria-label="写作流程">
+    <section class="flow-shell" :class="{ collapsed: flowCollapsed }" aria-label="写作流程">
       <div class="flow-head">
         <div>
           <strong>写作流程</strong>
           <small>{{ flowSummary }}</small>
         </div>
-        <span class="flow-progress">{{ activeFlowIndex + 1 }} / {{ writingFlowSteps.length }}</span>
+        <div class="flow-head-actions">
+          <span class="flow-progress">{{ activeFlowIndex + 1 }} / {{ writingFlowSteps.length }}</span>
+          <button
+            type="button"
+            class="flow-toggle"
+            :aria-expanded="!flowCollapsed"
+            :aria-label="flowCollapsed ? '展开写作流程' : '收起写作流程'"
+            @click="flowCollapsed = !flowCollapsed"
+          >
+            {{ flowCollapsed ? '展开' : '收起' }}
+          </button>
+        </div>
       </div>
 
-      <div class="flow-steps">
+      <div v-if="flowCollapsed" class="flow-collapsed-summary">
+        <span>{{ activeFlowStep.title }}</span>
+        <strong>{{ activeFlowStep.goal }}</strong>
+      </div>
+
+      <div v-else class="flow-steps">
         <button
           v-for="(step, index) in writingFlowSteps"
           :key="step.key"
@@ -44,7 +60,7 @@
         </button>
       </div>
 
-      <article class="current-stage-card">
+      <article v-if="!flowCollapsed" class="current-stage-card">
         <div class="current-stage-copy">
           <span class="current-stage-kicker">当前阶段</span>
           <h4>{{ activeFlowStep.title }}</h4>
@@ -291,6 +307,7 @@ const messageListRef = ref<HTMLElement | null>(null)
 const composerInputRef = ref<HTMLTextAreaElement | null>(null)
 const includeDraft = ref(false)
 const toolMenuOpen = ref(false)
+const flowCollapsed = ref(false)
 const selectedToolKey = ref<CoachToolKey>('coach')
 const coachStage = ref<CoachStage>('idle')
 const activeFlowKey = ref<WritingFlowKey>('analysis')
@@ -859,6 +876,9 @@ onMounted(() => {
   background: #fbfefc;
   overflow: hidden;
 }
+.flow-shell.collapsed {
+  background: #fff;
+}
 .flow-head {
   display: flex;
   align-items: center;
@@ -879,6 +899,12 @@ onMounted(() => {
   font-size: 12px;
   color: #6b7280;
 }
+.flow-head-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .flow-progress {
   flex-shrink: 0;
   border: 1px solid #bbf7d0;
@@ -888,6 +914,45 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 750;
   color: #047857;
+}
+.flow-toggle {
+  height: 28px;
+  border: 1px solid #ccfbf1;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f766e;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.flow-toggle:hover {
+  border-color: #5eead4;
+  background: #f0fdfa;
+}
+.flow-collapsed-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+.flow-collapsed-summary span {
+  flex-shrink: 0;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #065f46;
+  padding: 3px 8px;
+  font-weight: 800;
+}
+.flow-collapsed-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .flow-steps {
   display: grid;
