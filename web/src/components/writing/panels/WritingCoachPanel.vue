@@ -87,7 +87,7 @@
         class="message-row"
         :class="message.role"
       >
-        <div class="message-bubble" v-html="renderMarkdown(message.text)"></div>
+        <div class="message-bubble" v-html="renderMarkdown(message.text)" @click="onRenderedMarkdownClick"></div>
       </div>
 
       <article v-if="activeSuggestion" class="suggestion-card">
@@ -181,7 +181,7 @@
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue'
 import { writingSelectionStoreKey } from '../useWritingSelectionStore'
 import SelectedTextChip from './SelectedTextChip.vue'
-import { renderAssistantMarkdown } from '@/components/assistant/markdown'
+import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from '@/components/assistant/markdown'
 import type { WritingAiProvider } from '@/api/writing'
 
 type WritingMode = 'free' | 'exam'
@@ -695,6 +695,10 @@ function renderMarkdown(text: string): string {
   return renderAssistantMarkdown(text)
 }
 
+function onRenderedMarkdownClick(event: MouseEvent) {
+  void copyMarkdownCodeFromClick(event)
+}
+
 function shorten(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}...` : text
 }
@@ -1113,12 +1117,29 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   border-bottom: 1px solid #e2e8f0;
   background: #eef6f4;
   padding: 8px 12px;
   color: #0f766e;
   font-size: 12px;
   font-weight: 700;
+}
+.message-row.assistant .message-bubble :deep(.markdown-code-copy) {
+  height: 26px;
+  border: 1px solid #b7e4dc;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f766e;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.message-row.assistant .message-bubble :deep(.markdown-code-copy:hover),
+.message-row.assistant .message-bubble :deep(.markdown-code-copy--copied) {
+  border-color: #0f766e;
+  background: #ccfbf1;
 }
 .message-row.assistant .message-bubble :deep(.markdown-code-block pre) {
   margin: 0;

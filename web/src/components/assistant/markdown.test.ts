@@ -48,7 +48,7 @@ test('renderAssistantMarkdown renders fenced code blocks', () => {
 
   assert.match(html, /<p>审题阶段应该升级成：<\/p>/)
   assert.match(html, /<div class="markdown-code-block">/)
-  assert.match(html, /<div class="markdown-code-header"><span>text<\/span><\/div>/)
+  assert.match(html, /<div class="markdown-code-header"><span>text<\/span><button type="button" class="markdown-code-copy" data-markdown-code-copy aria-label="复制文本">复制<\/button><\/div>/)
   assert.match(html, /<pre><code>题目 \+ 材料 \+ 图片描述\/附件 \+ 学段 \+ 题型\n↓\n审题 Structured Output<\/code><\/pre>/)
   assert.doesNotMatch(html, /```text/)
 })

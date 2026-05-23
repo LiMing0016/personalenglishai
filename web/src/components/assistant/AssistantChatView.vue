@@ -36,6 +36,7 @@
             class="message-content message-content--markdown"
             :class="`message-content--markdown-${markdownTheme}`"
             v-html="renderAssistantMarkdown(message.content)"
+            @click="onRenderedMarkdownClick"
           ></div>
           <p v-else class="message-content message-content--plain">{{ message.content }}</p>
           <div
@@ -95,7 +96,7 @@
 import { onBeforeUnmount } from 'vue'
 
 import AssistantStarterCards from './AssistantStarterCards.vue'
-import { renderAssistantMarkdown } from './markdown.ts'
+import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
 
 defineProps<{
@@ -123,6 +124,9 @@ function previewUrlById(id: string, file: File) {
   return previewUrls.get(id)!
 }
 
+function onRenderedMarkdownClick(event: MouseEvent) {
+  void copyMarkdownCodeFromClick(event)
+}
 
 onBeforeUnmount(() => {
   for (const url of previewUrls.values()) {
@@ -356,12 +360,31 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: #2b3442;
   padding: 8px 12px;
   color: #cbd5e1;
   font-size: 12px;
   font-weight: 700;
+}
+
+.message-content--markdown :deep(.markdown-code-copy) {
+  height: 26px;
+  border: 1px solid rgba(226, 232, 240, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.message-content--markdown :deep(.markdown-code-copy:hover),
+.message-content--markdown :deep(.markdown-code-copy--copied) {
+  border-color: rgba(226, 232, 240, 0.52);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .message-content--markdown :deep(.markdown-code-block pre) {
