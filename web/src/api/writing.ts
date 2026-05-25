@@ -1207,6 +1207,70 @@ export interface WritingDocumentItem {
   updatedAt: string
 }
 
+export interface WritingDocumentAssetEvaluation {
+  id: number
+  overallScore: number | null
+  band: string | null
+  structureScore: number | null
+  vocabularyScore: number | null
+  grammarScore: number | null
+  expressionScore: number | null
+  totalErrorCount: number | null
+  createdAt: string | null
+}
+
+export interface WritingDocumentAssetCoachConversation {
+  id: string
+  title: string
+  messageCount: number
+  updatedAt: string | null
+}
+
+export interface WritingLearningAssetPreviewItem {
+  id: string
+  assetType: 'word' | 'phrase' | 'sentence' | 'grammar' | 'writing_strategy' | string
+  sourceType: 'user_focus' | 'coach_feedback' | 'system_discovered' | string
+  displayText: string
+  originalText: string | null
+  recommendedText: string | null
+  meaningZh: string | null
+  explanation: string | null
+  valueReasonForUser: string | null
+  howToReuse: string | null
+  reviewPrompt: string | null
+  sourceQuestion: string | null
+  sourceExcerpt: string | null
+  confidence: number | null
+  learningValueScore: number | null
+  promotionStatus: string | null
+}
+
+export interface WritingLearningAssetPreview {
+  status: 'none' | 'completed' | 'failed' | string
+  model: string | null
+  summary: string | null
+  errorMessage: string | null
+  generatedAt: string | null
+  items: WritingLearningAssetPreviewItem[]
+}
+
+export interface WritingDocumentAssetResponse {
+  docId: string
+  title: string
+  taskPrompt: string | null
+  content: string
+  latestRevision: number
+  latestScore: number | null
+  submitCount: number
+  archived: boolean
+  evaluations: WritingDocumentAssetEvaluation[]
+  coachConversations: WritingDocumentAssetCoachConversation[]
+  learningAssetPreview: WritingLearningAssetPreview
+  markdown: string
+  generatedAt: string | null
+  stale: boolean
+}
+
 export interface WritingDocumentsResponse {
   items: WritingDocumentItem[]
   total: number
@@ -1221,6 +1285,49 @@ export function getWritingDocuments(
     .get<WritingDocumentsResponse>('/writing/documents', {
       params: { page, size, ...(options?.archived === true ? { archived: true } : {}) },
     })
+    .then((res) => res.data)
+}
+
+export function linkWritingCoachConversation(docId: string, conversationId: string): Promise<void> {
+  return http
+    .post(`/writing/documents/${encodeURIComponent(docId)}/coach-conversations`, { conversationId })
+    .then(() => {})
+}
+
+export function getWritingDocumentAsset(docId: string): Promise<WritingDocumentAssetResponse> {
+  return http
+    .get<WritingDocumentAssetResponse>(`/writing/documents/${encodeURIComponent(docId)}/asset`)
+    .then((res) => res.data)
+}
+
+export function refreshWritingDocumentAsset(docId: string): Promise<WritingDocumentAssetResponse> {
+  return http
+    .post<WritingDocumentAssetResponse>(`/writing/documents/${encodeURIComponent(docId)}/asset/refresh`)
+    .then((res) => res.data)
+}
+
+export function refreshWritingDocumentLearningAssetPreview(docId: string): Promise<WritingDocumentAssetResponse> {
+  return http
+    .post<WritingDocumentAssetResponse>(
+      `/writing/documents/${encodeURIComponent(docId)}/asset/learning-preview/refresh`,
+    )
+    .then((res) => res.data)
+}
+
+export function getWritingDocumentAssetMarkdown(docId: string): Promise<string> {
+  return http
+    .get<string>(`/writing/documents/${encodeURIComponent(docId)}/asset/markdown`, {
+      responseType: 'text',
+    })
+    .then((res) => res.data)
+}
+
+export function getWritingCoachConversationMarkdown(docId: string, conversationId: string): Promise<string> {
+  return http
+    .get<string>(
+      `/writing/documents/${encodeURIComponent(docId)}/coach-conversations/${encodeURIComponent(conversationId)}/markdown`,
+      { responseType: 'text' },
+    )
     .then((res) => res.data)
 }
 

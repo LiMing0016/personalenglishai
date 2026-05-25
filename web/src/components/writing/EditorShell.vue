@@ -203,6 +203,7 @@ import { useGrammarStore } from '@/stores/grammarStore'
 import { useEvaluateStore } from '@/stores/evaluateStore'
 import { stageCache } from '@/stores/stageCache'
 import { getActiveRubric, getStageConfig, getWritingSessionMetadata, rewriteApply } from '@/api/writing'
+import { linkWritingCoachConversation } from '@/api/writing'
 import type {
   PolishTier,
   WritingAiProvider,
@@ -246,6 +247,7 @@ const showHandwritingImportDialog = ref(false)
 const archiveBusy = ref(false)
 const aiGenerating = ref(false)
 let aiAbortController: AbortController | null = null
+const linkedCoachConversationKeys = new Set<string>()
 const {
   submit: evalSubmit,
   cancel: evalCancel,
@@ -1058,6 +1060,32 @@ async function ensureWritingAssistantConversation(): Promise<string> {
   return conversation.id
 }
 
+function syncWritingCoachConversationLink(conversationId = draftStore.aiConversationId) {
+  const docId = (aiDocId.value || draftStore.docId || '').trim()
+  const normalizedConversationId = conversationId.trim()
+  if (!docId || !normalizedConversationId.startsWith('conv-')) return
+
+  const linkKey = `${docId}:${normalizedConversationId}`
+  if (linkedCoachConversationKeys.has(linkKey)) return
+  linkedCoachConversationKeys.add(linkKey)
+
+  linkWritingCoachConversation(docId, normalizedConversationId)
+    .catch((error) => {
+      linkedCoachConversationKeys.delete(linkKey)
+      console.warn('[WritingCoach] link conversation to document failed', error)
+    })
+}
+
+watch(
+  () => [draftStore.docId, draftStore.aiConversationId] as const,
+  ([docId, conversationId]) => {
+    if (docId && !aiDocId.value) {
+      aiDocId.value = docId
+    }
+    syncWritingCoachConversationLink(conversationId || '')
+  },
+)
+
 function buildWritingCoachPrompt(options: {
   instruction: string
   selectedTool: WritingCoachToolDto
@@ -1224,9 +1252,12 @@ async function onAiNoteSend() {
         content: draftStore.draftText,
       })
       aiDocId.value = created.docId
+      draftStore.docId = created.docId
+      draftStore.docRevision = created.latestRevision
     }
 
     const conversationId = await ensureWritingAssistantConversation()
+    syncWritingCoachConversationLink(conversationId)
     const prompt = buildWritingCoachPrompt({
       instruction,
       selectedTool,

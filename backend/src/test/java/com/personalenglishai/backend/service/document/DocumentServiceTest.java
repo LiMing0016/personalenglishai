@@ -11,6 +11,7 @@ import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,9 @@ class DocumentServiceTest {
 
     @Mock
     private WritingPromptSheetService writingPromptSheetService;
+
+    @Mock
+    private WritingDocumentAssetService writingDocumentAssetService;
 
     @InjectMocks
     private DocumentService documentService;
@@ -385,6 +389,7 @@ class DocumentServiceTest {
         documentService.archiveDocument("1", "default", "doc_x", 1L);
 
         verify(documentMapper).updateStatus(10L, 2);
+        verify(writingDocumentAssetService).refreshSnapshot("1", "default", "doc_x", 1L);
     }
 
     @Test

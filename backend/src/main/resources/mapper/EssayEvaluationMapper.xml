@@ -89,7 +89,7 @@
                total_error_count, major_error_count, minor_error_count,
                content_quality, task_achievement, structure_score, vocabulary_score, grammar_score, expression_score,
                grammar_error_count, spelling_error_count, vocabulary_error_count, lexical_error_count,
-               punctuation_error_count, syntax_error_count, created_at,
+               punctuation_error_count, syntax_error_count, result_json, created_at,
                LEFT(essay_text, 100) AS essay_text
         FROM essay_evaluation
         WHERE user_id = #{userId}

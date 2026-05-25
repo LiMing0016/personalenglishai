@@ -68,7 +68,10 @@ import com.personalenglishai.backend.dto.writing.TranslateRequest;
 import com.personalenglishai.backend.dto.writing.TranslateResponse;
 import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnRequest;
 import com.personalenglishai.backend.dto.writing.GenerateExamDialogueTurnResponse;
+import com.personalenglishai.backend.dto.writing.LinkWritingCoachConversationRequest;
+import com.personalenglishai.backend.dto.writing.WritingDocumentAssetResponse;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import com.personalenglishai.backend.service.subscription.AiUsageContext;
 import com.personalenglishai.backend.service.subscription.AiUsageContextHolder;
 import com.personalenglishai.backend.service.subscription.SubscriptionService;
@@ -76,6 +79,8 @@ import com.personalenglishai.backend.dto.writing.EssayPromptResponse;
 import com.personalenglishai.backend.dto.writing.EssayPromptListResponse;
 import com.personalenglishai.backend.entity.EssayPrompt;
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -115,6 +120,7 @@ public class WritingController {
     private final GrammarSuppressService grammarSuppressService;
     private final TrustedRewriteService trustedRewriteService;
     private final SubscriptionService subscriptionService;
+    private final WritingDocumentAssetService writingDocumentAssetService;
     private final ObjectMapper objectMapper;
 
     public WritingController(WritingEvaluateService writingEvaluateService,
@@ -140,6 +146,7 @@ public class WritingController {
                              GrammarSuppressService grammarSuppressService,
                              TrustedRewriteService trustedRewriteService,
                              SubscriptionService subscriptionService,
+                             WritingDocumentAssetService writingDocumentAssetService,
                              ObjectMapper objectMapper) {
         this.writingEvaluateService = writingEvaluateService;
         this.writingEvaluateTaskService = writingEvaluateTaskService;
@@ -164,6 +171,7 @@ public class WritingController {
         this.grammarSuppressService = grammarSuppressService;
         this.trustedRewriteService = trustedRewriteService;
         this.subscriptionService = subscriptionService;
+        this.writingDocumentAssetService = writingDocumentAssetService;
         this.objectMapper = objectMapper;
     }
 
@@ -698,6 +706,88 @@ public class WritingController {
         resp.put("items", items);
         resp.put("total", total);
         return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/documents/{docId}/coach-conversations")
+    public ResponseEntity<Void> linkWritingCoachConversation(
+            @PathVariable String docId,
+            @Valid @RequestBody LinkWritingCoachConversationRequest request,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        writingDocumentAssetService.linkCoachConversation(
+                String.valueOf(userId),
+                "default",
+                docId,
+                userId,
+                request.getConversationId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/documents/{docId}/asset")
+    public ResponseEntity<WritingDocumentAssetResponse> getWritingDocumentAsset(
+            @PathVariable String docId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(writingDocumentAssetService.getAsset(String.valueOf(userId), "default", docId, userId));
+    }
+
+    @PostMapping("/documents/{docId}/asset/refresh")
+    public ResponseEntity<WritingDocumentAssetResponse> refreshWritingDocumentAsset(
+            @PathVariable String docId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        writingDocumentAssetService.refreshSnapshot(String.valueOf(userId), "default", docId, userId);
+        return ResponseEntity.ok(writingDocumentAssetService.getAsset(String.valueOf(userId), "default", docId, userId));
+    }
+
+    @PostMapping("/documents/{docId}/asset/learning-preview/refresh")
+    public ResponseEntity<WritingDocumentAssetResponse> refreshWritingDocumentLearningAssetPreview(
+            @PathVariable String docId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(writingDocumentAssetService.refreshLearningAssetPreview(
+                String.valueOf(userId),
+                "default",
+                docId,
+                userId));
+    }
+
+    @GetMapping(value = "/documents/{docId}/asset/markdown", produces = "text/markdown; charset=UTF-8")
+    public ResponseEntity<String> getWritingDocumentAssetMarkdown(
+            @PathVariable String docId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        String markdown = writingDocumentAssetService.getMarkdown(String.valueOf(userId), "default", docId, userId);
+        String filename = "writing-asset-" + docId + ".md";
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "markdown", java.nio.charset.StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(markdown);
+    }
+
+    @GetMapping(value = "/documents/{docId}/coach-conversations/{conversationId}/markdown", produces = "text/markdown; charset=UTF-8")
+    public ResponseEntity<String> getWritingCoachConversationMarkdown(
+            @PathVariable String docId,
+            @PathVariable String conversationId,
+            HttpServletRequest httpRequest) {
+        Long userId = (Long) httpRequest.getAttribute("userId");
+        if (userId == null) return ResponseEntity.status(401).build();
+        String markdown = writingDocumentAssetService.getCoachConversationMarkdown(
+                String.valueOf(userId),
+                "default",
+                docId,
+                userId,
+                conversationId);
+        String filename = "writing-coach-" + docId + "-" + conversationId + ".md";
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "markdown", java.nio.charset.StandardCharsets.UTF_8))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(markdown);
     }
 
     @GetMapping("/dashboard/assets")

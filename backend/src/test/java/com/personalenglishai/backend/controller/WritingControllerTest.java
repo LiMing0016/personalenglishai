@@ -29,6 +29,7 @@ import com.personalenglishai.backend.service.writing.GrammarCheckService;
 import com.personalenglishai.backend.service.writing.GrammarSuppressService;
 import com.personalenglishai.backend.service.writing.EssayPromptService;
 import com.personalenglishai.backend.service.writing.TrustedRewriteService;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import com.personalenglishai.backend.service.writing.impl.WritingSuggestionsService;
 import com.personalenglishai.backend.service.subscription.SubscriptionService;
 import com.personalenglishai.backend.dto.writing.WritingTemplateRequest;
@@ -152,6 +153,9 @@ class WritingControllerTest {
 
     @MockBean
     private SubscriptionService subscriptionService;
+
+    @MockBean
+    private WritingDocumentAssetService writingDocumentAssetService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;

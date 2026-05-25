@@ -501,6 +501,56 @@ CREATE TABLE IF NOT EXISTS writing_exam_metadata (
         ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='exam-only writing metadata';
 
+CREATE TABLE IF NOT EXISTS writing_document_conversation_link (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL COMMENT 'users.id',
+    document_id BIGINT NOT NULL COMMENT 'documents.id',
+    conversation_uid VARCHAR(64) NOT NULL COMMENT 'assistant_conversation.conversation_uid',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_doc_conversation (document_id, conversation_uid),
+    INDEX idx_writing_doc_conversation_user_doc (user_id, document_id),
+    INDEX idx_writing_doc_conversation_uid (conversation_uid),
+    CONSTRAINT fk_writing_doc_conversation_document
+        FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_doc_conversation_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_doc_conversation_assistant
+        FOREIGN KEY (conversation_uid) REFERENCES assistant_conversation(conversation_uid)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='writing document to coach conversation links';
+
+CREATE TABLE IF NOT EXISTS writing_document_asset_snapshot (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    document_id BIGINT NOT NULL COMMENT 'documents.id',
+    user_id BIGINT NOT NULL COMMENT 'users.id',
+    snapshot_uid VARCHAR(64) NOT NULL COMMENT 'stable generated snapshot uid',
+    markdown_content LONGTEXT NOT NULL COMMENT 'readable markdown archive',
+    snapshot_json LONGTEXT NOT NULL COMMENT 'machine-readable archive snapshot',
+    latest_revision INT NOT NULL DEFAULT 1,
+    evaluation_count INT NOT NULL DEFAULT 0,
+    coach_message_count INT NOT NULL DEFAULT 0,
+    generated_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_asset_snapshot_document (document_id),
+    UNIQUE KEY uk_writing_asset_snapshot_uid (snapshot_uid),
+    INDEX idx_writing_asset_snapshot_user (user_id, updated_at),
+    CONSTRAINT fk_writing_asset_snapshot_document
+        FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_asset_snapshot_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='writing document asset snapshots';
+
 -- subscription plans and monthly AI token quota usage
 CREATE TABLE IF NOT EXISTS subscription_plan (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -793,3 +843,69 @@ CREATE TABLE IF NOT EXISTS learning_evidence (
     KEY idx_learning_evidence_candidate (candidate_uid),
     KEY idx_learning_evidence_comparison (comparison_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='selected learning evidence for downstream consumer model';
+
+CREATE TABLE IF NOT EXISTS writing_learning_asset_preview_run (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_uid VARCHAR(96) NOT NULL,
+    document_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'completed' COMMENT 'completed | failed',
+    model VARCHAR(128) NULL,
+    summary VARCHAR(1000) NULL,
+    result_json JSON NULL,
+    error_message TEXT NULL,
+    input_token_count BIGINT NULL,
+    output_token_count BIGINT NULL,
+    item_count INT NOT NULL DEFAULT 0,
+    generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_learning_asset_preview_run_uid (run_uid),
+    KEY idx_writing_learning_asset_preview_run_doc_time (document_id, generated_at),
+    KEY idx_writing_learning_asset_preview_run_user_time (user_id, generated_at),
+    CONSTRAINT fk_writing_learning_asset_preview_run_doc
+        FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_learning_asset_preview_run_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='writing asset DeepSeek learning preview runs';
+
+CREATE TABLE IF NOT EXISTS writing_learning_asset_preview_item (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    item_uid VARCHAR(96) NOT NULL,
+    run_uid VARCHAR(96) NOT NULL,
+    document_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    asset_type VARCHAR(32) NOT NULL COMMENT 'word | phrase | sentence | grammar | writing_strategy',
+    source_type VARCHAR(32) NOT NULL COMMENT 'user_focus | coach_feedback | system_discovered',
+    display_text VARCHAR(1000) NOT NULL,
+    original_text VARCHAR(1000) NULL,
+    recommended_text VARCHAR(1000) NULL,
+    meaning_zh VARCHAR(500) NULL,
+    explanation TEXT NULL,
+    value_reason_for_user TEXT NULL,
+    how_to_reuse TEXT NULL,
+    review_prompt TEXT NULL,
+    source_question VARCHAR(500) NULL,
+    source_excerpt TEXT NULL,
+    confidence DECIMAL(6,4) NULL,
+    learning_value_score DECIMAL(6,4) NULL,
+    promotion_status VARCHAR(32) NOT NULL DEFAULT 'preview' COMMENT 'preview | promoted | ignored',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_writing_learning_asset_preview_item_uid (item_uid),
+    KEY idx_writing_learning_asset_preview_item_run (run_uid),
+    KEY idx_writing_learning_asset_preview_item_doc_type (document_id, asset_type),
+    KEY idx_writing_learning_asset_preview_item_user_status (user_id, promotion_status),
+    CONSTRAINT fk_writing_learning_asset_preview_item_doc
+        FOREIGN KEY (document_id) REFERENCES documents(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT,
+    CONSTRAINT fk_writing_learning_asset_preview_item_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+        ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='writing asset DeepSeek learning preview items';

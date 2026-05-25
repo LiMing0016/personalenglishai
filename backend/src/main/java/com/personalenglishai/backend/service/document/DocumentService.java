@@ -11,6 +11,7 @@ import com.personalenglishai.backend.entity.WritingMetadata;
 import com.personalenglishai.backend.mapper.DocumentMapper;
 import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,15 +38,18 @@ public class DocumentService {
     private final WritingMetadataMapper writingMetadataMapper;
     private final WritingExamMetadataMapper writingExamMetadataMapper;
     private final WritingPromptSheetService writingPromptSheetService;
+    private final WritingDocumentAssetService writingDocumentAssetService;
 
     public DocumentService(DocumentMapper documentMapper,
                            WritingMetadataMapper writingMetadataMapper,
                            WritingExamMetadataMapper writingExamMetadataMapper,
-                           WritingPromptSheetService writingPromptSheetService) {
+                           WritingPromptSheetService writingPromptSheetService,
+                           WritingDocumentAssetService writingDocumentAssetService) {
         this.documentMapper = documentMapper;
         this.writingMetadataMapper = writingMetadataMapper;
         this.writingExamMetadataMapper = writingExamMetadataMapper;
         this.writingPromptSheetService = writingPromptSheetService;
+        this.writingDocumentAssetService = writingDocumentAssetService;
     }
 
     /** 生成对外稳定 public_id */
@@ -163,6 +167,7 @@ public class DocumentService {
     @Transactional(rollbackFor = Exception.class)
     public void archiveDocument(String tenantId, String workspaceId, String publicDocId, Long userId) {
         updateArchiveStatus(tenantId, workspaceId, publicDocId, userId, STATUS_ARCHIVED);
+        writingDocumentAssetService.refreshSnapshot(tenantId, workspaceId, publicDocId, userId);
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: project
-last_updated: 2026-05-10
+last_updated: 2026-05-25
 related_code:
   - web/
   - backend/
@@ -17,3 +17,4 @@ related_code:
 - [邀请系统](./referral-system.md)
 - [订阅](./subscription/)
 - [CEFR](./cefr/)
+- [翻译页面](./翻译页面/)

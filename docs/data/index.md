@@ -1,7 +1,7 @@
 ---
 status: active
 owner: project
-last_updated: 2026-05-10
+last_updated: 2026-05-23
 related_code:
   - backend/src/main/resources/db/
   - backend/src/main/resources/mapper/
@@ -15,3 +15,4 @@ related_code:
 
 - [评分持久化结构](./scoring-persistence-schema.md)
 - [写作 Dashboard 数据口径](./writing-dashboard-data.md)
+- [作文资产归档清单](./writing-document-assets.md)
