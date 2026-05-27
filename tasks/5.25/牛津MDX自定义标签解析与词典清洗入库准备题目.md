@@ -40,7 +40,7 @@
 
 ## 题目 1：完善 Python 词典清洗 Schema 与解析契约
 
-### 发给 Trae 的 Prompt
+### 发给 Trae 的 Prompt（完成）
 
 请完善 Python 侧词典清洗 schema 和解析契约，让牛津 MDX 词条可以被稳定表示为结构化数据。重点支持词头、词性、音标、义项、英文释义、中文释义、例句、习语/固定表达和用法说明。不要直接写数据库，也不要改管理员鉴权。
 
@@ -137,7 +137,7 @@
 
 ## 题目 2：实现牛津 MDX 自定义标签解析
 
-### 发给 Trae 的 Prompt
+### 发给 Trae 的 Prompt（完成）
 
 请完善 `python/ai_orchestrator/tools/dictionary/entry_parser.py`，支持解析牛津高阶 MDX 的自定义标签。解析器要从 `<h>`、`<phon>`、`<pos>`、`<def>`、`<chn>`、`<x>`、`<idm-g>`、`<unbox>` 中抽取结构化字段，同时保留已有普通 HTML class 解析能力。
 
@@ -171,7 +171,7 @@
 
 ### 小题 B：解析例句、习语和用法说明
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请继续完善牛津 MDX 的例句、习语和用法说明解析。
 
@@ -207,7 +207,7 @@
 
 ### 小题 A：完善 MDX reader 适配与依赖说明
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请完善 `python/ai_orchestrator/tools/dictionary/mdict_reader.py` 的使用说明和错误提示。
 

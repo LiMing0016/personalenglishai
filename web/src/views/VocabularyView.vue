@@ -175,7 +175,7 @@
 
         <section v-if="result" class="lookup-feedback">
           <header>
-            <strong>Oxford Dictionaries</strong>
+            <strong>{{ lookupSourceTitle }}</strong>
             <span>{{ result.language }} · {{ lastLookupAt }}</span>
           </header>
           <p v-if="primaryPhonetic?.text">/{{ primaryPhonetic.text }}/</p>
@@ -367,7 +367,7 @@ const apiStatusItems: Array<{
     name: 'Oxford 单词查询',
     endpoint: 'GET /api/dictionary/lookup',
     status: 'connected',
-    note: '顶部搜索框已调用真实后端词典接口。',
+    note: '顶部搜索框已调用真实后端词典接口，本地已安装词典优先。',
   },
   {
     name: '对话词句候选池',
@@ -581,6 +581,15 @@ const badges = [
 
 const selectedWord = computed(() => words.value.find((word) => word.id === selectedWordId.value) ?? words.value[0])
 const primaryPhonetic = computed(() => result.value?.phonetics.find((item) => item.text || item.audioUrl))
+const lookupSourceTitle = computed(() => {
+  if (result.value?.source === 'local') {
+    return '已安装本地词典'
+  }
+  if (result.value?.source === 'oxford') {
+    return 'Oxford Dictionaries'
+  }
+  return result.value?.source || '词典查询'
+})
 
 async function submitLookup() {
   const word = query.value.trim()

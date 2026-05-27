@@ -16,7 +16,7 @@ export interface DictionaryEntry {
 export interface DictionaryLookupResponse {
   word: string
   language: DictionaryLanguage | string
-  source: 'oxford'
+  source: 'local' | 'oxford' | string
   phonetics: DictionaryPhonetic[]
   entries: DictionaryEntry[]
 }

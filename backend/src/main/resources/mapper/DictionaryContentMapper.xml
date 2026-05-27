@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.personalenglishai.backend.mapper.DictionaryContentMapper">
+    <select id="selectActiveEntriesByNormalizedHeadword" resultType="map">
+        SELECT e.entry_uid AS entryUid,
+               e.headword,
+               e.part_of_speech AS partOfSpeech,
+               e.clean_text AS cleanText,
+               e.sort_order AS sortOrder,
+               l.display_name AS dictionaryName
+        FROM dictionary_entry e
+        INNER JOIN dictionary_library l ON l.dictionary_uid = e.dictionary_uid
+        WHERE e.normalized_headword = #{normalizedHeadword}
+          AND e.status = 'active'
+          AND l.enabled = 1
+          AND l.status IN ('installed', 'published')
+        ORDER BY l.sort_order ASC, e.sort_order ASC, e.id ASC
+        LIMIT 5
+    </select>
+
+    <select id="selectPronunciationsByEntryUids" resultType="map">
+        SELECT entry_uid AS entryUid,
+               region,
+               phonetic,
+               audio_resource_uid AS audioResourceUid,
+               sort_order AS sortOrder
+        FROM dictionary_pronunciation
+        WHERE entry_uid IN
+        <foreach collection="entryUids" item="entryUid" open="(" separator="," close=")">
+            #{entryUid}
+        </foreach>
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="selectSensesByEntryUids" resultType="map">
+        SELECT sense_uid AS senseUid,
+               entry_uid AS entryUid,
+               part_of_speech AS partOfSpeech,
+               definition_en AS definitionEn,
+               definition_zh AS definitionZh,
+               grammar_label AS grammarLabel,
+               register_label AS registerLabel,
+               sort_order AS sortOrder
+        FROM dictionary_sense
+        WHERE entry_uid IN
+        <foreach collection="entryUids" item="entryUid" open="(" separator="," close=")">
+            #{entryUid}
+        </foreach>
+        ORDER BY sort_order ASC, id ASC
+    </select>
+
+    <select id="selectExamplesByEntryUids" resultType="map">
+        SELECT example_uid AS exampleUid,
+               sense_uid AS senseUid,
+               entry_uid AS entryUid,
+               text_en AS textEn,
+               text_zh AS textZh,
+               source,
+               sort_order AS sortOrder
+        FROM dictionary_example
+        WHERE entry_uid IN
+        <foreach collection="entryUids" item="entryUid" open="(" separator="," close=")">
+            #{entryUid}
+        </foreach>
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 20
+    </select>
+
+    <select id="selectPhrasesByEntryUids" resultType="map">
+        SELECT phrase_uid AS phraseUid,
+               entry_uid AS entryUid,
+               phrase_text AS phraseText,
+               definition_en AS definitionEn,
+               definition_zh AS definitionZh,
+               sort_order AS sortOrder
+        FROM dictionary_phrase
+        WHERE entry_uid IN
+        <foreach collection="entryUids" item="entryUid" open="(" separator="," close=")">
+            #{entryUid}
+        </foreach>
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 20
+    </select>
+</mapper>
