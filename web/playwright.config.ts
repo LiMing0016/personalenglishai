@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const authFile = 'playwright/.auth/user.json';
+
 /**
  * Read environment variables from file.
  * https://github.com/motdotla/dotenv
@@ -38,18 +40,25 @@ export default defineConfig({
   /* Configure projects for major browsers */
   projects: [
     {
+      name: 'auth setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['auth setup'],
+      use: { ...devices['Desktop Chrome'], storageState: authFile },
     },
 
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
+      dependencies: ['auth setup'],
+      use: { ...devices['Desktop Firefox'], storageState: authFile },
     },
 
     {
       name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
+      dependencies: ['auth setup'],
+      use: { ...devices['Desktop Safari'], storageState: authFile },
     },
 
     /* Test against mobile viewports. */
@@ -65,17 +74,19 @@ export default defineConfig({
     /* Test against branded browsers. */
     {
       name: 'Microsoft Edge',
-      use: { ...devices['Desktop Edge'], channel: 'msedge' },
+      dependencies: ['auth setup'],
+      use: { ...devices['Desktop Edge'], channel: 'msedge', storageState: authFile },
     },
     {
       name: 'Google Chrome',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+      dependencies: ['auth setup'],
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', storageState: authFile },
     },
   ],
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npm run start',
+    command: 'npm run dev -- --host 127.0.0.1',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,

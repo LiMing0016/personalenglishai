@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.admin.AdminDataCleaningMapper">
+    <resultMap id="DataCleaningSourceResultMap" type="com.personalenglishai.backend.entity.admin.DataCleaningSource">
+        <id column="id" property="id"/>
+        <result column="source_uid" property="sourceUid"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_code" property="sourceCode"/>
+        <result column="display_name" property="displayName"/>
+        <result column="license_status" property="licenseStatus"/>
+        <result column="mdx_path" property="mdxPath"/>
+        <result column="mdd_path" property="mddPath"/>
+        <result column="examples_path" property="examplesPath"/>
+        <result column="cover_image_path" property="coverImagePath"/>
+        <result column="metadata_json" property="metadataJson"/>
+        <result column="status" property="status"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="DataCleaningJobResultMap" type="com.personalenglishai.backend.entity.admin.DataCleaningJob">
+        <id column="id" property="id"/>
+        <result column="job_uid" property="jobUid"/>
+        <result column="source_uid" property="sourceUid"/>
+        <result column="job_type" property="jobType"/>
+        <result column="status" property="status"/>
+        <result column="progress_total" property="progressTotal"/>
+        <result column="progress_done" property="progressDone"/>
+        <result column="result_json" property="resultJson"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="DictionaryLibraryResultMap" type="com.personalenglishai.backend.entity.admin.DictionaryLibrary">
+        <id column="id" property="id"/>
+        <result column="dictionary_uid" property="dictionaryUid"/>
+        <result column="source_uid" property="sourceUid"/>
+        <result column="dictionary_code" property="dictionaryCode"/>
+        <result column="display_name" property="displayName"/>
+        <result column="description" property="description"/>
+        <result column="format" property="format"/>
+        <result column="engine_version" property="engineVersion"/>
+        <result column="required_engine_version" property="requiredEngineVersion"/>
+        <result column="encoding" property="encoding"/>
+        <result column="entry_count" property="entryCount"/>
+        <result column="resource_count" property="resourceCount"/>
+        <result column="mdx_file_name" property="mdxFileName"/>
+        <result column="mdd_file_name" property="mddFileName"/>
+        <result column="cover_image_path" property="coverImagePath"/>
+        <result column="mdx_size_bytes" property="mdxSizeBytes"/>
+        <result column="mdd_size_bytes" property="mddSizeBytes"/>
+        <result column="examples_count" property="examplesCount"/>
+        <result column="license_status" property="licenseStatus"/>
+        <result column="storage_type" property="storageType"/>
+        <result column="enabled" property="enabled"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="status" property="status"/>
+        <result column="metadata_json" property="metadataJson"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="DictionaryImportJobResultMap" type="com.personalenglishai.backend.entity.admin.DictionaryImportJob">
+        <id column="id" property="id"/>
+        <result column="import_job_uid" property="importJobUid"/>
+        <result column="dictionary_uid" property="dictionaryUid"/>
+        <result column="source_uid" property="sourceUid"/>
+        <result column="status" property="status"/>
+        <result column="import_limit" property="importLimit"/>
+        <result column="processed_entries" property="processedEntries"/>
+        <result column="imported_entries" property="importedEntries"/>
+        <result column="failed_entries" property="failedEntries"/>
+        <result column="imported_examples" property="importedExamples"/>
+        <result column="imported_phrases" property="importedPhrases"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="result_json" property="resultJson"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="insertSource" parameterType="com.personalenglishai.backend.entity.admin.DataCleaningSource"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO data_cleaning_source (
+            source_uid, source_type, source_code, display_name, license_status,
+            mdx_path, mdd_path, examples_path, cover_image_path,
+            metadata_json, status, created_by, created_at, updated_at
+        )
+        VALUES (
+            #{sourceUid}, #{sourceType}, #{sourceCode}, #{displayName}, #{licenseStatus},
+            #{mdxPath}, #{mddPath}, #{examplesPath}, #{coverImagePath},
+            #{metadataJson}, #{status}, #{createdBy}, NOW(), NOW()
+        )
+    </insert>
+
+    <update id="updateSourceMetadata">
+        UPDATE data_cleaning_source
+        SET metadata_json = #{metadataJson},
+            status = #{status},
+            updated_at = NOW()
+        WHERE source_uid = #{sourceUid}
+    </update>
+
+    <select id="selectSourceByUid" resultMap="DataCleaningSourceResultMap">
+        SELECT id, source_uid, source_type, source_code, display_name, license_status,
+               mdx_path, mdd_path, examples_path, cover_image_path,
+               CAST(metadata_json AS CHAR) AS metadata_json, status, created_by, created_at, updated_at
+        FROM data_cleaning_source
+        WHERE source_uid = #{sourceUid}
+        LIMIT 1
+    </select>
+
+    <select id="selectSourceByCode" resultMap="DataCleaningSourceResultMap">
+        SELECT id, source_uid, source_type, source_code, display_name, license_status,
+               mdx_path, mdd_path, examples_path, cover_image_path,
+               CAST(metadata_json AS CHAR) AS metadata_json, status, created_by, created_at, updated_at
+        FROM data_cleaning_source
+        WHERE source_code = #{sourceCode}
+        LIMIT 1
+    </select>
+
+    <select id="selectSources" resultMap="DataCleaningSourceResultMap">
+        SELECT id, source_uid, source_type, source_code, display_name, license_status,
+               mdx_path, mdd_path, examples_path, cover_image_path,
+               NULL AS metadata_json, status, created_by, created_at, updated_at
+        FROM data_cleaning_source
+        <where>
+            <if test="sourceType != null and sourceType != ''">
+                source_type = #{sourceType}
+            </if>
+        </where>
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <select id="countSources" resultType="long">
+        SELECT COUNT(*) FROM data_cleaning_source
+    </select>
+
+    <insert id="insertJob" parameterType="com.personalenglishai.backend.entity.admin.DataCleaningJob"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO data_cleaning_job (
+            job_uid, source_uid, job_type, status, progress_total, progress_done,
+            result_json, error_message, created_by, started_at, finished_at,
+            created_at, updated_at
+        )
+        VALUES (
+            #{jobUid}, #{sourceUid}, #{jobType}, #{status}, #{progressTotal}, #{progressDone},
+            #{resultJson}, #{errorMessage}, #{createdBy}, #{startedAt}, #{finishedAt},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <update id="updateJob" parameterType="com.personalenglishai.backend.entity.admin.DataCleaningJob">
+        UPDATE data_cleaning_job
+        SET status = #{status},
+            progress_total = #{progressTotal},
+            progress_done = #{progressDone},
+            result_json = #{resultJson},
+            error_message = #{errorMessage},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt},
+            updated_at = NOW()
+        WHERE job_uid = #{jobUid}
+    </update>
+
+    <select id="selectJobByUid" resultMap="DataCleaningJobResultMap">
+        SELECT id, job_uid, source_uid, job_type, status, progress_total, progress_done,
+               CAST(result_json AS CHAR) AS result_json, error_message, created_by, started_at, finished_at,
+               created_at, updated_at
+        FROM data_cleaning_job
+        WHERE job_uid = #{jobUid}
+        LIMIT 1
+    </select>
+
+    <select id="selectJobs" resultMap="DataCleaningJobResultMap">
+        SELECT id, job_uid, source_uid, job_type, status, progress_total, progress_done,
+               NULL AS result_json, error_message, created_by, started_at, finished_at,
+               created_at, updated_at
+        FROM data_cleaning_job
+        <where>
+            <if test="sourceUid != null and sourceUid != ''">
+                source_uid = #{sourceUid}
+            </if>
+            <if test="jobType != null and jobType != ''">
+                AND job_type = #{jobType}
+            </if>
+        </where>
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+    </select>
+
+    <select id="selectJobStatusCounts" resultType="map">
+        SELECT status, COUNT(*) AS count
+        FROM data_cleaning_job
+        GROUP BY status
+    </select>
+
+    <insert id="upsertDictionaryLibrary" parameterType="com.personalenglishai.backend.entity.admin.DictionaryLibrary"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dictionary_library (
+            dictionary_uid, source_uid, dictionary_code, display_name, description,
+            format, engine_version, required_engine_version, encoding,
+            entry_count, resource_count, mdx_file_name, mdd_file_name, cover_image_path,
+            mdx_size_bytes, mdd_size_bytes, examples_count, license_status, storage_type,
+            enabled, sort_order, status, metadata_json, created_by, created_at, updated_at
+        )
+        VALUES (
+            #{dictionaryUid}, #{sourceUid}, #{dictionaryCode}, #{displayName}, #{description},
+            #{format}, #{engineVersion}, #{requiredEngineVersion}, #{encoding},
+            #{entryCount}, #{resourceCount}, #{mdxFileName}, #{mddFileName}, #{coverImagePath},
+            #{mdxSizeBytes}, #{mddSizeBytes}, #{examplesCount}, #{licenseStatus}, #{storageType},
+            #{enabled}, #{sortOrder}, #{status}, #{metadataJson}, #{createdBy}, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            source_uid = VALUES(source_uid),
+            display_name = VALUES(display_name),
+            description = VALUES(description),
+            format = VALUES(format),
+            engine_version = VALUES(engine_version),
+            required_engine_version = VALUES(required_engine_version),
+            encoding = VALUES(encoding),
+            entry_count = VALUES(entry_count),
+            resource_count = VALUES(resource_count),
+            mdx_file_name = VALUES(mdx_file_name),
+            mdd_file_name = VALUES(mdd_file_name),
+            cover_image_path = VALUES(cover_image_path),
+            mdx_size_bytes = VALUES(mdx_size_bytes),
+            mdd_size_bytes = VALUES(mdd_size_bytes),
+            examples_count = VALUES(examples_count),
+            license_status = VALUES(license_status),
+            storage_type = VALUES(storage_type),
+            status = VALUES(status),
+            metadata_json = VALUES(metadata_json),
+            updated_at = NOW()
+    </insert>
+
+    <select id="selectDictionaryLibraries" resultMap="DictionaryLibraryResultMap">
+        SELECT id, dictionary_uid, source_uid, dictionary_code, display_name, description,
+               format, engine_version, required_engine_version, encoding,
+               entry_count, resource_count, mdx_file_name, mdd_file_name, cover_image_path,
+               mdx_size_bytes, mdd_size_bytes, examples_count, license_status, storage_type,
+               enabled, sort_order, status, NULL AS metadata_json, created_by, created_at, updated_at
+        FROM dictionary_library
+        ORDER BY sort_order ASC, updated_at DESC, id DESC
+    </select>
+
+    <select id="selectDictionaryLibraryByUid" resultMap="DictionaryLibraryResultMap">
+        SELECT id, dictionary_uid, source_uid, dictionary_code, display_name, description,
+               format, engine_version, required_engine_version, encoding,
+               entry_count, resource_count, mdx_file_name, mdd_file_name, cover_image_path,
+               mdx_size_bytes, mdd_size_bytes, examples_count, license_status, storage_type,
+               enabled, sort_order, status, CAST(metadata_json AS CHAR) AS metadata_json, created_by, created_at, updated_at
+        FROM dictionary_library
+        WHERE dictionary_uid = #{dictionaryUid}
+        LIMIT 1
+    </select>
+
+    <insert id="insertDictionaryImportJob" parameterType="com.personalenglishai.backend.entity.admin.DictionaryImportJob"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO dictionary_import_job (
+            import_job_uid, dictionary_uid, source_uid, status, import_limit,
+            processed_entries, imported_entries, failed_entries, imported_examples, imported_phrases,
+            error_message, result_json, created_by, started_at, finished_at, created_at, updated_at
+        )
+        VALUES (
+            #{importJobUid}, #{dictionaryUid}, #{sourceUid}, #{status}, #{importLimit},
+            #{processedEntries}, #{importedEntries}, #{failedEntries}, #{importedExamples}, #{importedPhrases},
+            #{errorMessage}, #{resultJson}, #{createdBy}, #{startedAt}, #{finishedAt}, NOW(), NOW()
+        )
+    </insert>
+
+    <update id="updateDictionaryImportJob" parameterType="com.personalenglishai.backend.entity.admin.DictionaryImportJob">
+        UPDATE dictionary_import_job
+        SET status = #{status},
+            processed_entries = #{processedEntries},
+            imported_entries = #{importedEntries},
+            failed_entries = #{failedEntries},
+            imported_examples = #{importedExamples},
+            imported_phrases = #{importedPhrases},
+            error_message = #{errorMessage},
+            result_json = #{resultJson},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt},
+            updated_at = NOW()
+        WHERE import_job_uid = #{importJobUid}
+    </update>
+
+    <select id="selectDictionaryImportJobByUid" resultMap="DictionaryImportJobResultMap">
+        SELECT id, import_job_uid, dictionary_uid, source_uid, status, import_limit,
+               processed_entries, imported_entries, failed_entries, imported_examples, imported_phrases,
+               error_message, CAST(result_json AS CHAR) AS result_json, created_by, started_at, finished_at, created_at, updated_at
+        FROM dictionary_import_job
+        WHERE import_job_uid = #{importJobUid}
+        LIMIT 1
+    </select>
+
+    <select id="selectDictionaryImportJobs" resultMap="DictionaryImportJobResultMap">
+        SELECT id, import_job_uid, dictionary_uid, source_uid, status, import_limit,
+               processed_entries, imported_entries, failed_entries, imported_examples, imported_phrases,
+               error_message, NULL AS result_json, created_by, started_at, finished_at, created_at, updated_at
+        FROM dictionary_import_job
+        <where>
+            <if test="dictionaryUid != null and dictionaryUid != ''">
+                dictionary_uid = #{dictionaryUid}
+            </if>
+        </where>
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+    </select>
+
+    <update id="updateDictionaryLibraryStatus">
+        UPDATE dictionary_library
+        SET status = #{status},
+            updated_at = NOW()
+        WHERE dictionary_uid = #{dictionaryUid}
+    </update>
+
+    <insert id="upsertDictionaryEntry">
+        INSERT INTO dictionary_entry (
+            entry_uid, dictionary_uid, source_entry_id, headword, normalized_headword,
+            part_of_speech, clean_text, raw_html, quality_score, sort_order, metadata_json,
+            created_at, updated_at
+        )
+        VALUES (
+            #{entry.entryUid}, #{entry.dictionaryUid}, #{entry.sourceEntryId}, #{entry.headword}, #{entry.normalizedHeadword},
+            #{entry.partOfSpeech}, #{entry.cleanText}, #{entry.rawHtml}, #{entry.qualityScore}, #{entry.sortOrder}, #{entry.metadataJson},
+            NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            entry_uid = VALUES(entry_uid),
+            headword = VALUES(headword),
+            normalized_headword = VALUES(normalized_headword),
+            part_of_speech = VALUES(part_of_speech),
+            clean_text = VALUES(clean_text),
+            raw_html = VALUES(raw_html),
+            quality_score = VALUES(quality_score),
+            sort_order = VALUES(sort_order),
+            metadata_json = VALUES(metadata_json),
+            updated_at = NOW()
+    </insert>
+
+    <delete id="deleteDictionaryEntryChildren">
+        DELETE ex, s, p, pr
+        FROM dictionary_entry e
+        LEFT JOIN dictionary_example ex ON ex.entry_uid = e.entry_uid
+        LEFT JOIN dictionary_sense s ON s.entry_uid = e.entry_uid
+        LEFT JOIN dictionary_phrase p ON p.entry_uid = e.entry_uid
+        LEFT JOIN dictionary_pronunciation pr ON pr.entry_uid = e.entry_uid
+        WHERE e.entry_uid = #{entryUid}
+    </delete>
+
+    <insert id="insertDictionaryPronunciation">
+        INSERT INTO dictionary_pronunciation (
+            entry_uid, region, phonetic, audio_resource_uid, sort_order,
+            created_at
+        )
+        VALUES (
+            #{row.entryUid}, #{row.region}, #{row.phoneticText}, #{row.audioResourceUid}, #{row.sortOrder},
+            NOW()
+        )
+    </insert>
+
+    <insert id="insertDictionarySense">
+        INSERT INTO dictionary_sense (
+            sense_uid, entry_uid, definition_en, definition_zh, sort_order, metadata_json,
+            created_at, updated_at
+        )
+        VALUES (
+            #{row.senseUid}, #{row.entryUid}, #{row.definitionEn}, #{row.definitionZh}, #{row.sortOrder}, #{row.metadataJson},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <insert id="insertDictionaryExample">
+        INSERT INTO dictionary_example (
+            example_uid, sense_uid, entry_uid, text_en, text_zh, source, sort_order, metadata_json,
+            created_at, updated_at
+        )
+        VALUES (
+            #{row.exampleUid}, #{row.senseUid}, #{row.entryUid}, #{row.textEn}, #{row.textZh}, #{row.source}, #{row.sortOrder}, #{row.metadataJson},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <insert id="insertDictionaryPhrase">
+        INSERT INTO dictionary_phrase (
+            phrase_uid, entry_uid, phrase_text, definition_en, definition_zh, sort_order, metadata_json,
+            created_at, updated_at
+        )
+        VALUES (
+            #{row.phraseUid}, #{row.entryUid}, #{row.phraseText}, #{row.definitionEn}, #{row.definitionZh}, #{row.sortOrder}, #{row.metadataJson},
+            NOW(), NOW()
+        )
+    </insert>
+
+    <insert id="upsertDictionaryResource">
+        INSERT INTO dictionary_resource (
+            resource_uid, dictionary_uid, resource_key, resource_type, file_name, mime_type, storage_path, size_bytes,
+            created_at
+        )
+        VALUES (
+            #{row.resourceUid}, #{row.dictionaryUid}, #{row.resourceKey}, #{row.resourceType}, #{row.fileName}, #{row.mimeType}, #{row.storagePath}, #{row.sizeBytes},
+            NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            resource_uid = VALUES(resource_uid),
+            resource_type = VALUES(resource_type),
+            file_name = VALUES(file_name),
+            mime_type = VALUES(mime_type),
+            storage_path = VALUES(storage_path),
+            size_bytes = VALUES(size_bytes)
+    </insert>
+
+    <select id="selectDictionaryEntrySamples" resultType="map">
+        SELECT e.entry_uid AS entryUid,
+               e.headword,
+               e.part_of_speech AS partOfSpeech,
+               e.clean_text AS cleanText,
+               e.quality_score AS qualityScore,
+               (
+                   SELECT s.definition_en
+                   FROM dictionary_sense s
+                   WHERE s.entry_uid = e.entry_uid
+                   ORDER BY s.sort_order ASC, s.id ASC
+                   LIMIT 1
+               ) AS definitionEn,
+               (
+                   SELECT s.definition_zh
+                   FROM dictionary_sense s
+                   WHERE s.entry_uid = e.entry_uid
+                   ORDER BY s.sort_order ASC, s.id ASC
+                   LIMIT 1
+               ) AS definitionZh,
+               (
+                   SELECT COUNT(*)
+                   FROM dictionary_example ex
+                   WHERE ex.entry_uid = e.entry_uid
+               ) AS exampleCount,
+               (
+                   SELECT COUNT(*)
+                   FROM dictionary_phrase p
+                   WHERE p.entry_uid = e.entry_uid
+               ) AS phraseCount
+        FROM dictionary_entry e
+        WHERE e.dictionary_uid = #{dictionaryUid}
+        ORDER BY e.sort_order ASC, e.id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

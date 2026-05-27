@@ -11,7 +11,11 @@ related_docs:
   - docs/agent/Agent产品现状与路线图.md
   - docs/agent/Agent能力清单.md
   - docs/agent/写作教练Agent设计.md
+  - docs/agent/写作教练Schema设计.md
+  - docs/agent/写作路由与Patch方案.md
   - docs/agent/agent-builder/index.md
+  - docs/agent/FunctionCall学习笔记.md
+  - docs/agent/StructuredOutput学习笔记.md
 ---
 
 # Agent 设计
@@ -30,12 +34,16 @@ related_docs:
 | 2 | [学习助手 Agent 编排架构](./学习助手Agent编排架构.md) | 看当前 Python Agent 编排、字段字典、路由链路和流程图。 |
 | 3 | [Agent 能力清单](./Agent能力清单.md) | 看每个 Agent、workflow、工具和观测能力的状态。 |
 | 4 | [写作教练 Agent 设计](./写作教练Agent设计.md) | 看从零到一作文陪写、学段/考试标准、偏题检查和多轮循环方案。 |
-| 5 | [路由 Agent 设计](./路由Agent设计.md) | 看路由 Agent 的输入、输出、模型配置边界和工作流决策 schema。 |
-| 6 | [Agent 可观测性与调试中心](./Agent可观测性与调试中心.md) | 看 Agent Debug Recorder、Eval Dataset Builder、DeepEval 和 Langfuse 接入方案。 |
-| 7 | [AI 调试端设计](./AI调试端设计.md) | 看 `/ops/agent/*` 的页面结构、使用边界和数据接入顺序。 |
-| 8 | [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md) | 查官方 SDK 概念、术语翻译和 PEAI 代码用法映射。 |
-| 9 | [Agent Builder 学习资料](./agent-builder/) | 学习 OpenAI Platform 可视化工作流、节点、变量和 PEAI 映射方式。 |
-| 10 | [对话词句采集清洗方案](./数据清洗/对话词句采集清洗方案.md) | 看对话词句如何从 Agent 回复中采集、清洗、评分并落库。 |
+| 5 | [写作教练 Schema 设计](./写作教练Schema设计.md) | 看写作教练 input context、审题 output、提纲 output 和字段字典。 |
+| 6 | [写作路由与 Patch 方案](./写作路由与Patch方案.md) | 看 WritingIntentPlanner、WritingPatch 和 Patch 应用器如何协作。 |
+| 7 | [路由 Agent 设计](./路由Agent设计.md) | 看路由 Agent 的输入、输出、模型配置边界和工作流决策 schema。 |
+| 8 | [Agent 可观测性与调试中心](./Agent可观测性与调试中心.md) | 看 Agent Debug Recorder、Eval Dataset Builder、DeepEval 和 Langfuse 接入方案。 |
+| 9 | [AI 调试端设计](./AI调试端设计.md) | 看 `/ops/agent/*` 的页面结构、使用边界和数据接入顺序。 |
+| 10 | [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md) | 查官方 SDK 概念、术语翻译和 PEAI 代码用法映射。 |
+| 11 | [Function Call 学习笔记](./FunctionCall学习笔记.md) | 学习 function/tool calling 的调用链、schema、工具边界和 PEAI 落地方式。 |
+| 12 | [Structured Output 学习笔记](./StructuredOutput学习笔记.md) | 学习结构化输出、schema 约束、Agents SDK output_type 和 PEAI 输出契约设计。 |
+| 13 | [Agent Builder 学习资料](./agent-builder/) | 学习 OpenAI Platform 可视化工作流、节点、变量和 PEAI 映射方式。 |
+| 14 | [对话词句采集清洗方案](./数据清洗/对话词句采集清洗方案.md) | 看对话词句如何从 Agent 回复中采集、清洗、评分并落库。 |
 
 ## 文档分层
 
@@ -43,10 +51,10 @@ related_docs:
 | --- | --- | --- |
 | 产品总账 | 当前做到哪，欠什么，下一期做什么 | [Agent 产品现状与路线图](./Agent产品现状与路线图.md) |
 | 能力台账 | 每个 Agent / workflow / tool 是否可用 | [Agent 能力清单](./Agent能力清单.md) |
-| 技术设计 | 模块边界、数据流、schema、运行链路 | [学习助手 Agent 编排架构](./学习助手Agent编排架构.md)、[路由 Agent 设计](./路由Agent设计.md)、[写作教练 Agent 设计](./写作教练Agent设计.md) |
+| 技术设计 | 模块边界、数据流、schema、运行链路 | [学习助手 Agent 编排架构](./学习助手Agent编排架构.md)、[路由 Agent 设计](./路由Agent设计.md)、[写作教练 Agent 设计](./写作教练Agent设计.md)、[写作教练 Schema 设计](./写作教练Schema设计.md)、[写作路由与 Patch 方案](./写作路由与Patch方案.md) |
 | 调试与观测 | 如何记录、回放、评估、排查 Agent run | [Agent 可观测性与调试中心](./Agent可观测性与调试中心.md)、[AI 调试端设计](./AI调试端设计.md) |
 | 数据清洗 | 如何把 Agent 回复中的词句转成可学习资产 | [对话词句采集清洗方案](./数据清洗/对话词句采集清洗方案.md) |
-| 学习资料 | 外部 SDK 和 Agent Builder 概念如何映射到 PEAI | [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md)、[Agent Builder 学习资料](./agent-builder/) |
+| 学习资料 | 外部 SDK、Function Call、Structured Output 和 Agent Builder 概念如何映射到 PEAI | [OpenAI Agents SDK 中文学习笔记](./OpenAI Agents SDK中文学习笔记.md)、[Function Call 学习笔记](./FunctionCall学习笔记.md)、[Structured Output 学习笔记](./StructuredOutput学习笔记.md)、[Agent Builder 学习资料](./agent-builder/) |
 
 维护规则：
 

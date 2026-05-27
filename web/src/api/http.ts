@@ -21,6 +21,14 @@ export const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (typeof config.headers.set === 'function') {
+      config.headers.set('Content-Type', undefined)
+    } else {
+      delete (config.headers as Record<string, unknown>)['Content-Type']
+      delete (config.headers as Record<string, unknown>)['content-type']
+    }
+  }
   const token = getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`

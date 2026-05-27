@@ -2,12 +2,13 @@
 title: 写作教练 Agent 设计
 status: draft
 owner: ai
-last_updated: 2026-05-20
+last_updated: 2026-05-22
 review_cycle: on-change
 related_code:
   - python/ai_orchestrator/assistant_service.py
   - python/ai_orchestrator/agents/
   - python/ai_orchestrator/prompts/
+  - python/ai_orchestrator/schemas/writing_coach.py
   - web/src/components/writing/
 related_docs:
   - docs/agent/Agent能力清单.md
@@ -171,6 +172,36 @@ flowchart TD
 
 v1 不新增复杂持久化状态机，但必须有最小状态口径，避免每轮对话都从审题重新开始。该状态可以先沉淀在 active task summary、对话摘要或前端写作上下文中，后续再升级为 `WritingCoachWorkflowState`。
 
+## 阶段级 Structured Outputs
+
+当前 v1 主链路使用本地 Python orchestrator。前端写作教练按钮通过 `writingCoachContext.action` 传入阶段，后端在 `AssistantAgentService` 中优先识别本地结构化阶段，并选择对应的阶段 Agent，而不是继续复用通用 Prompt Design Agent。
+
+```text
+前端按钮
+  -> writingCoachContext.action
+  -> AssistantService 识别结构化阶段
+  -> 对应 Writing Coach 阶段 Agent
+  -> 阶段级 Pydantic Schema
+  -> 渲染为面向用户的 Markdown
+```
+
+阶段与输出契约：
+
+| action | Agent | output_type | 用途 |
+| --- | --- | --- | --- |
+| `analyze` | `Writing Coach Topic Analysis Agent` | `WritingCoachTopicAnalysisOutput` | 输出题目主旨、中心任务、必答点、偏题风险、推荐结构和下一步建议。 |
+| `outline` | `Writing Coach Outline Agent` | `WritingCoachOutlineOutput` | 输出中心论点、段落结构、主题句、支撑点、衔接提醒和下一步建议。 |
+| `next` | `Writing Coach Next Section Agent` | `WritingCoachNextSectionOutput` | 输出下一段的段落角色、段落目标、服务要点、参考草稿和切题检查。 |
+| `topic` | `Writing Coach Topic Relevance Agent` | `WritingCoachTopicRelevanceOutput` | 输出偏题状态、覆盖情况、缺失要点、风险点和修改方案。 |
+| `polish` | `Writing Coach Polish Agent` | `WritingCoachPolishOutput` | 输出保留原意的润色文本、修改点和保持题目方向的说明。 |
+| `draft` | `Writing Coach Final Draft Agent` | `WritingCoachFinalDraftOutput` | 输出完整草稿、题目覆盖检查、字数建议和终稿提醒。 |
+
+这些阶段的内部输出必须先是结构化对象，再由 `to_markdown()` 渲染成用户可读内容。这样可以同时满足：
+
+- 后端和后续 workflow 能稳定读取字段。
+- 前端当前聊天面板仍能直接展示 Markdown。
+- 后续保存 `WritingCoachWorkflowState` 时，不需要再从自然语言中反解析审题和提纲。
+
 建议最小状态：
 
 | 字段 | 含义 | 示例 |
@@ -278,82 +309,659 @@ Writing Coach Agent
    └─ score_english
 ```
 
-### Tool Schema 草案
+### Function Tool JSON Schema
 
-实现前应固定工具输入输出，避免 prompt、前端和后端各自理解不同。
+本节给出 Agent Builder / OpenAI API 可使用的 Function tool schema。OpenAI function calling 使用 JSON Schema 描述工具参数；开启 strict structured outputs 时，schema 应使用 `additionalProperties: false`，并让所有参数出现在 `required` 中。可选语义不要使用 `undefined` 或省略字段，统一用空字符串、空数组、`false`、`0` 或 nullable 字段表达。参考 OpenAI 官方文档：[Function calling](https://platform.openai.com/docs/guides/function-calling)。
 
-`get_writing_task_metadata`
+Agent Builder 的 Function 弹窗里，`Definition` 输入框要粘贴的是完整函数定义，不能只粘贴 `parameters` 里的 JSON Schema。正确结构如下：
 
-```text
-input:
-  documentId?: string
-  studyStage?: string
-  writingMode: "free" | "exam"
-  taskPrompt: string
-  taskType?: string
-  draftText?: string
-
-output:
-  metadataVersion: string
-  centralTask: string
-  mustAnswerPoints: string[]
-  riskPoints: string[]
-  recommendedStructure: {
-    intro?: string
-    body?: string[]
-    conclusion?: string
-  }
-  rubricFocus: string[]
+```json
+{
+  "name": "function_name",
+  "description": "说明这个函数什么时候被调用，以及它做什么。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "strict": true
+}
 ```
 
-`get_exam_rubric`
+如果通过 OpenAI API 的 `tools` 参数传入，则需要外层工具包装：
 
-```text
-input:
-  studyStage?: string
-  writingMode: "free" | "exam"
-  taskType?: string
-  targetExam?: string
-
-output:
-  rubricKey: string
-  rubricText: string
-  dimensions: Array<{
-    key: string
-    name: string
-    description: string
-  }>
-  wordPolicy?: {
-    minWords?: number
-    recommendedMaxWords?: number
-    penaltyNote?: string
-  }
+```json
+{
+  "type": "function",
+  "name": "function_name",
+  "description": "说明这个函数什么时候被调用，以及它做什么。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "required": []
+  },
+  "strict": true
+}
 ```
 
-`check_topic_relevance`
+下面 9 个工具均按 Agent Builder 可直接粘贴的 `Definition` 格式书写。
 
-```text
-input:
-  taskPrompt: string
-  centralTask: string
-  mustAnswerPoints: string[]
-  riskPoints?: string[]
-  contentType: "idea" | "outline" | "paragraph" | "draft"
-  content: string
+v1 为了让前端稳定消费，8 个写作阶段都可以做成 function tools。它们仍由一个 `writing_coach_agent` 编排，不拆成 8 个 Agent。
 
-output:
-  status: "aligned" | "risk" | "off_topic"
-  missingPoints: string[]
-  offTopicRisks: string[]
-  revisionAdvice: string[]
-  shouldProceed: boolean
+#### 通用输入约定
+
+`writing_context` 不是某一个工具本身，而是写作页每轮调用 Agent 时的统一状态对象。它应该放在 workflow input / state 中，由 `writing_coach_agent` 读取后决定是否调用具体 function tool。
+
+不要把所有字段都无差别塞进每个工具。正确分层是：
+
+- Start input：本轮用户输入和前端触发来源。
+- State：题目、正文、选区、审题结果、流程阶段。
+- Function tool parameters：只放该工具完成任务所需的最小字段。
+
+v1 建议前端每轮都传 `writing_context`，其中空值使用空字符串、空数组、`false` 或 `0`，不要传 `undefined`。
+
+注意：下面这段 `writing_context` 只是 workflow/state 的结构说明，不是 Function 弹窗的 `Definition` 内容，不能直接粘贴到 Agent Builder 的 Function 输入框。
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inputAsText": {
+      "type": "string",
+      "description": "用户本轮在右侧写作教练输入框中的原始输入。"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["chat", "analyze", "outline", "next", "topic", "polish", "draft"],
+      "description": "前端或路由识别出的本轮动作。chat 表示普通对话，不推进写作流程。"
+    },
+    "triggerSource": {
+      "type": "string",
+      "enum": ["chat_input", "toolbar_button", "workflow_card", "selection_menu", "auto_check"],
+      "description": "本轮请求由哪里触发，用于区分用户自由输入、按钮点击、选区菜单和自动检查。"
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "当前写作会话 ID。没有持久化会话时为空字符串。"
+    },
+    "documentId": {
+      "type": "string",
+      "description": "当前作文文档 ID。没有文档 ID 时为空字符串。"
+    },
+    "taskId": {
+      "type": "string",
+      "description": "当前写作题目或练习任务 ID。自由写作或临时题目时为空字符串。"
+    },
+    "studyStage": {
+      "type": "string",
+      "description": "用户学段，例如小学、初中、高中、大学四六级、雅思、托福等。"
+    },
+    "writingMode": {
+      "type": "string",
+      "enum": ["free", "exam"],
+      "description": "写作模式。free 表示自由写作，exam 表示考试写作。"
+    },
+    "taskPrompt": {
+      "type": "string",
+      "description": "聚合后的作文题目与写作要求。考试写作模式下必须提供；自由写作模式下可以为空字符串。"
+    },
+    "essayQuestion": {
+      "type": "string",
+      "description": "考试题目原文。与 taskPrompt 的区别是：essayQuestion 保留原题文本，不做聚合改写。"
+    },
+    "questionMaterials": {
+      "type": "string",
+      "description": "题目材料、提示语、图表描述、续写材料或附加要求。没有材料时为空字符串。"
+    },
+    "promptTitle": {
+      "type": "string",
+      "description": "题目标题。如果没有标题，可以为空字符串。"
+    },
+    "taskType": {
+      "type": "string",
+      "enum": ["unknown", "advantages_disadvantages", "opinion", "discussion", "problem_solution", "cause_effect", "compare_contrast", "letter_request", "letter_advice", "letter_apology", "chart_summary", "picture_description", "story_continuation", "application", "custom"],
+      "description": "更细的作文任务类型。"
+    },
+    "examType": {
+      "type": "string",
+      "enum": ["none", "primary", "middle_school", "high_school", "zhongkao", "gaokao", "cet4", "cet6", "postgraduate_exam", "ielts", "toefl", "custom"],
+      "description": "考试类型。none 表示非考试写作；custom 表示暂未覆盖的自定义考试类型。"
+    },
+    "genre": {
+      "type": "string",
+      "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"],
+      "description": "作文文体或任务形式。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标读者或收件人，例如 teacher、classmates、editor、friend、public audience。没有明确对象时为空字符串。"
+    },
+    "purpose": {
+      "type": "string",
+      "description": "写作目的，例如 persuade、explain、inform、request、apologize、summarize。没有明确目的时为空字符串。"
+    },
+    "stanceRequirement": {
+      "type": "string",
+      "description": "题目是否要求明确立场，例如 agree、disagree、balanced、not_required。没有明确要求时为空字符串。"
+    },
+    "minWords": {
+      "type": "integer",
+      "description": "作文最小字数要求。如果没有明确要求，可以为 0。"
+    },
+    "maxWords": {
+      "type": "integer",
+      "description": "作文最大字数或推荐上限。如果没有明确上限，可以为 0。"
+    },
+    "rubricKey": {
+      "type": "string",
+      "description": "评分标准标识。如果当前没有明确评分标准，可以为空字符串。"
+    },
+    "rubricVersion": {
+      "type": "string",
+      "description": "评分标准版本。如果没有版本管理，可以为空字符串。"
+    },
+    "targetScore": {
+      "type": "string",
+      "description": "用户目标分数、目标等级或目标档位，例如 CET-4 high score、IELTS 6.5。没有目标时为空字符串。"
+    },
+    "timeLimitMinutes": {
+      "type": "integer",
+      "description": "考试限时分钟数。自由写作或未知时为 0。"
+    },
+    "draftText": {
+      "type": "string",
+      "description": "当前作文正文。刚开始写作时可以为空字符串。"
+    },
+    "selectedText": {
+      "type": "string",
+      "description": "用户当前选中的正文片段。没有选区时为空字符串。"
+    },
+    "selectionStart": {
+      "type": "integer",
+      "description": "选区在正文中的起始位置。没有选区时为 0。"
+    },
+    "selectionEnd": {
+      "type": "integer",
+      "description": "选区在正文中的结束位置。没有选区时为 0。"
+    },
+    "includeDraft": {
+      "type": "boolean",
+      "description": "本轮请求是否引用完整作文正文。"
+    },
+    "currentParagraphIndex": {
+      "type": "integer",
+      "description": "当前正在陪写的段落序号，从 1 开始。未知或未进入分段陪写时为 0。"
+    },
+    "workflowMode": {
+      "type": "string",
+      "enum": ["general_chat", "writing_workflow"],
+      "description": "当前是否进入写作工作流。普通问答时为 general_chat。"
+    },
+    "currentStage": {
+      "type": "string",
+      "enum": ["none", "task_analysis", "idea_generation", "material_activation", "outline_building", "section_drafting", "structure_revision", "language_polishing", "final_check"],
+      "description": "当前工作流阶段。没有进入流程时为 none。"
+    },
+    "completedStages": {
+      "type": "array",
+      "description": "已经完成的写作阶段。",
+      "items": {
+        "type": "string",
+        "enum": ["task_analysis", "idea_generation", "material_activation", "outline_building", "section_drafting", "structure_revision", "language_polishing", "final_check"]
+      }
+    },
+    "hasTaskAnalysis": {
+      "type": "boolean",
+      "description": "是否已经完成审题。"
+    },
+    "hasConfirmedIdea": {
+      "type": "boolean",
+      "description": "用户是否已经确认立意。"
+    },
+    "hasOutline": {
+      "type": "boolean",
+      "description": "是否已经形成可用提纲。"
+    },
+    "hasFullDraft": {
+      "type": "boolean",
+      "description": "是否已经生成或写出完整草稿。"
+    },
+    "selectedIdea": {
+      "type": "string",
+      "description": "用户当前确认或正在讨论的立意。没有时为空字符串。"
+    },
+    "outlineText": {
+      "type": "string",
+      "description": "当前提纲文本。没有提纲时为空字符串。"
+    },
+    "lastTopicStatus": {
+      "type": "string",
+      "enum": ["unknown", "aligned", "risk", "off_topic"],
+      "description": "最近一次偏题检查结果。"
+    },
+    "lastAssistantSummary": {
+      "type": "string",
+      "description": "上一轮 Agent 对当前任务状态的简短摘要，用于多轮连续性。没有时为空字符串。"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["zh", "en", "mixed"],
+      "description": "用户输入语言。"
+    },
+    "responseLanguage": {
+      "type": "string",
+      "enum": ["zh", "en", "mixed"],
+      "description": "Agent 回复语言。默认中文讲解，英文用于作文内容。"
+    }
+  },
+  "required": ["inputAsText", "action", "triggerSource", "sessionId", "documentId", "taskId", "studyStage", "writingMode", "taskPrompt", "essayQuestion", "questionMaterials", "promptTitle", "taskType", "examType", "genre", "audience", "purpose", "stanceRequirement", "minWords", "maxWords", "rubricKey", "rubricVersion", "targetScore", "timeLimitMinutes", "draftText", "selectedText", "selectionStart", "selectionEnd", "includeDraft", "currentParagraphIndex", "workflowMode", "currentStage", "completedStages", "hasTaskAnalysis", "hasConfirmedIdea", "hasOutline", "hasFullDraft", "selectedIdea", "outlineText", "lastTopicStatus", "lastAssistantSummary", "language", "responseLanguage"]
+}
+```
+
+`writingTaskMetadata` 是审题后生成的任务元数据。除 `analyze_writing_task` 外，其他阶段工具都应接收它。如果审题尚未完成，`writing_coach_agent` 应先调用 `analyze_writing_task`，不要让下游工具重复审题。
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "centralTask": {
+      "type": "string",
+      "description": "题目中心任务：这道作文真正要求用户完成什么。"
+    },
+    "topicFocus": {
+      "type": "string",
+      "description": "题目关键词和讨论边界，说明哪些内容属于题内、哪些容易跑偏。"
+    },
+    "taskType": {
+      "type": "string",
+      "description": "审题后识别出的任务类型。"
+    },
+    "genre": {
+      "type": "string",
+      "description": "审题后确认的文体或任务形式。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标读者或收件人。没有时为空字符串。"
+    },
+    "purpose": {
+      "type": "string",
+      "description": "写作目的。"
+    },
+    "stanceRequirement": {
+      "type": "string",
+      "description": "是否要求明确立场及立场要求。"
+    },
+    "mustAnswerPoints": {
+      "type": "array",
+      "description": "作文必须回答或覆盖的要点。",
+      "items": { "type": "string" }
+    },
+    "offTopicRisks": {
+      "type": "array",
+      "description": "常见偏题风险。",
+      "items": { "type": "string" }
+    },
+    "missingInfo": {
+      "type": "array",
+      "description": "继续写作前仍缺少的信息。",
+      "items": { "type": "string" }
+    },
+    "recommendedStructure": {
+      "type": "array",
+      "description": "推荐作文结构。",
+      "items": { "type": "string" }
+    },
+    "paragraphGoals": {
+      "type": "array",
+      "description": "推荐每段承担的任务。",
+      "items": { "type": "string" }
+    },
+    "rubricFocus": {
+      "type": "array",
+      "description": "本题评分时最需要关注的维度。",
+      "items": { "type": "string" }
+    },
+    "wordPolicy": {
+      "type": "string",
+      "description": "字数策略，例如低于最小字数的风险、建议控制范围。"
+    },
+    "languageLevelGuidance": {
+      "type": "string",
+      "description": "结合学段和考试类型给出的语言难度建议。"
+    },
+    "clarifyingQuestions": {
+      "type": "array",
+      "description": "如果题目信息不足，需要追问用户的问题。",
+      "items": { "type": "string" }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["unknown", "high", "medium", "low"],
+      "description": "审题结果置信度。"
+    }
+  },
+  "required": ["centralTask", "topicFocus", "taskType", "genre", "audience", "purpose", "stanceRequirement", "mustAnswerPoints", "offTopicRisks", "missingInfo", "recommendedStructure", "paragraphGoals", "rubricFocus", "wordPolicy", "languageLevelGuidance", "clarifyingQuestions", "confidence"]
+}
+```
+
+工具返回值不是 OpenAI function schema 的一部分，但实现层必须保持稳定返回契约，供前端渲染：
+
+```json
+{
+  "stage": "task_analysis",
+  "summary": "给用户展示的简短中文总结",
+  "details": {},
+  "topicCheck": null,
+  "safeApply": null,
+  "conversationStatePatch": {
+    "mode": "writing_workflow",
+    "workflowStage": "task_analysis",
+    "currentStep": 1,
+    "completedStages": ["task_analysis"]
+  }
+}
+```
+
+#### 1. analyze_writing_task
+
+审题理解工具。第一次进入写作流程、题目变化、用户明确要求审题时调用。返回结果应写入 `state.writing_task_metadata`。
+
+```json
+{
+  "name": "analyze_writing_task",
+  "description": "分析英语作文题目，生成中心任务、必答点、偏题风险、推荐结构和评分关注点。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "inputAsText": { "type": "string", "description": "用户本轮原始输入，例如“帮我审题”“这个题怎么写”。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "writingMode": { "type": "string", "enum": ["free", "exam"], "description": "写作模式。" },
+      "taskPrompt": { "type": "string", "description": "聚合后的作文题目与写作要求。" },
+      "essayQuestion": { "type": "string", "description": "考试题目原文。自由写作或无原题时为空字符串。" },
+      "questionMaterials": { "type": "string", "description": "题目材料、提示语、图表描述、续写材料或附加要求。没有时为空字符串。" },
+      "promptTitle": { "type": "string", "description": "题目标题。没有时为空字符串。" },
+      "taskType": { "type": "string", "enum": ["unknown", "advantages_disadvantages", "opinion", "discussion", "problem_solution", "cause_effect", "compare_contrast", "letter_request", "letter_advice", "letter_apology", "chart_summary", "picture_description", "story_continuation", "application", "custom"], "description": "作文任务类型。" },
+      "examType": { "type": "string", "enum": ["none", "primary", "middle_school", "high_school", "zhongkao", "gaokao", "cet4", "cet6", "postgraduate_exam", "ielts", "toefl", "custom"], "description": "考试类型。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" },
+      "audience": { "type": "string", "description": "目标读者或收件人。没有明确对象时为空字符串。" },
+      "purpose": { "type": "string", "description": "写作目的。没有明确目的时为空字符串。" },
+      "stanceRequirement": { "type": "string", "description": "题目是否要求明确立场。没有明确要求时为空字符串。" },
+      "minWords": { "type": "integer", "description": "最小字数要求。没有时为 0。" },
+      "maxWords": { "type": "integer", "description": "最大字数或推荐上限。没有时为 0。" },
+      "rubricKey": { "type": "string", "description": "评分标准标识。没有时为空字符串。" },
+      "targetScore": { "type": "string", "description": "用户目标分数、目标等级或目标档位。没有时为空字符串。" },
+      "timeLimitMinutes": { "type": "integer", "description": "考试限时分钟数。自由写作或未知时为 0。" },
+      "draftText": { "type": "string", "description": "当前作文正文。刚开始写作时为空字符串。" },
+      "language": { "type": "string", "enum": ["zh", "en", "mixed"], "description": "用户输入语言。" }
+    },
+    "required": ["inputAsText", "studyStage", "writingMode", "taskPrompt", "essayQuestion", "questionMaterials", "promptTitle", "taskType", "examType", "genre", "audience", "purpose", "stanceRequirement", "minWords", "maxWords", "rubricKey", "targetScore", "timeLimitMinutes", "draftText", "language"]
+  }
+}
+```
+
+#### 2. generate_writing_ideas
+
+立意构思工具。用户要求确定观点、选择立场、生成写作思路或比较不同观点时调用。
+
+```json
+{
+  "name": "generate_writing_ideas",
+  "description": "基于题目中心任务生成 2 到 3 个切题立意，并说明每个立意的优缺点和适用场景。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": {
+        "type": "string",
+        "description": "作文题目原文或写作要求。"
+      },
+      "centralTask": {
+        "type": "string",
+        "description": "题目中心任务。"
+      },
+      "mustAnswerPoints": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "作文必须回答或覆盖的要点。"
+      },
+      "offTopicRisks": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "已知偏题风险。"
+      },
+      "studyStage": {
+        "type": "string",
+        "description": "用户学段。"
+      },
+      "writingMode": {
+        "type": "string",
+        "enum": ["free", "exam"],
+        "description": "写作模式。"
+      },
+      "genre": {
+        "type": "string",
+        "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"],
+        "description": "文体或任务形式。"
+      },
+      "ideaPreference": {
+        "type": "string",
+        "description": "用户对立意的偏好，例如简单、稳妥、高分、个人经历、批判性。没有偏好时为空字符串。"
+      }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "offTopicRisks", "studyStage", "writingMode", "genre", "ideaPreference"]
+  }
+}
+```
+
+#### 3. activate_writing_materials
+
+素材激活工具。用户要求找理由、例子、表达素材、论据或补充内容时调用。
+
+```json
+{
+  "name": "activate_writing_materials",
+  "description": "根据题目、立意和学段生成切题理由、例子、表达素材和可用句式。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "selectedIdea": { "type": "string", "description": "用户已选择或当前倾向的立意。没有时为空字符串。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" },
+      "materialNeed": { "type": "string", "description": "素材需求，例如理由、例子、连接词、开头素材、论证素材。没有明确需求时为空字符串。" }
+    },
+    "required": ["centralTask", "mustAnswerPoints", "selectedIdea", "studyStage", "genre", "materialNeed"]
+  }
+}
+```
+
+#### 4. build_writing_outline
+
+组织提纲工具。用户要求搭提纲、安排段落、规划结构或确定每段写什么时调用。
+
+```json
+{
+  "name": "build_writing_outline",
+  "description": "根据题目中心任务、必答点、立意和文体生成作文提纲，明确每段目标和要点覆盖。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "selectedIdea": { "type": "string", "description": "用户确认或当前推荐的立意。没有时为空字符串。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" },
+      "minWords": { "type": "integer", "description": "最小字数。" },
+      "maxWords": { "type": "integer", "description": "最大字数或推荐上限。" },
+      "studyStage": { "type": "string", "description": "用户学段。" }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "selectedIdea", "genre", "minWords", "maxWords", "studyStage"]
+  }
+}
+```
+
+#### 5. draft_writing_section
+
+起草写作工具。用户要求写开头、主体段、结尾、下一段或从零起草时调用。该工具只能返回草稿建议，不能直接覆盖正文。
+
+```json
+{
+  "name": "draft_writing_section",
+  "description": "根据题目、提纲和当前正文起草指定段落或完整草稿片段，并返回需要用户确认的 safe apply 建议。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "outline": { "type": "array", "items": { "type": "string" }, "description": "当前提纲。没有提纲时为空数组。" },
+      "draftText": { "type": "string", "description": "当前作文正文。" },
+      "sectionType": { "type": "string", "enum": ["opening", "body", "conclusion", "next_paragraph", "full_draft"], "description": "本次起草范围。" },
+      "currentParagraphIndex": { "type": "integer", "description": "当前段落序号。未知时为 0。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "outline", "draftText", "sectionType", "currentParagraphIndex", "studyStage", "genre"]
+  }
+}
+```
+
+#### 6. revise_writing_structure
+
+修改重构工具。用户要求重写、调整逻辑、改结构、补要点或删除无关内容时调用。结构修改应优先修正偏题和漏点，再考虑语言。
+
+```json
+{
+  "name": "revise_writing_structure",
+  "description": "检查并重构作文内容、段落逻辑和要点覆盖，输出结构修改建议和可确认的正文编辑方案。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "offTopicRisks": { "type": "array", "items": { "type": "string" }, "description": "偏题风险。" },
+      "draftText": { "type": "string", "description": "当前作文正文。" },
+      "selectedText": { "type": "string", "description": "用户选中的正文片段。没有选区时为空字符串。" },
+      "revisionGoal": { "type": "string", "description": "修改目标，例如补要点、调结构、删无关内容、加强逻辑。没有明确目标时为空字符串。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "offTopicRisks", "draftText", "selectedText", "revisionGoal", "studyStage", "genre"]
+  }
+}
+```
+
+#### 7. polish_writing_language
+
+语言润色工具。用户要求润色、优化表达、改句子、提高语言质量、降低或提高难度时调用。只允许润色 `selectedText` 或明确范围，不能改变原意、立场、事实和题目方向。
+
+```json
+{
+  "name": "polish_writing_language",
+  "description": "在不改变原意和题目方向的前提下，润色用户选中的英文表达，并返回可确认的替换建议。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "textToPolish": { "type": "string", "description": "需要润色的文本。通常来自 selectedText。" },
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "genre": { "type": "string", "enum": ["unknown", "argumentative", "expository", "narrative", "descriptive", "letter", "email", "notice", "announcement", "speech", "proposal", "report", "chart_description", "picture_description", "continuation_writing", "application", "review", "custom"], "description": "文体或任务形式。" },
+      "polishLevel": { "type": "string", "enum": ["light", "standard", "advanced"], "description": "润色强度。" },
+      "preserveMeaning": { "type": "boolean", "description": "是否必须保持原意。应始终为 true。" }
+    },
+    "required": ["textToPolish", "taskPrompt", "centralTask", "mustAnswerPoints", "studyStage", "genre", "polishLevel", "preserveMeaning"]
+  }
+}
+```
+
+#### 8. check_final_draft
+
+终稿检查工具。用户要求最终检查、检查全文、检查字数、完整性、切题性或是否可以提交时调用。它只做自查，不替代 Scoring Agent 正式评分。
+
+```json
+{
+  "name": "check_final_draft",
+  "description": "对完整作文进行终稿自查，检查切题、必答点覆盖、结构完整性、字数和 rubric 风险，但不产生正式评分。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "offTopicRisks": { "type": "array", "items": { "type": "string" }, "description": "偏题风险。" },
+      "rubricFocus": { "type": "array", "items": { "type": "string" }, "description": "评分关注点。" },
+      "draftText": { "type": "string", "description": "完整作文正文。" },
+      "minWords": { "type": "integer", "description": "最小字数。" },
+      "maxWords": { "type": "integer", "description": "最大字数或推荐上限。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "writingMode": { "type": "string", "enum": ["free", "exam"], "description": "写作模式。" },
+      "rubricKey": { "type": "string", "description": "评分标准标识。" }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "offTopicRisks", "rubricFocus", "draftText", "minWords", "maxWords", "studyStage", "writingMode", "rubricKey"]
+  }
+}
+```
+
+#### 9. check_topic_relevance
+
+偏题检查工具。用户要求检查是否跑题、检查立意、检查提纲、检查某段或检查终稿切题性时调用。它可以被其他阶段工具前置调用，也可以作为独立阶段响应用户。
+
+```json
+{
+  "name": "check_topic_relevance",
+  "description": "检查用户的立意、提纲、段落或完整草稿是否紧扣作文题目，返回偏题状态、缺失要点和修改建议。",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "taskPrompt": { "type": "string", "description": "作文题目原文或写作要求。" },
+      "centralTask": { "type": "string", "description": "题目中心任务。" },
+      "mustAnswerPoints": { "type": "array", "items": { "type": "string" }, "description": "必须覆盖的要点。" },
+      "offTopicRisks": { "type": "array", "items": { "type": "string" }, "description": "已知偏题风险。" },
+      "textToCheck": { "type": "string", "description": "需要检查的文本，可以是立意、提纲、段落或完整草稿。" },
+      "checkScope": { "type": "string", "enum": ["idea", "outline", "paragraph", "full_draft"], "description": "检查范围。" },
+      "studyStage": { "type": "string", "description": "用户学段。" },
+      "writingMode": { "type": "string", "enum": ["free", "exam"], "description": "写作模式。" },
+      "rubricKey": { "type": "string", "description": "评分标准标识。没有时为空字符串。" }
+    },
+    "required": ["taskPrompt", "centralTask", "mustAnswerPoints", "offTopicRisks", "textToCheck", "checkScope", "studyStage", "writingMode", "rubricKey"]
+  }
+}
 ```
 
 约束：
 
-- `status=off_topic` 时不得继续合成或润色，应先给纠偏建议。
-- `status=risk` 时可以继续讨论，但需要明确指出风险和补救方式。
-- `status=aligned` 且 `shouldProceed=true` 后，才适合进入下一阶段或调用 `polish_text`。
+- 8 个阶段工具是稳定前端输出的结构化能力，不代表要拆成 8 个 Agent。
+- `writing_coach_agent` 默认处于 `general_chat`，只有用户明确命中 8 个写作阶段之一时才调用对应工具并推进流程。
+- `analyze_writing_task` 产出的 `writing_task_metadata` 是后续工具的统一依据。
+- `check_topic_relevance` 不产生正式分数，只判断是否对齐题目中心任务和必答点。
+- `polish_writing_language` 不得在偏题内容上直接润色；如果文本偏题，应先纠偏。
+- 所有写入正文的内容必须通过 `safeApply` 返回，并要求用户确认。
 
 ## 前端交互
 
@@ -380,6 +988,9 @@ Writing Coach Agent 首期复用写作页右侧区域，但该区域不应再被
 
 - 写作页每次请求应传入当前题目、正文、学段和写作模式。
 - 右侧面板的标题和初始提示应从通用 `AI Chat` / `Send an instruction and I will rewrite it.` 调整为写作教练语义，例如“写作教练”和“我可以帮你审题、搭提纲、分段完成作文”。
+- v1 主链路使用本地 Python orchestrator 和 `/assistant/run/stream`，由后端代理 OpenAI 调用，不把 OpenAI API Key 暴露给浏览器。
+- ChatKit / Agent Builder 只作为实验、演示或备用方案，不作为 v1 写作教练主链路。
+- 由于用户正文和选区会持续变化，前端每轮请求应通过 `writingCoachContext` 和 message input 显式注入最新题目、正文、选区、学段和考试模式。
 - 审题、提纲、偏题风险和当前段落计划不应埋在聊天历史里，应进入可折叠的“写作计划”上下文区。
 - 默认状态下，对话区应占据右侧主要空间；写作计划以顶部状态、抽屉或弹层方式查看，避免长期压缩对话区。
 - 用户选中正文中的句子或段落时，编辑器应提供 inline actions，例如“检查跑题”“润色”“扩写”“降低难度”“替换建议”。
@@ -436,8 +1047,9 @@ v1 可以先实现最小 Safe Apply：
 
 ## v1 约束
 
-- v1 先使用现有对话历史、写作上下文和 `WritingTaskMetadata` 维持多轮状态。
+- v1 先使用本地 Python orchestrator、现有对话历史、写作上下文和 `WritingTaskMetadata` 维持多轮状态。
 - v1 不先新增复杂 `WritingCoachWorkflowState` 持久化状态机。
 - v1 先把本地 prompt 和文档作为权威源，OpenAI Dashboard 只用于调试发布后的 prompt 版本。
+- ChatKit / Agent Builder 只作为实验、演示或备用方案，不作为 v1 写作教练主链路。
 - v1 不改变 Scoring Agent 的正式评分职责。
 - v1 不做完整 Canvas 版本管理和复杂 diff 历史，先实现右侧 Agent Composer、写作计划抽屉、选区操作和最小 Safe Apply。

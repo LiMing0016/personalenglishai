@@ -10,3 +10,7 @@ mybatis:
 logging:
   level:
     reactor.netty: DEBUG
+
+assistant:
+  chatkit:
+    workflow-id: ${OPENAI_CHATKIT_WORKFLOW_ID:}

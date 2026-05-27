@@ -122,6 +122,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/app/WritingPage.vue'),
       },
       {
+        path: 'translation',
+        name: 'Translation',
+        component: () => import('@/pages/app/TranslationPage.vue'),
+      },
+      {
         path: 'assistant',
         name: 'LearningAssistant',
         component: () => import('@/pages/app/AssistantPage.vue'),
@@ -313,6 +318,11 @@ const routes: RouteRecordRaw[] = [
         path: 'data-catalog/:tableName',
         name: 'AdminDataCatalogDetail',
         component: () => import('@/pages/admin/AdminDataCatalogDetailPage.vue'),
+      },
+      {
+        path: 'data-cleaning',
+        name: 'AdminDataCleaning',
+        component: () => import('@/pages/admin/AdminDataCleaningPage.vue'),
       },
       {
         path: 'admin-users',

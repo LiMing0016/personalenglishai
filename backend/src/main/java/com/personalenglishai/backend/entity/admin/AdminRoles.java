@@ -21,7 +21,9 @@ public final class AdminRoles {
                     AdminPermissions.AUDIT_READ,
                     AdminPermissions.SUBSCRIPTION_READ,
                     AdminPermissions.SUBSCRIPTION_WRITE,
-                    AdminPermissions.DATA_CATALOG_READ
+                    AdminPermissions.DATA_CATALOG_READ,
+                    AdminPermissions.DATA_CLEANING_READ,
+                    AdminPermissions.DATA_CLEANING_WRITE
             ),
             SUPPORT_ADMIN, Set.of(
                     AdminPermissions.USERS_READ,
@@ -33,7 +35,9 @@ public final class AdminRoles {
                     AdminPermissions.PROMPTS_READ,
                     AdminPermissions.PROMPTS_WRITE,
                     AdminPermissions.RUBRICS_READ,
-                    AdminPermissions.RUBRICS_WRITE
+                    AdminPermissions.RUBRICS_WRITE,
+                    AdminPermissions.DATA_CLEANING_READ,
+                    AdminPermissions.DATA_CLEANING_WRITE
             )
     );
 

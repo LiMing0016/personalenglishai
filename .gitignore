@@ -17,10 +17,13 @@ docs/.vitepress/dist/
 __pycache__/
 *.py[cod]
 .venv/
+.cache/
 .pytest_cache/
 pytest-cache-files-*/
 .tmp_pip/
 python/ai_orchestrator/data/
+python/ai_orchestrator/tests/tmp_write_check/
+python/ai_orchestrator/tests/.tmp/
 
 # Maven local repository cache
 backend/.m2/
@@ -34,6 +37,7 @@ tools/**/.venv/
 tools/**/.npm-cache/
 
 # Local temp/debug artifacts
+storage/
 .tmp-*/
 .tmp-peai/
 .tmp-*.log

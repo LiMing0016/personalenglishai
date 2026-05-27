@@ -45,6 +45,7 @@ export default defineConfig({
     },
     nav: [
       { text: '首页', link: '/' },
+      { text: '学习', link: '/learning/' },
       { text: '产品', link: '/product/' },
       { text: '架构', link: '/architecture/' },
       { text: '接口', link: '/api/' },
@@ -57,6 +58,16 @@ export default defineConfig({
       { text: 'ADR', link: '/adr/' }
     ],
     sidebar: {
+      '/learning/': [
+        {
+          text: '学习',
+          items: [
+            { text: '学习资料总览', link: '/learning/' },
+            { text: 'Markdown 常用语法', link: '/learning/Markdown常用语法' },
+            { text: 'Jupyter 验证不同 Schema', link: '/learning/Jupyter验证不同Schema' }
+          ]
+        }
+      ],
       '/product/': [
         {
           text: '产品',
@@ -65,7 +76,15 @@ export default defineConfig({
             { text: '路线图', link: '/product/roadmap' },
             { text: '邀请系统', link: '/product/referral-system' },
             { text: '订阅', link: '/product/subscription/' },
-            { text: 'CEFR', link: '/product/cefr/' }
+            { text: 'CEFR', link: '/product/cefr/' },
+            {
+              text: '翻译页面',
+              collapsed: false,
+              items: [
+                { text: '翻译页面总览', link: '/product/翻译页面/' },
+                { text: '作文资产学习价值提取预览', link: '/product/翻译页面/作文资产DeepSeek学习价值提取预览方案' }
+              ]
+            }
           ]
         }
       ],
@@ -129,7 +148,8 @@ export default defineConfig({
             { text: '当前管理员端产品说明', link: '/admin/current-admin-product-design' },
             { text: '用户中心设计方案', link: '/admin/user-center-design' },
             { text: 'BI 分析后台方案', link: '/admin/bi-analytics-design' },
-            { text: '数据地图设计方案', link: '/admin/data-catalog-design' }
+            { text: '数据地图设计方案', link: '/admin/data-catalog-design' },
+            { text: '数据清洗中心词典探查', link: '/admin/data-cleaning-center' }
           ]
         }
       ],
@@ -141,11 +161,14 @@ export default defineConfig({
             { text: 'Agent 产品现状与路线图', link: '/agent/Agent产品现状与路线图' },
             { text: '学习助手 Agent 编排架构', link: '/agent/学习助手Agent编排架构' },
             { text: 'Agent 能力清单', link: '/agent/Agent能力清单' },
+            { text: '写作教练 Schema 设计', link: '/agent/写作教练Schema设计' },
             { text: '路由 Agent 设计', link: '/agent/路由Agent设计' },
             { text: 'Agent 可观测性与调试中心', link: '/agent/Agent可观测性与调试中心' },
             { text: 'AI 调试端设计', link: '/agent/AI调试端设计' },
             { text: '对话词句采集清洗方案', link: '/agent/数据清洗/对话词句采集清洗方案' },
             { text: 'OpenAI Agents SDK 学习笔记', link: '/agent/OpenAI Agents SDK中文学习笔记' },
+            { text: 'Function Call 学习笔记', link: '/agent/FunctionCall学习笔记' },
+            { text: 'Structured Output 学习笔记', link: '/agent/StructuredOutput学习笔记' },
             {
               text: 'Agent Builder 学习资料',
               collapsed: false,

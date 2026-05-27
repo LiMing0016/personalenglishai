@@ -47,6 +47,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       { to: '/admin/rubrics', label: 'Rubric', permission: 'admin.rubrics.read', status: 'implemented' },
       { to: '/admin/prompt-assets', label: 'Prompt', permission: 'admin.prompts.read', status: 'placeholder' },
       { to: '/admin/materials', label: '素材', permission: 'admin.prompts.read', status: 'placeholder' },
+      { to: '/admin/data-cleaning', label: '数据清洗中心', permission: 'admin.prompts.read', status: 'implemented' },
       { to: '/admin/scoring-config', label: '评分配置', permission: 'admin.rubrics.read', status: 'placeholder' },
     ],
   },

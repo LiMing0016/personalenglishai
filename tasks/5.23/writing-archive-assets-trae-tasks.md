@@ -49,7 +49,7 @@ documents.status = 2
 
 ### 小题 A：DocumentService 增加归档能力
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请在后端 `DocumentService` 中新增文档归档能力。
 
@@ -186,7 +186,7 @@ PATCH /api/docs/{docId}/unarchive
 
 请在写作编辑器右侧工具栏新增“归档”入口。点击后打开归档面板，用户可以把当前作文归档到作文资产库。归档前要保存当前编辑内容，归档成功后不退出编辑器，用户可以继续编辑。
 
-### 小题 A：扩展 ToolRail 和 PanelMode
+### 小题 A：扩展 ToolRail 和 PanelMode（完成）
 
 #### 题目 Prompt
 

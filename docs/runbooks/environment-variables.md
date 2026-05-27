@@ -186,6 +186,7 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | --- | --- |
 | `ASSISTANT_ORCHESTRATOR_BASE_URL` | 后端调用 Python orchestrator 的地址。 |
 | `ASSISTANT_ORCHESTRATOR_TIMEOUT_MS` | 后端调用 Python orchestrator 超时。 |
+| `OPENAI_CHATKIT_WORKFLOW_ID` | Agent Builder / ChatKit 写作教练的 workflow id。未配置时，写作教练 ChatKit 面板无法创建 session。 |
 | `AI_ASSISTANT_MODEL` | Python orchestrator 使用的助手模型。 |
 | `AI_ASSISTANT_SESSION_DB_PATH` | Python orchestrator 会话数据库路径。 |
 | `AI_ASSISTANT_PROMPT_SOURCE` | Python Agents SDK prompt 来源：`local` / `hybrid` / `remote`。默认 `local`。 |

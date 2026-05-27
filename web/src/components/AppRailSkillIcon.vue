@@ -8,10 +8,10 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  icon: 'assistant' | 'writing' | 'reading' | 'listening' | 'speaking'
+  icon: 'assistant' | 'writing' | 'translation' | 'reading' | 'listening' | 'speaking'
 }>()
 
-const iconSrc = computed(() => `/nav-icons/${props.icon}.png`)
+const iconSrc = computed(() => `/nav-icons/${props.icon}.${props.icon === 'translation' ? 'svg' : 'png'}`)
 </script>
 
 <style scoped>
