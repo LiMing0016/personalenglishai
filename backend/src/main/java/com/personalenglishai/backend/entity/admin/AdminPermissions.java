@@ -12,6 +12,8 @@ public final class AdminPermissions {
     public static final String SUBSCRIPTION_READ = "admin.subscription.read";
     public static final String SUBSCRIPTION_WRITE = "admin.subscription.write";
     public static final String DATA_CATALOG_READ = "admin.data_catalog.read";
+    public static final String DATA_CLEANING_READ = "admin.data_cleaning.read";
+    public static final String DATA_CLEANING_WRITE = "admin.data_cleaning.write";
 
     private AdminPermissions() {}
 }

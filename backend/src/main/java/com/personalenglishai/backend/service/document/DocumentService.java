@@ -11,6 +11,7 @@ import com.personalenglishai.backend.entity.WritingMetadata;
 import com.personalenglishai.backend.mapper.DocumentMapper;
 import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,21 +29,27 @@ public class DocumentService {
 
     private static final String WORKSPACE_DEFAULT = "default";
 
+    private static final int STATUS_ACTIVE = 1;
+    private static final int STATUS_ARCHIVED = 2;
+
     private static final int WRITING_METADATA_TITLE_MAX_LEN = 255;
 
     private final DocumentMapper documentMapper;
     private final WritingMetadataMapper writingMetadataMapper;
     private final WritingExamMetadataMapper writingExamMetadataMapper;
     private final WritingPromptSheetService writingPromptSheetService;
+    private final WritingDocumentAssetService writingDocumentAssetService;
 
     public DocumentService(DocumentMapper documentMapper,
                            WritingMetadataMapper writingMetadataMapper,
                            WritingExamMetadataMapper writingExamMetadataMapper,
-                           WritingPromptSheetService writingPromptSheetService) {
+                           WritingPromptSheetService writingPromptSheetService,
+                           WritingDocumentAssetService writingDocumentAssetService) {
         this.documentMapper = documentMapper;
         this.writingMetadataMapper = writingMetadataMapper;
         this.writingExamMetadataMapper = writingExamMetadataMapper;
         this.writingPromptSheetService = writingPromptSheetService;
+        this.writingDocumentAssetService = writingDocumentAssetService;
     }
 
     /** 生成对外稳定 public_id */
@@ -155,6 +162,17 @@ public class DocumentService {
         if (doc == null) throw new BizException(ErrorCode.DOC_NOT_FOUND, "document not found");
         if (!doc.getOwnerUserId().equals(userId)) throw new BizException(ErrorCode.DOC_FORBIDDEN, "not owner");
         documentMapper.softDelete(doc.getId(), LocalDateTime.now());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void archiveDocument(String tenantId, String workspaceId, String publicDocId, Long userId) {
+        updateArchiveStatus(tenantId, workspaceId, publicDocId, userId, STATUS_ARCHIVED);
+        writingDocumentAssetService.refreshSnapshot(tenantId, workspaceId, publicDocId, userId);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void unarchiveDocument(String tenantId, String workspaceId, String publicDocId, Long userId) {
+        updateArchiveStatus(tenantId, workspaceId, publicDocId, userId, STATUS_ACTIVE);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -379,12 +397,30 @@ public class DocumentService {
     }
     public List<Document> listByOwner(String tenantId, String workspaceId, Long ownerUserId, int offset, int limit) {
         return documentMapper.listByOwnerUserId(ownerUserId, tenantId,
-                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit);
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit, null);
+    }
+
+    public List<Document> listByOwner(String tenantId, String workspaceId, Long ownerUserId, int offset, int limit, boolean archived) {
+        return documentMapper.listByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, offset, limit, archived);
     }
 
     public long countByOwner(String tenantId, String workspaceId, Long ownerUserId) {
         return documentMapper.countByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, null);
+    }
+
+    public long countByOwner(String tenantId, String workspaceId, Long ownerUserId, boolean archived) {
+        return documentMapper.countByOwnerUserId(ownerUserId, tenantId,
+                workspaceId != null ? workspaceId : WORKSPACE_DEFAULT, archived);
+    }
+
+    private void updateArchiveStatus(String tenantId, String workspaceId, String publicDocId, Long userId, int status) {
+        Document doc = documentMapper.findByPublicIdAndTenantAndWorkspace(publicDocId, tenantId,
                 workspaceId != null ? workspaceId : WORKSPACE_DEFAULT);
+        if (doc == null) throw new BizException(ErrorCode.DOC_NOT_FOUND, "document not found");
+        if (!doc.getOwnerUserId().equals(userId)) throw new BizException(ErrorCode.DOC_FORBIDDEN, "not owner");
+        documentMapper.updateStatus(doc.getId(), status);
     }
 
     private static String sha256(String input) {

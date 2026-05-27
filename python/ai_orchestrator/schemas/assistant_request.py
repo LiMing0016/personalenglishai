@@ -13,6 +13,7 @@ AssistantIntent = Literal[
     "polish",
     "summarize",
     "grade_writing",
+    "first_draft_coach",
     "generate_examples",
     "analyze_question",
 ]
@@ -35,6 +36,8 @@ AttachmentKind = Literal["image", "pdf", "txt", "docx", "doc", "other"]
 AttachmentProcessingStatus = Literal["uploaded", "processing", "ready", "failed"]
 PreferredModelInputPart = Literal["input_image", "input_file", "input_text"]
 ImageDetail = Literal["low", "high", "auto"]
+WritingCoachAction = Literal["coach", "analyze", "outline", "next", "topic", "polish", "draft"]
+WritingMode = Literal["free", "exam"]
 
 
 class AssistantAttachmentProcessing(BaseModel):
@@ -109,6 +112,42 @@ class AssistantClientMeta(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AssistantWritingCoachRubricContext(BaseModel):
+    rubric_key: str = Field(default="", alias="rubricKey")
+    rubric_version: str = Field(default="", alias="rubricVersion")
+    rubric_text: str = Field(default="", alias="rubricText")
+    rubric_focus: list[str] = Field(default_factory=list, alias="rubricFocus")
+
+    model_config = {"populate_by_name": True}
+
+
+class AssistantWritingCoachContext(BaseModel):
+    schema_version: str | None = Field(default=None, alias="schemaVersion")
+    action: WritingCoachAction | None = None
+    writing_mode: WritingMode | None = Field(default=None, alias="writingMode")
+    study_stage: str | None = Field(default=None, alias="studyStage")
+    task_type: str | None = Field(default=None, alias="taskType")
+    essay_question: str | None = Field(default=None, alias="essayQuestion")
+    question_materials: str | None = Field(default=None, alias="questionMaterials")
+    image_descriptions: list[str] = Field(default_factory=list, alias="imageDescriptions")
+    attachments: list[AssistantAttachmentRef] = Field(default_factory=list)
+    essay_genre: str | None = Field(default=None, alias="essayGenre")
+    min_words: int | None = Field(default=None, alias="minWords")
+    max_words: int | None = Field(default=None, alias="maxWords")
+    draft_text: str | None = Field(default=None, alias="draftText")
+    selected_text: str | None = Field(default=None, alias="selectedText")
+    include_draft: bool | None = Field(default=None, alias="includeDraft")
+    topic_analysis_done: bool | None = Field(default=None, alias="topicAnalysisDone")
+    topic_brief: str | None = Field(default=None, alias="topicBrief")
+    central_task: str | None = Field(default=None, alias="centralTask")
+    must_answer_points: list[str] = Field(default_factory=list, alias="mustAnswerPoints")
+    risk_points: list[str] = Field(default_factory=list, alias="riskPoints")
+    recommended_structure: list[str] = Field(default_factory=list, alias="recommendedStructure")
+    rubric: AssistantWritingCoachRubricContext = Field(default_factory=AssistantWritingCoachRubricContext)
+
+    model_config = {"populate_by_name": True}
+
+
 class AssistantRequest(BaseModel):
     app_conversation_id: str | None = Field(default=None, alias="appConversationId")
     client_message_id: str = Field(alias="clientMessageId")
@@ -120,6 +159,7 @@ class AssistantRequest(BaseModel):
     selection: AssistantSelection | None = None
     attachments: list[AssistantAttachmentRef] = Field(default_factory=list)
     study_context: AssistantStudyContext | None = Field(default=None, alias="studyContext")
+    writing_coach_context: AssistantWritingCoachContext | None = Field(default=None, alias="writingCoachContext")
     client_meta: AssistantClientMeta | None = Field(default=None, alias="clientMeta")
 
     model_config = {"populate_by_name": True}

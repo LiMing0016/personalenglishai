@@ -26,3 +26,44 @@ test('renderAssistantMarkdown keeps non-table pipes as paragraph text', () => {
 
   assert.equal(html, '<p>A | B is not a table.</p>')
 })
+
+test('renderAssistantMarkdown allows safe br tags in generated content', () => {
+  const html = renderAssistantMarkdown('必答点：1. 明确立场<br>2. 展开理由')
+
+  assert.equal(html, '<p>必答点：1. 明确立场<br/>2. 展开理由</p>')
+})
+
+test('renderAssistantMarkdown renders fenced code blocks', () => {
+  const html = renderAssistantMarkdown(
+    [
+      '审题阶段应该升级成：',
+      '',
+      '```text',
+      '题目 + 材料 + 图片描述/附件 + 学段 + 题型',
+      '↓',
+      '审题 Structured Output',
+      '```',
+    ].join('\n'),
+  )
+
+  assert.match(html, /<p>审题阶段应该升级成：<\/p>/)
+  assert.match(html, /<div class="markdown-code-block">/)
+  assert.match(html, /<div class="markdown-code-header"><span>text<\/span><button type="button" class="markdown-code-copy" data-markdown-code-copy aria-label="复制文本">复制<\/button><\/div>/)
+  assert.match(html, /<pre><code>题目 \+ 材料 \+ 图片描述\/附件 \+ 学段 \+ 题型\n↓\n审题 Structured Output<\/code><\/pre>/)
+  assert.doesNotMatch(html, /```text/)
+})
+
+test('renderAssistantMarkdown renders h4-h6 headings', () => {
+  const html = renderAssistantMarkdown(
+    [
+      '#### 核心观点',
+      '##### 可展开句',
+      '###### 这一段的关键词',
+    ].join('\n'),
+  )
+
+  assert.match(html, /<h4>核心观点<\/h4>/)
+  assert.match(html, /<h5>可展开句<\/h5>/)
+  assert.match(html, /<h6>这一段的关键词<\/h6>/)
+  assert.doesNotMatch(html, /#### 核心观点/)
+})

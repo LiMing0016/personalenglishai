@@ -362,3 +362,26 @@ agent_prompt_snapshot:
   sensitiveColumns: [prompt_text]
   securityNotes:
     - Prompt 快照属于 AI 系统资产，查看和导出需要权限控制。
+
+data_cleaning_source:
+  title: 数据清洗源登记
+  module: 数据治理
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: updated_at
+  description: 存储管理员登记的词典、语料或导入文件来源及本地路径。
+  sensitiveColumns: [mdx_path, mdd_path, examples_path, cover_image_path, metadata_json]
+  securityNotes:
+    - 路径可能暴露服务器目录结构，只在管理员端按权限展示。
+    - 授权状态用于内控判断，未确认版权前不得发布到用户侧。
+
+data_cleaning_job:
+  title: 数据清洗任务记录
+  module: 数据治理
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: updated_at
+  description: 存储数据清洗、探查和后续导入任务的状态、进度和结果摘要。
+  sensitiveColumns: [result_json, error_message]
+  securityNotes:
+    - 任务结果可能包含文件路径和词典元信息，导出前需要过滤敏感路径。

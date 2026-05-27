@@ -170,6 +170,122 @@ export interface AdminDataCatalogTableDetail extends AdminDataCatalogTable {
   securityNotes: string[]
 }
 
+export interface AdminDataCleaningOverview {
+  sourceCount: number
+  jobCount: number
+  completedJobCount: number
+  failedJobCount: number
+  runningJobCount: number
+}
+
+export interface AdminDataCleaningSource {
+  id: number
+  sourceUid: string
+  sourceType: string
+  sourceCode: string
+  displayName: string
+  licenseStatus: string
+  mdxPath: string | null
+  mddPath: string | null
+  examplesPath: string | null
+  coverImagePath: string | null
+  metadata: Record<string, unknown>
+  status: string
+  createdBy: number | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface AdminDataCleaningJob {
+  id: number
+  jobUid: string
+  sourceUid: string
+  jobType: string
+  status: string
+  progressTotal: number
+  progressDone: number
+  result: Record<string, unknown>
+  errorMessage: string | null
+  createdBy: number | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface AdminDictionaryLibrary {
+  id: number
+  dictionaryUid: string
+  sourceUid: string | null
+  dictionaryCode: string
+  displayName: string
+  description: string | null
+  format: string
+  engineVersion: string | null
+  requiredEngineVersion: string | null
+  encoding: string | null
+  entryCount: number | null
+  resourceCount: number | null
+  mdxFileName: string | null
+  mddFileName: string | null
+  coverImagePath: string | null
+  mdxSizeBytes: number | null
+  mddSizeBytes: number | null
+  examplesCount: number | null
+  licenseStatus: string
+  storageType: string
+  enabled: boolean
+  sortOrder: number | null
+  status: string
+  metadata: Record<string, unknown>
+  createdBy: number | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface AdminDictionaryImportJob {
+  id: number
+  importJobUid: string
+  dictionaryUid: string
+  sourceUid: string | null
+  status: string
+  importLimit: number | null
+  processedEntries: number
+  importedEntries: number
+  failedEntries: number
+  importedExamples: number
+  importedPhrases: number
+  errorMessage: string | null
+  result: Record<string, unknown>
+  createdBy: number | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface AdminDictionaryEntrySample {
+  entryUid: string
+  headword: string
+  partOfSpeech: string | null
+  definitionEn?: string | null
+  definitionZh?: string | null
+  cleanText?: string | null
+  qualityScore?: number | null
+  exampleCount?: number | null
+  phraseCount?: number | null
+}
+
+export interface CreateDictionaryDataCleaningSourcePayload {
+  sourceCode: string
+  displayName: string
+  licenseStatus?: string
+  mdxPath?: string
+  mddPath?: string
+  examplesPath?: string
+  coverImagePath?: string
+}
+
 export interface AdminEssayListItem {
   evaluationId: number
   userId: number
@@ -337,6 +453,7 @@ export interface AdminSubscriptionDailyStat {
 let cachedAdminMe: AdminMe | null = null
 let pendingAdminMe: Promise<AdminMe> | null = null
 let cachedToken: string | null = null
+const dictionaryUploadTimeoutMs = 600_000
 
 export function clearAdminMeCache() {
   cachedAdminMe = null
@@ -443,6 +560,52 @@ export const adminApi = {
   },
   getDataCatalogTable(tableName: string) {
     return http.get<AdminDataCatalogTableDetail>(`/admin/data-catalog/tables/${encodeURIComponent(tableName)}`).then((r) => r.data)
+  },
+  getDataCleaningOverview() {
+    return http.get<AdminDataCleaningOverview>('/admin/data-cleaning/overview').then((r) => r.data)
+  },
+  listDataCleaningSources(params: Record<string, unknown> = {}) {
+    return http.get<AdminDataCleaningSource[]>('/admin/data-cleaning/sources', { params }).then((r) => r.data)
+  },
+  createDictionaryDataCleaningSource(payload: CreateDictionaryDataCleaningSourcePayload) {
+    return http.post<AdminDataCleaningSource>('/admin/data-cleaning/dictionary-sources', payload).then((r) => r.data)
+  },
+  uploadDictionaryDataCleaningSource(payload: CreateDictionaryDataCleaningSourcePayload, files: File[]) {
+    const formData = new FormData()
+    formData.append('sourceCode', payload.sourceCode)
+    formData.append('displayName', payload.displayName)
+    formData.append('licenseStatus', payload.licenseStatus || 'unknown')
+    for (const file of files) {
+      formData.append('files', file)
+    }
+    return http.post<AdminDataCleaningJob>('/admin/data-cleaning/dictionary-uploads', formData, { timeout: dictionaryUploadTimeoutMs }).then((r) => r.data)
+  },
+  listDataCleaningJobs(params: Record<string, unknown> = {}) {
+    return http.get<AdminDataCleaningJob[]>('/admin/data-cleaning/jobs', { params }).then((r) => r.data)
+  },
+  createDictionaryProbeJob(sourceUid: string) {
+    return http.post<AdminDataCleaningJob>('/admin/data-cleaning/dictionary-probe-jobs', { sourceUid }).then((r) => r.data)
+  },
+  getDataCleaningJob(jobUid: string) {
+    return http.get<AdminDataCleaningJob>(`/admin/data-cleaning/jobs/${encodeURIComponent(jobUid)}`).then((r) => r.data)
+  },
+  listAdminDictionaries() {
+    return http.get<AdminDictionaryLibrary[]>('/admin/dictionaries').then((r) => r.data)
+  },
+  getAdminDictionary(dictionaryUid: string) {
+    return http.get<AdminDictionaryLibrary>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}`).then((r) => r.data)
+  },
+  listAdminDictionaryImportJobs(dictionaryUid: string) {
+    return http.get<AdminDictionaryImportJob[]>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}/import-jobs`).then((r) => r.data)
+  },
+  createAdminDictionaryImportJob(dictionaryUid: string, limit = 100) {
+    return http.post<AdminDictionaryImportJob>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}/import-jobs`, null, { params: { limit } }).then((r) => r.data)
+  },
+  listAdminDictionaryEntrySamples(dictionaryUid: string, limit = 10) {
+    return http.get<AdminDictionaryEntrySample[]>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}/entries/samples`, { params: { limit } }).then((r) => r.data)
+  },
+  listAdminDictionaryImportFailures(importJobUid: string) {
+    return http.get<Record<string, unknown>[]>(`/admin/dictionaries/import-jobs/${encodeURIComponent(importJobUid)}/failures`).then((r) => r.data)
   },
 }
 

@@ -99,6 +99,13 @@
           <line x1="27" y1="17" x2="29" y2="17" class="ic-stroke" stroke-width="2" stroke-linecap="round"/>
           <circle cx="30" cy="17" r="1.5" class="ic-primary" opacity="0.6"/>
         </svg>
+        <!-- Archive: folder + check -->
+        <svg v-else-if="item.mode === 'archive'" width="22" height="22" viewBox="0 0 32 32" fill="none">
+          <path d="M3 9a3 3 0 0 1 3-3h7l3 4h10a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V9z" class="ic-stroke" stroke-width="1.8" fill="white"/>
+          <path d="M3 13h26v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V13z" class="ic-light" opacity="0.18"/>
+          <circle cx="23" cy="22" r="6" class="ic-primary"/>
+          <path d="M20 22l2 2 4-4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </span>
       <span class="rail-label">{{ item.label }}</span>
     </button>
@@ -118,6 +125,7 @@ export type PanelMode =
   | 'explain'
   | 'translate'
   | 'aiNote'
+  | 'archive'
   | 'taskPrompt'
 
 defineEmits<{

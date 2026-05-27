@@ -36,6 +36,7 @@
             class="message-content message-content--markdown"
             :class="`message-content--markdown-${markdownTheme}`"
             v-html="renderAssistantMarkdown(message.content)"
+            @click="onRenderedMarkdownClick"
           ></div>
           <p v-else class="message-content message-content--plain">{{ message.content }}</p>
           <div
@@ -95,7 +96,7 @@
 import { onBeforeUnmount } from 'vue'
 
 import AssistantStarterCards from './AssistantStarterCards.vue'
-import { renderAssistantMarkdown } from './markdown.ts'
+import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
 
 defineProps<{
@@ -123,6 +124,9 @@ function previewUrlById(id: string, file: File) {
   return previewUrls.get(id)!
 }
 
+function onRenderedMarkdownClick(event: MouseEvent) {
+  void copyMarkdownCodeFromClick(event)
+}
 
 onBeforeUnmount(() => {
   for (const url of previewUrls.values()) {
@@ -241,7 +245,10 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(h1),
 .message-content--markdown :deep(h2),
-.message-content--markdown :deep(h3) {
+.message-content--markdown :deep(h3),
+.message-content--markdown :deep(h4),
+.message-content--markdown :deep(h5),
+.message-content--markdown :deep(h6) {
   margin: 22px 0 10px;
   color: #0f172a;
   font-weight: 800;
@@ -250,7 +257,10 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(h1:first-child),
 .message-content--markdown :deep(h2:first-child),
-.message-content--markdown :deep(h3:first-child) {
+.message-content--markdown :deep(h3:first-child),
+.message-content--markdown :deep(h4:first-child),
+.message-content--markdown :deep(h5:first-child),
+.message-content--markdown :deep(h6:first-child) {
   margin-top: 0;
 }
 
@@ -264,6 +274,12 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(h3) {
   font-size: 16px;
+}
+
+.message-content--markdown :deep(h4),
+.message-content--markdown :deep(h5),
+.message-content--markdown :deep(h6) {
+  font-size: 15px;
 }
 
 .message-content--markdown :deep(ul) {
@@ -332,6 +348,61 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
+.message-content--markdown :deep(.markdown-code-block) {
+  margin: 14px 0 18px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+.message-content--markdown :deep(.markdown-code-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #2b3442;
+  padding: 8px 12px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.message-content--markdown :deep(.markdown-code-copy) {
+  height: 26px;
+  border: 1px solid rgba(226, 232, 240, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.message-content--markdown :deep(.markdown-code-copy:hover),
+.message-content--markdown :deep(.markdown-code-copy--copied) {
+  border-color: rgba(226, 232, 240, 0.52);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.message-content--markdown :deep(.markdown-code-block pre) {
+  margin: 0;
+  overflow-x: auto;
+  padding: 13px 14px;
+  white-space: pre-wrap;
+}
+
+.message-content--markdown :deep(.markdown-code-block code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .message-content--markdown-marktext :deep(h1),
 .message-content--markdown-marktext :deep(h2) {
   padding-bottom: 8px;
@@ -377,14 +448,20 @@ onBeforeUnmount(() => {
 
 .message-content--markdown-milkdown :deep(h1),
 .message-content--markdown-milkdown :deep(h2),
-.message-content--markdown-milkdown :deep(h3) {
+.message-content--markdown-milkdown :deep(h3),
+.message-content--markdown-milkdown :deep(h4),
+.message-content--markdown-milkdown :deep(h5),
+.message-content--markdown-milkdown :deep(h6) {
   margin: 12px 0 0;
   padding: 0 2px;
 }
 
 .message-content--markdown-milkdown :deep(h1:first-child),
 .message-content--markdown-milkdown :deep(h2:first-child),
-.message-content--markdown-milkdown :deep(h3:first-child) {
+.message-content--markdown-milkdown :deep(h3:first-child),
+.message-content--markdown-milkdown :deep(h4:first-child),
+.message-content--markdown-milkdown :deep(h5:first-child),
+.message-content--markdown-milkdown :deep(h6:first-child) {
   margin-top: 0;
 }
 

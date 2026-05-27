@@ -9,6 +9,7 @@ function renderInline(text: string): string {
   return escapeHtml(text)
     .replace(/`([^`]+?)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
 }
 
 function renderParagraph(lines: string[]): string {
@@ -34,6 +35,77 @@ function renderOrderedList(lines: string[]): string {
 function renderBlockquote(lines: string[]): string {
   const quoteLines = lines.map((line) => line.replace(/^>\s?/, ''))
   return `<blockquote>${renderParagraph(quoteLines)}</blockquote>`
+}
+
+function renderCodeBlock(language: string, code: string): string {
+  const label = language.trim() || 'text'
+  return [
+    '<div class="markdown-code-block">',
+    '<div class="markdown-code-header">',
+    `<span>${escapeHtml(label)}</span>`,
+    '<button type="button" class="markdown-code-copy" data-markdown-code-copy aria-label="复制文本">复制</button>',
+    '</div>',
+    `<pre><code>${escapeHtml(code)}</code></pre>`,
+    '</div>',
+  ].join('')
+}
+
+async function writeTextToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard API is not available.')
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+}
+
+function showCopiedState(button: HTMLButtonElement) {
+  const previousText = button.textContent || '复制'
+  button.textContent = '已复制'
+  button.classList.add('markdown-code-copy--copied')
+  window.setTimeout(() => {
+    if (!button.isConnected) return
+    button.textContent = previousText
+    button.classList.remove('markdown-code-copy--copied')
+  }, 1200)
+}
+
+export async function copyMarkdownCodeFromClick(event: MouseEvent): Promise<boolean> {
+  if (typeof Element === 'undefined') return false
+  const target = event.target instanceof Element ? event.target : null
+  const button = target?.closest<HTMLButtonElement>('[data-markdown-code-copy]')
+  if (!button) return false
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const code = button.closest('.markdown-code-block')?.querySelector('code')?.textContent ?? ''
+  if (!code) return true
+
+  try {
+    await writeTextToClipboard(code)
+    showCopiedState(button)
+  } catch {
+    button.textContent = '复制失败'
+    window.setTimeout(() => {
+      if (!button.isConnected) return
+      button.textContent = '复制'
+    }, 1200)
+  }
+  return true
 }
 
 function splitTableRow(line: string): string[] {
@@ -136,6 +208,19 @@ export function renderAssistantMarkdown(markdown: string): string {
     const line = rawLine.trimEnd()
     const trimmed = line.trim()
 
+    const codeFence = /^```([A-Za-z0-9_+.-]+)?\s*$/.exec(trimmed)
+    if (codeFence) {
+      flushAll()
+      const codeLines: string[] = []
+      index += 1
+      while (index < lines.length && !/^```\s*$/.test(lines[index]!.trim())) {
+        codeLines.push(lines[index]!)
+        index += 1
+      }
+      blocks.push(renderCodeBlock(codeFence[1] ?? 'text', codeLines.join('\n')))
+      continue
+    }
+
     if (!trimmed) {
       flushAll()
       continue
@@ -160,7 +245,7 @@ export function renderAssistantMarkdown(markdown: string): string {
       continue
     }
 
-    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed)
+    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed)
     if (heading) {
       flushAll()
       const level = heading[1].length

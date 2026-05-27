@@ -29,6 +29,7 @@ export async function streamAssistantEvents(
   url: string,
   payload: unknown,
   onEvent: (event: Partial<AssistantStreamEvent>) => void,
+  options: { signal?: AbortSignal } = {},
 ) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -44,6 +45,7 @@ export async function streamAssistantEvents(
     headers,
     credentials: 'include',
     body: JSON.stringify(payload),
+    signal: options.signal,
   })
   if (!response.ok) {
     throw new Error(`Request failed with status code ${response.status}`)

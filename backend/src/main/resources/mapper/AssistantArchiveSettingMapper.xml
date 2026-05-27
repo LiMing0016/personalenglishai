@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.assistant.AssistantArchiveSettingMapper">
+    <resultMap id="AssistantArchiveSettingResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantArchiveSetting">
+        <id column="user_id" property="userId"/>
+        <result column="archive_dir" property="archiveDir"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <select id="findByUserId" resultMap="AssistantArchiveSettingResultMap">
+        SELECT user_id, archive_dir, created_at, updated_at
+        FROM assistant_archive_setting
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="upsert" parameterType="com.personalenglishai.backend.entity.assistant.AssistantArchiveSetting">
+        INSERT INTO assistant_archive_setting (user_id, archive_dir, created_at, updated_at)
+        VALUES (#{userId}, #{archiveDir}, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            archive_dir = VALUES(archive_dir),
+            updated_at = NOW()
+    </insert>
+</mapper>

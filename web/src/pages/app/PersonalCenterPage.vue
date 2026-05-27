@@ -80,6 +80,7 @@
     <main class="pc-content">
       <OverviewSection v-if="activeSection === 'overview'" />
       <MyEssaysSection v-else-if="activeSection === 'essays'" />
+      <WritingAssetsSection v-else-if="activeSection === 'assets'" />
       <AbilityRadarSection v-else-if="activeSection === 'radar'" />
       <SubscriptionSection v-else-if="activeSection === 'subscription'" />
       <ReferralSection v-else-if="activeSection === 'referral'" />
@@ -102,13 +103,14 @@ import { stageCache } from '@/stores/stageCache'
 import { showToast } from '@/utils/toast'
 import OverviewSection from '@/components/personal-center/OverviewSection.vue'
 import MyEssaysSection from '@/components/personal-center/MyEssaysSection.vue'
+import WritingAssetsSection from '@/components/personal-center/WritingAssetsSection.vue'
 import AbilityRadarSection from '@/components/personal-center/AbilityRadarSection.vue'
 import AccountSettingsSection from '@/components/personal-center/AccountSettingsSection.vue'
 import ReferralSection from '@/components/personal-center/ReferralSection.vue'
 import SubscriptionSection from '@/components/personal-center/SubscriptionSection.vue'
 
-type SectionKey = 'overview' | 'essays' | 'radar' | 'subscription' | 'referral' | 'settings'
-const SECTION_KEYS: SectionKey[] = ['overview', 'essays', 'radar', 'subscription', 'referral', 'settings']
+type SectionKey = 'overview' | 'essays' | 'assets' | 'radar' | 'subscription' | 'referral' | 'settings'
+const SECTION_KEYS: SectionKey[] = ['overview', 'essays', 'assets', 'radar', 'subscription', 'referral', 'settings']
 
 const router = useRouter()
 const route = useRoute()
@@ -130,6 +132,9 @@ const IconGrid = () =>
 const IconFile = () =>
   h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<path d="M10 1H4a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7l-6-6z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 1v6h6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' })
 
+const IconArchive = () =>
+  h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<path d="M2 5.5A1.5 1.5 0 013.5 4h4l1.5 2h5.5A1.5 1.5 0 0116 7.5v5A1.5 1.5 0 0114.5 14h-11A1.5 1.5 0 012 12.5v-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.5 10l1.7 1.7 3.4-3.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' })
+
 const IconStar = () =>
   h('svg', { width: 18, height: 18, viewBox: '0 0 18 18', fill: 'none', innerHTML: '<path d="M9 1l2.47 5.01L17 6.76l-4 3.9.94 5.5L9 13.77l-4.94 2.4.94-5.5-4-3.9 5.53-.75L9 1z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' })
 
@@ -145,6 +150,7 @@ const IconGear = () =>
 const navItems = [
   { key: 'overview' as SectionKey, label: '综合能力', icon: IconGrid },
   { key: 'essays' as SectionKey, label: '我的作文', icon: IconFile },
+  { key: 'assets' as SectionKey, label: '作文资产', icon: IconArchive },
   { key: 'radar' as SectionKey, label: '能力雷达', icon: IconStar },
   { key: 'subscription' as SectionKey, label: '会员订阅', icon: IconCard },
   { key: 'referral' as SectionKey, label: '邀请激励', icon: IconGift },

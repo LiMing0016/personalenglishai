@@ -7,21 +7,27 @@
       v-if="assistantDrawerOpen"
       :search-value="searchText"
       :groups="conversationGroups"
+      :archived-groups="archivedConversationGroups"
       :folder-groups="folderConversationGroups"
       :active-conversation-id="activeConversationId"
       :folders="projects"
+      :archive-dir="archiveDirDraft"
+      :default-archive-dir="archiveSettings?.defaultArchiveDir ?? ''"
+      :archive-dir-saving="isSavingArchiveDir"
       @new-conversation="createConversation"
       @update:search-value="searchText = $event"
       @close-sidebar="closeAssistantDrawer"
       @select-conversation="selectConversation"
       @rename-conversation="handleRenameConversation"
       @archive-conversation="handleArchiveConversation"
+      @restore-conversation="handleRestoreConversation"
       @delete-conversation="handleDeleteConversation"
       @share-conversation="handleShareConversation"
       @pin-conversation="setConversationPinned"
       @move-conversation-to-folder="handleMoveConversationToFolder"
       @create-folder="openCreateFolderOnlyDialog"
       @create-folder-and-move="openCreateFolderDialog"
+      @save-archive-dir="handleSaveArchiveDir"
     />
 
     <div class="assistant-main">
@@ -107,6 +113,7 @@ import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from 'vue
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
+import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
 import { showToast } from '@/utils/toast'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
 import {
@@ -124,6 +131,7 @@ import { createAssistantState } from './assistantState.ts'
 
 const {
   conversations,
+  archivedConversations,
   projects,
   activeConversationId,
   activeConversation,
@@ -145,6 +153,7 @@ const {
   renameConversation,
   setConversationPinned,
   archiveConversation,
+  restoreConversation,
   deleteConversation,
   moveConversation,
   shareConversation,
@@ -166,6 +175,9 @@ const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
 const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
+const archiveSettings = ref<AssistantArchiveSettingsDto | null>(null)
+const archiveDirDraft = ref('')
+const isSavingArchiveDir = ref(false)
 
 const folderDialogCopy = computed(() =>
   folderDialogMode.value === 'move'
@@ -195,6 +207,7 @@ function closeAssistantDrawer() {
 
 onMounted(() => {
   void loadRemoteState()
+  void loadArchiveSettings()
   const pendingPrompt = sessionStorage.getItem(PENDING_ASSISTANT_PROMPT_KEY)
   const pendingSelection = parsePendingAssistantSelection(
     sessionStorage.getItem(PENDING_ASSISTANT_SELECTION_KEY),
@@ -238,7 +251,42 @@ async function handleArchiveConversation(id: string) {
     await archiveConversation(id)
     showToast('已归档', 'success')
   } catch (error) {
-    showToast(error instanceof Error ? error.message : '归档失败', 'error')
+    showToast(readApiErrorMessage(error, '归档失败'), 'error')
+  }
+}
+
+async function loadArchiveSettings() {
+  try {
+    const settings = await assistantApi.getArchiveSettings()
+    archiveSettings.value = settings
+    archiveDirDraft.value = settings.archiveDir
+  } catch {
+    archiveSettings.value = null
+    archiveDirDraft.value = ''
+  }
+}
+
+async function handleSaveArchiveDir(value: string) {
+  if (isSavingArchiveDir.value) return
+  isSavingArchiveDir.value = true
+  try {
+    const settings = await assistantApi.updateArchiveSettings(value)
+    archiveSettings.value = settings
+    archiveDirDraft.value = settings.archiveDir
+    showToast('归档目录已保存', 'success')
+  } catch (error) {
+    showToast(readApiErrorMessage(error, '归档目录保存失败'), 'error')
+  } finally {
+    isSavingArchiveDir.value = false
+  }
+}
+
+async function handleRestoreConversation(id: string) {
+  try {
+    await restoreConversation(id)
+    showToast('已取消归档', 'success')
+  } catch (error) {
+    showToast(readApiErrorMessage(error, '取消归档失败'), 'error')
   }
 }
 
@@ -357,6 +405,14 @@ function buildConversationGroups(items: typeof conversations.value) {
   return groups.filter((group) => group.conversations.length > 0)
 }
 
+function readApiErrorMessage(error: unknown, fallback: string) {
+  const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage
+  }
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 const filteredConversations = computed(() => {
   const keyword = searchText.value.trim()
   return keyword
@@ -366,10 +422,23 @@ const filteredConversations = computed(() => {
     : conversations.value
 })
 
+const filteredArchivedConversations = computed(() => {
+  const keyword = searchText.value.trim()
+  return keyword
+    ? archivedConversations.value.filter((conversation) =>
+        `${conversation.title} ${conversation.summary}`.includes(keyword),
+      )
+    : archivedConversations.value
+})
+
 const conversationGroups = computed(() =>
   buildConversationGroups(filteredConversations.value.filter((conversation) => (
     conversation.projectId === null || conversation.projectId === undefined
   ))),
+)
+
+const archivedConversationGroups = computed(() =>
+  buildConversationGroups(filteredArchivedConversations.value),
 )
 
 const folderConversationGroups = computed(() =>

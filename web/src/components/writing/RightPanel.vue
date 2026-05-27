@@ -1,11 +1,10 @@
 <template>
   <aside class="right-panel">
-    <AiNotePanel
+    <WritingCoachPanel
       ref="aiNotePanelRef"
       v-if="panel === 'aiNote'"
       :model-value="aiNote"
       :selected-text-pinned="selectedTextPinned"
-      :selection-dismissed="selectionDismissed"
       :selected-span-pinned="selectedSpanPinned"
       :last-chat-result="lastChatResult"
       :conversation-id="conversationId"
@@ -13,14 +12,18 @@
       :writing-mode="writingMode"
       :ai-provider="aiProvider"
       :task-prompt="taskPrompt"
+      :essay="essay"
+      :study-stage="studyStage"
+      :task-type="taskType"
+      :min-words="minWords"
+      :recommended-max-words="recommendedMaxWords"
       @update:model-value="$emit('update:aiNote', $event)"
-      @update:ai-provider="$emit('update:ai-provider', $event)"
-      @update:writing-mode="$emit('update:writingMode', $event)"
-      @update:task-prompt="$emit('update:taskPrompt', $event)"
       @send="$emit('ai-note-send')"
       @stop="$emit('ai-note-stop')"
       @dismiss-selection="$emit('dismiss-selection')"
       @replace-selection-with="$emit('replace-selection-with', $event)"
+      @apply-suggestion="$emit('writing-coach-apply', $event)"
+      @apply-edit-action="$emit('writing-coach-edit-action', $event)"
       @cleared="$emit('ai-chat-cleared')"
       @close="$emit('close')"
     />
@@ -105,6 +108,15 @@
         v-else-if="panel === 'translate'"
         @sentence-focus="$emit('sentence-focus', $event)"
       />
+      <WritingArchivePanel
+        v-else-if="panel === 'archive'"
+        :doc-id="docId"
+        :title="documentTitle"
+        :archived="!!documentArchived"
+        :busy="!!archiveBusy"
+        @archive="$emit('archive-document')"
+        @unarchive="$emit('unarchive-document')"
+      />
       <TaskPromptPanel
         v-else-if="panel === 'taskPrompt'"
         :writing-mode="writingMode"
@@ -123,11 +135,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
 import type { GrammarCheckMode, WritingAiProvider, WritingEvaluateResponse } from '@/api/writing'
+import type { WritingCoachEditAction } from '@/types/assistantRequest'
 import type { PanelMode } from './ToolRail.vue'
 import ToolPanel from './ToolPanel.vue'
-// Static: high-frequency panels loaded on first visit
-import AiNotePanel from './panels/AiNotePanel.vue'
 import GrammarCheckPanel from './panels/GrammarCheckPanel.vue'
+import WritingCoachPanel from './panels/WritingCoachPanel.vue'
 // Lazy: low-frequency panels loaded on demand
 const ScorePanel = defineAsyncComponent(() => import('./panels/ScorePanel.vue'))
 const RewritePanel = defineAsyncComponent(() => import('./panels/RewritePanel.vue'))
@@ -136,6 +148,7 @@ const PolishPanel = defineAsyncComponent(() => import('./panels/PolishPanel.vue'
 const ExplainPanel = defineAsyncComponent(() => import('./panels/ExplainPanel.vue'))
 const TranslatePanel = defineAsyncComponent(() => import('./panels/TranslatePanel.vue'))
 const TaskPromptPanel = defineAsyncComponent(() => import('./panels/TaskPromptPanel.vue'))
+const WritingArchivePanel = defineAsyncComponent(() => import('./panels/WritingArchivePanel.vue'))
 
 const props = defineProps<{
   panel: PanelMode
@@ -143,6 +156,9 @@ const props = defineProps<{
   width: number
   essay: string
   docId?: string | null
+  documentTitle?: string | null
+  documentArchived?: boolean
+  archiveBusy?: boolean
   selectionState: { text: string; start: number; end: number } | null
   selectionDismissed: boolean
   selectedTextPinned: string
@@ -196,6 +212,8 @@ defineEmits<{
   'start-grammar-check': []
   'dismiss-selection': []
   'replace-selection-with': [resultText: string]
+  'writing-coach-apply': [payload: { type: 'replace_selection' | 'append_text' | 'replace_all'; text: string }]
+  'writing-coach-edit-action': [payload: WritingCoachEditAction]
   'update:aiNote': [value: string]
   'update:ai-provider': [value: WritingAiProvider]
   'ai-note-send': []
@@ -203,6 +221,8 @@ defineEmits<{
   'ai-chat-cleared': []
   'update:writingMode': [value: 'free' | 'exam']
   'update:taskPrompt': [value: string]
+  'archive-document': []
+  'unarchive-document': []
 }>()
 
 const scorePanelTitle = computed(() => {
@@ -213,17 +233,20 @@ const scorePanelTitle = computed(() => {
   if (props.panel === 'improve') return '写作模版'
   if (props.panel === 'explain') return '写作素材'
   if (props.panel === 'translate') return '翻译'
+  if (props.panel === 'archive') return '作文归档'
   if (props.panel === 'taskPrompt') return '题单'
   return props.title
 })
 
 type RecentMessageDto = { role: 'user' | 'assistant'; content: string }
+type WritingCoachToolDto = { key: string; label: string; prompt: string }
 
 const aiNotePanelRef = ref<{
   setComposerText: (text: string) => void
   focusComposer: () => void
   getRecentMessages: (max?: number) => RecentMessageDto[]
   isIncludeDraft: () => boolean
+  getSelectedTool: () => WritingCoachToolDto
 } | null>(null)
 
 function setAiComposerText(text: string): boolean {
@@ -248,16 +271,23 @@ function isIncludeDraft(): boolean {
   return aiNotePanelRef.value?.isIncludeDraft() ?? false
 }
 
+function getAiSelectedTool(): WritingCoachToolDto {
+  if (props.panel !== 'aiNote') return { key: 'coach', label: '写作教练', prompt: '' }
+  return aiNotePanelRef.value?.getSelectedTool() ?? { key: 'coach', label: '写作教练', prompt: '' }
+}
+
 defineExpose<{
   setAiComposerText: (text: string) => boolean
   focusAiComposer: () => boolean
   getAiRecentMessages: (max?: number) => RecentMessageDto[]
   isIncludeDraft: () => boolean
+  getAiSelectedTool: () => WritingCoachToolDto
 }>({
   setAiComposerText,
   focusAiComposer,
   getAiRecentMessages,
   isIncludeDraft,
+  getAiSelectedTool,
 })
 </script>
 

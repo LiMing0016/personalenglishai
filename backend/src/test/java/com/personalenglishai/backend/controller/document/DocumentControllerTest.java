@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -189,6 +190,53 @@ class DocumentControllerTest {
                             .requestAttr("userId", 1L))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("403001"));
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/docs/{docId}/archive")
+    class ArchiveDoc {
+
+        @Test
+        @DisplayName("archives document and returns 204")
+        void archive_success() throws Exception {
+            doNothing().when(documentService).archiveDocument("1", "default", "doc_abc123", 1L);
+
+            mockMvc.perform(patch("/api/docs/doc_abc123/archive")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isNoContent());
+
+            verify(documentService).archiveDocument("1", "default", "doc_abc123", 1L);
+        }
+
+        @Test
+        @DisplayName("returns 403 when user is not owner")
+        void archive_forbidden() throws Exception {
+            doThrow(new BizException(ErrorCode.DOC_FORBIDDEN, "not owner"))
+                    .when(documentService)
+                    .archiveDocument("1", "default", "doc_abc123", 1L);
+
+            mockMvc.perform(patch("/api/docs/doc_abc123/archive")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("403001"));
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/docs/{docId}/unarchive")
+    class UnarchiveDoc {
+
+        @Test
+        @DisplayName("unarchives document and returns 204")
+        void unarchive_success() throws Exception {
+            doNothing().when(documentService).unarchiveDocument("1", "default", "doc_abc123", 1L);
+
+            mockMvc.perform(patch("/api/docs/doc_abc123/unarchive")
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isNoContent());
+
+            verify(documentService).unarchiveDocument("1", "default", "doc_abc123", 1L);
         }
     }
 }

@@ -6,7 +6,9 @@ import com.personalenglishai.backend.controller.dto.assistant.AssistantMessageRe
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.SendAssistantMessageRequest;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
+import com.personalenglishai.backend.service.assistant.AssistantConversationArchiveService;
 import com.personalenglishai.backend.service.assistant.AssistantConversationService;
+import com.personalenglishai.backend.service.assistant.ChatKitSessionService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +47,12 @@ class AssistantControllerTest {
 
     @MockBean
     private AssistantConversationService assistantConversationService;
+
+    @MockBean
+    private AssistantConversationArchiveService assistantConversationArchiveService;
+
+    @MockBean
+    private ChatKitSessionService chatKitSessionService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;

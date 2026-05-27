@@ -2,7 +2,7 @@
 title: 仓库结构规范
 status: active
 owner: project
-last_updated: 2026-05-16
+last_updated: 2026-05-22
 review_cycle: monthly
 related_code:
   - backend/
@@ -149,6 +149,7 @@ tools/
 ```text
 pytest-cache-files-*/
 .pytest_cache/
+.cache/
 .tmp_pip/
 .tmp-*/
 .tmp_ctx_*.json

@@ -11,6 +11,7 @@ import com.personalenglishai.backend.mapper.WritingExamMetadataMapper;
 import com.personalenglishai.backend.mapper.WritingMetadataMapper;
 import com.personalenglishai.backend.dto.writing.WritingSessionMetadataResponse;
 import com.personalenglishai.backend.service.writing.WritingPromptSheetService;
+import com.personalenglishai.backend.service.writing.WritingDocumentAssetService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +47,9 @@ class DocumentServiceTest {
 
     @Mock
     private WritingPromptSheetService writingPromptSheetService;
+
+    @Mock
+    private WritingDocumentAssetService writingDocumentAssetService;
 
     @InjectMocks
     private DocumentService documentService;
@@ -374,6 +378,43 @@ class DocumentServiceTest {
         documentService.softDelete("1", "default", "doc_x", 1L);
 
         verify(documentMapper).softDelete(eq(10L), any(LocalDateTime.class));
+    }
+
+    @Test
+    @DisplayName("archiveDocument marks owned document as archived")
+    void archiveDocument_success() {
+        Document doc = buildDoc(10L, 1L, 1);
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_x", "1", "default")).thenReturn(doc);
+
+        documentService.archiveDocument("1", "default", "doc_x", 1L);
+
+        verify(documentMapper).updateStatus(10L, 2);
+        verify(writingDocumentAssetService).refreshSnapshot("1", "default", "doc_x", 1L);
+    }
+
+    @Test
+    @DisplayName("archiveDocument throws DOC_FORBIDDEN when requester is not owner")
+    void archiveDocument_forbidden() {
+        Document doc = buildDoc(10L, 2L, 1);
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_x", "1", "default")).thenReturn(doc);
+
+        assertThatThrownBy(() -> documentService.archiveDocument("1", "default", "doc_x", 1L))
+                .isInstanceOf(BizException.class)
+                .matches(ex -> ((BizException) ex).getErrorCode() == ErrorCode.DOC_FORBIDDEN);
+
+        verify(documentMapper, never()).updateStatus(any(Long.class), any(Integer.class));
+    }
+
+    @Test
+    @DisplayName("unarchiveDocument restores owned archived document to active")
+    void unarchiveDocument_success() {
+        Document doc = buildDoc(10L, 1L, 1);
+        doc.setStatus(2);
+        when(documentMapper.findByPublicIdAndTenantAndWorkspace("doc_x", "1", "default")).thenReturn(doc);
+
+        documentService.unarchiveDocument("1", "default", "doc_x", 1L);
+
+        verify(documentMapper).updateStatus(10L, 1);
     }
 
     private Document buildDoc(Long id, Long ownerUserId, int latestRevision) {

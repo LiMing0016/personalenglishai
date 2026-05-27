@@ -68,6 +68,9 @@
         FROM documents
         WHERE owner_user_id = #{ownerUserId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
               AND deleted_at IS NULL
+              <if test="archived != null and archived">
+                  AND status = 2
+              </if>
         ORDER BY updated_at DESC
         LIMIT #{limit} OFFSET #{offset}
     </select>
@@ -77,6 +80,9 @@
         FROM documents
         WHERE owner_user_id = #{ownerUserId} AND tenant_id = #{tenantId} AND workspace_id = #{workspaceId}
               AND deleted_at IS NULL
+              <if test="archived != null and archived">
+                  AND status = 2
+              </if>
     </select>
 
     <select id="findByPublicIdAndTenantAndWorkspace" resultMap="DocumentResultMap">

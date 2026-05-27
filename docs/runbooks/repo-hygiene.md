@@ -2,10 +2,11 @@
 title: 仓库目录卫生治理
 status: active
 owner: project
-last_updated: 2026-05-16
+last_updated: 2026-05-22
 review_cycle: monthly
 related_code:
   - .gitignore
+  - pyproject.toml
   - AGENTS.md
   - docs/AGENTS.md
 related_docs:
@@ -60,6 +61,7 @@ stop.nginx.bat
 ```text
 .pytest_cache/
 pytest-cache-files-*/
+.cache/
 .tmp_pip/
 .tmp-*/
 .tmp-backend/
@@ -73,6 +75,7 @@ tmp[0-9a-zA-Z_]*/
 
 说明：
 
+- pytest 缓存通过根目录 `pyproject.toml` 固定到 `.cache/pytest/`，避免在根目录生成多条 `pytest-cache-files-*` 随机目录。
 - `tmp/` 不再作为长期资产目录；历史 PDF 资料迁入 `docs/archive/source-assets/pdfs/`。
 - `tmp1n4_a0rs/` 这类带随机后缀的目录按临时产物处理。
 - `.tmp_ctx_*.json` 是本地测试上下文样例，不应提交。

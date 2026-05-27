@@ -40,6 +40,8 @@ jwt:
 
 app:
   base-url: ${APP_BASE_URL:http://localhost:5173}
+  data-cleaning:
+    dictionary-upload-dir: ${DATA_CLEANING_DICTIONARY_UPLOAD_DIR:storage/data-cleaning/dictionaries}
   cookie:
     secure: ${COOKIE_SECURE:false}
   mail:
@@ -58,9 +60,9 @@ server:
       enabled: true
       force: true
   tomcat:
-    max-http-form-post-size: 10MB
-spring.servlet.multipart.max-file-size: 10MB
-spring.servlet.multipart.max-request-size: 10MB
+    max-http-form-post-size: ${SERVER_TOMCAT_MAX_HTTP_FORM_POST_SIZE:512MB}
+spring.servlet.multipart.max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:512MB}
+spring.servlet.multipart.max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:768MB}
 
 openai:
   client:

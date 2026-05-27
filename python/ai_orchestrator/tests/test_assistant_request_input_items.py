@@ -75,6 +75,68 @@ class AssistantRequestInputItemsTest(unittest.TestCase):
         self.assertLess(text.index("<selected_text>"), text.index(injection))
         self.assertLess(text.index(injection), text.index("</selected_text>"))
 
+    def test_first_draft_coach_includes_stable_topic_analysis_contract(self) -> None:
+        request = AssistantRequest(
+            clientMessageId="client-1",
+            mode="exam_boost",
+            intent="first_draft_coach",
+            message={"text": "请先帮我审题"},
+            writingCoachContext={
+                "action": "analyze",
+                "writingMode": "exam",
+                "taskType": "ielts_task2",
+                "essayQuestion": "Some people think technology makes education better. To what extent do you agree or disagree?",
+                "essayGenre": "opinion",
+                "minWords": 250,
+                "maxWords": 300,
+                "imageDescriptions": ["The chart compares online and classroom learning outcomes."],
+                "rubric": {
+                    "rubricKey": "ielts-writing-v1",
+                    "rubricVersion": "v1",
+                    "rubricFocus": ["task_response", "coherence"],
+                    "rubricText": "Task response and coherence are most important.",
+                },
+                "topicAnalysisDone": False,
+            },
+        )
+
+        text = build_assistant_input_items(request)[0]["content"][0]["text"]
+
+        self.assertIn("[写作教练运行规则]", text)
+        self.assertIn("第一轮必须先稳定返回题目主旨分析", text)
+        self.assertIn("[写作教练结构化上下文]", text)
+        self.assertIn("- action: analyze", text)
+        self.assertIn("- essayGenre: opinion", text)
+        self.assertIn("imageDescriptions", text)
+        self.assertIn("online and classroom learning outcomes", text)
+        self.assertIn("- rubricKey: ielts-writing-v1", text)
+        self.assertIn("task_response", text)
+        self.assertIn("- topicAnalysisDone: False", text)
+        self.assertIn("Some people think technology makes education better", text)
+
+    def test_first_draft_coach_reuses_existing_topic_analysis(self) -> None:
+        request = AssistantRequest(
+            clientMessageId="client-1",
+            mode="exam_boost",
+            intent="first_draft_coach",
+            message={"text": "请帮我搭提纲"},
+            writingCoachContext={
+                "action": "outline",
+                "writingMode": "exam",
+                "topicAnalysisDone": True,
+                "topicBrief": "讨论技术是否改善教育，并明确同意程度。",
+                "centralTask": "回答 technology improves education 的程度。",
+                "mustAnswerPoints": ["明确立场", "解释技术如何改善教育"],
+            },
+        )
+
+        text = build_assistant_input_items(request)[0]["content"][0]["text"]
+
+        self.assertIn("不要重新生成题意", text)
+        self.assertIn("- topicBrief: 讨论技术是否改善教育，并明确同意程度。", text)
+        self.assertIn("- centralTask: 回答 technology improves education 的程度。", text)
+        self.assertIn("  - 明确立场", text)
+
     def test_image_attachment_produces_input_image(self) -> None:
         request = AssistantRequest(
             clientMessageId="client-1",

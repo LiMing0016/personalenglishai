@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.writing.WritingDocumentAssetMapper">
+
+    <resultMap id="WritingDocumentAssetSnapshotResultMap" type="com.personalenglishai.backend.entity.writing.WritingDocumentAssetSnapshot">
+        <id column="id" property="id"/>
+        <result column="document_id" property="documentId"/>
+        <result column="user_id" property="userId"/>
+        <result column="snapshot_uid" property="snapshotUid"/>
+        <result column="markdown_content" property="markdownContent"/>
+        <result column="snapshot_json" property="snapshotJson"/>
+        <result column="latest_revision" property="latestRevision"/>
+        <result column="evaluation_count" property="evaluationCount"/>
+        <result column="coach_message_count" property="coachMessageCount"/>
+        <result column="generated_at" property="generatedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="AssistantConversationResultMap" type="com.personalenglishai.backend.entity.assistant.AssistantConversation">
+        <id column="id" property="id"/>
+        <result column="conversation_uid" property="conversationUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="project_id" property="projectId"/>
+        <result column="title" property="title"/>
+        <result column="summary" property="summary"/>
+        <result column="pinned" property="pinned"/>
+        <result column="archived_at" property="archivedAt"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="WritingLearningAssetPreviewRunResultMap" type="com.personalenglishai.backend.entity.writing.WritingLearningAssetPreviewRun">
+        <id column="id" property="id"/>
+        <result column="run_uid" property="runUid"/>
+        <result column="document_id" property="documentId"/>
+        <result column="user_id" property="userId"/>
+        <result column="status" property="status"/>
+        <result column="model" property="model"/>
+        <result column="summary" property="summary"/>
+        <result column="result_json" property="resultJson"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="input_token_count" property="inputTokenCount"/>
+        <result column="output_token_count" property="outputTokenCount"/>
+        <result column="item_count" property="itemCount"/>
+        <result column="generated_at" property="generatedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="WritingLearningAssetPreviewItemResultMap" type="com.personalenglishai.backend.entity.writing.WritingLearningAssetPreviewItem">
+        <id column="id" property="id"/>
+        <result column="item_uid" property="itemUid"/>
+        <result column="run_uid" property="runUid"/>
+        <result column="document_id" property="documentId"/>
+        <result column="user_id" property="userId"/>
+        <result column="asset_type" property="assetType"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="display_text" property="displayText"/>
+        <result column="original_text" property="originalText"/>
+        <result column="recommended_text" property="recommendedText"/>
+        <result column="meaning_zh" property="meaningZh"/>
+        <result column="explanation" property="explanation"/>
+        <result column="value_reason_for_user" property="valueReasonForUser"/>
+        <result column="how_to_reuse" property="howToReuse"/>
+        <result column="review_prompt" property="reviewPrompt"/>
+        <result column="source_question" property="sourceQuestion"/>
+        <result column="source_excerpt" property="sourceExcerpt"/>
+        <result column="confidence" property="confidence"/>
+        <result column="learning_value_score" property="learningValueScore"/>
+        <result column="promotion_status" property="promotionStatus"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <insert id="upsertConversationLink">
+        INSERT INTO writing_document_conversation_link (
+            user_id, document_id, conversation_uid, created_at, updated_at
+        )
+        VALUES (
+            #{userId}, #{documentId}, #{conversationUid}, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE updated_at = NOW()
+    </insert>
+
+    <select id="selectLinkedConversations" resultMap="AssistantConversationResultMap">
+        SELECT c.id, c.conversation_uid, c.user_id, c.project_id, c.title, c.summary,
+               c.pinned, c.archived_at, c.deleted_at, c.created_at, c.updated_at
+        FROM writing_document_conversation_link l
+        INNER JOIN assistant_conversation c ON c.conversation_uid = l.conversation_uid
+        WHERE l.user_id = #{userId}
+          AND l.document_id = #{documentId}
+          AND c.user_id = #{userId}
+          AND c.deleted_at IS NULL
+        ORDER BY c.updated_at ASC, c.id ASC
+    </select>
+
+    <select id="selectRecoverableCoachConversations" resultMap="AssistantConversationResultMap">
+        SELECT DISTINCT c.id, c.conversation_uid, c.user_id, c.project_id, c.title, c.summary,
+               c.pinned, c.archived_at, c.deleted_at, c.created_at, c.updated_at
+        FROM assistant_conversation c
+        INNER JOIN assistant_message m ON m.conversation_uid = c.conversation_uid
+        WHERE c.user_id = #{userId}
+          AND c.deleted_at IS NULL
+          AND m.user_id = #{userId}
+          AND m.role = 'user'
+          AND m.content LIKE '%[写作教练 Copilot 请求]%'
+          AND (
+            <foreach collection="probes" item="probe" separator=" OR ">
+                m.content LIKE CONCAT('%', #{probe}, '%')
+            </foreach>
+          )
+        ORDER BY c.updated_at ASC, c.id ASC
+        LIMIT 20
+    </select>
+
+    <select id="findSnapshot" resultMap="WritingDocumentAssetSnapshotResultMap">
+        SELECT id, document_id, user_id, snapshot_uid, markdown_content, snapshot_json,
+               latest_revision, evaluation_count, coach_message_count,
+               generated_at, created_at, updated_at
+        FROM writing_document_asset_snapshot
+        WHERE user_id = #{userId}
+          AND document_id = #{documentId}
+        LIMIT 1
+    </select>
+
+    <insert id="upsertSnapshot" parameterType="com.personalenglishai.backend.entity.writing.WritingDocumentAssetSnapshot"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_document_asset_snapshot (
+            document_id, user_id, snapshot_uid, markdown_content, snapshot_json,
+            latest_revision, evaluation_count, coach_message_count,
+            generated_at, created_at, updated_at
+        )
+        VALUES (
+            #{documentId}, #{userId}, #{snapshotUid}, #{markdownContent}, #{snapshotJson},
+            #{latestRevision}, #{evaluationCount}, #{coachMessageCount},
+            #{generatedAt}, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            snapshot_uid = VALUES(snapshot_uid),
+            markdown_content = VALUES(markdown_content),
+            snapshot_json = VALUES(snapshot_json),
+            latest_revision = VALUES(latest_revision),
+            evaluation_count = VALUES(evaluation_count),
+            coach_message_count = VALUES(coach_message_count),
+            generated_at = VALUES(generated_at),
+            updated_at = NOW()
+    </insert>
+
+    <select id="findLatestLearningAssetPreviewRun" resultMap="WritingLearningAssetPreviewRunResultMap">
+        SELECT id, run_uid, document_id, user_id, status, model, summary, result_json,
+               error_message, input_token_count, output_token_count, item_count,
+               generated_at, created_at, updated_at
+        FROM writing_learning_asset_preview_run
+        WHERE user_id = #{userId}
+          AND document_id = #{documentId}
+        ORDER BY generated_at DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLearningAssetPreviewItems" resultMap="WritingLearningAssetPreviewItemResultMap">
+        SELECT id, item_uid, run_uid, document_id, user_id, asset_type, source_type,
+               display_text, original_text, recommended_text, meaning_zh, explanation,
+               value_reason_for_user, how_to_reuse, review_prompt, source_question,
+               source_excerpt, confidence, learning_value_score, promotion_status,
+               created_at, updated_at
+        FROM writing_learning_asset_preview_item
+        WHERE run_uid = #{runUid}
+        ORDER BY learning_value_score DESC, id ASC
+    </select>
+
+    <insert id="insertLearningAssetPreviewRun" parameterType="com.personalenglishai.backend.entity.writing.WritingLearningAssetPreviewRun"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO writing_learning_asset_preview_run (
+            run_uid, document_id, user_id, status, model, summary, result_json,
+            error_message, input_token_count, output_token_count, item_count,
+            generated_at, created_at, updated_at
+        )
+        VALUES (
+            #{runUid}, #{documentId}, #{userId}, #{status}, #{model}, #{summary}, #{resultJson},
+            #{errorMessage}, #{inputTokenCount}, #{outputTokenCount}, #{itemCount},
+            #{generatedAt}, NOW(), NOW()
+        )
+    </insert>
+
+    <delete id="deleteLearningAssetPreviewItems">
+        DELETE FROM writing_learning_asset_preview_item
+        WHERE run_uid = #{runUid}
+    </delete>
+
+    <insert id="insertLearningAssetPreviewItems">
+        INSERT INTO writing_learning_asset_preview_item (
+            item_uid, run_uid, document_id, user_id, asset_type, source_type,
+            display_text, original_text, recommended_text, meaning_zh, explanation,
+            value_reason_for_user, how_to_reuse, review_prompt, source_question,
+            source_excerpt, confidence, learning_value_score, promotion_status,
+            created_at, updated_at
+        )
+        VALUES
+        <foreach collection="items" item="item" separator=",">
+            (
+                #{item.itemUid}, #{runUid}, #{item.documentId}, #{item.userId}, #{item.assetType}, #{item.sourceType},
+                #{item.displayText}, #{item.originalText}, #{item.recommendedText}, #{item.meaningZh}, #{item.explanation},
+                #{item.valueReasonForUser}, #{item.howToReuse}, #{item.reviewPrompt}, #{item.sourceQuestion},
+                #{item.sourceExcerpt}, #{item.confidence}, #{item.learningValueScore}, #{item.promotionStatus},
+                NOW(), NOW()
+            )
+        </foreach>
+    </insert>
+</mapper>

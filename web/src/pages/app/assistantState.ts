@@ -279,6 +279,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
 
   const activeConversation = computed(() => {
     const current = conversations.value.find((conversation) => conversation.id === activeConversationId.value)
+      ?? archivedConversations.value.find((conversation) => conversation.id === activeConversationId.value)
     return current ?? conversations.value[0]!
   })
 
@@ -307,6 +308,18 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       activeConversationId.value = merged.id
     }
     persistState()
+    void hydrateConversationAttachments(merged.id).catch(() => undefined)
+  }
+
+  function replaceArchivedConversation(id: string, next: AssistantConversation) {
+    const previous = archivedConversations.value.find((conversation) => conversation.id === id)
+    const merged = mergeTransientMessageAttachments(previous, next)
+    archivedConversations.value = archivedConversations.value.map((conversation) => (
+      conversation.id === id ? merged : conversation
+    ))
+    if (activeConversationId.value === id) {
+      activeConversationId.value = merged.id
+    }
     void hydrateConversationAttachments(merged.id).catch(() => undefined)
   }
 
@@ -394,14 +407,21 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   }
 
   async function selectConversation(id: string) {
-    if (conversations.value.some((conversation) => conversation.id === id)) {
+    const isVisibleConversation = conversations.value.some((conversation) => conversation.id === id)
+    const isArchivedConversation = archivedConversations.value.some((conversation) => conversation.id === id)
+    if (isVisibleConversation || isArchivedConversation) {
       activeConversationId.value = id
       errorMessage.value = ''
       lastFailedPrompt.value = ''
       persistState()
       if (remote && remoteConversationIds.has(id)) {
         try {
-          replaceConversation(id, fromRemoteConversation(await assistantApi.getConversation(id)))
+          const remoteConversation = fromRemoteConversation(await assistantApi.getConversation(id))
+          if (isArchivedConversation) {
+            replaceArchivedConversation(id, remoteConversation)
+          } else {
+            replaceConversation(id, remoteConversation)
+          }
         } catch (error) {
           errorMessage.value = error instanceof Error ? error.message : '对话加载失败'
         }

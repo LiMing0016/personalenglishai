@@ -43,3 +43,12 @@ test('admin navigation exposes the data catalog system entry', () => {
   assert.equal(dataCatalog?.permission, 'admin.data_catalog.read')
   assert.equal(dataCatalog?.status, 'implemented')
 })
+
+test('admin navigation exposes data cleaning under content assets', () => {
+  const contentGroup = adminNavGroups.find((group) => group.label === '内容资产')
+  const dataCleaning = contentGroup?.items.find((item) => item.label === '数据清洗中心')
+
+  assert.equal(dataCleaning?.to, '/admin/data-cleaning')
+  assert.equal(dataCleaning?.permission, 'admin.prompts.read')
+  assert.equal(dataCleaning?.status, 'implemented')
+})
