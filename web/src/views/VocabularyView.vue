@@ -63,8 +63,21 @@
           <span v-if="debugMessage">{{ debugMessage }}</span>
         </section>
 
-        <section class="search-meta-grid">
-          <article class="compact-panel">
+        <section v-if="selectedWord && !errorMessage" class="search-detail-section" aria-label="当前单词详情">
+          <DictionaryDetail
+            :key="lookupResultWord"
+            :result="result"
+            :word="selectedWord"
+            :source-title="lookupSourceTitle"
+            :last-lookup-at="lastLookupAt"
+            @review="addTodayReview(selectedWord.id)"
+            @master="markSelectedMastered"
+            @play-audio="playAudio"
+          />
+        </section>
+
+        <section class="search-meta-grid" aria-label="搜索快捷入口">
+          <article class="compact-panel compact-panel--hot">
             <header>
               <h2>热门搜索</h2>
             </header>
@@ -87,19 +100,6 @@
               </li>
             </ul>
           </article>
-        </section>
-
-        <section v-if="selectedWord" class="search-detail-section" aria-label="当前单词详情">
-          <DictionaryDetail
-            :key="lookupResultWord"
-            :result="result"
-            :word="selectedWord"
-            :source-title="lookupSourceTitle"
-            :last-lookup-at="lastLookupAt"
-            @review="addTodayReview(selectedWord.id)"
-            @master="markSelectedMastered"
-            @play-audio="playAudio"
-          />
         </section>
 
         <section class="results-panel">
@@ -615,8 +615,8 @@ const DictionaryDetail = defineComponent({
       }]
     })
     const dictionaryPhonetics = computed(() => props.result?.phonetics ?? [])
-    const dictionaryAudio = computed(() => dictionaryPhonetics.value.find((item) => item.audioUrl)?.audioUrl)
     const displayWord = computed(() => props.result?.word || props.word.word)
+    const speechWord = computed(() => displayWord.value.replace(/[·•]/g, ''))
     const displaySource = computed(() => props.result ? props.sourceTitle : '学习词库')
     const displayLanguage = computed(() => props.result?.language || '本地学习数据')
     const partOfSpeechLabel = computed(() => dictionaryEntries.value[0]?.partOfSpeech || props.word.partOfSpeech)
@@ -624,6 +624,13 @@ const DictionaryDetail = defineComponent({
       const first = dictionaryEntries.value[0]?.definitions?.[0]
       return first || props.word.meaning
     })
+    const contentEntries = computed<DictionaryEntry[]>(() => dictionaryEntries.value.map((entry) => {
+      const definitions = entry.definitions.filter((definition) => !definition.trim().startsWith('短语：'))
+      return {
+        ...entry,
+        definitions: definitions.length ? definitions : entry.definitions,
+      }
+    }))
     const supplementWord = computed(() => {
       if (!props.result || props.result.word === props.word.word) {
         return props.word
@@ -632,6 +639,22 @@ const DictionaryDetail = defineComponent({
     })
     const expandedDetailEntries = ref<Set<string>>(new Set())
     const commonPhrases = computed(() => {
+      const phraseDefinitions = dictionaryEntries.value
+        .flatMap((entry) => entry.definitions)
+        .filter((definition) => definition.trim().startsWith('短语：'))
+        .map((definition) => {
+          const text = definition.trim().replace(/^短语：/, '')
+          const [phrase, ...rest] = text.split(' - ')
+          return {
+            phrase: phrase.trim(),
+            meaning: rest.join(' - ').trim() || text,
+          }
+        })
+
+      if (phraseDefinitions.length) {
+        return phraseDefinitions
+      }
+
       const base = props.result?.word || props.word.word
       return [
         { phrase: `have the ${base} to do sth`, meaning: '有勇气或能力去做某事' },
@@ -662,37 +685,53 @@ const DictionaryDetail = defineComponent({
     function cleanPhonetic(text = '') {
       return text.replace(/^(BrE|NAmE)\s*/i, '').trim()
     }
-    function formatPhonetic(label: string, index: number) {
+    function phoneticText(label: string, index: number) {
       const preferred = dictionaryPhonetics.value.find((item) => item.text?.toLowerCase().startsWith(label.toLowerCase()))
-      const text = cleanPhonetic(preferred?.text || dictionaryPhonetics.value[index]?.text || '')
-      if (text) {
-        return `${label} ${text}`
-      }
-      return `${label} ${props.word.phonetic}`
+      return cleanPhonetic(preferred?.text || dictionaryPhonetics.value[index]?.text || props.word.phonetic)
+    }
+    const pronunciationItems = computed(() => [
+      {
+        label: '英',
+        language: 'en-GB',
+        text: phoneticText('BrE', 0),
+        audioUrl: dictionaryPhonetics.value[0]?.audioUrl,
+      },
+      {
+        label: '美',
+        language: 'en-US',
+        text: phoneticText('NAmE', 1),
+        audioUrl: dictionaryPhonetics.value[1]?.audioUrl,
+      },
+    ].filter((item) => item.text))
+    function playPronunciation(item: { audioUrl?: string; text: string; language: string }) {
+      emit('play-audio', {
+        audioUrl: item.audioUrl,
+        text: speechWord.value,
+        language: item.language,
+      })
     }
 
     return () => h('article', { class: 'dictionary-detail-card' }, [
       h('header', { class: 'dictionary-hero' }, [
         h('div', { class: 'dictionary-title-block' }, [
-          h('span', { class: 'section-eyebrow' }, 'Oxford detail'),
+          h('span', { class: 'section-eyebrow' }, 'Oxford Dictionary'),
           h('h2', displayWord.value),
-          h('div', { class: 'phonetic-line' }, [
-            h('span', formatPhonetic('BrE', 0)),
-            h('span', formatPhonetic('NAmE', 1)),
-            dictionaryAudio.value
-              ? h('button', {
+          h('div', { class: 'phonetic-line' }, pronunciationItems.value.map((item) => h('button', {
                 type: 'button',
-                class: 'audio-button',
-                'aria-label': '播放发音',
-                onClick: () => emit('play-audio', dictionaryAudio.value),
-              }, '♪')
-              : h('span', { class: 'audio-button muted', 'aria-hidden': 'true' }, '♪'),
-          ]),
+                class: 'pronunciation-button',
+                'aria-label': `播放${item.label}式发音`,
+                onClick: () => playPronunciation(item),
+              }, [
+                h('span', { class: 'pronunciation-icon', 'aria-hidden': 'true' }, '♪'),
+                h('span', { class: 'pronunciation-label' }, item.label),
+                h('span', { class: 'pronunciation-text' }, `/${item.text}/`),
+              ]))),
           h('div', { class: 'dictionary-meta-row' }, [
             h('mark', { class: 'source-pill' }, displaySource.value),
             h('span', displayLanguage.value),
             props.lastLookupAt ? h('span', props.lastLookupAt) : null,
           ]),
+          h('p', { class: 'hero-definition' }, primaryDefinition.value),
         ]),
         h('div', { class: 'dictionary-actions' }, [
           h('button', { type: 'button', 'aria-label': '收藏单词' }, props.word.favorite ? '★' : '☆'),
@@ -702,16 +741,18 @@ const DictionaryDetail = defineComponent({
       ]),
 
       h('section', { class: 'definition-list' }, [
-        h('div', { class: 'entry-heading' }, [
-          h('mark', { class: 'pos-label' }, partOfSpeechLabel.value || 'entry'),
-          h('span', primaryDefinition.value),
+        h('header', { class: 'section-title-row' }, [
+          h('h3', '释义与例句'),
+          h('span', `${contentEntries.value.reduce((total, entry) => total + entry.definitions.length, 0)} 条释义`),
         ]),
-        ...dictionaryEntries.value.map((entry, entryIndex) => {
+        ...contentEntries.value.map((entry, entryIndex) => {
           const key = detailEntryKey(entry, entryIndex)
           return h('article', { class: 'definition-entry' }, [
             h('div', { class: 'definition-index' }, String(entryIndex + 1)),
             h('div', [
-              h('h3', entry.partOfSpeech || 'definition'),
+              h('h3', [
+                h('mark', { class: 'pos-label' }, entry.partOfSpeech || partOfSpeechLabel.value || 'entry'),
+              ]),
               ...visibleDetailDefinitions(entry, key).map((definition, definitionIndex) => h('section', { class: 'definition-item' }, [
                 h('p', { class: 'definition-text' }, definition),
                 entry.examples[definitionIndex]
@@ -734,7 +775,10 @@ const DictionaryDetail = defineComponent({
       ]),
 
       h('section', { class: 'phrase-panel' }, [
-        h('h3', '常用搭配 / 习语'),
+        h('header', { class: 'section-title-row' }, [
+          h('h3', '常用搭配 / 习语'),
+          h('span', `${commonPhrases.value.length} 条`),
+        ]),
         h('div', { class: 'phrase-list' }, commonPhrases.value.map((item, index) => h('article', [
           h('strong', item.phrase),
           h('p', `${index + 1}. ${item.meaning}`),
@@ -865,8 +909,26 @@ function markSelectedMastered() {
   word.mastery = 100
 }
 
-function playAudio(audioUrl: string) {
-  void new Audio(audioUrl).play()
+function playAudio(payload: string | { audioUrl?: string; text?: string; language?: string }) {
+  if (typeof payload === 'string') {
+    void new Audio(payload).play()
+    return
+  }
+
+  if (payload.audioUrl) {
+    void new Audio(payload.audioUrl).play()
+    return
+  }
+
+  if (!payload.text || !('speechSynthesis' in window)) {
+    return
+  }
+
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(payload.text)
+  utterance.lang = payload.language || 'en-GB'
+  utterance.rate = 0.9
+  window.speechSynthesis.speak(utterance)
 }
 
 function statusClass(status: LearningStatus) {
@@ -1085,6 +1147,10 @@ function normalizeError(err: unknown) {
   padding: 26px;
 }
 
+.search-main .page-heading {
+  text-align: center;
+}
+
 .page-heading p,
 .page-heading h1,
 .page-heading span {
@@ -1115,9 +1181,10 @@ function normalizeError(err: unknown) {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) 110px 92px;
   align-items: center;
-  max-width: 760px;
+  width: 100%;
+  max-width: 820px;
   min-height: 54px;
-  margin-top: 24px;
+  margin: 24px auto 0;
   overflow: hidden;
   border: 1px solid #10b981;
   border-radius: 8px;
@@ -1173,7 +1240,10 @@ function normalizeError(err: unknown) {
 }
 
 .lookup-message {
+  width: 100%;
+  max-width: 820px;
   margin-top: 16px;
+  margin-inline: auto;
   padding: 16px;
   border: 1px solid #bbf7d0;
   border-radius: 8px;
@@ -1218,21 +1288,328 @@ function normalizeError(err: unknown) {
 
 .search-meta-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 14px;
-  margin-top: 22px;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 12px;
+  margin-inline: auto;
 }
 
 .search-detail-section {
-  margin-top: 14px;
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 18px;
+  margin-inline: auto;
 }
 
 .dictionary-detail-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.search-detail-section :deep(.dictionary-hero) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
   padding: 24px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 72%);
+}
+
+.search-detail-section :deep(.section-eyebrow) {
+  display: block;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.search-detail-section :deep(.dictionary-title-block h2) {
+  margin: 6px 0 0;
+  color: #0f172a;
+  font-size: 42px;
+  line-height: 1.1;
+}
+
+.search-detail-section :deep(.phonetic-line),
+.search-detail-section :deep(.dictionary-meta-row),
+.search-detail-section :deep(.dictionary-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-detail-section :deep(.phonetic-line) {
+  gap: 14px;
+  margin-top: 12px;
+  color: #475569;
+  font-size: 15px;
+}
+
+.search-detail-section :deep(.pronunciation-button) {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px 0 8px;
   border: 1px solid #dce7e1;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #334155;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  font-weight: 800;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.search-detail-section :deep(.pronunciation-button:hover) {
+  border-color: #10b981;
+  color: #047857;
+  box-shadow: 0 10px 24px rgba(5, 150, 105, 0.12);
+  transform: translateY(-1px);
+}
+
+.search-detail-section :deep(.pronunciation-icon) {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #047857;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.search-detail-section :deep(.pronunciation-label) {
+  color: #047857;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.pronunciation-text) {
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.search-detail-section :deep(.dictionary-meta-row) {
+  gap: 10px;
+  margin-top: 14px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.search-detail-section :deep(.source-pill),
+.search-detail-section :deep(.pos-label) {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.source-pill) {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.search-detail-section :deep(.pos-label) {
+  background: #eef2ff;
+  color: #2563eb;
+}
+
+.search-detail-section :deep(.hero-definition) {
+  max-width: 820px;
+  margin: 14px 0 0;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.search-detail-section :deep(.dictionary-actions) {
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.search-detail-section :deep(.dictionary-actions button),
+.search-detail-section :deep(.detail-expand-button) {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #bbd7ca;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  color: #047857;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.dictionary-actions .primary-action) {
+  border: 0;
+  background: #059669;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(5, 150, 105, 0.18);
+}
+
+.search-detail-section :deep(.definition-list),
+.search-detail-section :deep(.phrase-panel),
+.search-detail-section :deep(.learning-supplement) {
+  margin-top: 22px;
+}
+
+.search-detail-section :deep(.section-title-row) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.section-title-row h3) {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.search-detail-section :deep(.section-title-row span) {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.search-detail-section :deep(.definition-entry) {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 4px;
+}
+
+.search-detail-section :deep(.definition-entry + .definition-entry) {
+  border-top: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.definition-index) {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.definition-entry h3) {
+  margin: 0;
+}
+
+.search-detail-section :deep(.definition-item) {
+  margin-top: 12px;
+  padding-left: 14px;
+  border-left: 3px solid #d1fae5;
+}
+
+.search-detail-section :deep(.definition-text) {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.search-detail-section :deep(.definition-item blockquote) {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.search-detail-section :deep(.definition-item blockquote p) {
+  margin: 0;
+  color: #2563eb;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.search-detail-section :deep(.definition-item blockquote small) {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.search-detail-section :deep(.phrase-list) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.search-detail-section :deep(.phrase-list article) {
+  padding: 12px 14px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.search-detail-section :deep(.phrase-list strong) {
+  color: #0f172a;
+}
+
+.search-detail-section :deep(.phrase-list p) {
+  margin: 5px 0 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.search-detail-section :deep(.learning-supplement) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.learning-supplement h3) {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.search-detail-section :deep(.supplement-empty) {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.search-detail-section :deep(.derived-list) {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.search-detail-section :deep(.derived-list span) {
+  min-height: 30px;
+  padding: 8px 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.search-detail-section :deep(.morpheme-list.compact) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .dictionary-hero {
@@ -1503,6 +1880,29 @@ function normalizeError(err: unknown) {
   padding: 16px;
 }
 
+.search-meta-grid .compact-panel {
+  padding: 12px 14px;
+}
+
+.search-meta-grid .compact-panel h2 {
+  font-size: 14px;
+}
+
+.compact-panel--hot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.compact-panel--hot header {
+  align-items: center;
+}
+
+.compact-panel--hot .chip-list {
+  margin-top: 0;
+}
+
 .compact-panel header,
 .results-panel header,
 .collection-header,
@@ -1545,8 +1945,8 @@ function normalizeError(err: unknown) {
 
 .recent-list {
   display: grid;
-  gap: 10px;
-  margin: 12px 0 0;
+  gap: 6px;
+  margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -1555,6 +1955,7 @@ function normalizeError(err: unknown) {
   display: grid;
   grid-template-columns: 18px 1fr;
   align-items: center;
+  min-height: 28px;
 }
 
 .recent-list button {
@@ -1565,7 +1966,10 @@ function normalizeError(err: unknown) {
 }
 
 .results-panel {
+  width: 100%;
+  max-width: 1080px;
   margin-top: 14px;
+  margin-inline: auto;
 }
 
 .results-panel header button,
