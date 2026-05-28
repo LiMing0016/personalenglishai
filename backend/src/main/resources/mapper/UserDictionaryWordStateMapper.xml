@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.UserDictionaryWordStateMapper">
+
+    <resultMap id="UserDictionaryWordStateResultMap" type="com.personalenglishai.backend.entity.UserDictionaryWordState">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="word" property="word"/>
+        <result column="normalized_word" property="normalizedWord"/>
+        <result column="language" property="language"/>
+        <result column="source" property="source"/>
+        <result column="favorite" property="favorite"/>
+        <result column="lookup_count" property="lookupCount"/>
+        <result column="favorited_at" property="favoritedAt"/>
+        <result column="last_lookup_at" property="lastLookupAt"/>
+    </resultMap>
+
+    <insert id="incrementLookup">
+        INSERT INTO user_dictionary_word_state (
+            user_id, word, normalized_word, language, source,
+            favorite, lookup_count, first_lookup_at, last_lookup_at
+        )
+        VALUES (
+            #{userId}, #{word}, #{normalizedWord}, #{language}, #{source},
+            0, 1, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            word = VALUES(word),
+            language = VALUES(language),
+            source = VALUES(source),
+            lookup_count = lookup_count + 1,
+            last_lookup_at = NOW(),
+            updated_at = NOW()
+    </insert>
+
+    <insert id="setFavorite">
+        INSERT INTO user_dictionary_word_state (
+            user_id, word, normalized_word, language, source,
+            favorite, lookup_count, favorited_at
+        )
+        VALUES (
+            #{userId}, #{word}, #{normalizedWord}, #{language}, 'manual',
+            #{favorite}, 0, CASE WHEN #{favorite} THEN NOW() ELSE NULL END
+        )
+        ON DUPLICATE KEY UPDATE
+            word = VALUES(word),
+            language = VALUES(language),
+            favorite = VALUES(favorite),
+            favorited_at = CASE
+                WHEN VALUES(favorite) = 1 THEN COALESCE(favorited_at, NOW())
+                ELSE NULL
+            END,
+            updated_at = NOW()
+    </insert>
+
+    <select id="selectByUserAndWord" resultMap="UserDictionaryWordStateResultMap">
+        SELECT id,
+               user_id,
+               word,
+               normalized_word,
+               language,
+               source,
+               favorite,
+               lookup_count,
+               favorited_at,
+               last_lookup_at
+        FROM user_dictionary_word_state
+        WHERE user_id = #{userId}
+          AND normalized_word = #{normalizedWord}
+        LIMIT 1
+    </select>
+
+    <sql id="FavoriteKeywordCondition">
+        <if test="keyword != null and keyword != ''">
+            AND (
+                word LIKE CONCAT('%', #{keyword}, '%')
+                OR normalized_word LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+    </sql>
+
+    <select id="selectFavorites" resultMap="UserDictionaryWordStateResultMap">
+        SELECT id,
+               user_id,
+               word,
+               normalized_word,
+               language,
+               source,
+               favorite,
+               lookup_count,
+               favorited_at,
+               last_lookup_at
+        FROM user_dictionary_word_state
+        WHERE user_id = #{userId}
+          AND favorite = 1
+        <include refid="FavoriteKeywordCondition"/>
+        ORDER BY favorited_at DESC, updated_at DESC, id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countFavorites" resultType="long">
+        SELECT COUNT(1)
+        FROM user_dictionary_word_state
+        WHERE user_id = #{userId}
+          AND favorite = 1
+        <include refid="FavoriteKeywordCondition"/>
+    </select>
+</mapper>

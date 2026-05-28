@@ -18,7 +18,7 @@
           :key="view.key"
           type="button"
           :class="{ active: activeView === view.key }"
-          @click="activeView = view.key"
+          @click="switchVocabularyView(view.key)"
         >
           <span aria-hidden="true">{{ view.icon }}</span>
           {{ view.label }}
@@ -73,6 +73,7 @@
             @review="addTodayReview(selectedWord.id)"
             @master="markSelectedMastered"
             @play-audio="playAudio"
+            @toggle-favorite="toggleDictionaryFavorite"
           />
         </section>
 
@@ -186,20 +187,26 @@
           <section class="page-heading">
             <p>Collection</p>
             <h1>我的收藏 / 生词本</h1>
-            <span>共 128 个单词</span>
+            <span>共 {{ favoriteTotal }} 个单词</span>
           </section>
           <div class="collection-tools">
             <label>
               <span aria-hidden="true">⌕</span>
-              <input type="search" placeholder="搜索收藏的单词" aria-label="搜索收藏的单词">
+              <input
+                v-model="favoriteKeyword"
+                type="search"
+                placeholder="搜索收藏的单词"
+                aria-label="搜索收藏的单词"
+                @keyup.enter="loadFavoriteWords(1)"
+              >
             </label>
-            <button type="button">导出</button>
+            <button type="button" @click="loadFavoriteWords(1)">搜索</button>
           </div>
         </header>
 
         <div class="filter-row" aria-label="收藏筛选">
-          <button v-for="filter in collectionFilters" :key="filter.label" type="button" :class="{ active: filter.active }">
-            {{ filter.label }} <span>{{ filter.count }}</span>
+          <button type="button" class="active">
+            全部 <span>{{ favoriteTotal }}</span>
           </button>
           <button type="button" class="add-group-button">+ 添加分组</button>
         </div>
@@ -209,46 +216,61 @@
             <span><input type="checkbox" aria-label="全选单词"></span>
             <span>单词</span>
             <span>释义</span>
-            <span>状态</span>
+            <span>查询</span>
             <span>收藏时间</span>
             <span>操作</span>
           </div>
-          <div
-            v-for="word in collectionWords"
-            :key="word.id"
-            class="collection-row"
-            :class="{ selected: selectedWordId === word.id }"
-          >
-            <span><input type="checkbox" :aria-label="`选择 ${word.word}`"></span>
-            <button type="button" class="collection-word" @click="selectedWordId = word.id">
-              <strong>{{ word.word }}</strong>
-              <small>{{ word.phonetic }}</small>
-            </button>
-            <span>{{ word.partOfSpeech }}. {{ word.meaning }}</span>
-            <span><mark :class="statusClass(word.status)">{{ word.status }}</mark></span>
-            <span>{{ word.savedAt }}</span>
-            <span class="collection-actions">
-              <button type="button" aria-label="收藏单词">☆</button>
-              <button type="button" aria-label="更多操作">•••</button>
-            </span>
+          <div v-if="favoriteLoading" class="collection-empty">
+            正在加载收藏单词...
           </div>
-          <footer class="table-footer">
-            <span>共 128 条</span>
-            <div>
-              <button type="button">‹</button>
-              <strong>1</strong>
-              <button type="button">›</button>
+          <div v-else-if="favoriteError" class="collection-empty collection-empty--error">
+            {{ favoriteError }}
+          </div>
+          <div v-else-if="!favoriteWords.length" class="collection-empty">
+            暂无收藏单词，可以先在搜索页点击星标收藏。
+          </div>
+          <template v-else>
+            <div
+              v-for="word in favoriteWords"
+              :key="word.word"
+              class="collection-row"
+              :class="{ selected: selectedFavoriteWord === word.word }"
+            >
+              <span><input type="checkbox" :aria-label="`选择 ${word.word}`"></span>
+              <button type="button" class="collection-word" @click="selectedFavoriteWord = word.word">
+                <strong>{{ word.word }}</strong>
+                <small>{{ word.phonetic || '暂无音标' }}</small>
+              </button>
+              <span>{{ formatFavoriteMeaning(word) }}</span>
+              <span><mark class="status-badge status-badge--review">{{ word.lookupCount }} 次</mark></span>
+              <span>{{ formatFavoriteDate(word.favoritedAt) }}</span>
+              <span class="collection-actions">
+                <button type="button" aria-label="查看详细释义" @click="openFavoriteDetail(word.word)">⌕</button>
+                <button type="button" aria-label="取消收藏" @click="removeFavoriteWord(word.word)">★</button>
+              </span>
             </div>
-            <span>10 条/页</span>
+          </template>
+          <footer class="table-footer">
+            <span>共 {{ favoriteTotal }} 条</span>
+            <div>
+              <button type="button" :disabled="favoritePage <= 1 || favoriteLoading" @click="loadFavoriteWords(favoritePage - 1)">‹</button>
+              <strong>{{ favoritePage }}</strong>
+              <button
+                type="button"
+                :disabled="favoritePage >= favoritePageCount || favoriteLoading"
+                @click="loadFavoriteWords(favoritePage + 1)"
+              >›</button>
+            </div>
+            <span>{{ favoritePageSize }} 条/页</span>
           </footer>
         </section>
       </div>
 
-      <WordPreview
-        v-if="selectedWord"
-        :word="selectedWord"
-        @review="addTodayReview(selectedWord.id)"
-        @master="markSelectedMastered"
+      <FavoriteWordPreview
+        v-if="selectedFavoriteItem"
+        :item="selectedFavoriteItem"
+        @open-detail="openFavoriteDetail"
+        @remove="removeFavoriteWord"
       />
     </section>
 
@@ -324,9 +346,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, ref } from 'vue'
-import { lookupDictionary } from '@/api/dictionary'
-import type { DictionaryEntry, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
+import { computed, defineComponent, h, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { listDictionaryFavorites, lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
+import type { DictionaryEntry, DictionaryFavoriteItem, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
+import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
 type LearningStatus = '新学' | '学习中' | '复习中' | '已掌握'
@@ -352,7 +376,10 @@ interface LearningWord {
 }
 
 const maxVisibleDefinitions = 3
-const activeView = ref<VocabularyViewKey>('search')
+const route = useRoute()
+const router = useRouter()
+const vocabularyViewKeys: VocabularyViewKey[] = ['search', 'modes', 'collection', 'stats']
+const activeView = ref<VocabularyViewKey>(parseVocabularyView(route.query.tab) ?? 'search')
 const selectedWordId = ref('innovative')
 const query = ref('')
 const language = ref<DictionaryLanguage>('en-gb')
@@ -361,6 +388,14 @@ const result = ref<DictionaryLookupResponse | null>(null)
 const errorMessage = ref('')
 const debugMessage = ref('')
 const lastLookupAt = ref('')
+const favoriteWords = ref<DictionaryFavoriteItem[]>([])
+const favoriteTotal = ref(0)
+const favoritePage = ref(1)
+const favoritePageSize = ref(10)
+const favoriteKeyword = ref('')
+const favoriteLoading = ref(false)
+const favoriteError = ref('')
+const selectedFavoriteWord = ref('')
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
@@ -531,13 +566,6 @@ const insights = [
   { title: '个性化推荐', description: '根据你的掌握程度智能推荐', icon: '◇' },
 ]
 
-const collectionFilters = [
-  { label: '全部', count: 128, active: true },
-  { label: '新学', count: 28, active: false },
-  { label: '学习中', count: 62, active: false },
-  { label: '已掌握', count: 38, active: false },
-]
-
 const metrics = [
   { title: '今日待复习', value: '18', hint: '较昨日 +6', icon: '□', tone: 'tone-green' },
   { title: '新增单词', value: '26', hint: '较昨日 +8', icon: '+', tone: 'tone-blue' },
@@ -569,8 +597,11 @@ const milestones = [
 ]
 
 const selectedWord = computed(() => words.value.find((item) => item.id === selectedWordId.value) ?? words.value[0])
-const collectionWords = computed(() => words.value.filter((item) => item.favorite))
 const reviewQueue = computed(() => words.value.filter((item) => item.inReview))
+const selectedFavoriteItem = computed(() => {
+  return favoriteWords.value.find((item) => item.word === selectedFavoriteWord.value) ?? favoriteWords.value[0] ?? null
+})
+const favoritePageCount = computed(() => Math.max(1, Math.ceil(favoriteTotal.value / favoritePageSize.value)))
 const lookupResultWord = computed(() => result.value?.word || selectedWord.value?.word || '')
 const lookupSourceTitle = computed(() => {
   if (result.value?.source === 'local') {
@@ -602,7 +633,7 @@ const DictionaryDetail = defineComponent({
       default: '',
     },
   },
-  emits: ['review', 'master', 'play-audio'],
+  emits: ['review', 'master', 'play-audio', 'toggle-favorite'],
   setup(props, { emit }) {
     const dictionaryEntries = computed<DictionaryEntry[]>(() => {
       if (props.result?.entries?.length) {
@@ -619,6 +650,8 @@ const DictionaryDetail = defineComponent({
     const speechWord = computed(() => displayWord.value.replace(/[·•]/g, ''))
     const displaySource = computed(() => props.result ? props.sourceTitle : '学习词库')
     const displayLanguage = computed(() => props.result?.language || '本地学习数据')
+    const displayFavorite = computed(() => props.result?.favorite ?? props.word.favorite)
+    const displayLookupCount = computed(() => props.result?.lookupCount ?? 0)
     const partOfSpeechLabel = computed(() => dictionaryEntries.value[0]?.partOfSpeech || props.word.partOfSpeech)
     const primaryDefinition = computed(() => {
       const first = dictionaryEntries.value[0]?.definitions?.[0]
@@ -734,9 +767,29 @@ const DictionaryDetail = defineComponent({
           h('p', { class: 'hero-definition' }, primaryDefinition.value),
         ]),
         h('div', { class: 'dictionary-actions' }, [
-          h('button', { type: 'button', 'aria-label': '收藏单词' }, props.word.favorite ? '★' : '☆'),
+          h('button', {
+            type: 'button',
+            class: ['favorite-action', displayFavorite.value ? 'active' : ''],
+            'aria-label': displayFavorite.value ? '取消收藏单词' : '收藏单词',
+            onClick: () => emit('toggle-favorite', {
+              word: displayWord.value,
+              favorite: !displayFavorite.value,
+              language: props.result?.language,
+            }),
+          }, displayFavorite.value ? '★' : '☆'),
           h('button', { type: 'button', class: 'primary-action', onClick: () => emit('review') }, '加入今日复习'),
           h('button', { type: 'button', onClick: () => emit('master') }, '标记已掌握'),
+        ]),
+      ]),
+
+      h('section', { class: 'dictionary-insight-row', 'aria-label': '单词学习状态' }, [
+        h('article', [
+          h('span', '查询次数'),
+          h('strong', `${displayLookupCount.value} 次`),
+        ]),
+        h('article', [
+          h('span', '收藏状态'),
+          h('strong', displayFavorite.value ? '已收藏' : '未收藏'),
         ]),
       ]),
 
@@ -812,53 +865,66 @@ const DictionaryDetail = defineComponent({
   },
 })
 
-const WordPreview = defineComponent({
-  name: 'WordPreview',
+const FavoriteWordPreview = defineComponent({
+  name: 'FavoriteWordPreview',
   props: {
-    word: {
-      type: Object as () => LearningWord,
+    item: {
+      type: Object as () => DictionaryFavoriteItem,
       required: true,
     },
   },
-  emits: ['review', 'master'],
+  emits: ['open-detail', 'remove'],
   setup(props, { emit }) {
-    return () => h('aside', { class: 'word-preview-card' }, [
-      h('h2', { class: 'preview-title' }, '单词详情'),
+    const sourceText = computed(() => {
+      if (props.item.source === 'local') return '本地词典'
+      if (props.item.source === 'oxford') return 'Oxford'
+      return props.item.source || '收藏词库'
+    })
+    return () => h('aside', { class: 'word-preview-card favorite-preview-card' }, [
+      h('h2', { class: 'preview-title' }, '收藏详情'),
       h('header', [
         h('div', [
-          h('h3', props.word.word),
-          h('p', `${props.word.phonetic}  ♪`),
+          h('h3', props.item.word),
+          h('p', props.item.phonetic ? `/${props.item.phonetic}/` : '暂无音标'),
         ]),
-        h('button', { type: 'button', 'aria-label': '收藏单词' }, props.word.favorite ? '★' : '☆'),
+        h('button', {
+          type: 'button',
+          'aria-label': '取消收藏',
+          onClick: () => emit('remove', props.item.word),
+        }, '★'),
       ]),
-      h('mark', { class: 'word-state' }, props.word.status),
-      h('p', { class: 'word-meaning' }, `${props.word.partOfSpeech}. ${props.word.meaning}`),
-      h('section', { class: 'preview-block' }, [
-        h('h3', '例句'),
-        h('p', props.word.example),
-        h('small', props.word.translation),
-      ]),
-      h('section', { class: 'preview-block' }, [
-        h('h3', '词根词缀联想记忆'),
-        h('div', { class: 'morpheme-list' }, props.word.morphemes.map((part) => h('article', [
-          h('strong', part.name),
-          h('span', part.meaning),
-          h('small', part.hint),
-        ]))),
+      h('mark', { class: 'word-state' }, sourceText.value),
+      h('p', { class: 'word-meaning' }, [
+        props.item.partOfSpeech ? `${props.item.partOfSpeech}. ` : '',
+        props.item.meaning || '暂无释义预览，点击查看详细释义。',
       ]),
       h('section', { class: 'preview-block' }, [
-        h('h3', '近义词'),
-        h('div', { class: 'chip-list' }, props.word.synonyms.map((item) => h('span', item))),
+        h('h3', '学习记录'),
+        h('dl', { class: 'favorite-preview-stats' }, [
+          h('div', [
+            h('dt', '查询次数'),
+            h('dd', `${props.item.lookupCount || 0} 次`),
+          ]),
+          h('div', [
+            h('dt', '收藏时间'),
+            h('dd', formatFavoriteDate(props.item.favoritedAt)),
+          ]),
+          h('div', [
+            h('dt', '最近查询'),
+            h('dd', formatFavoriteDate(props.item.lastLookupAt)),
+          ]),
+        ]),
       ]),
       h('footer', [
         h('button', {
           type: 'button',
           class: 'primary-action',
-          'aria-label': '加入复习',
-          onClick: () => emit('review'),
-        }, '加入今日复习'),
-        h('button', { type: 'button', onClick: () => emit('master') }, '标记已掌握'),
-        h('button', { type: 'button' }, '查看详细释义'),
+          onClick: () => emit('open-detail', props.item.word),
+        }, '查看详细释义'),
+        h('button', {
+          type: 'button',
+          onClick: () => emit('remove', props.item.word),
+        }, '取消收藏'),
       ]),
     ])
   },
@@ -892,6 +958,145 @@ async function submitLookup() {
     loading.value = false
   }
 }
+
+async function toggleDictionaryFavorite(payload: { word: string; favorite: boolean; language?: string }) {
+  const targetWord = payload.word?.trim()
+  if (!targetWord) {
+    return
+  }
+  try {
+    const state = await setDictionaryFavorite(targetWord, payload.favorite, payload.language || language.value)
+    if (result.value && result.value.word.toLowerCase() === state.word.toLowerCase()) {
+      result.value = {
+        ...result.value,
+        favorite: state.favorite,
+        lookupCount: state.lookupCount,
+      }
+    }
+    const localWord = words.value.find((item) => item.word.toLowerCase() === targetWord.toLowerCase())
+    if (localWord) {
+      localWord.favorite = state.favorite
+    }
+    if (!state.favorite) {
+      removeFavoriteFromList(state.word)
+    } else if (activeView.value === 'collection') {
+      await loadFavoriteWords(favoritePage.value)
+    }
+    showToast(state.favorite ? '已加入收藏' : '已取消收藏', 'success')
+  } catch {
+    showToast('收藏状态更新失败，请稍后重试', 'error')
+  }
+}
+
+async function loadFavoriteWords(page = favoritePage.value) {
+  favoriteLoading.value = true
+  favoriteError.value = ''
+  try {
+    const response = await listDictionaryFavorites({
+      keyword: favoriteKeyword.value.trim() || undefined,
+      page,
+      size: favoritePageSize.value,
+    })
+    favoriteWords.value = response.items
+    favoriteTotal.value = response.total
+    favoritePage.value = response.page
+    favoritePageSize.value = response.size
+    if (!favoriteWords.value.some((item) => item.word === selectedFavoriteWord.value)) {
+      selectedFavoriteWord.value = favoriteWords.value[0]?.word || ''
+    }
+  } catch {
+    favoriteError.value = '收藏列表加载失败，请确认登录状态和后端服务'
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+async function removeFavoriteWord(word: string) {
+  const targetWord = word.trim()
+  if (!targetWord) {
+    return
+  }
+  try {
+    const state = await setDictionaryFavorite(targetWord, false, language.value)
+    removeFavoriteFromList(state.word)
+    if (result.value && result.value.word.toLowerCase() === state.word.toLowerCase()) {
+      result.value = {
+        ...result.value,
+        favorite: false,
+        lookupCount: state.lookupCount,
+      }
+    }
+    showToast('已取消收藏', 'success')
+  } catch {
+    showToast('取消收藏失败，请稍后重试', 'error')
+  }
+}
+
+function removeFavoriteFromList(word: string) {
+  const normalizedWord = word.toLowerCase()
+  const before = favoriteWords.value.length
+  favoriteWords.value = favoriteWords.value.filter((item) => item.word.toLowerCase() !== normalizedWord)
+  if (favoriteWords.value.length !== before) {
+    favoriteTotal.value = Math.max(0, favoriteTotal.value - 1)
+  }
+  if (selectedFavoriteWord.value.toLowerCase() === normalizedWord) {
+    selectedFavoriteWord.value = favoriteWords.value[0]?.word || ''
+  }
+}
+
+async function openFavoriteDetail(word: string) {
+  query.value = word
+  activeView.value = 'search'
+  await submitLookup()
+}
+
+function formatFavoriteMeaning(item: DictionaryFavoriteItem) {
+  const prefix = item.partOfSpeech ? `${item.partOfSpeech}. ` : ''
+  return `${prefix}${item.meaning || '暂无释义预览'}`
+}
+
+function formatFavoriteDate(value?: string) {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function parseVocabularyView(value: unknown): VocabularyViewKey | null {
+  const tab = Array.isArray(value) ? value[0] : value
+  return typeof tab === 'string' && vocabularyViewKeys.includes(tab as VocabularyViewKey)
+    ? tab as VocabularyViewKey
+    : null
+}
+
+function switchVocabularyView(view: VocabularyViewKey) {
+  activeView.value = view
+  const nextQuery = { ...route.query }
+  if (view === 'search') {
+    delete nextQuery.tab
+  } else {
+    nextQuery.tab = view
+  }
+  void router.replace({ query: nextQuery })
+}
+
+watch(() => route.query.tab, (tab) => {
+  activeView.value = parseVocabularyView(tab) ?? 'search'
+})
+
+watch(activeView, (view) => {
+  if (view === 'collection') {
+    void loadFavoriteWords(1)
+  }
+})
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
@@ -929,16 +1134,6 @@ function playAudio(payload: string | { audioUrl?: string; text?: string; languag
   utterance.lang = payload.language || 'en-GB'
   utterance.rate = 0.9
   window.speechSynthesis.speak(utterance)
-}
-
-function statusClass(status: LearningStatus) {
-  return {
-    'status-badge': true,
-    'status-badge--new': status === '新学',
-    'status-badge--learning': status === '学习中',
-    'status-badge--review': status === '复习中',
-    'status-badge--mastered': status === '已掌握',
-  }
 }
 
 function normalizeError(err: unknown) {
@@ -1457,6 +1652,48 @@ function normalizeError(err: unknown) {
   background: #059669;
   color: #ffffff;
   box-shadow: 0 10px 22px rgba(5, 150, 105, 0.18);
+}
+
+.search-detail-section :deep(.dictionary-actions .favorite-action) {
+  width: 46px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.search-detail-section :deep(.dictionary-actions .favorite-action.active) {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.search-detail-section :deep(.dictionary-insight-row) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.search-detail-section :deep(.dictionary-insight-row article) {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.search-detail-section :deep(.dictionary-insight-row span) {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.search-detail-section :deep(.dictionary-insight-row strong) {
+  color: #0f172a;
+  font-size: 18px;
 }
 
 .search-detail-section :deep(.definition-list),
@@ -2382,6 +2619,20 @@ function normalizeError(err: unknown) {
   background: #f0fdf4;
 }
 
+.collection-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  padding: 24px;
+  border-top: 1px solid #edf2f7;
+  color: #64748b;
+  text-align: center;
+}
+
+.collection-empty--error {
+  color: #991b1b;
+}
+
 .collection-word {
   display: grid;
   border: 0;
@@ -2438,9 +2689,40 @@ function normalizeError(err: unknown) {
   background: #ffffff;
 }
 
+.table-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .table-footer strong {
   background: #059669;
   color: #ffffff;
+}
+
+.favorite-preview-stats {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.favorite-preview-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.favorite-preview-stats dt,
+.favorite-preview-stats dd {
+  margin: 0;
+}
+
+.favorite-preview-stats dt {
+  color: #64748b;
+}
+
+.favorite-preview-stats dd {
+  color: #0f172a;
+  font-weight: 900;
 }
 
 .stats-kpis {

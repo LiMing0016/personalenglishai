@@ -9,6 +9,8 @@ public class DictionaryLookupResponse {
     private String source = "oxford";
     private List<DictionaryPhoneticDto> phonetics = new ArrayList<>();
     private List<DictionaryEntryDto> entries = new ArrayList<>();
+    private Boolean favorite;
+    private Integer lookupCount;
 
     public String getWord() {
         return word;
@@ -48,5 +50,21 @@ public class DictionaryLookupResponse {
 
     public void setEntries(List<DictionaryEntryDto> entries) {
         this.entries = entries == null ? new ArrayList<>() : entries;
+    }
+
+    public Boolean getFavorite() {
+        return favorite;
+    }
+
+    public void setFavorite(Boolean favorite) {
+        this.favorite = favorite;
+    }
+
+    public Integer getLookupCount() {
+        return lookupCount;
+    }
+
+    public void setLookupCount(Integer lookupCount) {
+        this.lookupCount = lookupCount;
     }
 }

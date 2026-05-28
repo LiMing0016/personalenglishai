@@ -4,7 +4,7 @@
 
 单词模块第一版以“在线查词”为核心能力，在现有 `/app/vocabulary` 页面接入 Oxford Dictionaries API，完成从用户输入英文单词到展示英文释义、音标、发音和例句的闭环。
 
-第一版的目标是把词典能力稳定接入本地项目，而不是一次性完成完整背单词系统。因此本阶段只做查词体验，不做单词本、复习计划、记忆曲线、中文翻译或写作页选词查询。
+第一版的目标是把词典能力稳定接入本地项目，而不是一次性完成完整背单词系统。当前已包含查词、用户收藏和查询次数；复习计划、记忆曲线、中文翻译和写作页选词查询仍在后续阶段。
 
 ## 范围
 
@@ -14,6 +14,7 @@
 - 前端改造 `/app/vocabulary` 为查词页。
 - 展示 Oxford 返回的英文原文内容。
 - 支持音标、音频、词性、英文释义、英文例句。
+- 支持用户收藏单词、记录查询次数，并在“我的收藏 / 生词本”展示收藏列表。
 - 处理未找到、凭据错误、额度耗尽、超时和服务异常等错误状态。
 - 通过环境变量配置 Oxford 凭据和 base URL。
 
@@ -21,8 +22,7 @@
 
 - 中文释义或 AI 翻译。
 - 写作页选词查询。
-- 单词收藏、单词本、复习队列。
-- 数据库表结构变更。
+- 复习队列。
 - Redis 或本地缓存。
 - Oxford 原始 JSON 透传给前端。
 
@@ -421,6 +421,50 @@ npm run build
 - 增加 Redis 或数据库缓存，降低 Oxford 调用次数。
 - 在写作页支持选中单词快速查词。
 - 将查词结果与用户学习画像关联。
+
+## 用户单词状态扩展
+
+2026-05-28 起，单词模块增加用户维度的收藏和查询次数。公共词典内容仍保存在 `dictionary_*` 表中，用户行为不写入 `dictionary_entry`，而是单独落到 `user_dictionary_word_state`。
+
+这样拆分的原因：
+
+- `dictionary_entry` 是全局词典内容，同一个单词对所有用户一致。
+- 收藏、查询次数、后续复习状态都属于用户学习行为，需要按 `user_id + normalized_word` 隔离。
+- 后续“我的收藏”“最近查询”“复习队列”可以复用同一张用户状态表。
+
+新增表：
+
+```sql
+CREATE TABLE IF NOT EXISTS user_dictionary_word_state (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    word VARCHAR(255) NOT NULL,
+    normalized_word VARCHAR(255) NOT NULL,
+    language VARCHAR(32) NULL,
+    source VARCHAR(32) NULL,
+    favorite TINYINT(1) NOT NULL DEFAULT 0,
+    lookup_count INT NOT NULL DEFAULT 0,
+    first_lookup_at DATETIME NULL,
+    last_lookup_at DATETIME NULL,
+    favorited_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_dictionary_word (user_id, normalized_word)
+);
+```
+
+接口变化：
+
+- `GET /api/dictionary/lookup` 在用户已登录时，成功查询后自动 `lookup_count + 1`，并在响应中返回 `favorite`、`lookupCount`。
+- `POST /api/dictionary/words/{word}/favorite` 更新当前用户对该单词的收藏状态，返回最新 `favorite` 和 `lookupCount`。
+- `GET /api/dictionary/favorites?keyword=&page=&size=` 返回当前用户收藏单词分页列表，列表项包含 `word`、`phonetic`、`partOfSpeech`、`meaning`、`lookupCount`、`favoritedAt`、`lastLookupAt` 等字段。释义预览从本地 `dictionary_*` 表补充，不复制词典正文到用户状态表。
+
+前端展示：
+
+- 单词详情右上角星标按钮直接调用收藏接口。
+- 单词详情展示“查询次数”和“收藏状态”。
+- “我的收藏 / 生词本”页从 `/api/dictionary/favorites` 拉取真实收藏数据，支持按单词搜索、分页、取消收藏，并可跳转回搜索页查看完整牛津词典详情。
+- 如果用户未登录或接口失败，前端保留当前详情内容并显示错误提示。
 
 ## 文档与合并评估
 
