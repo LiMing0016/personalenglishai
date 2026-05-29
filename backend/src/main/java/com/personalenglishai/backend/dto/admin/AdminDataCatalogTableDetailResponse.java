@@ -7,6 +7,7 @@ public class AdminDataCatalogTableDetailResponse extends AdminDataCatalogTableRe
     private List<Column> columns = new ArrayList<>();
     private List<Index> indexes = new ArrayList<>();
     private List<ForeignKey> foreignKeys = new ArrayList<>();
+    private List<Relationship> relationships = new ArrayList<>();
     private List<String> sensitiveColumns = new ArrayList<>();
     private List<String> securityNotes = new ArrayList<>();
 
@@ -16,6 +17,8 @@ public class AdminDataCatalogTableDetailResponse extends AdminDataCatalogTableRe
     public void setIndexes(List<Index> indexes) { this.indexes = indexes; }
     public List<ForeignKey> getForeignKeys() { return foreignKeys; }
     public void setForeignKeys(List<ForeignKey> foreignKeys) { this.foreignKeys = foreignKeys; }
+    public List<Relationship> getRelationships() { return relationships; }
+    public void setRelationships(List<Relationship> relationships) { this.relationships = relationships; }
     public List<String> getSensitiveColumns() { return sensitiveColumns; }
     public void setSensitiveColumns(List<String> sensitiveColumns) { this.sensitiveColumns = sensitiveColumns; }
     public List<String> getSecurityNotes() { return securityNotes; }
@@ -73,5 +76,30 @@ public class AdminDataCatalogTableDetailResponse extends AdminDataCatalogTableRe
         public void setReferencedTableName(String referencedTableName) { this.referencedTableName = referencedTableName; }
         public String getReferencedColumnName() { return referencedColumnName; }
         public void setReferencedColumnName(String referencedColumnName) { this.referencedColumnName = referencedColumnName; }
+    }
+
+    public static class Relationship {
+        private String sourceTable;
+        private String sourceColumn;
+        private String targetTable;
+        private String targetColumn;
+        private String relationType;
+        private String direction;
+        private String description;
+
+        public String getSourceTable() { return sourceTable; }
+        public void setSourceTable(String sourceTable) { this.sourceTable = sourceTable; }
+        public String getSourceColumn() { return sourceColumn; }
+        public void setSourceColumn(String sourceColumn) { this.sourceColumn = sourceColumn; }
+        public String getTargetTable() { return targetTable; }
+        public void setTargetTable(String targetTable) { this.targetTable = targetTable; }
+        public String getTargetColumn() { return targetColumn; }
+        public void setTargetColumn(String targetColumn) { this.targetColumn = targetColumn; }
+        public String getRelationType() { return relationType; }
+        public void setRelationType(String relationType) { this.relationType = relationType; }
+        public String getDirection() { return direction; }
+        public void setDirection(String direction) { this.direction = direction; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
     }
 }

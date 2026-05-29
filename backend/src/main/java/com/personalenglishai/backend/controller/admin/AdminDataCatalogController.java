@@ -2,10 +2,12 @@ package com.personalenglishai.backend.controller.admin;
 
 import com.personalenglishai.backend.dto.admin.AdminDataCatalogTableDetailResponse;
 import com.personalenglishai.backend.dto.admin.AdminDataCatalogTableResponse;
+import com.personalenglishai.backend.dto.admin.AdminDataCatalogGraphResponse;
 import com.personalenglishai.backend.entity.admin.AdminPermissions;
 import com.personalenglishai.backend.service.admin.AdminAuthorizationService;
 import com.personalenglishai.backend.service.admin.AdminDataCatalogService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -44,5 +46,32 @@ public class AdminDataCatalogController {
             @PathVariable String tableName) {
         adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.DATA_CATALOG_READ);
         return ResponseEntity.ok(dataCatalogService.getTableDetail(tableName));
+    }
+
+    @GetMapping("/graph")
+    public ResponseEntity<AdminDataCatalogGraphResponse> getGraph(
+            @RequestAttribute("userId") Long adminUserId,
+            @RequestParam(required = false) String module,
+            @RequestParam(required = false) String tableName) {
+        adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.DATA_CATALOG_READ);
+        return ResponseEntity.ok(dataCatalogService.getGraph(module, tableName));
+    }
+
+    @GetMapping(value = "/export/mermaid", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> exportMermaid(
+            @RequestAttribute("userId") Long adminUserId,
+            @RequestParam(required = false) String module,
+            @RequestParam(required = false) String tableName) {
+        adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.DATA_CATALOG_READ);
+        return ResponseEntity.ok(dataCatalogService.exportMermaid(module, tableName));
+    }
+
+    @GetMapping(value = "/export/dbml", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> exportDbml(
+            @RequestAttribute("userId") Long adminUserId,
+            @RequestParam(required = false) String module,
+            @RequestParam(required = false) String tableName) {
+        adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.DATA_CATALOG_READ);
+        return ResponseEntity.ok(dataCatalogService.exportDbml(module, tableName));
     }
 }

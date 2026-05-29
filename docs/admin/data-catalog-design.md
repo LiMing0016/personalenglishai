@@ -32,15 +32,17 @@ related_docs:
 - 当前大概有多少数据。
 - 应该跳转到哪个管理员页面继续排查。
 
-首版建议只做只读数据字典和表级概览，不做脱敏样例和自由查询。
+当前版本保持只读边界，但已从“表级概览”升级为“自动发现 + 业务增强 + 关系图可视化”模式，不做脱敏样例和自由查询。
 
 ## 范围
 
 覆盖：
 
 - 表列表和表详情。
+- 自动发现新建表。
 - 表中文名、所属模块、业务说明、敏感级别。
 - 字段、主键、索引、外键关系。
+- ER 关系图、逻辑关系补充和 Mermaid / DBML 导出。
 - 近似行数、最近更新时间等表级健康信息。
 - 表到管理员业务页面的跳转。
 - `super_admin` 或细粒度权限控制。
@@ -75,6 +77,7 @@ flowchart TB
 
   DATA_CATALOG --> TABLE_LIST["表列表"]
   DATA_CATALOG --> TABLE_DETAIL["表详情"]
+  DATA_CATALOG --> ER_GRAPH["ER 关系图"]
 
   TABLE_LIST --> FILTERS["模块 / 敏感级别 / 关键词筛选"]
   TABLE_LIST --> HEALTH["行数 / 最近更新时间 / 空表提示"]
@@ -84,6 +87,11 @@ flowchart TB
   TABLE_DETAIL --> RELATIONS["外键与关联表"]
   TABLE_DETAIL --> SECURITY["敏感字段与安全说明"]
   TABLE_DETAIL --> ROUTE["业务页面跳转"]
+  TABLE_DETAIL --> LOCAL_GRAPH["局部关系图"]
+
+  ER_GRAPH --> MODULE_GRAPH["按模块筛选"]
+  ER_GRAPH --> FOCUS_GRAPH["按表聚焦"]
+  ER_GRAPH --> EXPORT["导出 Mermaid / DBML"]
 
   ROUTE --> USERS["/admin/users"]
   ROUTE --> MODEL_USAGE["/admin/model-usage"]
@@ -115,10 +123,17 @@ flowchart TB
 | 表名 | 数据库真实表名 |
 | 中文名 | 面向管理员的业务名称 |
 | 所属模块 | 归属业务域 |
+| 状态 | 配置增强 / 自动发现 |
 | 行数 | 使用近似行数或缓存行数 |
 | 敏感级别 | 表级数据敏感度 |
 | 最近更新时间 | 基于配置的时间字段或统计时间 |
 | 管理员入口 | 跳转对应业务页面 |
+
+说明：
+
+- 新建表只要已经落到当前数据库，就会自动出现在列表里。
+- 未配置 `admin-data-catalog.yml` 的表也会展示，但只显示基础信息。
+- 已配置的表会补中文名、模块、敏感级别、说明、入口和安全说明。
 
 ### 数据地图详情页
 
@@ -134,10 +149,25 @@ flowchart TB
 | 字段列表 | 字段名、类型、是否为空、默认值、字段说明、敏感标记 |
 | 主键与索引 | 主键、唯一索引、普通索引、索引用途 |
 | 关联关系 | 外键、被引用表、业务关系说明 |
+| 局部关系图 | 当前表为中心的一跳关系图 |
 | 安全说明 | 哪些字段不可展示、哪些字段需要脱敏 |
 | 业务入口 | 对应管理员页面、排查建议 |
 
 首版不展示样例行。P4 如果需要脱敏样例，应独立加权限和审计。
+
+### ER 图视图
+
+路由：`/admin/data-catalog?view=graph`
+
+定位：帮助管理员在不进入数据库客户端的情况下，快速理解表与表之间的结构关系和业务关系。
+
+支持：
+
+- 全库关系图
+- 按模块查看
+- 按表聚焦
+- 区分真实外键与逻辑关系
+- 导出 Mermaid / DBML
 
 ## 数据来源
 
@@ -158,7 +188,7 @@ flowchart TB
 
 - 行数优先使用 `information_schema.tables.table_rows` 的近似值。
 - 不对大表执行实时 `COUNT(*)`。
-- 最近更新时间优先使用人工配置的时间字段，例如 `updated_at`、`created_at`、`occurred_at`。
+- 最近更新时间优先使用人工配置的时间字段；未配置时自动推断 `updated_at`、`occurred_at`、`last_lookup_at`、`created_at` 等常见时间列。
 
 ### 人工业务配置
 
@@ -201,6 +231,19 @@ ai_token_usage_event:
 - 对生产库没有写入要求。
 - 后续如果需要运营在线维护，再迁移成配置表。
 
+### 逻辑关系配置
+
+除了数据库真实外键外，数据地图还支持通过 `admin-data-catalog.yml` 补充逻辑关系，用于弥补历史表结构中未显式声明外键、但业务上存在稳定从属关系的场景。
+
+例如词典域中：
+
+- `dictionary_entry -> dictionary_sense`
+- `dictionary_sense -> dictionary_example`
+- `dictionary_entry -> dictionary_pronunciation`
+- `user_dictionary_word_state -> dictionary_entry`
+
+逻辑关系只用于管理员端图谱展示和文档导出，不会伪造成数据库真实外键。
+
 ## 后端接口
 
 ### 表列表
@@ -238,6 +281,25 @@ ai_token_usage_event:
 ### 表详情
 
 `GET /api/admin/data-catalog/tables/{tableName}`
+
+### 关系图
+
+`GET /api/admin/data-catalog/graph`
+
+请求参数：
+
+| 参数 | 类型 | 说明 |
+| --- | --- | --- |
+| `module` | string | 按模块过滤 |
+| `tableName` | string | 按单表聚焦 |
+
+### Mermaid 导出
+
+`GET /api/admin/data-catalog/export/mermaid`
+
+### DBML 导出
+
+`GET /api/admin/data-catalog/export/dbml`
 
 响应示例：
 
