@@ -137,6 +137,7 @@ export interface AdminDataCatalogTable {
   latestAt: string | null
   adminRoute: string | null
   description: string | null
+  configured: boolean
 }
 
 export interface AdminDataCatalogColumn {
@@ -162,12 +163,47 @@ export interface AdminDataCatalogForeignKey {
   referencedColumnName: string | null
 }
 
+export interface AdminDataCatalogRelationship {
+  sourceTable: string
+  sourceColumn: string | null
+  targetTable: string
+  targetColumn: string | null
+  relationType: 'physical' | 'logical' | string
+  direction: 'incoming' | 'outgoing' | string
+  description: string | null
+}
+
 export interface AdminDataCatalogTableDetail extends AdminDataCatalogTable {
   columns: AdminDataCatalogColumn[]
   indexes: AdminDataCatalogIndex[]
   foreignKeys: AdminDataCatalogForeignKey[]
+  relationships: AdminDataCatalogRelationship[]
   sensitiveColumns: string[]
   securityNotes: string[]
+}
+
+export interface AdminDataCatalogGraphNode {
+  tableName: string
+  title: string | null
+  module: string | null
+  sensitivity: 'low' | 'medium' | 'high' | 'critical' | string
+  rowCount: number
+  adminRoute: string | null
+  configured: boolean
+}
+
+export interface AdminDataCatalogGraphEdge {
+  sourceTable: string
+  sourceColumn: string | null
+  targetTable: string
+  targetColumn: string | null
+  relationType: 'physical' | 'logical' | string
+  description: string | null
+}
+
+export interface AdminDataCatalogGraph {
+  nodes: AdminDataCatalogGraphNode[]
+  edges: AdminDataCatalogGraphEdge[]
 }
 
 export interface AdminDataCleaningOverview {
@@ -561,6 +597,15 @@ export const adminApi = {
   getDataCatalogTable(tableName: string) {
     return http.get<AdminDataCatalogTableDetail>(`/admin/data-catalog/tables/${encodeURIComponent(tableName)}`).then((r) => r.data)
   },
+  getDataCatalogGraph(params: Record<string, unknown>) {
+    return http.get<AdminDataCatalogGraph>('/admin/data-catalog/graph', { params }).then((r) => r.data)
+  },
+  exportDataCatalogMermaid(params: Record<string, unknown>) {
+    return http.get('/admin/data-catalog/export/mermaid', { params, responseType: 'text' }).then((r) => String(r.data ?? ''))
+  },
+  exportDataCatalogDbml(params: Record<string, unknown>) {
+    return http.get('/admin/data-catalog/export/dbml', { params, responseType: 'text' }).then((r) => String(r.data ?? ''))
+  },
   getDataCleaningOverview() {
     return http.get<AdminDataCleaningOverview>('/admin/data-cleaning/overview').then((r) => r.data)
   },
@@ -598,7 +643,7 @@ export const adminApi = {
   listAdminDictionaryImportJobs(dictionaryUid: string) {
     return http.get<AdminDictionaryImportJob[]>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}/import-jobs`).then((r) => r.data)
   },
-  createAdminDictionaryImportJob(dictionaryUid: string, limit = 100) {
+  createAdminDictionaryImportJob(dictionaryUid: string, limit = 0) {
     return http.post<AdminDictionaryImportJob>(`/admin/dictionaries/${encodeURIComponent(dictionaryUid)}/import-jobs`, null, { params: { limit } }).then((r) => r.data)
   },
   listAdminDictionaryEntrySamples(dictionaryUid: string, limit = 10) {

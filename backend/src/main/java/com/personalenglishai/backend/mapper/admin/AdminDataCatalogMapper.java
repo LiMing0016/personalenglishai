@@ -16,5 +16,7 @@ public interface AdminDataCatalogMapper {
 
     List<Map<String, Object>> selectForeignKeys(@Param("tableName") String tableName);
 
+    List<Map<String, Object>> selectAllForeignKeys();
+
     Object selectLatestAt(@Param("tableName") String tableName, @Param("timeColumn") String timeColumn);
 }

@@ -1,335 +1,359 @@
 <template>
-  <main class="learning-shell">
-    <header class="learning-topbar">
-      <div class="brand-block">
-        <div class="brand-mark" aria-hidden="true">□</div>
+  <main class="vocabulary-shell">
+    <header class="vocabulary-topbar">
+      <div class="brand-lockup" aria-label="词启 Vocabulary">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </div>
         <div>
-          <p class="brand-name">English Learning</p>
-          <h1>单词学习</h1>
+          <strong>词启</strong>
+          <small>Vocabulary</small>
         </div>
       </div>
 
-      <form class="learning-search" @submit.prevent="submitLookup">
-        <span class="search-icon" aria-hidden="true">⌕</span>
-        <input
-          v-model="query"
-          type="search"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="搜索单词、短语或句子，例如 innovative 或 play a vital role"
-          aria-label="搜索单词、短语或句子"
+      <nav class="vocabulary-nav" aria-label="单词学习页面">
+        <button
+          v-for="view in views"
+          :key="view.key"
+          type="button"
+          :class="{ active: activeView === view.key }"
+          @click="switchVocabularyView(view.key)"
         >
-        <select v-model="language" aria-label="选择词典语言">
-          <option value="en-gb">en-gb</option>
-          <option value="en-us">en-us</option>
-        </select>
-        <button type="submit" :disabled="loading">
-          {{ loading ? '查询中' : '查询' }}
+          <span aria-hidden="true">{{ view.icon }}</span>
+          {{ view.label }}
         </button>
-      </form>
+      </nav>
 
-      <div class="top-actions" aria-label="用户操作">
-        <button type="button" class="icon-button" aria-label="通知">♢</button>
-        <div class="user-avatar" aria-label="当前用户"></div>
+      <div class="topbar-actions" aria-label="用户操作">
+        <button type="button" class="icon-button" aria-label="通知">!</button>
+        <div class="avatar" aria-label="当前用户"></div>
       </div>
     </header>
 
-    <nav class="learning-tabs" aria-label="单词学习视图">
-      <button
-        v-for="tab in tabs"
-        :key="tab"
-        type="button"
-        :class="{ active: tab === activeTab }"
-        @click="activeTab = tab"
-      >
-        {{ tab }}
-      </button>
-    </nav>
-
-    <section class="api-status-panel" aria-label="单词端接口接入状态">
-      <header>
-        <div>
-          <p>接口接入状态</p>
-          <h2>单词端数据源验收标记</h2>
-        </div>
-        <span>当前页面</span>
-      </header>
-      <div class="api-status-grid">
-        <article v-for="item in apiStatusItems" :key="item.name" class="api-status-item">
-          <mark :class="`api-badge api-badge--${item.status}`">{{ apiStatusLabel[item.status] }}</mark>
-          <strong>{{ item.name }}</strong>
-          <span>{{ item.endpoint }}</span>
-          <small>{{ item.note }}</small>
-        </article>
-      </div>
-    </section>
-
-    <section class="metric-grid" aria-label="学习概览">
-      <article v-for="metric in metrics" :key="metric.title" class="metric-card">
-        <div class="metric-icon" :class="metric.tone">{{ metric.icon }}</div>
-        <div>
-          <p>{{ metric.title }}</p>
-          <strong>{{ metric.value }}</strong>
-          <span>{{ metric.hint }} · 本地模拟</span>
-        </div>
-      </article>
-    </section>
-
-    <section class="learning-layout">
-      <article class="word-table-card">
-        <header class="card-header">
-          <div>
-            <h2>来自昨日对话的重点单词</h2>
-            <p>根据对话采集、清洗与学习价值评分生成</p>
-          </div>
-          <mark class="api-badge api-badge--mock">列表未接用户词库 API</mark>
-          <div class="table-actions">
-            <button type="button">全部状态 ⌄</button>
-            <button type="button">批量操作 ⌄</button>
-          </div>
-        </header>
-
-        <div class="word-table" role="table" aria-label="昨日对话重点单词">
-          <div class="word-row word-row--head" role="row">
-            <span role="columnheader">单词</span>
-            <span role="columnheader">词性</span>
-            <span role="columnheader">中文释义</span>
-            <span role="columnheader">例句</span>
-            <span role="columnheader">来源</span>
-            <span role="columnheader">出现</span>
-            <span role="columnheader">学习状态</span>
-            <span role="columnheader">操作</span>
-          </div>
-
-          <button
-            v-for="word in words"
-            :key="word.id"
-            type="button"
-            class="word-row word-row--item"
-            :class="{ selected: word.id === selectedWordId }"
-            role="row"
-            @click="selectedWordId = word.id"
-          >
-            <span class="word-cell">
-              <span class="favorite" aria-hidden="true">☆</span>
-              <strong>{{ word.word }}</strong>
-              <small>{{ word.phonetic }} ♪</small>
-            </span>
-            <span><mark class="pos-tag" :class="`pos-tag--${word.partOfSpeech}`">{{ word.partOfSpeech }}.</mark></span>
-            <span>{{ word.meaning }}</span>
-            <span class="example-cell" v-html="highlightExample(word.example, word.word)"></span>
-            <span><mark class="source-tag">对话</mark></span>
-            <span class="count-cell">{{ word.occurrences }}</span>
-            <span class="status-cell">
-              <i :class="statusClass(word.status)" aria-hidden="true"></i>
-              {{ word.status }}
-            </span>
-            <span class="row-actions">
-              <button type="button" @click.stop="addTodayReview(word.id)">加入复习 <small>本地</small></button>
-              <button type="button" @click.stop="selectedWordId = word.id">查看详情 <small>静态</small> 〉</button>
-            </span>
-          </button>
-        </div>
-
-        <footer class="table-footer">
-          <span>共 {{ words.length }} 条</span>
-          <div class="pager" aria-label="分页">
-            <button type="button">‹</button>
-            <strong>1</strong>
-            <button type="button">›</button>
-          </div>
-          <span>20 条/页</span>
-        </footer>
-      </article>
-
-      <article v-if="selectedWord" class="word-detail-panel">
-        <header class="detail-header">
-          <h2>单词详情</h2>
-          <button type="button" aria-label="关闭详情">×</button>
-        </header>
-
-        <section class="detail-hero">
-          <div>
-            <div class="word-title-line">
-              <h3>{{ selectedWord.word }}</h3>
-              <button type="button" aria-label="收藏单词">☆</button>
-            </div>
-            <mark class="api-badge api-badge--partial">详情静态 + 词典查询已接</mark>
-            <p class="phonetic">{{ selectedWord.phonetic }} ♪</p>
-            <p>
-              <mark class="pos-tag pos-tag--adj">{{ selectedWord.partOfSpeech }}.</mark>
-              <span>{{ selectedWord.meaning }}</span>
-            </p>
-          </div>
-          <aside class="mastery-card">
-            <strong>{{ selectedWord.status }}</strong>
-            <span>熟悉度 {{ selectedWord.mastery }}%</span>
-            <i><em :style="{ width: `${selectedWord.mastery}%` }"></em></i>
-          </aside>
+    <section v-if="activeView === 'search'" class="vocabulary-page search-page" aria-label="搜索单词">
+      <div class="search-main">
+        <section class="page-heading">
+          <p>Search</p>
+          <h1>搜索单词</h1>
+          <span>查询、学习、一步到位</span>
         </section>
 
-        <section v-if="errorMessage" class="lookup-feedback lookup-feedback--error">
+        <form class="dictionary-search" @submit.prevent="submitLookup">
+          <span aria-hidden="true">⌕</span>
+          <input
+            v-model="query"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="输入单词、词组或中文释义"
+            aria-label="输入单词、词组或中文释义"
+          >
+          <select v-model="language" aria-label="选择词典语言">
+            <option value="en-gb">en-gb</option>
+            <option value="en-us">en-us</option>
+          </select>
+          <button type="submit" :disabled="loading">
+            {{ loading ? '查询中' : '搜索' }}
+          </button>
+        </form>
+
+        <section v-if="errorMessage" class="lookup-message lookup-message--error">
           <strong>{{ errorMessage }}</strong>
           <span v-if="debugMessage">{{ debugMessage }}</span>
         </section>
 
-        <section v-if="result" class="lookup-feedback">
-          <header>
-            <strong>Oxford Dictionaries</strong>
-            <span>{{ result.language }} · {{ lastLookupAt }}</span>
-          </header>
-          <p v-if="primaryPhonetic?.text">/{{ primaryPhonetic.text }}/</p>
-          <button
-            v-if="primaryPhonetic?.audioUrl"
-            type="button"
-            @click="playAudio(primaryPhonetic.audioUrl)"
-          >
-            播放发音
-          </button>
-          <div v-for="entry in result.entries" :key="entry.partOfSpeech || 'unknown'" class="dictionary-entry">
-            <h4>{{ entry.partOfSpeech || 'unknown' }}</h4>
-            <ol>
-              <li
-                v-for="(definition, index) in visibleDefinitions(entry)"
-                :key="`${entry.partOfSpeech}-${index}-${definition}`"
-              >
-                <p>{{ definition }}</p>
-                <small v-if="entry.examples[index]">{{ entry.examples[index] }}</small>
+        <section v-if="selectedWord && !errorMessage" class="search-detail-section" aria-label="当前单词详情">
+          <DictionaryDetail
+            :key="lookupResultWord"
+            :result="result"
+            :word="selectedWord"
+            :source-title="lookupSourceTitle"
+            :last-lookup-at="lastLookupAt"
+            @review="addTodayReview(selectedWord.id)"
+            @master="markSelectedMastered"
+            @play-audio="playAudio"
+            @toggle-favorite="toggleDictionaryFavorite"
+          />
+        </section>
+
+        <section class="search-meta-grid" aria-label="搜索快捷入口">
+          <article class="compact-panel compact-panel--hot">
+            <header>
+              <h2>热门搜索</h2>
+            </header>
+            <div class="chip-list">
+              <button v-for="item in hotSearches" :key="item" type="button" @click="query = item">
+                {{ item }}
+              </button>
+            </div>
+          </article>
+
+          <article class="compact-panel">
+            <header>
+              <h2>最近搜索</h2>
+              <button type="button">清空</button>
+            </header>
+            <ul class="recent-list">
+              <li v-for="item in recentSearches" :key="item">
+                <span aria-hidden="true">○</span>
+                <button type="button" @click="query = item">{{ item }}</button>
               </li>
-            </ol>
+            </ul>
+          </article>
+        </section>
+
+        <section class="results-panel">
+          <header>
+            <h2>搜索结果 <small>({{ words.length * 32 }})</small></h2>
+            <button type="button">相关度⌄</button>
+          </header>
+          <div class="result-list" role="table" aria-label="单词搜索结果">
             <button
-              v-if="entry.definitions.length > maxVisibleDefinitions"
+              v-for="word in words.slice(0, 5)"
+              :key="word.id"
               type="button"
-              class="expand-button"
-              @click="toggleEntry(entry.partOfSpeech || 'unknown')"
+              class="result-row"
+              :class="{ selected: selectedWordId === word.id }"
+              role="row"
+              @click="selectedWordId = word.id"
             >
-              {{ isExpanded(entry.partOfSpeech || 'unknown') ? '收起' : '展开更多' }}
+              <strong>{{ word.word }}</strong>
+              <span>{{ word.phonetic }}</span>
+              <em>{{ word.partOfSpeech }}.</em>
+              <p>{{ word.meaning }}</p>
+              <i aria-label="收藏状态">{{ word.favorite ? '★' : '☆' }}</i>
             </button>
           </div>
         </section>
+      </div>
+    </section>
 
-        <section class="meaning-card">
-          <h4>释义与用法</h4>
-          <p>{{ selectedWord.usage }}</p>
+    <section v-else-if="activeView === 'modes'" class="vocabulary-page mode-page" aria-label="背词模式">
+      <div class="mode-content">
+        <section class="page-heading">
+          <p>Practice</p>
+          <h1>选择适合你的学习模式</h1>
+          <span>科学的学习方法，帮助你更高效地记忆单词</span>
         </section>
 
-        <section class="detail-section">
-          <h4>例句 ♪</h4>
-          <p class="detail-example" v-html="highlightExample(selectedWord.example, selectedWord.word)"></p>
-          <small>{{ selectedWord.translation }}</small>
-        </section>
+        <div class="mode-grid">
+          <article v-for="mode in studyModes" :key="mode.title" class="mode-card" :class="mode.tone">
+            <div class="mode-icon" aria-hidden="true">{{ mode.icon }}</div>
+            <h2>{{ mode.title }}</h2>
+            <p>{{ mode.description }}</p>
+            <button type="button">{{ mode.action }} →</button>
+          </article>
+        </div>
 
-        <section class="detail-section">
-          <h4>词根词缀联想记忆</h4>
-          <div class="morpheme-grid">
-            <article v-for="part in selectedWord.morphemes" :key="part.name">
-              <strong>{{ part.name }}</strong>
-              <span>{{ part.meaning }}</span>
-              <small>{{ part.hint }}</small>
-            </article>
+        <section class="insight-strip">
+          <article v-for="item in insights" :key="item.title">
+            <div aria-hidden="true">{{ item.icon }}</div>
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.description }}</span>
+          </article>
+        </section>
+      </div>
+
+      <aside class="today-plan-card">
+        <header>
+          <h2>今日学习计划</h2>
+          <button type="button">调整计划设置</button>
+        </header>
+        <div class="progress-ring" aria-label="今日计划完成 60%">
+          <span>60%</span>
+        </div>
+        <dl>
+          <div>
+            <dt>今日目标</dt>
+            <dd>30 词</dd>
           </div>
-        </section>
-
-        <section class="detail-section">
-          <h4>近义词</h4>
-          <div class="chip-grid">
-            <span v-for="item in selectedWord.synonyms" :key="item">{{ item }}</span>
+          <div>
+            <dt>已完成</dt>
+            <dd>18 词</dd>
           </div>
-        </section>
-
-        <section class="detail-section">
-          <h4>词族 / 派生词</h4>
-          <div class="derived-grid">
-            <article v-for="item in selectedWord.derived" :key="item.word">
-              <strong>{{ item.word }}</strong>
-              <small>{{ item.partOfSpeech }}. {{ item.meaning }}</small>
-            </article>
+          <div>
+            <dt>剩余复习</dt>
+            <dd>{{ reviewQueue.length }} 词</dd>
           </div>
-        </section>
-
-        <footer class="detail-actions">
-          <button type="button" class="primary-action" @click="addTodayReview(selectedWord.id)">加入今日复习 <small>未接 API</small></button>
-          <button type="button" @click="markSelectedMastered">标记已掌握 <small>本地</small></button>
-          <button type="button">收藏 <small>未接 API</small></button>
-        </footer>
-      </article>
-
-      <aside class="study-sidebar">
-        <section class="side-card">
-          <header>
-            <h2>今日学习计划</h2>
-            <mark class="api-badge api-badge--mock">静态</mark>
-            <button type="button">设置</button>
-          </header>
-          <ul class="plan-list">
-            <li v-for="item in studyPlan" :key="item.label">
-              <span>{{ item.icon }}</span>
-              <strong>{{ item.label }}</strong>
-              <em>{{ item.done }} / {{ item.total }}</em>
-            </li>
-          </ul>
-        </section>
-
-        <section class="side-card">
-          <header>
-            <h2>复习队列 <small>({{ reviewQueue.length }})</small></h2>
-            <mark class="api-badge api-badge--missing">未接 learning_review_queue</mark>
-            <button type="button">全部</button>
-          </header>
-          <ul class="review-list">
-            <li v-for="item in reviewQueue" :key="item.word">
-              <span class="review-dot" :class="item.tone"></span>
-              <strong>{{ item.word }}</strong>
-              <mark>★</mark>
-              <i>
-                <em
-                  v-for="step in 9"
-                  :key="step"
-                  :class="{ filled: step <= item.level }"
-                ></em>
-              </i>
-            </li>
-          </ul>
-          <button type="button" class="primary-action full-width">开始复习 <small>未接 API</small></button>
-        </section>
-
-        <section class="side-card">
-          <header>
-            <h2>学习建议</h2>
-            <mark class="api-badge api-badge--mock">静态</mark>
-            <button type="button">换一批</button>
-          </header>
-          <ul class="advice-list">
-            <li v-for="item in advice" :key="item">{{ item }}</li>
-          </ul>
-        </section>
-
-        <section class="side-card">
-          <header>
-            <h2>学习成就</h2>
-            <mark class="api-badge api-badge--mock">静态</mark>
-            <button type="button">查看全部</button>
-          </header>
-          <div class="badge-grid">
-            <article v-for="badge in badges" :key="badge.title">
-              <div :class="badge.tone">{{ badge.icon }}</div>
-              <strong>{{ badge.title }}</strong>
-              <span>{{ badge.subtitle }}</span>
-            </article>
-          </div>
-        </section>
+        </dl>
+        <button type="button" class="primary-action">继续学习</button>
       </aside>
+    </section>
+
+    <section v-else-if="activeView === 'collection'" class="vocabulary-page collection-page" aria-label="我的收藏">
+      <div class="collection-main">
+        <header class="collection-header">
+          <section class="page-heading">
+            <p>Collection</p>
+            <h1>我的收藏 / 生词本</h1>
+            <span>共 {{ favoriteTotal }} 个单词</span>
+          </section>
+          <div class="collection-tools">
+            <label>
+              <span aria-hidden="true">⌕</span>
+              <input
+                v-model="favoriteKeyword"
+                type="search"
+                placeholder="搜索收藏的单词"
+                aria-label="搜索收藏的单词"
+                @keyup.enter="loadFavoriteWords(1)"
+              >
+            </label>
+            <button type="button" @click="loadFavoriteWords(1)">搜索</button>
+          </div>
+        </header>
+
+        <div class="filter-row" aria-label="收藏筛选">
+          <button type="button" class="active">
+            全部 <span>{{ favoriteTotal }}</span>
+          </button>
+          <button type="button" class="add-group-button">+ 添加分组</button>
+        </div>
+
+        <section class="collection-table" aria-label="收藏单词列表">
+          <div class="collection-row collection-row--head">
+            <span><input type="checkbox" aria-label="全选单词"></span>
+            <span>单词</span>
+            <span>释义</span>
+            <span>查询</span>
+            <span>收藏时间</span>
+            <span>操作</span>
+          </div>
+          <div v-if="favoriteLoading" class="collection-empty">
+            正在加载收藏单词...
+          </div>
+          <div v-else-if="favoriteError" class="collection-empty collection-empty--error">
+            {{ favoriteError }}
+          </div>
+          <div v-else-if="!favoriteWords.length" class="collection-empty">
+            暂无收藏单词，可以先在搜索页点击星标收藏。
+          </div>
+          <template v-else>
+            <div
+              v-for="word in favoriteWords"
+              :key="word.word"
+              class="collection-row"
+              :class="{ selected: selectedFavoriteWord === word.word }"
+            >
+              <span><input type="checkbox" :aria-label="`选择 ${word.word}`"></span>
+              <button type="button" class="collection-word" @click="selectedFavoriteWord = word.word">
+                <strong>{{ word.word }}</strong>
+                <small>{{ word.phonetic || '暂无音标' }}</small>
+              </button>
+              <span>{{ formatFavoriteMeaning(word) }}</span>
+              <span><mark class="status-badge status-badge--review">{{ word.lookupCount }} 次</mark></span>
+              <span>{{ formatFavoriteDate(word.favoritedAt) }}</span>
+              <span class="collection-actions">
+                <button type="button" aria-label="查看详细释义" @click="openFavoriteDetail(word.word)">⌕</button>
+                <button type="button" aria-label="取消收藏" @click="removeFavoriteWord(word.word)">★</button>
+              </span>
+            </div>
+          </template>
+          <footer class="table-footer">
+            <span>共 {{ favoriteTotal }} 条</span>
+            <div>
+              <button type="button" :disabled="favoritePage <= 1 || favoriteLoading" @click="loadFavoriteWords(favoritePage - 1)">‹</button>
+              <strong>{{ favoritePage }}</strong>
+              <button
+                type="button"
+                :disabled="favoritePage >= favoritePageCount || favoriteLoading"
+                @click="loadFavoriteWords(favoritePage + 1)"
+              >›</button>
+            </div>
+            <span>{{ favoritePageSize }} 条/页</span>
+          </footer>
+        </section>
+      </div>
+
+      <FavoriteWordPreview
+        v-if="selectedFavoriteItem"
+        :item="selectedFavoriteItem"
+        @open-detail="openFavoriteDetail"
+        @remove="removeFavoriteWord"
+      />
+    </section>
+
+    <section v-else class="vocabulary-page stats-page" aria-label="学习统计">
+      <section class="stats-kpis" aria-label="学习概览">
+        <article v-for="metric in metrics" :key="metric.title" class="metric-card">
+          <div :class="metric.tone" aria-hidden="true">{{ metric.icon }}</div>
+          <span>{{ metric.title }}</span>
+          <strong>{{ metric.value }}</strong>
+          <small>{{ metric.hint }}</small>
+        </article>
+      </section>
+
+      <section class="stats-grid">
+        <article class="chart-panel trend-panel">
+          <header>
+            <h2>学习趋势（近 7 天）</h2>
+            <button type="button">学习单词数⌄</button>
+          </header>
+          <div class="line-chart" aria-label="近 7 天学习趋势">
+            <span
+              v-for="point in trendPoints"
+              :key="point.date"
+              :style="{ '--value': `${point.value}%` }"
+            >
+              <i></i>
+              <small>{{ point.date }}</small>
+            </span>
+          </div>
+        </article>
+
+        <article class="chart-panel">
+          <header>
+            <h2>掌握情况分布</h2>
+          </header>
+          <div class="donut-layout">
+            <div class="donut-chart" aria-label="掌握情况分布"></div>
+            <ul>
+              <li><span class="legend-dot mastered"></span>已掌握 328 (46%)</li>
+              <li><span class="legend-dot learning"></span>学习中 284 (40%)</li>
+              <li><span class="legend-dot new"></span>新学 100 (14%)</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="chart-panel calendar-panel">
+          <header>
+            <h2>连续学习日历</h2>
+          </header>
+          <div class="calendar-grid" aria-label="连续学习日历">
+            <span v-for="day in calendarDays" :key="day.label" :class="{ done: day.done }">
+              {{ day.label }}
+            </span>
+          </div>
+          <footer>
+            <span><i class="legend-dot mastered"></i> 已学习</span>
+            <span><i class="legend-dot idle"></i> 未学习</span>
+          </footer>
+        </article>
+      </section>
+
+      <section class="milestone-panel">
+        <h2>学习里程碑</h2>
+        <div class="milestone-track">
+          <article v-for="milestone in milestones" :key="milestone.label" :class="{ locked: milestone.locked }">
+            <span>{{ milestone.locked ? '锁' : '✓' }}</span>
+            <strong>{{ milestone.label }}</strong>
+          </article>
+        </div>
+      </section>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { lookupDictionary } from '@/api/dictionary'
-import type { DictionaryEntry, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
+import { computed, defineComponent, h, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { listDictionaryFavorites, lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
+import type { DictionaryEntry, DictionaryFavoriteItem, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
+import { showToast } from '@/utils/toast'
 
+type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
 type LearningStatus = '新学' | '学习中' | '复习中' | '已掌握'
-type ApiStatus = 'connected' | 'partial' | 'mock' | 'missing'
 
 interface LearningWord {
   id: string
@@ -347,54 +371,15 @@ interface LearningWord {
   synonyms: string[]
   derived: Array<{ word: string; partOfSpeech: string; meaning: string }>
   inReview: boolean
+  favorite: boolean
+  savedAt: string
 }
 
 const maxVisibleDefinitions = 3
-const tabs = ['今日复习', '我的单词', '短语句子', '学习统计']
-const apiStatusLabel: Record<ApiStatus, string> = {
-  connected: '已接入',
-  partial: '部分接入',
-  mock: '本地模拟',
-  missing: '未接入',
-}
-const apiStatusItems: Array<{
-  name: string
-  endpoint: string
-  status: ApiStatus
-  note: string
-}> = [
-  {
-    name: 'Oxford 单词查询',
-    endpoint: 'GET /api/dictionary/lookup',
-    status: 'connected',
-    note: '顶部搜索框已调用真实后端词典接口。',
-  },
-  {
-    name: '对话词句候选池',
-    endpoint: 'learning_raw_candidate / learning_evidence',
-    status: 'partial',
-    note: '后端已入库，单词页还没有用户侧读取 API。',
-  },
-  {
-    name: '重点单词列表',
-    endpoint: 'GET /api/learning/vocabulary/items',
-    status: 'missing',
-    note: '当前表格仍使用前端静态数据。',
-  },
-  {
-    name: '每日复习队列',
-    endpoint: 'learning_review_queue',
-    status: 'missing',
-    note: '队列表和前端读取接口尚未落地。',
-  },
-  {
-    name: '学习操作',
-    endpoint: 'POST review / mastery / favorite',
-    status: 'mock',
-    note: '加入复习、标记掌握、收藏目前只改本地状态。',
-  },
-]
-const activeTab = ref('今日复习')
+const route = useRoute()
+const router = useRouter()
+const vocabularyViewKeys: VocabularyViewKey[] = ['search', 'modes', 'collection', 'stats']
+const activeView = ref<VocabularyViewKey>(parseVocabularyView(route.query.tab) ?? 'search')
 const selectedWordId = ref('innovative')
 const query = ref('')
 const language = ref<DictionaryLanguage>('en-gb')
@@ -402,8 +387,22 @@ const loading = ref(false)
 const result = ref<DictionaryLookupResponse | null>(null)
 const errorMessage = ref('')
 const debugMessage = ref('')
-const expandedEntries = ref<Set<string>>(new Set())
 const lastLookupAt = ref('')
+const favoriteWords = ref<DictionaryFavoriteItem[]>([])
+const favoriteTotal = ref(0)
+const favoritePage = ref(1)
+const favoritePageSize = ref(10)
+const favoriteKeyword = ref('')
+const favoriteLoading = ref(false)
+const favoriteError = ref('')
+const selectedFavoriteWord = ref('')
+
+const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
+  { key: 'search', label: '搜索单词', icon: '⌕' },
+  { key: 'modes', label: '背词模式', icon: '▣' },
+  { key: 'collection', label: '我的收藏', icon: '☆' },
+  { key: 'stats', label: '学习统计', icon: '◷' },
+]
 
 const words = ref<LearningWord[]>([
   {
@@ -430,6 +429,8 @@ const words = ref<LearningWord[]>([
       { word: 'innovator', partOfSpeech: 'n', meaning: '创新者；革新者' },
     ],
     inReview: false,
+    favorite: true,
+    savedAt: '2024-05-20',
   },
   {
     id: 'perception',
@@ -454,6 +455,8 @@ const words = ref<LearningWord[]>([
       { word: 'perceptive', partOfSpeech: 'adj', meaning: '有洞察力的' },
     ],
     inReview: true,
+    favorite: true,
+    savedAt: '2024-05-18',
   },
   {
     id: 'sustainable',
@@ -477,6 +480,33 @@ const words = ref<LearningWord[]>([
       { word: 'sustainability', partOfSpeech: 'n', meaning: '可持续性' },
     ],
     inReview: true,
+    favorite: true,
+    savedAt: '2024-05-19',
+  },
+  {
+    id: 'strategy',
+    word: 'strategy',
+    phonetic: '/ˈstræt.ə.dʒi/',
+    partOfSpeech: 'n',
+    meaning: '策略；战略',
+    example: 'A clear strategy helps teams make better decisions.',
+    translation: '清晰的策略有助于团队做出更好的决策。',
+    occurrences: 2,
+    status: '学习中',
+    mastery: 52,
+    usage: '常用于商业、学习计划和议论文写作，强调有目标的行动方案。',
+    morphemes: [
+      { name: 'strateg', meaning: '领导；部署', hint: '来自军事语境' },
+      { name: '-y', meaning: '名词后缀', hint: '表示抽象概念' },
+    ],
+    synonyms: ['plan 计划', 'approach 方法', 'method 方法'],
+    derived: [
+      { word: 'strategic', partOfSpeech: 'adj', meaning: '战略性的' },
+      { word: 'strategist', partOfSpeech: 'n', meaning: '战略家' },
+    ],
+    inReview: false,
+    favorite: true,
+    savedAt: '2024-05-17',
   },
   {
     id: 'launch',
@@ -498,89 +528,407 @@ const words = ref<LearningWord[]>([
       { word: 'launcher', partOfSpeech: 'n', meaning: '启动器；发射器' },
     ],
     inReview: true,
-  },
-  {
-    id: 'stakeholder',
-    word: 'stakeholder',
-    phonetic: '/ˈsteɪk.hoʊl.dər/',
-    partOfSpeech: 'n',
-    meaning: '利益相关者；干系人',
-    example: 'It is important to consider the needs of all stakeholders.',
-    translation: '考虑所有利益相关者的需求很重要。',
-    occurrences: 2,
-    status: '学习中',
-    mastery: 42,
-    usage: '用于商业、政策、项目管理写作，指会被决策影响或能影响决策的人或组织。',
-    morphemes: [
-      { name: 'stake', meaning: '利害关系', hint: '表示投入或风险' },
-      { name: 'holder', meaning: '持有者', hint: '表示角色身份' },
-    ],
-    synonyms: ['participant 参与者', 'partner 伙伴', 'shareholder 股东'],
-    derived: [
-      { word: 'stake', partOfSpeech: 'n', meaning: '利害关系' },
-    ],
-    inReview: true,
-  },
-  {
-    id: 'optimize',
-    word: 'optimize',
-    phonetic: '/ˈɑːp.tɪ.maɪz/',
-    partOfSpeech: 'v',
-    meaning: '优化；使最优化',
-    example: 'We need to optimize our workflow to improve efficiency.',
-    translation: '我们需要优化工作流程以提高效率。',
-    occurrences: 1,
-    status: '复习中',
-    mastery: 58,
-    usage: '适合描述流程、系统、策略或学习方法的改进。',
-    morphemes: [
-      { name: 'optim', meaning: '最好', hint: '来自 optimum' },
-      { name: '-ize', meaning: '使成为', hint: '动词后缀' },
-    ],
-    synonyms: ['improve 改进', 'refine 完善', 'enhance 增强'],
-    derived: [
-      { word: 'optimization', partOfSpeech: 'n', meaning: '优化' },
-      { word: 'optimal', partOfSpeech: 'adj', meaning: '最佳的' },
-    ],
-    inReview: true,
+    favorite: true,
+    savedAt: '2024-05-16',
   },
 ])
 
+const hotSearches = ['innovative', 'strategy', 'sustainable', 'perception', 'launch', 'challenge']
+const recentSearches = ['innovative', 'sustainable', 'perception', 'viable', 'strategy']
+
+const studyModes = [
+  {
+    title: '智能复习',
+    description: '基于艾宾浩斯记忆曲线，优先复习即将遗忘的单词',
+    action: '开始复习',
+    icon: '♧',
+    tone: 'mode-card--green',
+  },
+  {
+    title: '新词学习',
+    description: '学习新单词，掌握词义、用法和真实语境例句',
+    action: '开始学习',
+    icon: '▤',
+    tone: 'mode-card--blue',
+  },
+  {
+    title: '拼写训练',
+    description: '通过听音与拼写训练，强化单词书写记忆',
+    action: '开始训练',
+    icon: 'A-Z',
+    tone: 'mode-card--violet',
+  },
+]
+
+const insights = [
+  { title: '学习建议', description: '每天坚持学习 20-30 分钟，效果更佳', icon: '◎' },
+  { title: '记忆曲线', description: '科学复习，事半功倍', icon: '⌁' },
+  { title: '个性化推荐', description: '根据你的掌握程度智能推荐', icon: '◇' },
+]
+
 const metrics = [
-  { title: '今日待复习', value: '18', hint: '较昨日 -6', icon: '□', tone: 'tone-green' },
+  { title: '今日待复习', value: '18', hint: '较昨日 +6', icon: '□', tone: 'tone-green' },
   { title: '新增单词', value: '26', hint: '较昨日 +8', icon: '+', tone: 'tone-blue' },
   { title: '已掌握', value: '328', hint: '总计', icon: '★', tone: 'tone-amber' },
-  { title: '连续学习', value: '12 天', hint: '超越超过 12 天', icon: '●', tone: 'tone-purple' },
+  { title: '连续学习', value: '12 天', hint: '超过 82% 的学习者', icon: '●', tone: 'tone-purple' },
 ]
 
-const studyPlan = [
-  { icon: '●', label: '复习 20 个单词', done: 18, total: 20 },
-  { icon: '↻', label: '学习 5 个句子', done: 3, total: 5 },
-  { icon: '○', label: '完成 1 次测试', done: 0, total: 1 },
+const trendPoints = [
+  { date: '05-14', value: 28 },
+  { date: '05-15', value: 38 },
+  { date: '05-16', value: 64 },
+  { date: '05-17', value: 42 },
+  { date: '05-18', value: 78 },
+  { date: '05-19', value: 70 },
+  { date: '05-20', value: 92 },
 ]
 
-const reviewQueue = [
-  { word: 'perception', tone: 'tone-amber', level: 3 },
-  { word: 'launch', tone: 'tone-amber', level: 3 },
-  { word: 'stakeholder', tone: 'tone-blue', level: 4 },
-  { word: 'sustainable', tone: 'tone-purple', level: 2 },
-  { word: 'optimize', tone: 'tone-gray', level: 3 },
+const calendarDays = Array.from({ length: 35 }, (_, index) => ({
+  label: ['一', '二', '三', '四', '五', '六', '日'][index % 7],
+  done: ![3, 6, 13, 18, 24, 27, 32].includes(index),
+}))
+
+const milestones = [
+  { label: '累计学习 7 天', locked: false },
+  { label: '累计学习 14 天', locked: false },
+  { label: '累计学习 30 天', locked: true },
+  { label: '累计学习 60 天', locked: true },
+  { label: '累计学习 100 天', locked: true },
 ]
 
-const advice = [
-  '建议在早上或者注意力较高的时候进行学习',
-  '尝试使用间隔复习法，强化记忆',
-  '每天完成测试，巩固学习效果',
-]
+const selectedWord = computed(() => words.value.find((item) => item.id === selectedWordId.value) ?? words.value[0])
+const reviewQueue = computed(() => words.value.filter((item) => item.inReview))
+const selectedFavoriteItem = computed(() => {
+  return favoriteWords.value.find((item) => item.word === selectedFavoriteWord.value) ?? favoriteWords.value[0] ?? null
+})
+const favoritePageCount = computed(() => Math.max(1, Math.ceil(favoriteTotal.value / favoritePageSize.value)))
+const lookupResultWord = computed(() => result.value?.word || selectedWord.value?.word || '')
+const lookupSourceTitle = computed(() => {
+  if (result.value?.source === 'local') {
+    return '已安装本地词典'
+  }
+  if (result.value?.source === 'oxford') {
+    return 'Oxford Dictionaries'
+  }
+  return result.value?.source || '词典查询'
+})
 
-const badges = [
-  { title: '连续 12 天', subtitle: '学习达人', icon: '★', tone: 'badge-gold' },
-  { title: '掌握单词 300+', subtitle: '词汇大师', icon: '⚖', tone: 'badge-silver' },
-  { title: '完成测试 20 次', subtitle: '坚持不懈', icon: '✿', tone: 'badge-bronze' },
-]
+const DictionaryDetail = defineComponent({
+  name: 'DictionaryDetail',
+  props: {
+    result: {
+      type: Object as () => DictionaryLookupResponse | null,
+      default: null,
+    },
+    word: {
+      type: Object as () => LearningWord,
+      required: true,
+    },
+    sourceTitle: {
+      type: String,
+      required: true,
+    },
+    lastLookupAt: {
+      type: String,
+      default: '',
+    },
+  },
+  emits: ['review', 'master', 'play-audio', 'toggle-favorite'],
+  setup(props, { emit }) {
+    const dictionaryEntries = computed<DictionaryEntry[]>(() => {
+      if (props.result?.entries?.length) {
+        return props.result.entries
+      }
+      return [{
+        partOfSpeech: props.word.partOfSpeech,
+        definitions: [props.word.usage || props.word.meaning],
+        examples: [props.word.example],
+      }]
+    })
+    const dictionaryPhonetics = computed(() => props.result?.phonetics ?? [])
+    const displayWord = computed(() => props.result?.word || props.word.word)
+    const speechWord = computed(() => displayWord.value.replace(/[·•]/g, ''))
+    const displaySource = computed(() => props.result ? props.sourceTitle : '学习词库')
+    const displayLanguage = computed(() => props.result?.language || '本地学习数据')
+    const displayFavorite = computed(() => props.result?.favorite ?? props.word.favorite)
+    const displayLookupCount = computed(() => props.result?.lookupCount ?? 0)
+    const partOfSpeechLabel = computed(() => dictionaryEntries.value[0]?.partOfSpeech || props.word.partOfSpeech)
+    const primaryDefinition = computed(() => {
+      const first = dictionaryEntries.value[0]?.definitions?.[0]
+      return first || props.word.meaning
+    })
+    const contentEntries = computed<DictionaryEntry[]>(() => dictionaryEntries.value.map((entry) => {
+      const definitions = entry.definitions.filter((definition) => !definition.trim().startsWith('短语：'))
+      return {
+        ...entry,
+        definitions: definitions.length ? definitions : entry.definitions,
+      }
+    }))
+    const supplementWord = computed(() => {
+      if (!props.result || props.result.word === props.word.word) {
+        return props.word
+      }
+      return null
+    })
+    const expandedDetailEntries = ref<Set<string>>(new Set())
+    const commonPhrases = computed(() => {
+      const phraseDefinitions = dictionaryEntries.value
+        .flatMap((entry) => entry.definitions)
+        .filter((definition) => definition.trim().startsWith('短语：'))
+        .map((definition) => {
+          const text = definition.trim().replace(/^短语：/, '')
+          const [phrase, ...rest] = text.split(' - ')
+          return {
+            phrase: phrase.trim(),
+            meaning: rest.join(' - ').trim() || text,
+          }
+        })
 
-const selectedWord = computed(() => words.value.find((word) => word.id === selectedWordId.value) ?? words.value[0])
-const primaryPhonetic = computed(() => result.value?.phonetics.find((item) => item.text || item.audioUrl))
+      if (phraseDefinitions.length) {
+        return phraseDefinitions
+      }
+
+      const base = props.result?.word || props.word.word
+      return [
+        { phrase: `have the ${base} to do sth`, meaning: '有勇气或能力去做某事' },
+        { phrase: `${base} in context`, meaning: '在真实语境中理解并使用这个词' },
+        { phrase: `${base} approach`, meaning: '与该词相关的常见表达或搭配' },
+      ]
+    })
+    function detailEntryKey(entry: DictionaryEntry, index: number) {
+      return `${entry.partOfSpeech || 'entry'}-${index}`
+    }
+    function isDetailEntryExpanded(key: string) {
+      return expandedDetailEntries.value.has(key)
+    }
+    function toggleDetailEntry(key: string) {
+      const next = new Set(expandedDetailEntries.value)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      expandedDetailEntries.value = next
+    }
+    function visibleDetailDefinitions(entry: DictionaryEntry, key: string) {
+      return isDetailEntryExpanded(key)
+        ? entry.definitions
+        : entry.definitions.slice(0, maxVisibleDefinitions)
+    }
+    function cleanPhonetic(text = '') {
+      return text.replace(/^(BrE|NAmE)\s*/i, '').trim()
+    }
+    function phoneticText(label: string, index: number) {
+      const preferred = dictionaryPhonetics.value.find((item) => item.text?.toLowerCase().startsWith(label.toLowerCase()))
+      return cleanPhonetic(preferred?.text || dictionaryPhonetics.value[index]?.text || props.word.phonetic)
+    }
+    const pronunciationItems = computed(() => [
+      {
+        label: '英',
+        language: 'en-GB',
+        text: phoneticText('BrE', 0),
+        audioUrl: dictionaryPhonetics.value[0]?.audioUrl,
+      },
+      {
+        label: '美',
+        language: 'en-US',
+        text: phoneticText('NAmE', 1),
+        audioUrl: dictionaryPhonetics.value[1]?.audioUrl,
+      },
+    ].filter((item) => item.text))
+    function playPronunciation(item: { audioUrl?: string; text: string; language: string }) {
+      emit('play-audio', {
+        audioUrl: item.audioUrl,
+        text: speechWord.value,
+        language: item.language,
+      })
+    }
+
+    return () => h('article', { class: 'dictionary-detail-card' }, [
+      h('header', { class: 'dictionary-hero' }, [
+        h('div', { class: 'dictionary-title-block' }, [
+          h('span', { class: 'section-eyebrow' }, 'Oxford Dictionary'),
+          h('h2', displayWord.value),
+          h('div', { class: 'phonetic-line' }, pronunciationItems.value.map((item) => h('button', {
+                type: 'button',
+                class: 'pronunciation-button',
+                'aria-label': `播放${item.label}式发音`,
+                onClick: () => playPronunciation(item),
+              }, [
+                h('span', { class: 'pronunciation-icon', 'aria-hidden': 'true' }, '♪'),
+                h('span', { class: 'pronunciation-label' }, item.label),
+                h('span', { class: 'pronunciation-text' }, `/${item.text}/`),
+              ]))),
+          h('div', { class: 'dictionary-meta-row' }, [
+            h('mark', { class: 'source-pill' }, displaySource.value),
+            h('span', displayLanguage.value),
+            props.lastLookupAt ? h('span', props.lastLookupAt) : null,
+          ]),
+          h('p', { class: 'hero-definition' }, primaryDefinition.value),
+        ]),
+        h('div', { class: 'dictionary-actions' }, [
+          h('button', {
+            type: 'button',
+            class: ['favorite-action', displayFavorite.value ? 'active' : ''],
+            'aria-label': displayFavorite.value ? '取消收藏单词' : '收藏单词',
+            onClick: () => emit('toggle-favorite', {
+              word: displayWord.value,
+              favorite: !displayFavorite.value,
+              language: props.result?.language,
+            }),
+          }, displayFavorite.value ? '★' : '☆'),
+          h('button', { type: 'button', class: 'primary-action', onClick: () => emit('review') }, '加入今日复习'),
+          h('button', { type: 'button', onClick: () => emit('master') }, '标记已掌握'),
+        ]),
+      ]),
+
+      h('section', { class: 'dictionary-insight-row', 'aria-label': '单词学习状态' }, [
+        h('article', [
+          h('span', '查询次数'),
+          h('strong', `${displayLookupCount.value} 次`),
+        ]),
+        h('article', [
+          h('span', '收藏状态'),
+          h('strong', displayFavorite.value ? '已收藏' : '未收藏'),
+        ]),
+      ]),
+
+      h('section', { class: 'definition-list' }, [
+        h('header', { class: 'section-title-row' }, [
+          h('h3', '释义与例句'),
+          h('span', `${contentEntries.value.reduce((total, entry) => total + entry.definitions.length, 0)} 条释义`),
+        ]),
+        ...contentEntries.value.map((entry, entryIndex) => {
+          const key = detailEntryKey(entry, entryIndex)
+          return h('article', { class: 'definition-entry' }, [
+            h('div', { class: 'definition-index' }, String(entryIndex + 1)),
+            h('div', [
+              h('h3', [
+                h('mark', { class: 'pos-label' }, entry.partOfSpeech || partOfSpeechLabel.value || 'entry'),
+              ]),
+              ...visibleDetailDefinitions(entry, key).map((definition, definitionIndex) => h('section', { class: 'definition-item' }, [
+                h('p', { class: 'definition-text' }, definition),
+                entry.examples[definitionIndex]
+                  ? h('blockquote', [
+                    h('p', entry.examples[definitionIndex]),
+                    !props.result && definitionIndex === 0 ? h('small', props.word.translation) : null,
+                  ])
+                  : null,
+              ])),
+              entry.definitions.length > maxVisibleDefinitions
+                ? h('button', {
+                  type: 'button',
+                  class: 'ghost-button detail-expand-button',
+                  onClick: () => toggleDetailEntry(key),
+                }, isDetailEntryExpanded(key) ? '收起' : '展开更多')
+                : null,
+            ]),
+          ])
+        }),
+      ]),
+
+      h('section', { class: 'phrase-panel' }, [
+        h('header', { class: 'section-title-row' }, [
+          h('h3', '常用搭配 / 习语'),
+          h('span', `${commonPhrases.value.length} 条`),
+        ]),
+        h('div', { class: 'phrase-list' }, commonPhrases.value.map((item, index) => h('article', [
+          h('strong', item.phrase),
+          h('p', `${index + 1}. ${item.meaning}`),
+        ]))),
+      ]),
+
+      h('section', { class: 'learning-supplement' }, [
+        h('article', [
+          h('h3', '近义词'),
+          supplementWord.value
+            ? h('div', { class: 'chip-list' }, supplementWord.value.synonyms.map((item) => h('span', item)))
+            : h('p', { class: 'supplement-empty' }, '查询结果优先展示词典释义，近义词可在本地词库补充后显示。'),
+        ]),
+        h('article', [
+          h('h3', '派生词'),
+          supplementWord.value
+            ? h('div', { class: 'derived-list' }, supplementWord.value.derived.map((item) => h('span', `${item.word} ${item.partOfSpeech}. ${item.meaning}`)))
+            : h('p', { class: 'supplement-empty' }, '暂未匹配本地派生词。'),
+        ]),
+        h('article', [
+          h('h3', '词根联想'),
+          supplementWord.value
+            ? h('div', { class: 'morpheme-list compact' }, supplementWord.value.morphemes.map((part) => h('article', [
+              h('strong', part.name),
+              h('span', part.meaning),
+            ])))
+            : h('p', { class: 'supplement-empty' }, '可在单词入库后补充词根记忆。'),
+        ]),
+      ]),
+    ])
+  },
+})
+
+const FavoriteWordPreview = defineComponent({
+  name: 'FavoriteWordPreview',
+  props: {
+    item: {
+      type: Object as () => DictionaryFavoriteItem,
+      required: true,
+    },
+  },
+  emits: ['open-detail', 'remove'],
+  setup(props, { emit }) {
+    const sourceText = computed(() => {
+      if (props.item.source === 'local') return '本地词典'
+      if (props.item.source === 'oxford') return 'Oxford'
+      return props.item.source || '收藏词库'
+    })
+    return () => h('aside', { class: 'word-preview-card favorite-preview-card' }, [
+      h('h2', { class: 'preview-title' }, '收藏详情'),
+      h('header', [
+        h('div', [
+          h('h3', props.item.word),
+          h('p', props.item.phonetic ? `/${props.item.phonetic}/` : '暂无音标'),
+        ]),
+        h('button', {
+          type: 'button',
+          'aria-label': '取消收藏',
+          onClick: () => emit('remove', props.item.word),
+        }, '★'),
+      ]),
+      h('mark', { class: 'word-state' }, sourceText.value),
+      h('p', { class: 'word-meaning' }, [
+        props.item.partOfSpeech ? `${props.item.partOfSpeech}. ` : '',
+        props.item.meaning || '暂无释义预览，点击查看详细释义。',
+      ]),
+      h('section', { class: 'preview-block' }, [
+        h('h3', '学习记录'),
+        h('dl', { class: 'favorite-preview-stats' }, [
+          h('div', [
+            h('dt', '查询次数'),
+            h('dd', `${props.item.lookupCount || 0} 次`),
+          ]),
+          h('div', [
+            h('dt', '收藏时间'),
+            h('dd', formatFavoriteDate(props.item.favoritedAt)),
+          ]),
+          h('div', [
+            h('dt', '最近查询'),
+            h('dd', formatFavoriteDate(props.item.lastLookupAt)),
+          ]),
+        ]),
+      ]),
+      h('footer', [
+        h('button', {
+          type: 'button',
+          class: 'primary-action',
+          onClick: () => emit('open-detail', props.item.word),
+        }, '查看详细释义'),
+        h('button', {
+          type: 'button',
+          onClick: () => emit('remove', props.item.word),
+        }, '取消收藏'),
+      ]),
+    ])
+  },
+})
 
 async function submitLookup() {
   const word = query.value.trim()
@@ -594,7 +942,6 @@ async function submitLookup() {
   loading.value = true
   errorMessage.value = ''
   debugMessage.value = ''
-  expandedEntries.value = new Set()
 
   try {
     result.value = await lookupDictionary(word, language.value)
@@ -612,6 +959,145 @@ async function submitLookup() {
   }
 }
 
+async function toggleDictionaryFavorite(payload: { word: string; favorite: boolean; language?: string }) {
+  const targetWord = payload.word?.trim()
+  if (!targetWord) {
+    return
+  }
+  try {
+    const state = await setDictionaryFavorite(targetWord, payload.favorite, payload.language || language.value)
+    if (result.value && result.value.word.toLowerCase() === state.word.toLowerCase()) {
+      result.value = {
+        ...result.value,
+        favorite: state.favorite,
+        lookupCount: state.lookupCount,
+      }
+    }
+    const localWord = words.value.find((item) => item.word.toLowerCase() === targetWord.toLowerCase())
+    if (localWord) {
+      localWord.favorite = state.favorite
+    }
+    if (!state.favorite) {
+      removeFavoriteFromList(state.word)
+    } else if (activeView.value === 'collection') {
+      await loadFavoriteWords(favoritePage.value)
+    }
+    showToast(state.favorite ? '已加入收藏' : '已取消收藏', 'success')
+  } catch {
+    showToast('收藏状态更新失败，请稍后重试', 'error')
+  }
+}
+
+async function loadFavoriteWords(page = favoritePage.value) {
+  favoriteLoading.value = true
+  favoriteError.value = ''
+  try {
+    const response = await listDictionaryFavorites({
+      keyword: favoriteKeyword.value.trim() || undefined,
+      page,
+      size: favoritePageSize.value,
+    })
+    favoriteWords.value = response.items
+    favoriteTotal.value = response.total
+    favoritePage.value = response.page
+    favoritePageSize.value = response.size
+    if (!favoriteWords.value.some((item) => item.word === selectedFavoriteWord.value)) {
+      selectedFavoriteWord.value = favoriteWords.value[0]?.word || ''
+    }
+  } catch {
+    favoriteError.value = '收藏列表加载失败，请确认登录状态和后端服务'
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+async function removeFavoriteWord(word: string) {
+  const targetWord = word.trim()
+  if (!targetWord) {
+    return
+  }
+  try {
+    const state = await setDictionaryFavorite(targetWord, false, language.value)
+    removeFavoriteFromList(state.word)
+    if (result.value && result.value.word.toLowerCase() === state.word.toLowerCase()) {
+      result.value = {
+        ...result.value,
+        favorite: false,
+        lookupCount: state.lookupCount,
+      }
+    }
+    showToast('已取消收藏', 'success')
+  } catch {
+    showToast('取消收藏失败，请稍后重试', 'error')
+  }
+}
+
+function removeFavoriteFromList(word: string) {
+  const normalizedWord = word.toLowerCase()
+  const before = favoriteWords.value.length
+  favoriteWords.value = favoriteWords.value.filter((item) => item.word.toLowerCase() !== normalizedWord)
+  if (favoriteWords.value.length !== before) {
+    favoriteTotal.value = Math.max(0, favoriteTotal.value - 1)
+  }
+  if (selectedFavoriteWord.value.toLowerCase() === normalizedWord) {
+    selectedFavoriteWord.value = favoriteWords.value[0]?.word || ''
+  }
+}
+
+async function openFavoriteDetail(word: string) {
+  query.value = word
+  activeView.value = 'search'
+  await submitLookup()
+}
+
+function formatFavoriteMeaning(item: DictionaryFavoriteItem) {
+  const prefix = item.partOfSpeech ? `${item.partOfSpeech}. ` : ''
+  return `${prefix}${item.meaning || '暂无释义预览'}`
+}
+
+function formatFavoriteDate(value?: string) {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+function parseVocabularyView(value: unknown): VocabularyViewKey | null {
+  const tab = Array.isArray(value) ? value[0] : value
+  return typeof tab === 'string' && vocabularyViewKeys.includes(tab as VocabularyViewKey)
+    ? tab as VocabularyViewKey
+    : null
+}
+
+function switchVocabularyView(view: VocabularyViewKey) {
+  activeView.value = view
+  const nextQuery = { ...route.query }
+  if (view === 'search') {
+    delete nextQuery.tab
+  } else {
+    nextQuery.tab = view
+  }
+  void router.replace({ query: nextQuery })
+}
+
+watch(() => route.query.tab, (tab) => {
+  activeView.value = parseVocabularyView(tab) ?? 'search'
+})
+
+watch(activeView, (view) => {
+  if (view === 'collection') {
+    void loadFavoriteWords(1)
+  }
+})
+
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
   if (!word) return
@@ -622,48 +1108,32 @@ function addTodayReview(wordId: string) {
 }
 
 function markSelectedMastered() {
-  if (!selectedWord.value) return
-  selectedWord.value.status = '已掌握'
-  selectedWord.value.mastery = 100
+  const word = selectedWord.value
+  if (!word) return
+  word.status = '已掌握'
+  word.mastery = 100
 }
 
-function visibleDefinitions(entry: DictionaryEntry) {
-  const key = entry.partOfSpeech || 'unknown'
-  return isExpanded(key)
-    ? entry.definitions
-    : entry.definitions.slice(0, maxVisibleDefinitions)
-}
-
-function isExpanded(key: string) {
-  return expandedEntries.value.has(key)
-}
-
-function toggleEntry(key: string) {
-  const next = new Set(expandedEntries.value)
-  if (next.has(key)) {
-    next.delete(key)
-  } else {
-    next.add(key)
+function playAudio(payload: string | { audioUrl?: string; text?: string; language?: string }) {
+  if (typeof payload === 'string') {
+    void new Audio(payload).play()
+    return
   }
-  expandedEntries.value = next
-}
 
-function playAudio(audioUrl: string) {
-  void new Audio(audioUrl).play()
-}
-
-function statusClass(status: LearningStatus) {
-  return {
-    'status-dot': true,
-    'status-dot--new': status === '新学',
-    'status-dot--learning': status === '学习中',
-    'status-dot--review': status === '复习中',
-    'status-dot--mastered': status === '已掌握',
+  if (payload.audioUrl) {
+    void new Audio(payload.audioUrl).play()
+    return
   }
-}
 
-function highlightExample(example: string, word: string) {
-  return example.replace(new RegExp(`(${word})`, 'gi'), '<strong>$1</strong>')
+  if (!payload.text || !('speechSynthesis' in window)) {
+    return
+  }
+
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(payload.text)
+  utterance.lang = payload.language || 'en-GB'
+  utterance.rate = 0.9
+  window.speechSynthesis.speak(utterance)
 }
 
 function normalizeError(err: unknown) {
@@ -689,85 +1159,241 @@ function normalizeError(err: unknown) {
 </script>
 
 <style scoped>
-.learning-shell {
+.vocabulary-shell {
   min-height: 100vh;
-  padding: 16px 22px 28px;
-  overflow: auto;
-  background: #f8fafc;
+  padding: 22px;
+  background: #f7faf9;
   color: #0f172a;
 }
 
-.learning-topbar {
+.vocabulary-topbar {
   display: grid;
-  grid-template-columns: 420px minmax(520px, 1fr) auto;
-  gap: 22px;
+  grid-template-columns: 210px minmax(0, 1fr) 96px;
+  gap: 24px;
   align-items: center;
+  min-height: 68px;
+  padding: 0 24px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
-.brand-block,
-.top-actions,
-.word-title-line,
-.card-header,
-.table-actions,
-.detail-header,
-.detail-hero,
-.detail-actions,
-.side-card header,
-.plan-list li,
-.review-list li {
+.brand-lockup,
+.brand-mark,
+.vocabulary-nav,
+.topbar-actions,
+.result-row,
+.collection-tools,
+.filter-row,
+.collection-actions,
+.stats-kpis,
+.chart-panel header,
+.table-footer,
+.table-footer div,
+.milestone-track {
   display: flex;
   align-items: center;
 }
 
-.brand-block {
-  gap: 12px;
+.brand-lockup {
+  gap: 10px;
 }
 
 .brand-mark {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border: 2px solid #059669;
-  border-radius: 7px;
-  color: #059669;
-  font-size: 12px;
-  font-weight: 800;
+  position: relative;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #ecfdf5;
 }
 
-.brand-name {
-  margin: 0;
+.brand-mark span {
+  position: absolute;
+  width: 9px;
+  height: 18px;
+  border-radius: 10px 10px 2px 10px;
+  background: #059669;
+  transform: rotate(-28deg) translateX(-4px);
+}
+
+.brand-mark span + span {
+  transform: rotate(28deg) translateX(4px);
+}
+
+.brand-lockup strong {
+  display: block;
   color: #047857;
-  font-size: 15px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.brand-lockup small {
+  color: #334155;
+  font-size: 11px;
   font-weight: 800;
 }
 
-.learning-topbar h1 {
-  margin: 0;
-  color: #020617;
-  font-size: 30px;
-  line-height: 1.1;
+.vocabulary-nav {
+  justify-content: center;
+  gap: 16px;
 }
 
-.learning-search {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 118px 78px;
+.vocabulary-nav button,
+.icon-button,
+.dictionary-search button,
+.compact-panel button,
+.results-panel button,
+.ghost-button,
+.mode-card button,
+.today-plan-card button,
+.collection-tools button,
+.filter-row button,
+.collection-actions button,
+.table-footer button,
+.chart-panel button,
+.word-preview-card button {
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.vocabulary-nav button {
+  display: inline-flex;
+  gap: 8px;
   align-items: center;
-  min-height: 48px;
-  border: 1px solid #d9e2ec;
+  min-height: 44px;
+  padding: 0 12px;
+  background: transparent;
+  color: #475569;
+}
+
+.vocabulary-nav button.active {
+  color: #047857;
+  box-shadow: inset 0 -3px 0 #059669;
+}
+
+.topbar-actions {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 28%, #14532d 0 14%, transparent 15%),
+    radial-gradient(circle at 50% 78%, #14532d 0 32%, transparent 33%),
+    #bbf7d0;
+}
+
+.vocabulary-page {
+  margin-top: 18px;
+}
+
+.search-page,
+.mode-page,
+.collection-page {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+
+.search-page {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mode-page,
+.collection-page {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
+.search-main,
+.mode-content,
+.collection-main,
+.word-preview-card,
+.today-plan-card,
+.metric-card,
+.chart-panel,
+.milestone-panel,
+.compact-panel,
+.results-panel,
+.collection-table {
+  border: 1px solid #dce7e1;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
 }
 
-.search-icon {
+.search-main,
+.mode-content,
+.collection-main {
+  padding: 26px;
+}
+
+.search-main .page-heading {
+  text-align: center;
+}
+
+.page-heading p,
+.page-heading h1,
+.page-heading span {
+  margin: 0;
+}
+
+.page-heading p {
+  color: #059669;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.page-heading h1 {
+  margin-top: 6px;
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.page-heading span {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.dictionary-search {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 110px 92px;
+  align-items: center;
+  width: 100%;
+  max-width: 820px;
+  min-height: 54px;
+  margin: 24px auto 0;
+  overflow: hidden;
+  border: 1px solid #10b981;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.dictionary-search > span {
   color: #64748b;
   text-align: center;
 }
 
-.learning-search input,
-.learning-search select {
-  height: 46px;
+.dictionary-search input,
+.dictionary-search select,
+.collection-tools input {
   min-width: 0;
   border: 0;
   background: transparent;
@@ -775,472 +1401,1282 @@ function normalizeError(err: unknown) {
   outline: none;
 }
 
-.learning-search input {
-  padding-right: 12px;
-  font-size: 15px;
+.dictionary-search input,
+.dictionary-search select {
+  height: 52px;
 }
 
-.learning-search input::placeholder {
+.dictionary-search input::placeholder,
+.collection-tools input::placeholder {
   color: #94a3b8;
 }
 
-.learning-search select {
-  border-left: 1px solid #e2e8f0;
-  padding: 0 12px;
-  font-weight: 700;
+.dictionary-search select {
+  border-left: 1px solid #dce7e1;
+  padding: 0 10px;
+  font-weight: 800;
 }
 
-.learning-search button,
+.dictionary-search button,
 .primary-action {
-  min-height: 38px;
-  border: 0;
-  border-radius: 8px;
+  min-height: 42px;
   background: #059669;
   color: #ffffff;
-  font-weight: 800;
-  box-shadow: 0 10px 24px rgba(5, 150, 105, 0.18);
+  box-shadow: 0 10px 22px rgba(5, 150, 105, 0.18);
 }
 
-.learning-search button {
-  margin-right: 5px;
+.dictionary-search button {
+  margin-right: 6px;
 }
 
-.learning-search button:disabled {
+.dictionary-search button:disabled {
   background: #94a3b8;
   box-shadow: none;
 }
 
-.top-actions {
-  gap: 14px;
-}
-
-.icon-button {
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #334155;
-  font-size: 22px;
-}
-
-.user-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 28%, #059669 0 14%, transparent 15%),
-    radial-gradient(circle at 50% 78%, #059669 0 32%, transparent 33%),
-    #dcfce7;
-}
-
-.learning-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(4, 108px);
+.lookup-message {
+  width: 100%;
+  max-width: 820px;
   margin-top: 16px;
-  border: 1px solid #d9e2ec;
+  margin-inline: auto;
+  padding: 16px;
+  border: 1px solid #bbf7d0;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #f0fdf4;
 }
 
-.learning-tabs button {
-  height: 32px;
-  border: 0;
-  border-right: 1px solid #e2e8f0;
-  background: transparent;
+.lookup-message--error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.lookup-message header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dictionary-entry {
+  margin-top: 12px;
+}
+
+.dictionary-entry h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dictionary-entry p,
+.dictionary-entry small {
+  margin: 4px 0 0;
   color: #334155;
-  font-weight: 700;
+  line-height: 1.5;
 }
 
-.learning-tabs button:last-child {
-  border-right: 0;
-}
-
-.learning-tabs button.active {
-  border-radius: 8px;
-  background: #e6f6ef;
+.ghost-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #bbd7ca;
+  background: #ffffff;
   color: #047857;
 }
 
-.api-status-panel {
-  margin-top: 16px;
-  padding: 16px;
-  border: 1px solid #d9e5de;
+.search-meta-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px;
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 12px;
+  margin-inline: auto;
+}
+
+.search-detail-section {
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 18px;
+  margin-inline: auto;
+}
+
+.dictionary-detail-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.search-detail-section :deep(.dictionary-hero) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+  padding: 24px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 72%);
+}
+
+.search-detail-section :deep(.section-eyebrow) {
+  display: block;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.search-detail-section :deep(.dictionary-title-block h2) {
+  margin: 6px 0 0;
+  color: #0f172a;
+  font-size: 42px;
+  line-height: 1.1;
+}
+
+.search-detail-section :deep(.phonetic-line),
+.search-detail-section :deep(.dictionary-meta-row),
+.search-detail-section :deep(.dictionary-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-detail-section :deep(.phonetic-line) {
+  gap: 14px;
+  margin-top: 12px;
+  color: #475569;
+  font-size: 15px;
+}
+
+.search-detail-section :deep(.pronunciation-button) {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px 0 8px;
+  border: 1px solid #dce7e1;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #334155;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+  font-weight: 800;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.search-detail-section :deep(.pronunciation-button:hover) {
+  border-color: #10b981;
+  color: #047857;
+  box-shadow: 0 10px 24px rgba(5, 150, 105, 0.12);
+  transform: translateY(-1px);
+}
+
+.search-detail-section :deep(.pronunciation-icon) {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d1fae5;
+  color: #047857;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.search-detail-section :deep(.pronunciation-label) {
+  color: #047857;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.pronunciation-text) {
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.search-detail-section :deep(.dictionary-meta-row) {
+  gap: 10px;
+  margin-top: 14px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.search-detail-section :deep(.source-pill),
+.search-detail-section :deep(.pos-label) {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.source-pill) {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.search-detail-section :deep(.pos-label) {
+  background: #eef2ff;
+  color: #2563eb;
+}
+
+.search-detail-section :deep(.hero-definition) {
+  max-width: 820px;
+  margin: 14px 0 0;
+  color: #334155;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.search-detail-section :deep(.dictionary-actions) {
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.search-detail-section :deep(.dictionary-actions button),
+.search-detail-section :deep(.detail-expand-button) {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #bbd7ca;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+  color: #047857;
+  font-weight: 900;
 }
 
-.api-status-panel header {
+.search-detail-section :deep(.dictionary-actions .primary-action) {
+  border: 0;
+  background: #059669;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(5, 150, 105, 0.18);
+}
+
+.search-detail-section :deep(.dictionary-actions .favorite-action) {
+  width: 46px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.search-detail-section :deep(.dictionary-actions .favorite-action.active) {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.search-detail-section :deep(.dictionary-insight-row) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.search-detail-section :deep(.dictionary-insight-row article) {
   display: flex;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
-.api-status-panel p,
-.api-status-panel h2 {
-  margin: 0;
-}
-
-.api-status-panel p {
-  color: #059669;
+.search-detail-section :deep(.dictionary-insight-row span) {
+  color: #64748b;
   font-size: 13px;
   font-weight: 800;
 }
 
-.api-status-panel h2 {
-  margin-top: 4px;
-  font-size: 16px;
+.search-detail-section :deep(.dictionary-insight-row strong) {
+  color: #0f172a;
+  font-size: 18px;
 }
 
-.api-status-panel header > span {
+.search-detail-section :deep(.definition-list),
+.search-detail-section :deep(.phrase-panel),
+.search-detail-section :deep(.learning-supplement) {
+  margin-top: 22px;
+}
+
+.search-detail-section :deep(.section-title-row) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.section-title-row h3) {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.search-detail-section :deep(.section-title-row span) {
   color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.api-status-grid {
+.search-detail-section :deep(.definition-entry) {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 4px;
 }
 
-.api-status-item {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
+.search-detail-section :deep(.definition-entry + .definition-entry) {
+  border-top: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.definition-index) {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.search-detail-section :deep(.definition-entry h3) {
+  margin: 0;
+}
+
+.search-detail-section :deep(.definition-item) {
+  margin-top: 12px;
+  padding-left: 14px;
+  border-left: 3px solid #d1fae5;
+}
+
+.search-detail-section :deep(.definition-text) {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1.65;
+}
+
+.search-detail-section :deep(.definition-item blockquote) {
+  margin: 10px 0 0;
+  padding: 10px 12px;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #f8fbff;
 }
 
-.api-status-item strong,
-.api-status-item span,
-.api-status-item small {
+.search-detail-section :deep(.definition-item blockquote p) {
+  margin: 0;
+  color: #2563eb;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.search-detail-section :deep(.definition-item blockquote small) {
   display: block;
-}
-
-.api-status-item strong {
-  margin-top: 8px;
-  font-size: 14px;
-}
-
-.api-status-item span {
-  margin-top: 5px;
-  overflow: hidden;
-  color: #334155;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.api-status-item small {
-  margin-top: 7px;
+  margin-top: 4px;
   color: #64748b;
   line-height: 1.45;
 }
 
-.api-badge {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  min-height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: 11px;
+.search-detail-section :deep(.phrase-list) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.search-detail-section :deep(.phrase-list article) {
+  padding: 12px 14px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.search-detail-section :deep(.phrase-list strong) {
+  color: #0f172a;
+}
+
+.search-detail-section :deep(.phrase-list p) {
+  margin: 5px 0 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.search-detail-section :deep(.learning-supplement) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid #edf2f7;
+}
+
+.search-detail-section :deep(.learning-supplement h3) {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.search-detail-section :deep(.supplement-empty) {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.search-detail-section :deep(.derived-list) {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.search-detail-section :deep(.derived-list span) {
+  min-height: 30px;
+  padding: 8px 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  color: #047857;
+  font-size: 12px;
   font-weight: 800;
+}
+
+.search-detail-section :deep(.morpheme-list.compact) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dictionary-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.section-eyebrow {
+  display: block;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dictionary-title-block h2 {
+  margin: 6px 0 0;
+  font-size: 42px;
+  line-height: 1.1;
+}
+
+.phonetic-line,
+.dictionary-meta-row,
+.dictionary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.phonetic-line {
+  gap: 14px;
+  margin-top: 14px;
+  color: #475569;
+  font-size: 15px;
+}
+
+.audio-button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #dce7e1;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #047857;
+  font-weight: 900;
+}
+
+.audio-button.muted {
+  color: #94a3b8;
+}
+
+.dictionary-meta-row {
+  gap: 10px;
+  margin-top: 14px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.source-pill,
+.pos-label {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.source-pill {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.pos-label {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.dictionary-actions {
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.dictionary-actions button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #bbd7ca;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #047857;
+  font-weight: 900;
+}
+
+.dictionary-actions .primary-action {
+  border: 0;
+  background: #059669;
+  color: #ffffff;
+}
+
+.definition-list {
+  margin-top: 20px;
+}
+
+.entry-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.entry-heading span {
+  color: #334155;
+  font-weight: 800;
+}
+
+.definition-entry {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.definition-entry + .definition-entry {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #edf2f7;
+}
+
+.definition-index {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.definition-entry h3,
+.phrase-panel h3,
+.learning-supplement h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.definition-item {
+  margin-top: 12px;
+  padding-left: 14px;
+  border-left: 3px solid #d1fae5;
+}
+
+.definition-text,
+.definition-translation {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.definition-text {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.definition-translation {
+  margin-top: 4px;
+  color: #475569;
+}
+
+.definition-item blockquote {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.definition-item blockquote p {
+  margin: 0;
+  color: #2563eb;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.definition-item blockquote small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.detail-expand-button {
+  margin-top: 10px;
+}
+
+.phrase-panel,
+.learning-supplement {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #edf2f7;
+}
+
+.phrase-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.phrase-list article {
+  padding: 12px 14px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #fbfdfc;
+}
+
+.phrase-list strong {
+  color: #0f172a;
+}
+
+.phrase-list p {
+  margin: 5px 0 0;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.learning-supplement {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.derived-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.derived-list span {
+  min-height: 30px;
+  padding: 8px 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.supplement-empty {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.morpheme-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.compact-panel,
+.results-panel {
+  padding: 16px;
+}
+
+.search-meta-grid .compact-panel {
+  padding: 12px 14px;
+}
+
+.search-meta-grid .compact-panel h2 {
+  font-size: 14px;
+}
+
+.compact-panel--hot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.compact-panel--hot header {
+  align-items: center;
+}
+
+.compact-panel--hot .chip-list {
+  margin-top: 0;
+}
+
+.compact-panel header,
+.results-panel header,
+.collection-header,
+.today-plan-card header,
+.word-preview-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.compact-panel h2,
+.results-panel h2,
+.today-plan-card h2,
+.chart-panel h2,
+.milestone-panel h2,
+.preview-title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip-list button,
+.chip-list span {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recent-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent-list li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  min-height: 28px;
+}
+
+.recent-list button {
+  min-width: 0;
+  background: transparent;
+  color: #475569;
+  text-align: left;
+}
+
+.results-panel {
+  width: 100%;
+  max-width: 1080px;
+  margin-top: 14px;
+  margin-inline: auto;
+}
+
+.results-panel header button,
+.compact-panel header button,
+.chart-panel button,
+.collection-tools button,
+.filter-row button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #dce7e1;
+  background: #ffffff;
+  color: #047857;
+}
+
+.result-list {
+  display: grid;
+  margin-top: 12px;
+}
+
+.result-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 120px 56px minmax(180px, 1.4fr) 28px;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  text-align: left;
+}
+
+.result-row + .result-row {
+  border-top: 1px solid #edf2f7;
+}
+
+.result-row.selected {
+  background: #e9fbf2;
+}
+
+.result-row strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.result-row span,
+.result-row p {
+  overflow: hidden;
+  margin: 0;
+  color: #64748b;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.api-badge--connected {
+.result-row em {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #2563eb;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.result-row i {
+  color: #059669;
+  font-style: normal;
+  text-align: center;
+}
+
+.word-preview-card,
+.today-plan-card {
+  padding: 22px;
+}
+
+.word-preview-card {
+  position: sticky;
+  top: 20px;
+}
+
+.word-preview-card h3 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.word-preview-card header p,
+.word-meaning,
+.preview-block p,
+.preview-block small {
+  margin: 6px 0 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.word-preview-card header button {
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  color: #64748b;
+  font-size: 20px;
+}
+
+.word-state,
+.status-badge {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.word-state {
+  margin-top: 8px;
+}
+
+.word-meaning {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.preview-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #edf2f7;
+}
+
+.preview-block h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.morpheme-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.morpheme-list article {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+}
+
+.morpheme-list strong,
+.morpheme-list span,
+.morpheme-list small {
+  display: block;
+}
+
+.morpheme-list strong {
+  color: #047857;
+}
+
+.morpheme-list span,
+.morpheme-list small {
+  margin-top: 3px;
+  color: #475569;
+  font-size: 11px;
+}
+
+.word-preview-card footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.word-preview-card footer button {
+  min-height: 38px;
+  border: 1px solid #bbd7ca;
+  background: #ffffff;
+  color: #047857;
+}
+
+.word-preview-card footer .primary-action {
+  grid-column: 1 / -1;
+  border: 0;
+  color: #ffffff;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.mode-card {
+  display: grid;
+  justify-items: center;
+  min-height: 250px;
+  padding: 28px 22px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.mode-card--green { background: #f0fdf4; }
+.mode-card--blue { background: #eff6ff; }
+.mode-card--violet { background: #f5f3ff; }
+
+.mode-icon {
+  display: grid;
+  width: 68px;
+  height: 68px;
+  place-items: center;
+  border-radius: 18px;
+  background: #ffffff;
+  color: #059669;
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.mode-card h2 {
+  margin: 22px 0 0;
+  font-size: 21px;
+}
+
+.mode-card p {
+  max-width: 210px;
+  margin: 12px 0 0;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+.mode-card button {
+  align-self: end;
+  min-width: 150px;
+  min-height: 42px;
+  margin-top: 24px;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.mode-card--blue button {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.mode-card--violet button {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.insight-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 26px;
+  overflow: hidden;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+}
+
+.insight-strip article {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 18px;
+}
+
+.insight-strip article + article {
+  border-left: 1px solid #e2e8f0;
+}
+
+.insight-strip div {
+  display: grid;
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.insight-strip span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.today-plan-card header {
+  align-items: center;
+}
+
+.today-plan-card header button {
+  background: transparent;
+  color: #047857;
+}
+
+.progress-ring {
+  display: grid;
+  width: 132px;
+  height: 132px;
+  place-items: center;
+  margin: 28px auto 20px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #ffffff 56%, transparent 57%),
+    conic-gradient(#059669 0 60%, #d1fae5 60% 100%);
+}
+
+.progress-ring span {
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.today-plan-card dl {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 22px;
+}
+
+.today-plan-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.today-plan-card dt,
+.today-plan-card dd {
+  margin: 0;
+}
+
+.today-plan-card dt {
+  color: #64748b;
+}
+
+.today-plan-card dd {
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.today-plan-card .primary-action {
+  width: 100%;
+}
+
+.collection-header {
+  align-items: center;
+}
+
+.collection-tools {
+  gap: 10px;
+}
+
+.collection-tools label {
+  display: grid;
+  grid-template-columns: 32px 190px;
+  align-items: center;
+  min-height: 40px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #64748b;
+}
+
+.filter-row {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.filter-row button {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.filter-row button.active {
   border-color: #bbf7d0;
   background: #dcfce7;
   color: #047857;
 }
 
-.api-badge--partial {
-  border-color: #bfdbfe;
-  background: #dbeafe;
-  color: #1d4ed8;
+.add-group-button {
+  margin-left: auto;
 }
 
-.api-badge--mock {
-  border-color: #fde68a;
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.api-badge--missing {
-  border-color: #fecaca;
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  max-width: 840px;
-  margin-top: 16px;
-}
-
-.metric-card,
-.word-table-card,
-.word-detail-panel,
-.side-card {
-  border: 1px solid #dce7e1;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-}
-
-.metric-card {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  min-height: 92px;
-  padding: 16px;
-}
-
-.metric-icon {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  font-size: 22px;
-  font-weight: 900;
-}
-
-.metric-card p,
-.metric-card span {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.metric-card p {
-  color: #334155;
-  font-weight: 800;
-}
-
-.metric-card strong {
-  display: block;
-  margin-top: 2px;
-  color: #0f172a;
-  font-size: 28px;
-  line-height: 1.05;
-}
-
-.tone-green { background: #dcfce7; color: #059669; }
-.tone-blue { background: #dbeafe; color: #2563eb; }
-.tone-amber { background: #fef3c7; color: #f59e0b; }
-.tone-purple { background: #ede9fe; color: #7c3aed; }
-.tone-gray { background: #e2e8f0; color: #64748b; }
-
-.learning-layout {
-  display: grid;
-  grid-template-columns: minmax(800px, 0.95fr) minmax(420px, 0.75fr) 304px;
-  gap: 14px;
-  align-items: start;
-  margin-top: 16px;
-}
-
-.word-table-card {
-  min-width: 0;
+.collection-table {
+  margin-top: 14px;
   overflow: hidden;
 }
 
-.card-header {
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.card-header h2,
-.detail-header h2,
-.side-card h2 {
-  margin: 0;
-  color: #0f172a;
-  font-size: 18px;
-}
-
-.card-header p {
-  margin: 3px 0 0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.table-actions {
-  gap: 8px;
-}
-
-.table-actions button,
-.detail-header button,
-.detail-actions button,
-.side-card header button,
-.row-actions button,
-.pager button,
-.expand-button,
-.lookup-feedback button {
-  border: 1px solid #bbd7ca;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #047857;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.table-actions button {
-  height: 30px;
-  padding: 0 10px;
-}
-
-.word-table {
+.collection-row {
   display: grid;
-  padding: 0 8px;
-}
-
-.word-row {
-  display: grid;
-  grid-template-columns: minmax(130px, 1.05fr) 52px minmax(96px, 0.8fr) minmax(170px, 1.5fr) 48px 38px 72px 78px;
-  gap: 8px;
+  grid-template-columns: 40px minmax(145px, 1fr) minmax(220px, 1.6fr) 92px 104px 78px;
+  gap: 12px;
   align-items: center;
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  border-bottom: 1px solid #e5e7eb;
-  background: transparent;
-  text-align: left;
-}
-
-.word-row--head {
-  min-height: 42px;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.word-row--item {
-  min-height: 82px;
-  padding: 0;
+  min-height: 60px;
+  padding: 0 16px;
+  border-bottom: 1px solid #edf2f7;
   color: #334155;
-  font-size: 12px;
-  cursor: pointer;
 }
 
-.word-row--item.selected {
-  border: 1px solid #b9ead2;
-  border-radius: 8px;
-  background: #e9fbf2;
-}
-
-.word-cell {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  column-gap: 6px;
-}
-
-.favorite {
-  grid-row: 1 / span 2;
-  align-self: center;
-  color: #94a3b8;
-  font-size: 18px;
-}
-
-.word-cell strong {
-  color: #0f172a;
-  font-size: 16px;
-}
-
-.word-cell small {
+.collection-row--head {
+  min-height: 46px;
   color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
 }
 
-.pos-tag,
-.source-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-style: normal;
-  font-weight: 800;
+.collection-row.selected {
+  background: #f0fdf4;
 }
 
-.pos-tag--adj { background: #f3e8ff; color: #7c3aed; }
-.pos-tag--n { background: #dbeafe; color: #2563eb; }
-.pos-tag--v { background: #dcfce7; color: #059669; }
-.source-tag { background: #e8f8f0; color: #047857; }
-
-.example-cell {
-  line-height: 1.45;
-}
-
-.example-cell :deep(strong),
-.detail-example :deep(strong) {
-  color: #047857;
-}
-
-.count-cell {
-  color: #0f172a;
-  font-weight: 800;
+.collection-empty {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  padding: 24px;
+  border-top: 1px solid #edf2f7;
+  color: #64748b;
   text-align: center;
 }
 
-.status-cell {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  font-weight: 700;
+.collection-empty--error {
+  color: #991b1b;
 }
 
-.status-dot {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.status-dot--new,
-.status-dot--mastered { background: #059669; }
-.status-dot--learning { background: #2563eb; }
-.status-dot--review { background: #f59e0b; }
-
-.row-actions {
+.collection-word {
   display: grid;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+}
+
+.collection-word small {
+  margin-top: 3px;
+  color: #64748b;
+}
+
+.status-badge--new { background: #ffedd5; color: #ea580c; }
+.status-badge--learning { background: #dbeafe; color: #2563eb; }
+.status-badge--review { background: #fef3c7; color: #b45309; }
+.status-badge--mastered { background: #dcfce7; color: #047857; }
+
+.collection-actions {
   gap: 6px;
 }
 
-.row-actions button {
-  height: 28px;
-  padding: 0 6px;
+.collection-actions button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dce7e1;
+  background: #ffffff;
+  color: #64748b;
 }
 
 .table-footer {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  justify-content: center;
-  min-height: 72px;
-  color: #334155;
+  min-height: 64px;
+  justify-content: space-between;
+  padding: 0 18px;
+  color: #64748b;
   font-size: 13px;
 }
 
-.pager {
-  display: flex;
+.table-footer div {
   gap: 8px;
-  align-items: center;
 }
 
-.pager button,
-.pager strong {
+.table-footer button,
+.table-footer strong {
   display: grid;
   width: 30px;
   height: 30px;
@@ -1248,450 +2684,312 @@ function normalizeError(err: unknown) {
   border-radius: 8px;
 }
 
-.pager strong {
+.table-footer button {
+  border: 1px solid #dce7e1;
+  background: #ffffff;
+}
+
+.table-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.table-footer strong {
   background: #059669;
   color: #ffffff;
 }
 
-.word-detail-panel {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.detail-header {
-  justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.detail-header button {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  color: #475569;
-  font-size: 22px;
-}
-
-.detail-hero {
-  justify-content: space-between;
-  gap: 18px;
-  padding: 24px 24px 12px;
-}
-
-.word-title-line {
-  gap: 8px;
-}
-
-.word-title-line h3 {
-  margin: 0;
-  font-size: 34px;
-  line-height: 1.1;
-}
-
-.word-title-line button {
-  border: 0;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 24px;
-}
-
-.phonetic {
-  margin: 8px 0 10px;
-  color: #475569;
-  font-size: 14px;
-}
-
-.mastery-card {
-  min-width: 116px;
-  padding: 14px;
-  border-radius: 8px;
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.mastery-card strong,
-.mastery-card span {
-  display: block;
-}
-
-.mastery-card span {
-  margin-top: 8px;
-  font-size: 12px;
-}
-
-.mastery-card i,
-.review-list i {
-  display: flex;
-  overflow: hidden;
-  background: #d1fae5;
-}
-
-.mastery-card i {
-  height: 6px;
-  margin-top: 10px;
-  border-radius: 999px;
-}
-
-.mastery-card em {
-  display: block;
-  border-radius: inherit;
-  background: #059669;
-}
-
-.lookup-feedback,
-.meaning-card,
-.detail-section {
-  margin: 12px 24px 0;
-}
-
-.lookup-feedback,
-.meaning-card {
-  padding: 14px;
-  border: 1px solid #b9ead2;
-  border-radius: 8px;
-  background: #f0fdf4;
-}
-
-.lookup-feedback--error {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
-}
-
-.lookup-feedback header {
-  display: flex;
-  justify-content: space-between;
+.favorite-preview-stats {
+  display: grid;
   gap: 10px;
-}
-
-.lookup-feedback p,
-.meaning-card p,
-.detail-section p,
-.detail-section small {
-  margin: 6px 0 0;
-  color: #334155;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.dictionary-entry {
-  margin-top: 10px;
-}
-
-.dictionary-entry h4,
-.meaning-card h4,
-.detail-section h4 {
   margin: 0;
+}
+
+.favorite-preview-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.favorite-preview-stats dt,
+.favorite-preview-stats dd {
+  margin: 0;
+}
+
+.favorite-preview-stats dt {
+  color: #64748b;
+}
+
+.favorite-preview-stats dd {
   color: #0f172a;
-  font-size: 15px;
+  font-weight: 900;
 }
 
-.dictionary-entry ol {
-  margin: 8px 0 0;
-  padding-left: 20px;
+.stats-kpis {
+  gap: 16px;
 }
 
-.dictionary-entry li + li {
-  margin-top: 8px;
-}
-
-.expand-button {
-  margin-top: 8px;
-  padding: 7px 10px;
-}
-
-.morpheme-grid,
-.chip-grid,
-.derived-grid {
-  display: grid;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.morpheme-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.morpheme-grid article,
-.chip-grid span,
-.derived-grid article {
-  border: 1px solid #dce7e1;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.morpheme-grid article {
-  padding: 10px;
-  background: #f0fdf4;
-}
-
-.morpheme-grid strong,
-.derived-grid strong {
-  display: block;
-  color: #047857;
-}
-
-.morpheme-grid span,
-.morpheme-grid small,
-.derived-grid small {
-  display: block;
-  margin-top: 3px;
-  color: #475569;
-  font-size: 11px;
-}
-
-.chip-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.chip-grid span {
-  padding: 10px;
-  color: #047857;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.derived-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.derived-grid article {
-  padding: 10px;
-}
-
-.detail-actions {
-  gap: 10px;
-  padding: 18px 24px 24px;
-}
-
-.detail-actions button {
+.metric-card {
   flex: 1;
-  min-height: 38px;
-}
-
-.study-sidebar {
-  display: grid;
-  gap: 14px;
-}
-
-.side-card {
+  min-width: 0;
   padding: 18px;
 }
 
-.side-card header {
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+.metric-card div {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 900;
 }
 
-.side-card h2 {
-  font-size: 17px;
-}
-
-.side-card h2 small {
+.metric-card span,
+.metric-card small {
+  display: block;
+  margin-top: 8px;
   color: #64748b;
-  font-weight: 500;
 }
 
-.side-card header button {
-  border: 0;
-  color: #059669;
+.metric-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 30px;
+  line-height: 1.1;
 }
 
-.plan-list,
-.review-list,
-.advice-list {
+.tone-green { background: #dcfce7; color: #059669; }
+.tone-blue { background: #dbeafe; color: #2563eb; }
+.tone-amber { background: #fef3c7; color: #f59e0b; }
+.tone-purple { background: #ede9fe; color: #7c3aed; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(260px, 0.85fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.chart-panel,
+.milestone-panel {
+  padding: 20px;
+}
+
+.chart-panel header {
+  justify-content: space-between;
+}
+
+.line-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  height: 240px;
+  margin-top: 22px;
+  border-bottom: 1px solid #dce7e1;
+  background:
+    linear-gradient(to top, #edf2f7 1px, transparent 1px) 0 0 / 100% 48px;
+}
+
+.line-chart span {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  height: 100%;
+  align-items: end;
+}
+
+.line-chart i {
+  width: 100%;
+  height: var(--value);
+  max-width: 42px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(180deg, #10b981, #a7f3d0);
+}
+
+.line-chart small {
+  color: #64748b;
+}
+
+.donut-layout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 22px;
+  align-items: center;
+  margin-top: 28px;
+}
+
+.donut-chart {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #ffffff 56%, transparent 57%),
+    conic-gradient(#059669 0 46%, #3b82f6 46% 86%, #f59e0b 86% 100%);
+}
+
+.donut-layout ul {
   display: grid;
   gap: 12px;
   margin: 0;
   padding: 0;
+  color: #334155;
   list-style: none;
 }
 
-.plan-list li {
-  gap: 12px;
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 50%;
 }
 
-.plan-list span {
-  color: #059669;
-}
+.legend-dot.mastered { background: #059669; }
+.legend-dot.learning { background: #3b82f6; }
+.legend-dot.new { background: #f59e0b; }
+.legend-dot.idle { background: #cbd5e1; }
 
-.plan-list strong {
-  flex: 1;
-  color: #334155;
-  font-size: 14px;
-}
-
-.plan-list em {
-  color: #047857;
-  font-style: normal;
-  font-weight: 800;
-}
-
-.review-list li {
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
   gap: 10px;
+  margin-top: 24px;
 }
 
-.review-dot {
-  width: 8px;
-  height: 8px;
+.calendar-grid span {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
   border-radius: 50%;
+  background: #e2e8f0;
+  color: transparent;
+  font-size: 0;
 }
 
-.review-list strong {
-  flex: 1;
-  font-size: 13px;
-}
-
-.review-list mark {
-  width: 28px;
-  border-radius: 999px;
-  background: #fef3c7;
-  color: #f97316;
-  text-align: center;
-}
-
-.review-list i {
-  gap: 4px;
-  background: transparent;
-}
-
-.review-list i em {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #cbd5e1;
-}
-
-.review-list i em.filled {
+.calendar-grid span.done {
   background: #059669;
 }
 
-.full-width {
-  width: 100%;
+.calendar-panel footer {
+  display: flex;
+  gap: 18px;
+  margin-top: 18px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.milestone-panel {
   margin-top: 16px;
 }
 
-.advice-list li {
-  position: relative;
-  padding-left: 16px;
-  color: #475569;
-  font-size: 12px;
-}
-
-.advice-list li::before {
-  position: absolute;
-  top: 8px;
-  left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #94a3b8;
-  content: '';
-}
-
-.badge-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.milestone-track {
   gap: 12px;
+  margin-top: 18px;
 }
 
-.badge-grid article {
+.milestone-track article {
   display: grid;
-  justify-items: center;
-  gap: 6px;
-  text-align: center;
+  flex: 1;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 54px;
+  color: #047857;
 }
 
-.badge-grid div {
+.milestone-track span {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border-radius: 50%;
-  font-size: 24px;
+  background: #dcfce7;
+  font-size: 12px;
   font-weight: 900;
 }
 
-.badge-grid strong,
-.badge-grid span {
-  color: #475569;
-  font-size: 11px;
+.milestone-track article.locked {
+  color: #94a3b8;
 }
 
-.badge-grid span {
-  margin-top: -6px;
+.milestone-track article.locked span {
+  background: #e2e8f0;
 }
 
-.badge-gold { background: #fef3c7; color: #f59e0b; }
-.badge-silver { background: #e2e8f0; color: #64748b; }
-.badge-bronze { background: #fed7aa; color: #ea580c; }
-
-@media (max-width: 1480px) {
-  .learning-topbar {
+@media (max-width: 1180px) {
+  .vocabulary-topbar,
+  .search-page,
+  .mode-page,
+  .collection-page,
+  .stats-grid {
     grid-template-columns: 1fr;
   }
 
-  .api-status-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .learning-layout {
-    grid-template-columns: minmax(0, 1fr) 420px;
-  }
-
-  .study-sidebar {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1080px) {
-  .metric-grid,
-  .api-status-grid,
-  .learning-layout,
-  .study-sidebar {
-    grid-template-columns: 1fr;
-  }
-
-  .word-table-card {
+  .vocabulary-nav {
+    justify-content: flex-start;
     overflow-x: auto;
   }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .word-preview-card {
+    position: static;
+  }
 }
 
-@media (max-width: 720px) {
-  .learning-shell {
+@media (max-width: 820px) {
+  .vocabulary-shell {
+    padding: 12px;
+  }
+
+  .vocabulary-topbar {
     padding: 14px;
   }
 
-  .learning-search {
-    grid-template-columns: 34px minmax(0, 1fr);
-    padding-bottom: 6px;
+  .dictionary-search,
+  .search-meta-grid,
+  .mode-grid,
+  .insight-strip,
+  .stats-kpis,
+  .donut-layout,
+  .morpheme-list {
+    grid-template-columns: 1fr;
   }
 
-  .learning-search select,
-  .learning-search button {
-    grid-column: span 1;
-    margin: 0 6px;
-    border-top: 1px solid #e2e8f0;
+  .dictionary-search {
+    padding: 8px;
   }
 
-  .learning-tabs {
+  .dictionary-search > span {
+    display: none;
+  }
+
+  .dictionary-search input,
+  .dictionary-search select,
+  .dictionary-search button {
     width: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
   }
 
-  .detail-hero,
-  .detail-actions {
+  .result-row,
+  .collection-row {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .collection-row--head {
+    display: none;
+  }
+
+  .collection-header,
+  .collection-tools,
+  .milestone-track {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .morpheme-grid,
-  .chip-grid,
-  .derived-grid,
-  .badge-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -1,12 +1,16 @@
 package com.personalenglishai.backend.controller;
 
 import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
+import com.personalenglishai.backend.dto.admin.AdminPageResponse;
 import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
+import com.personalenglishai.backend.dto.dictionary.DictionaryFavoriteItemResponse;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
 import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
+import com.personalenglishai.backend.dto.dictionary.DictionaryWordStateResponse;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupException;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupService;
+import com.personalenglishai.backend.service.dictionary.DictionaryWordStateService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,6 +22,7 @@ import java.util.List;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,6 +36,9 @@ class DictionaryControllerTest {
 
     @MockBean
     private DictionaryLookupService dictionaryLookupService;
+
+    @MockBean
+    private DictionaryWordStateService dictionaryWordStateService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -100,5 +108,51 @@ class DictionaryControllerTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("429020"))
                 .andExpect(jsonPath("$.message").value("词典服务额度已用完，请稍后再试"));
+    }
+
+    @Test
+    @DisplayName("updates favorite state")
+    void updatesFavoriteState() throws Exception {
+        DictionaryWordStateResponse response = new DictionaryWordStateResponse();
+        response.setWord("apple");
+        response.setLanguage("en-gb");
+        response.setFavorite(true);
+        response.setLookupCount(3);
+        when(dictionaryWordStateService.setFavorite(7L, "apple", "en-gb", true)).thenReturn(response);
+
+        mockMvc.perform(post("/api/dictionary/words/apple/favorite")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"favorite\":true,\"language\":\"en-gb\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.word").value("apple"))
+                .andExpect(jsonPath("$.data.favorite").value(true))
+                .andExpect(jsonPath("$.data.lookupCount").value(3));
+    }
+
+    @Test
+    @DisplayName("lists favorite words")
+    void listsFavoriteWords() throws Exception {
+        DictionaryFavoriteItemResponse item = new DictionaryFavoriteItemResponse();
+        item.setWord("spark");
+        item.setLanguage("en-gb");
+        item.setFavorite(true);
+        item.setLookupCount(5);
+        item.setPhonetic("spɑːk");
+        item.setPartOfSpeech("noun");
+        item.setMeaning("a very small burning piece of material；火花");
+        when(dictionaryWordStateService.listFavorites(7L, "spa", 1, 10))
+                .thenReturn(new AdminPageResponse<>(List.of(item), 1, 1, 10));
+
+        mockMvc.perform(get("/api/dictionary/favorites")
+                        .requestAttr("userId", 7L)
+                        .param("keyword", "spa")
+                        .param("page", "1")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].word").value("spark"))
+                .andExpect(jsonPath("$.data.items[0].lookupCount").value(5))
+                .andExpect(jsonPath("$.data.items[0].meaning").value("a very small burning piece of material；火花"));
     }
 }

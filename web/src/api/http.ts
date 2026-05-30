@@ -11,7 +11,14 @@ import { getToken, setToken, clearToken } from '@/utils/token'
 import { clearStageCache } from '@/stores/stageCache'
 import { showToast } from '@/utils/toast'
 
-const BASE_URL = '/api'
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+const normalizedConfiguredApiBaseUrl = configuredApiBaseUrl?.replace(/\/$/, '')
+const BASE_URL =
+  import.meta.env.DEV || !normalizedConfiguredApiBaseUrl
+    ? '/api'
+    : normalizedConfiguredApiBaseUrl.endsWith('/api')
+      ? normalizedConfiguredApiBaseUrl
+      : `${normalizedConfiguredApiBaseUrl}/api`
 
 export const http = axios.create({
   baseURL: BASE_URL,

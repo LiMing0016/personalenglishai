@@ -385,3 +385,152 @@ data_cleaning_job:
   sensitiveColumns: [result_json, error_message]
   securityNotes:
     - 任务结果可能包含文件路径和词典元信息，导出前需要过滤敏感路径。
+
+dictionary_library:
+  title: 词典库主表
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: updated_at
+  description: 存储已安装词典库、词典来源、格式、启用状态和资源统计，是词典资产的主登记表。
+  sensitiveColumns: [metadata_json, cover_image_path]
+  securityNotes:
+    - metadata_json 可能包含来源信息和导入附加元数据，仅在管理员排障时查看。
+    - 资源路径类字段不直接面向普通运营展示。
+
+dictionary_entry:
+  title: 词条主表
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: updated_at
+  description: 存储词条头词、标准化头词、词性、清洗文本和排序信息，是词典查询的核心入口。
+  sensitiveColumns: [raw_html, metadata_json]
+  securityNotes:
+    - raw_html 属于词典源内容，数据地图只展示结构，不直接展示全文原始内容。
+    - metadata_json 仅用于排查导入质量问题。
+
+user_dictionary_word_state:
+  title: 用户单词状态
+  module: 词典与词汇学习
+  sensitivity: high
+  adminRoute:
+  timeColumn: last_lookup_at
+  description: 存储用户维度的查词次数、收藏状态、首次查询时间和最近查询时间，不承载公共词典正文。
+  sensitiveColumns: [user_id, word, normalized_word]
+  securityNotes:
+    - 该表属于用户学习行为数据，应按用户隐私数据处理。
+    - 收藏状态和查词次数只用于词汇学习业务，不作为公共词典字段回写。
+
+dictionary_pronunciation:
+  title: 词条发音
+  module: 词典与词汇学习
+  sensitivity: low
+  adminRoute: /admin/data-cleaning
+  timeColumn: created_at
+  description: 存储词条的英式、美式或其他区域发音音标，以及关联音频资源标识。
+  sensitiveColumns: []
+  securityNotes:
+    - 发音数据属于词典内容衍生结构，可通过词条详情联动查看。
+
+dictionary_sense:
+  title: 词义明细
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: created_at
+  description: 存储词条下的词义、中文释义、语法标签和排序信息，是单词详情页释义主体。
+  sensitiveColumns: [definition_en, definition_zh]
+  securityNotes:
+    - 释义文本属于词典正文内容，数据地图默认只展示字段和关系。
+
+dictionary_example:
+  title: 例句明细
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: created_at
+  description: 存储词条或词义下的双语例句、来源和难度信息，用于前端例句展示。
+  sensitiveColumns: [text_en, text_zh]
+  securityNotes:
+    - 例句内容在数据地图中不直接展开为样例正文。
+
+dictionary_phrase:
+  title: 短语与搭配
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: created_at
+  description: 存储词条相关短语、固定搭配和补充释义，用于单词扩展学习。
+  sensitiveColumns: [definition_en, definition_zh, metadata_json]
+  securityNotes:
+    - metadata_json 仅用于排查导入结构，不作为业务前台展示字段。
+
+dictionary_resource:
+  title: 词典资源文件
+  module: 词典与词汇学习
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: created_at
+  description: 存储词典图片、音频、样式等资源文件索引和存储路径。
+  sensitiveColumns: [storage_path, resource_key]
+  securityNotes:
+    - 资源路径字段可能暴露服务器目录结构，展示时需要权限控制。
+
+dictionary_import_job:
+  title: 词典导入任务
+  module: 数据治理
+  sensitivity: medium
+  adminRoute: /admin/data-cleaning
+  timeColumn: updated_at
+  description: 存储词典内容入库任务状态、进度、失败信息和导入统计。
+  sensitiveColumns: [result_json, error_message]
+  securityNotes:
+    - 导入失败信息可能包含源文件路径和结构异常，只在管理员端排障使用。
+
+_logicalRelations:
+  - sourceTable: dictionary_library
+    sourceColumn: dictionary_uid
+    targetTable: dictionary_entry
+    targetColumn: dictionary_uid
+    description: 词典库包含多个词条
+  - sourceTable: dictionary_library
+    sourceColumn: dictionary_uid
+    targetTable: dictionary_resource
+    targetColumn: dictionary_uid
+    description: 词典库包含多个资源文件
+  - sourceTable: dictionary_library
+    sourceColumn: dictionary_uid
+    targetTable: dictionary_import_job
+    targetColumn: dictionary_uid
+    description: 词典库关联导入任务
+  - sourceTable: dictionary_entry
+    sourceColumn: entry_uid
+    targetTable: dictionary_pronunciation
+    targetColumn: entry_uid
+    description: 词条包含多个发音
+  - sourceTable: dictionary_entry
+    sourceColumn: entry_uid
+    targetTable: dictionary_sense
+    targetColumn: entry_uid
+    description: 词条包含多个词义
+  - sourceTable: dictionary_sense
+    sourceColumn: sense_uid
+    targetTable: dictionary_example
+    targetColumn: sense_uid
+    description: 词义关联多个例句
+  - sourceTable: dictionary_entry
+    sourceColumn: entry_uid
+    targetTable: dictionary_example
+    targetColumn: entry_uid
+    description: 词条可直接关联例句
+  - sourceTable: dictionary_entry
+    sourceColumn: entry_uid
+    targetTable: dictionary_phrase
+    targetColumn: entry_uid
+    description: 词条关联短语与搭配
+  - sourceTable: user_dictionary_word_state
+    sourceColumn: normalized_word
+    targetTable: dictionary_entry
+    targetColumn: normalized_headword
+    description: 用户查词状态映射到标准化词条

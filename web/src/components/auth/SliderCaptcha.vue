@@ -10,6 +10,11 @@
 
           <div v-if="loading" class="captcha-loading">加载中...</div>
 
+          <div v-else-if="errorText" class="captcha-error">
+            <p>{{ errorText }}</p>
+            <button type="button" @click="fetchCaptcha">重新加载</button>
+          </div>
+
           <template v-else-if="bgImage">
             <div
               class="captcha-image-area"
@@ -64,6 +69,7 @@ const bgImage = ref('')
 const pieceImage = ref('')
 const captchaId = ref('')
 const loading = ref(false)
+const errorText = ref('')
 const sliderX = ref(0)
 const status = ref<'idle' | 'dragging' | 'success' | 'fail'>('idle')
 const statusClass = ref('')
@@ -84,8 +90,11 @@ watch(() => props.visible, (v) => {
 
 async function fetchCaptcha() {
   loading.value = true
+  errorText.value = ''
   status.value = 'idle'
   sliderX.value = 0
+  bgImage.value = ''
+  pieceImage.value = ''
   try {
     const res = await authApi.getCaptcha()
     const data = res.data
@@ -93,9 +102,11 @@ async function fetchCaptcha() {
       captchaId.value = data.captchaId
       bgImage.value = data.bgImage
       pieceImage.value = data.pieceImage
+    } else {
+      errorText.value = '验证码数据为空，请稍后重试'
     }
   } catch {
-    // silently fail, user can close and retry
+    errorText.value = '验证码加载失败，请确认后端服务和 API 地址配置'
   } finally {
     loading.value = false
   }
@@ -169,6 +180,7 @@ function reset() {
   bgImage.value = ''
   pieceImage.value = ''
   captchaId.value = ''
+  errorText.value = ''
   sliderX.value = 0
   status.value = 'idle'
   statusClass.value = ''
@@ -234,6 +246,37 @@ onUnmounted(() => {
   justify-content: center;
   color: rgba(225, 235, 255, 0.5);
   font-size: 14px;
+}
+
+.captcha-error {
+  display: grid;
+  gap: 14px;
+  min-height: 160px;
+  align-content: center;
+  justify-items: center;
+  color: rgba(225, 235, 255, 0.78);
+  text-align: center;
+}
+
+.captcha-error p {
+  margin: 0;
+  max-width: 260px;
+  line-height: 1.6;
+}
+
+.captcha-error button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid rgba(53, 192, 255, 0.36);
+  border-radius: 999px;
+  background: rgba(53, 192, 255, 0.12);
+  color: rgba(225, 235, 255, 0.92);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.captcha-error button:hover {
+  border-color: rgba(53, 192, 255, 0.72);
 }
 
 .captcha-image-area {

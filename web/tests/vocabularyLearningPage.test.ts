@@ -7,19 +7,20 @@ const pageSource = readFileSync(
 )
 
 for (const requiredText of [
-  '单词学习',
-  '今日复习',
-  '接口接入状态',
-  '已接入',
-  '未接入',
-  '本地模拟',
-  'GET /api/dictionary/lookup',
-  'learning_raw_candidate / learning_evidence',
-  '来自昨日对话的重点单词',
+  '词启',
+  'Vocabulary',
+  '搜索单词',
+  '背词模式',
+  '我的收藏',
+  '学习统计',
+  '查询、学习、一步到位',
+  '选择适合你的学习模式',
+  '我的收藏 / 生词本',
+  '学习趋势（近 7 天）',
   '单词详情',
   '词根词缀联想记忆',
-  '复习队列',
-  '学习成就',
+  '今日学习计划',
+  '连续学习日历',
   'innovative',
   '加入今日复习',
 ]) {
@@ -27,17 +28,24 @@ for (const requiredText of [
 }
 
 for (const requiredClass of [
-  'learning-shell',
-  'metric-card',
-  'api-status-panel',
-  'api-badge--connected',
-  'api-badge--missing',
-  'word-table-card',
-  'word-detail-panel',
-  'study-sidebar',
+  'vocabulary-shell',
+  'vocabulary-topbar',
+  'vocabulary-nav',
+  'search-page',
+  'mode-page',
+  'collection-page',
+  'stats-page',
+  'word-preview-card',
+  'search-detail-section',
+  'dictionary-detail-card',
 ]) {
   assert.ok(pageSource.includes(requiredClass), `vocabulary learning page should include ${requiredClass}`)
 }
+
+assert.ok(
+  !pageSource.includes('单词端数据源验收标记'),
+  'vocabulary learning page should not expose backend integration status as student-facing content',
+)
 
 assert.ok(
   pageSource.includes('lookupDictionary'),
