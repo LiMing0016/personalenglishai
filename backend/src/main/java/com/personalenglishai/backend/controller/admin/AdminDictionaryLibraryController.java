@@ -73,7 +73,7 @@ public class AdminDictionaryLibraryController {
     public ResponseEntity<AdminDictionaryImportJobResponse> createImportJob(
             @RequestAttribute("userId") Long adminUserId,
             @PathVariable String dictionaryUid,
-            @RequestParam(defaultValue = "100") Integer limit) {
+            @RequestParam(defaultValue = "0") Integer limit) {
         adminAuthorizationService.requirePermission(adminUserId, AdminPermissions.DATA_CLEANING_WRITE);
         return ResponseEntity.ok(dataCleaningService.createDictionaryImportJob(adminUserId, dictionaryUid, limit));
     }

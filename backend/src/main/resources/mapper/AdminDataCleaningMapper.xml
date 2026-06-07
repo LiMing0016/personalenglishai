@@ -324,6 +324,14 @@
         WHERE dictionary_uid = #{dictionaryUid}
     </update>
 
+    <select id="selectDictionaryEntryUidBySource" resultType="string">
+        SELECT entry_uid
+        FROM dictionary_entry
+        WHERE dictionary_uid = #{dictionaryUid}
+          AND source_entry_id = #{sourceEntryId}
+        LIMIT 1
+    </select>
+
     <insert id="upsertDictionaryEntry">
         INSERT INTO dictionary_entry (
             entry_uid, dictionary_uid, source_entry_id, headword, normalized_headword,

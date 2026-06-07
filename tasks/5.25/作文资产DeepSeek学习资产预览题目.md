@@ -68,7 +68,7 @@
 
 ### 小题 B：新增刷新接口并调用 DeepSeek
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请新增刷新作文学习资产预览的后端接口。
 
@@ -136,7 +136,7 @@
 
 ### 小题 B：资产详情新增学习资产预览 UI
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请在 `web/src/components/personal-center/WritingAssetsSection.vue` 中新增“DeepSeek 学习资产预览”分区。
 

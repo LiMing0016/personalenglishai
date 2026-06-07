@@ -38,7 +38,18 @@ def default_readmdict_reader(path: Path) -> Iterable[MdxRecord]:
             "MDX parsing requires the optional readmdict package. "
             "Install readmdict in the Python worker environment before running dictionary import."
         ) from exc
-    return MDX(str(path)).items()  # type: ignore[no-any-return]
+    except SystemExit as exc:
+        raise RuntimeError(
+            "MDX parsing requires LZO support for this file. "
+            "Install a Windows-compatible python-lzo/lzo package in the Python worker environment."
+        ) from exc
+    try:
+        return MDX(str(path)).items()  # type: ignore[no-any-return]
+    except SystemExit as exc:
+        raise RuntimeError(
+            "MDX parsing requires LZO support for this file. "
+            "Install a Windows-compatible python-lzo/lzo package in the Python worker environment."
+        ) from exc
 
 
 def iter_mdd_raw_resources(
@@ -76,7 +87,18 @@ def default_readmdd_reader(path: Path) -> Iterable[MdxRecord]:
             "MDD parsing requires the optional readmdict package. "
             "Install readmdict in the Python worker environment before running dictionary import."
         ) from exc
-    return MDD(str(path)).items()  # type: ignore[no-any-return]
+    except SystemExit as exc:
+        raise RuntimeError(
+            "MDD parsing requires LZO support for this file. "
+            "Install a Windows-compatible python-lzo/lzo package in the Python worker environment."
+        ) from exc
+    try:
+        return MDD(str(path)).items()  # type: ignore[no-any-return]
+    except SystemExit as exc:
+        raise RuntimeError(
+            "MDD parsing requires LZO support for this file. "
+            "Install a Windows-compatible python-lzo/lzo package in the Python worker environment."
+        ) from exc
 
 
 def resource_type_for_key(resource_key: str) -> str:

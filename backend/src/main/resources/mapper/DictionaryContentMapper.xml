@@ -16,7 +16,7 @@
         WHERE e.normalized_headword = #{normalizedHeadword}
           AND e.status = 'active'
           AND l.enabled = 1
-          AND l.status IN ('installed', 'published')
+          AND l.status IN ('installed', 'imported', 'published')
         ORDER BY l.sort_order ASC, e.sort_order ASC, e.id ASC
         LIMIT 5
     </select>

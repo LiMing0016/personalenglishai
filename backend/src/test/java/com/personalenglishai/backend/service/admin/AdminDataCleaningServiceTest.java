@@ -21,9 +21,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -157,7 +159,14 @@ class AdminDataCleaningServiceTest {
                 """);
         MockMultipartFile mdx = new MockMultipartFile("files", "oxfordPrimary.mdx", "application/octet-stream", mdxBytes);
         FakeAdminDataCleaningMapper mapper = new FakeAdminDataCleaningMapper();
-        AdminDataCleaningService service = new AdminDataCleaningService(mapper, new ObjectMapper(), tempDir.resolve("uploads"));
+        CapturingExecutor executor = new CapturingExecutor();
+        AdminDataCleaningService service = new AdminDataCleaningService(
+                mapper,
+                new ObjectMapper(),
+                tempDir.resolve("uploads"),
+                (library, source, importLimit) -> Map.of("status", "completed", "entries", List.of()),
+                executor
+        );
         CreateDictionaryDataCleaningSourceRequest request = new CreateDictionaryDataCleaningSourceRequest();
         request.setSourceCode("oxfordPrimary");
         request.setDisplayName("Oxford Primary");
@@ -168,10 +177,44 @@ class AdminDataCleaningServiceTest {
 
         assertThat(importJob.getDictionaryUid()).isEqualTo(library.getDictionaryUid());
         assertThat(importJob.getSourceUid()).isEqualTo(library.getSourceUid());
-        assertThat(importJob.getStatus()).isEqualTo("pending");
+        assertThat(importJob.getStatus()).isEqualTo("queued");
         assertThat(importJob.getImportLimit()).isEqualTo(100);
         assertThat(importJob.getProcessedEntries()).isZero();
         assertThat(service.listDictionaryImportJobs(library.getDictionaryUid())).hasSize(1);
+    }
+
+    @Test
+    void dictionaryImportJobReturnsQueuedBeforeAsyncWorkerRuns() throws Exception {
+        byte[] mdxBytes = mdictBytes("""
+                <Dictionary Format="Html" Description="Oxford Primary Number of Entries: 800" Title="Oxford Primary" Encoding="UTF-8"/>
+                """);
+        MockMultipartFile mdx = new MockMultipartFile("files", "oxfordPrimary.mdx", "application/octet-stream", mdxBytes);
+        FakeAdminDataCleaningMapper mapper = new FakeAdminDataCleaningMapper();
+        CapturingExecutor executor = new CapturingExecutor();
+        DictionaryImportWorker worker = (library, source, importLimit) -> Map.of(
+                "status", "completed",
+                "summary", Map.of("entry_count", 0),
+                "entries", List.of()
+        );
+        AdminDataCleaningService service = new AdminDataCleaningService(mapper, new ObjectMapper(), tempDir.resolve("uploads"), worker, executor);
+        CreateDictionaryDataCleaningSourceRequest request = new CreateDictionaryDataCleaningSourceRequest();
+        request.setSourceCode("oxfordPrimary");
+        request.setDisplayName("Oxford Primary");
+        service.uploadDictionarySourceAndProbe(9L, request, List.of(mdx));
+        AdminDictionaryLibraryResponse library = service.listDictionaryLibraries().get(0);
+
+        AdminDictionaryImportJobResponse importJob = service.createDictionaryImportJob(9L, library.getDictionaryUid(), 0);
+
+        assertThat(importJob.getStatus()).isEqualTo("queued");
+        assertThat(importJob.getImportLimit()).isZero();
+        assertThat(importJob.getProcessedEntries()).isZero();
+        assertThat(service.listDictionaryImportJobs(library.getDictionaryUid()).get(0).getStatus()).isEqualTo("queued");
+
+        executor.runNext();
+
+        AdminDictionaryImportJobResponse completed = service.listDictionaryImportJobs(library.getDictionaryUid()).get(0);
+        assertThat(completed.getStatus()).isEqualTo("failed");
+        assertThat(completed.getErrorMessage()).contains("未导入任何词条");
     }
 
     @Test
@@ -209,7 +252,7 @@ class AdminDataCleaningServiceTest {
 
         AdminDictionaryImportJobResponse importJob = service.createDictionaryImportJob(9L, library.getDictionaryUid(), 100);
 
-        assertThat(importJob.getStatus()).isEqualTo("completed");
+        assertThat(importJob.getStatus()).isEqualTo("completed_with_warnings");
         assertThat(importJob.getProcessedEntries()).isEqualTo(1);
         assertThat(importJob.getImportedEntries()).isEqualTo(1);
         assertThat(importJob.getImportedExamples()).isEqualTo(1);
@@ -224,6 +267,99 @@ class AdminDataCleaningServiceTest {
         assertThat(mapper.resourceRows).hasSize(1);
         assertThat(service.listDictionaryEntrySamples(library.getDictionaryUid(), 5)).hasSize(1);
         assertThat(service.listDictionaryImportFailureSamples(importJob.getImportJobUid())).hasSize(1);
+    }
+
+    @Test
+    void dictionaryImportJobFailsWhenWorkerOnlyReportsWarningsWithoutEntries() throws Exception {
+        byte[] mdxBytes = mdictBytes("""
+                <Dictionary Format="Html" Description="Oxford Primary Number of Entries: 800" Title="Oxford Primary" Encoding="UTF-8"/>
+                """);
+        MockMultipartFile mdx = new MockMultipartFile("files", "oxfordPrimary.mdx", "application/octet-stream", mdxBytes);
+        FakeAdminDataCleaningMapper mapper = new FakeAdminDataCleaningMapper();
+        DictionaryImportWorker worker = (library, source, importLimit) -> Map.of(
+                "status", "completed_with_warnings",
+                "summary", Map.of("entry_count", 0, "warning_count", 1),
+                "warnings", List.of("failed to read mdx entries: missing readmdict"),
+                "entries", List.of()
+        );
+        AdminDataCleaningService service = new AdminDataCleaningService(mapper, new ObjectMapper(), tempDir.resolve("uploads"), worker);
+        CreateDictionaryDataCleaningSourceRequest request = new CreateDictionaryDataCleaningSourceRequest();
+        request.setSourceCode("oxfordPrimary");
+        request.setDisplayName("Oxford Primary");
+        service.uploadDictionarySourceAndProbe(9L, request, List.of(mdx));
+        AdminDictionaryLibraryResponse library = service.listDictionaryLibraries().get(0);
+
+        AdminDictionaryImportJobResponse importJob = service.createDictionaryImportJob(9L, library.getDictionaryUid(), 0);
+
+        assertThat(importJob.getStatus()).isEqualTo("failed");
+        assertThat(importJob.getImportedEntries()).isZero();
+        assertThat(importJob.getFailedEntries()).isEqualTo(1);
+        assertThat(importJob.getErrorMessage()).contains("failed to read mdx entries");
+    }
+
+    @Test
+    void dictionaryImportJobRecordsPersistenceExceptionsWithoutMaskingBatchRead() throws Exception {
+        byte[] mdxBytes = mdictBytes("""
+                <Dictionary Format="Html" Description="Oxford Primary Number of Entries: 800" Title="Oxford Primary" Encoding="UTF-8"/>
+                """);
+        MockMultipartFile mdx = new MockMultipartFile("files", "oxfordPrimary.mdx", "application/octet-stream", mdxBytes);
+        FakeAdminDataCleaningMapper mapper = new FakeAdminDataCleaningMapper();
+        mapper.failNullMessageForSourceEntryId = "broken";
+        DictionaryImportWorker worker = (library, source, importLimit) -> Map.of(
+                "status", "completed_with_warnings",
+                "summary", Map.of("entry_count", 2, "warning_count", 0),
+                "entries", List.of(
+                        Map.of("word", "home", "source_entry_id", "home", "clean_text", "home noun"),
+                        Map.of("word", "broken", "source_entry_id", "broken", "clean_text", "broken noun")
+                )
+        );
+        AdminDataCleaningService service = new AdminDataCleaningService(mapper, new ObjectMapper(), tempDir.resolve("uploads"), worker);
+        CreateDictionaryDataCleaningSourceRequest request = new CreateDictionaryDataCleaningSourceRequest();
+        request.setSourceCode("oxfordPrimary");
+        request.setDisplayName("Oxford Primary");
+        service.uploadDictionarySourceAndProbe(9L, request, List.of(mdx));
+        AdminDictionaryLibraryResponse library = service.listDictionaryLibraries().get(0);
+
+        AdminDictionaryImportJobResponse importJob = service.createDictionaryImportJob(9L, library.getDictionaryUid(), 0);
+
+        assertThat(importJob.getStatus()).isEqualTo("completed_with_warnings");
+        assertThat(importJob.getImportedEntries()).isEqualTo(1);
+        List<Map<String, Object>> failures = service.listDictionaryImportFailureSamples(importJob.getImportJobUid());
+        assertThat(failures)
+                .extracting((row) -> row.get("message"))
+                .contains("NullPointerException")
+                .noneMatch((message) -> String.valueOf(message).contains("读取词条批次失败"));
+    }
+
+    @Test
+    void repeatedDictionaryImportReusesExistingEntryUidAndDoesNotDuplicateRows() throws Exception {
+        byte[] mdxBytes = mdictBytes("""
+                <Dictionary Format="Html" Description="Oxford Primary Number of Entries: 800" Title="Oxford Primary" Encoding="UTF-8"/>
+                """);
+        MockMultipartFile mdx = new MockMultipartFile("files", "oxfordPrimary.mdx", "application/octet-stream", mdxBytes);
+        FakeAdminDataCleaningMapper mapper = new FakeAdminDataCleaningMapper();
+        DictionaryImportWorker worker = (library, source, importLimit) -> Map.of(
+                "status", "completed",
+                "summary", Map.of("entry_count", 1, "sense_count", 1),
+                "entries", List.of(Map.of(
+                        "word", "home",
+                        "source_entry_id", "home",
+                        "clean_text", "home noun",
+                        "senses", List.of(Map.of("definition_en", "the house you live in"))
+                ))
+        );
+        AdminDataCleaningService service = new AdminDataCleaningService(mapper, new ObjectMapper(), tempDir.resolve("uploads"), worker);
+        CreateDictionaryDataCleaningSourceRequest request = new CreateDictionaryDataCleaningSourceRequest();
+        request.setSourceCode("oxfordPrimary");
+        request.setDisplayName("Oxford Primary");
+        service.uploadDictionarySourceAndProbe(9L, request, List.of(mdx));
+        AdminDictionaryLibraryResponse library = service.listDictionaryLibraries().get(0);
+
+        service.createDictionaryImportJob(9L, library.getDictionaryUid(), 0);
+        service.createDictionaryImportJob(9L, library.getDictionaryUid(), 0);
+
+        assertThat(mapper.entryRows).hasSize(1);
+        assertThat(mapper.senseRows).hasSize(1);
     }
 
     @Test
@@ -348,6 +484,7 @@ class AdminDataCleaningServiceTest {
         private final List<Map<String, Object>> exampleRows = new java.util.ArrayList<>();
         private final List<Map<String, Object>> phraseRows = new java.util.ArrayList<>();
         private final List<Map<String, Object>> resourceRows = new java.util.ArrayList<>();
+        private String failNullMessageForSourceEntryId;
 
         @Override
         public int insertSource(DataCleaningSource source) {
@@ -481,8 +618,22 @@ class AdminDataCleaningServiceTest {
         }
 
         @Override
+        public String selectDictionaryEntryUidBySource(String dictionaryUid, String sourceEntryId) {
+            return entryRows.stream()
+                    .filter(row -> dictionaryUid.equals(row.get("dictionaryUid")))
+                    .filter(row -> sourceEntryId.equals(row.get("sourceEntryId")))
+                    .map(row -> String.valueOf(row.get("entryUid")))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        @Override
         public int upsertDictionaryEntry(Map<String, Object> entry) {
-            entryRows.removeIf(row -> entry.get("entryUid").equals(row.get("entryUid")));
+            if (entry.get("sourceEntryId").equals(failNullMessageForSourceEntryId)) {
+                throw new NullPointerException();
+            }
+            entryRows.removeIf(row -> entry.get("dictionaryUid").equals(row.get("dictionaryUid"))
+                    && entry.get("sourceEntryId").equals(row.get("sourceEntryId")));
             entryRows.add(new LinkedHashMap<>(entry));
             return 1;
         }
@@ -541,6 +692,22 @@ class AdminDataCleaningServiceTest {
                         return sample;
                     })
                     .toList();
+        }
+    }
+
+    private static final class CapturingExecutor implements Executor {
+        private final ArrayDeque<Runnable> tasks = new ArrayDeque<>();
+
+        @Override
+        public void execute(Runnable command) {
+            tasks.add(command);
+        }
+
+        void runNext() {
+            Runnable task = tasks.poll();
+            if (task != null) {
+                task.run();
+            }
         }
     }
 }
