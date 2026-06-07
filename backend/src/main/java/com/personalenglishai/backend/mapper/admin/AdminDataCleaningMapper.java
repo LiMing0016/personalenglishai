@@ -54,6 +54,9 @@ public interface AdminDataCleaningMapper {
     int updateDictionaryLibraryStatus(@Param("dictionaryUid") String dictionaryUid,
                                       @Param("status") String status);
 
+    String selectDictionaryEntryUidBySource(@Param("dictionaryUid") String dictionaryUid,
+                                            @Param("sourceEntryId") String sourceEntryId);
+
     int upsertDictionaryEntry(@Param("entry") Map<String, Object> entry);
 
     int deleteDictionaryEntryChildren(@Param("entryUid") String entryUid);

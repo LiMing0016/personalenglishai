@@ -234,6 +234,40 @@ class DictionaryCleaningTest(unittest.TestCase):
         self.assertEqual(payload["entries"][0]["word"], "home")
         self.assertEqual(payload["entries"][0]["senses"][0]["examples"][0]["text_zh"], "我们现在离家不远了。")
 
+    def test_cli_can_write_clean_entries_to_batch_files_for_full_import(self) -> None:
+        TEST_TEMP_ROOT.mkdir(exist_ok=True)
+        request_path = TEST_TEMP_ROOT / "dictionary_import_batch_request.json"
+        output_path = TEST_TEMP_ROOT / "dictionary_import_batch_result.json"
+        request_path.write_text(
+            json.dumps(
+                {
+                    "sourceCode": "oald9",
+                    "displayName": "Oxford",
+                    "limit": 0,
+                    "entryBatchSize": 1,
+                    "rawEntries": [
+                        {"headword": "home", "html": "<h>home</h><pos>noun</pos><def>house<chn>家</chn></def>"},
+                        {"headword": "school", "html": "<h>school</h><pos>noun</pos><def>place to study<chn>学校</chn></def>"},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        exit_code = run_dictionary_cleaning_cli(["--input", str(request_path), "--output", str(output_path)])
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(payload["summary"]["entry_count"], 2)
+        self.assertEqual(payload["entries"], [])
+        self.assertEqual(len(payload["entryBatchPaths"]), 2)
+        first_batch = json.loads(Path(payload["entryBatchPaths"][0]).read_text(encoding="utf-8"))
+        second_batch = json.loads(Path(payload["entryBatchPaths"][1]).read_text(encoding="utf-8"))
+        self.assertEqual(first_batch[0]["word"], "home")
+        self.assertEqual(second_batch[0]["word"], "school")
+
 
 def write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
     shared_strings: list[str] = []

@@ -77,6 +77,7 @@ public class PythonDictionaryImportWorker implements DictionaryImportWorker {
         payload.put("sourceCode", source.getSourceCode());
         payload.put("displayName", library.getDisplayName());
         payload.put("limit", importLimit);
+        payload.put("entryBatchSize", 500);
         payload.put("mdxPath", source.getMdxPath());
         payload.put("mddPath", source.getMddPath());
         payload.put("examplesPath", source.getExamplesPath());

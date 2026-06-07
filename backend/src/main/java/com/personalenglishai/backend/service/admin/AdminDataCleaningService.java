@@ -17,6 +17,7 @@ import com.personalenglishai.backend.entity.admin.DictionaryImportJob;
 import com.personalenglishai.backend.entity.admin.DictionaryLibrary;
 import com.personalenglishai.backend.mapper.admin.AdminDataCleaningMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -58,31 +60,42 @@ public class AdminDataCleaningService {
     private final ObjectMapper objectMapper;
     private final Path dictionaryUploadRoot;
     private final DictionaryImportWorker dictionaryImportWorker;
+    private final Executor dictionaryImportExecutor;
 
     @Autowired
     public AdminDataCleaningService(AdminDataCleaningMapper mapper,
                                     ObjectMapper objectMapper,
                                     DictionaryImportWorker dictionaryImportWorker,
+                                    @Qualifier("dictionaryImportExecutor") Executor dictionaryImportExecutor,
                                     @Value("${app.data-cleaning.dictionary-upload-dir:storage/data-cleaning/dictionaries}") String dictionaryUploadDir) {
-        this(mapper, objectMapper, Path.of(dictionaryUploadDir), dictionaryImportWorker);
+        this(mapper, objectMapper, Path.of(dictionaryUploadDir), dictionaryImportWorker, dictionaryImportExecutor);
     }
 
     AdminDataCleaningService(AdminDataCleaningMapper mapper, ObjectMapper objectMapper) {
-        this(mapper, objectMapper, Path.of("storage/data-cleaning/dictionaries"), (library, source, limit) -> Map.of("status", "pending", "entries", List.of()));
+        this(mapper, objectMapper, Path.of("storage/data-cleaning/dictionaries"), (library, source, limit) -> Map.of("status", "pending", "entries", List.of()), Runnable::run);
     }
 
     AdminDataCleaningService(AdminDataCleaningMapper mapper, ObjectMapper objectMapper, Path dictionaryUploadRoot) {
-        this(mapper, objectMapper, dictionaryUploadRoot, (library, source, limit) -> Map.of("status", "pending", "entries", List.of()));
+        this(mapper, objectMapper, dictionaryUploadRoot, (library, source, limit) -> Map.of("status", "pending", "entries", List.of()), Runnable::run);
     }
 
     AdminDataCleaningService(AdminDataCleaningMapper mapper,
                              ObjectMapper objectMapper,
                              Path dictionaryUploadRoot,
                              DictionaryImportWorker dictionaryImportWorker) {
+        this(mapper, objectMapper, dictionaryUploadRoot, dictionaryImportWorker, Runnable::run);
+    }
+
+    AdminDataCleaningService(AdminDataCleaningMapper mapper,
+                             ObjectMapper objectMapper,
+                             Path dictionaryUploadRoot,
+                             DictionaryImportWorker dictionaryImportWorker,
+                             Executor dictionaryImportExecutor) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
         this.dictionaryUploadRoot = dictionaryUploadRoot.toAbsolutePath().normalize();
         this.dictionaryImportWorker = dictionaryImportWorker;
+        this.dictionaryImportExecutor = dictionaryImportExecutor;
     }
 
     public AdminDataCleaningOverviewResponse getOverview() {
@@ -190,19 +203,19 @@ public class AdminDataCleaningService {
         job.setImportJobUid(newUid("dij"));
         job.setDictionaryUid(library.getDictionaryUid());
         job.setSourceUid(library.getSourceUid());
-        job.setStatus("running");
+        job.setStatus("queued");
         job.setImportLimit(normalizeImportLimit(importLimit));
         job.setProcessedEntries(0);
         job.setImportedEntries(0);
         job.setFailedEntries(0);
         job.setImportedExamples(0);
         job.setImportedPhrases(0);
-        job.setResultJson(toJson(Map.of("message", "Python 词典正文入库 worker 处理中")));
+        job.setResultJson(toJson(Map.of("message", "词典正文入库任务已排队")));
         job.setCreatedBy(adminUserId);
-        job.setStartedAt(LocalDateTime.now());
         mapper.insertDictionaryImportJob(job);
         mapper.updateDictionaryLibraryStatus(library.getDictionaryUid(), "importing");
-        return executeDictionaryImportJob(job, library, source);
+        dictionaryImportExecutor.execute(() -> executeDictionaryImportJob(job.getImportJobUid()));
+        return toDictionaryImportJobResponse(job);
     }
 
     public List<AdminDictionaryImportJobResponse> listDictionaryImportJobs(String dictionaryUid) {
@@ -314,9 +327,30 @@ public class AdminDataCleaningService {
         mapper.upsertDictionaryLibrary(library);
     }
 
+    private void executeDictionaryImportJob(String importJobUid) {
+        DictionaryImportJob job = mapper.selectDictionaryImportJobByUid(importJobUid);
+        if (job == null) {
+            return;
+        }
+        DictionaryLibrary library = mapper.selectDictionaryLibraryByUid(job.getDictionaryUid());
+        DataCleaningSource source = mapper.selectSourceByUid(job.getSourceUid());
+        if (library == null || source == null) {
+            job.setStatus("failed");
+            job.setErrorMessage("dictionary library or source not found");
+            job.setFinishedAt(LocalDateTime.now());
+            mapper.updateDictionaryImportJob(job);
+            return;
+        }
+        executeDictionaryImportJob(job, library, source);
+    }
+
     private AdminDictionaryImportJobResponse executeDictionaryImportJob(DictionaryImportJob job,
                                                                         DictionaryLibrary library,
                                                                         DataCleaningSource source) {
+        job.setStatus("running");
+        job.setStartedAt(LocalDateTime.now());
+        job.setResultJson(toJson(Map.of("message", "Python 词典正文入库 worker 处理中")));
+        mapper.updateDictionaryImportJob(job);
         try {
             Map<String, Object> workerResult = dictionaryImportWorker.importDictionary(library, source, job.getImportLimit());
             List<Map<String, Object>> failures = new ArrayList<>();
@@ -329,11 +363,12 @@ public class AdminDataCleaningService {
             job.setFailedEntries(failures.size());
             job.setImportedExamples(counters.importedExamples());
             job.setImportedPhrases(counters.importedPhrases());
-            job.setStatus(resolveImportStatus(workerResult, counters.importedEntries()));
+            job.setStatus(resolveImportStatus(workerResult, counters, failures));
+            job.setErrorMessage(resolveImportErrorMessage(job.getStatus(), failures));
             job.setFinishedAt(LocalDateTime.now());
             job.setResultJson(toJson(importResultPayload(workerResult, counters, importedResources, failures)));
             mapper.updateDictionaryImportJob(job);
-            mapper.updateDictionaryLibraryStatus(library.getDictionaryUid(), counters.importedEntries() > 0 ? "imported" : "installed");
+            mapper.updateDictionaryLibraryStatus(library.getDictionaryUid(), counters.importedEntries() > 0 ? "imported" : "failed");
         } catch (Exception ex) {
             job.setStatus("failed");
             job.setErrorMessage(ex.getMessage());
@@ -352,19 +387,35 @@ public class AdminDataCleaningService {
     private ImportCounters persistDictionaryImportEntries(DictionaryLibrary library,
                                                           Map<String, Object> workerResult,
                                                           List<Map<String, Object>> failures) {
-        Object entriesValue = workerResult.get("entries");
-        if (!(entriesValue instanceof List<?> entries)) {
-            return new ImportCounters(0, 0, 0, 0, List.of());
+        ImportAccumulator accumulator = new ImportAccumulator();
+        persistDictionaryImportEntryValues(library, workerResult.get("entries"), failures, accumulator);
+        Object batchPathsValue = workerResult.get("entryBatchPaths");
+        if (batchPathsValue instanceof List<?> batchPaths) {
+            for (Object batchPathValue : batchPaths) {
+                String batchPath = stringValue(batchPathValue);
+                if (isBlank(batchPath)) {
+                    continue;
+                }
+                try {
+                    List<Object> batchEntries = objectMapper.readValue(Path.of(batchPath).toFile(), new TypeReference<>() {});
+                    persistDictionaryImportEntryValues(library, batchEntries, failures, accumulator);
+                } catch (Exception ex) {
+                    failures.add(Map.of("message", "读取词条批次失败: " + batchPath + " - " + ex.getMessage()));
+                }
+            }
         }
+        return accumulator.toCounters();
+    }
 
-        int processed = 0;
-        int imported = 0;
-        int importedExamples = 0;
-        int importedPhrases = 0;
-        List<Map<String, Object>> samples = new ArrayList<>();
-        int sortOrder = 0;
+    private void persistDictionaryImportEntryValues(DictionaryLibrary library,
+                                                    Object entriesValue,
+                                                    List<Map<String, Object>> failures,
+                                                    ImportAccumulator accumulator) {
+        if (!(entriesValue instanceof List<?> entries)) {
+            return;
+        }
         for (Object value : entries) {
-            processed++;
+            accumulator.processedEntries++;
             Map<String, Object> entry = asMap(value);
             String word = firstNonBlank(stringValue(entry.get("word")), stringValue(entry.get("headword")));
             if (isBlank(word)) {
@@ -372,19 +423,21 @@ public class AdminDataCleaningService {
                 continue;
             }
             try {
-                String entryUid = newUid("de");
+                String sourceEntryId = firstNonBlank(stringValue(entry.get("source_entry_id")), stringValue(entry.get("sourceEntryId")), word);
+                String existingEntryUid = mapper.selectDictionaryEntryUidBySource(library.getDictionaryUid(), sourceEntryId);
+                String entryUid = firstNonBlank(existingEntryUid, newUid("de"));
                 String cleanText = firstNonBlank(stringValue(entry.get("clean_text")), stringValue(entry.get("cleanText")), word);
                 Map<String, Object> entryRow = new LinkedHashMap<>();
                 entryRow.put("entryUid", entryUid);
                 entryRow.put("dictionaryUid", library.getDictionaryUid());
-                entryRow.put("sourceEntryId", firstNonBlank(stringValue(entry.get("source_entry_id")), stringValue(entry.get("sourceEntryId")), word));
+                entryRow.put("sourceEntryId", sourceEntryId);
                 entryRow.put("headword", word);
                 entryRow.put("normalizedHeadword", normalizeHeadword(word));
                 entryRow.put("partOfSpeech", firstNonBlank(stringValue(entry.get("part_of_speech")), stringValue(entry.get("partOfSpeech"))));
                 entryRow.put("cleanText", cleanText);
                 entryRow.put("rawHtml", stringValue(entry.get("raw_html")));
                 entryRow.put("qualityScore", qualityScore(entry));
-                entryRow.put("sortOrder", sortOrder++);
+                entryRow.put("sortOrder", accumulator.sortOrder++);
                 entryRow.put("metadataJson", toJson(entry));
                 mapper.upsertDictionaryEntry(entryRow);
                 mapper.deleteDictionaryEntryChildren(entryUid);
@@ -392,25 +445,24 @@ public class AdminDataCleaningService {
                 persistPhonetics(entryUid, entry);
                 SenseCounters senseCounters = persistSenses(entryUid, entry);
                 int phraseCount = persistPhrases(entryUid, entry);
-                importedExamples += senseCounters.exampleCount();
-                importedPhrases += phraseCount;
-                imported++;
-                if (samples.size() < 5) {
-                    samples.add(Map.of(
+                accumulator.importedExamples += senseCounters.exampleCount();
+                accumulator.importedPhrases += phraseCount;
+                accumulator.importedEntries++;
+                if (accumulator.samples.size() < 5) {
+                    accumulator.samples.add(Map.of(
                             "entryUid", entryUid,
                             "headword", word,
-                            "partOfSpeech", firstNonBlank(stringValue(entryRow.get("partOfSpeech")), ""),
-                            "definitionEn", firstNonBlank(senseCounters.firstDefinitionEn(), ""),
-                            "definitionZh", firstNonBlank(senseCounters.firstDefinitionZh(), ""),
+                            "partOfSpeech", stringOrEmpty(firstNonBlank(stringValue(entryRow.get("partOfSpeech")))),
+                            "definitionEn", stringOrEmpty(firstNonBlank(senseCounters.firstDefinitionEn())),
+                            "definitionZh", stringOrEmpty(firstNonBlank(senseCounters.firstDefinitionZh())),
                             "exampleCount", senseCounters.exampleCount(),
                             "phraseCount", phraseCount
                     ));
                 }
             } catch (Exception ex) {
-                failures.add(Map.of("headword", word, "message", ex.getMessage()));
+                failures.add(Map.of("headword", word, "message", firstNonBlank(ex.getMessage(), ex.getClass().getSimpleName())));
             }
         }
-        return new ImportCounters(processed, imported, importedExamples, importedPhrases, samples);
     }
 
     private void persistPhonetics(String entryUid, Map<String, Object> entry) {
@@ -578,15 +630,30 @@ public class AdminDataCleaningService {
         return failures;
     }
 
-    private String resolveImportStatus(Map<String, Object> workerResult, int importedEntries) {
+    private String resolveImportStatus(Map<String, Object> workerResult,
+                                       ImportCounters counters,
+                                       List<Map<String, Object>> failures) {
         String status = stringValue(workerResult.get("status"));
-        if ("pending".equals(status)) {
-            return "pending";
-        }
-        if ("failed".equals(status) && importedEntries == 0) {
+        if (counters.importedEntries() == 0) {
             return "failed";
         }
+        if ("failed".equals(status) || "completed_with_warnings".equals(status) || !failures.isEmpty()) {
+            return "completed_with_warnings";
+        }
         return "completed";
+    }
+
+    private String resolveImportErrorMessage(String status, List<Map<String, Object>> failures) {
+        if (!"failed".equals(status)) {
+            return null;
+        }
+        if (!failures.isEmpty()) {
+            String message = stringValue(failures.get(0).get("message"));
+            if (!isBlank(message)) {
+                return message;
+            }
+        }
+        return "未导入任何词条，请检查 Python 解析依赖、MDX 文件和字段映射。";
     }
 
     Map<String, Object> probeDictionarySource(DataCleaningSource source) throws IOException {
@@ -1184,9 +1251,9 @@ public class AdminDataCleaningService {
 
     private static int normalizeImportLimit(Integer importLimit) {
         if (importLimit == null || importLimit <= 0) {
-            return 100;
+            return 0;
         }
-        return Math.min(importLimit, 1000);
+        return importLimit;
     }
 
     private static String normalizeHeadword(String value) {
@@ -1242,6 +1309,19 @@ public class AdminDataCleaningService {
                 return shared.getOrDefault(safeInt(rawValue, -1), rawValue);
             }
             return unescapeXml(rawValue);
+        }
+    }
+
+    private static final class ImportAccumulator {
+        private int processedEntries;
+        private int importedEntries;
+        private int importedExamples;
+        private int importedPhrases;
+        private int sortOrder;
+        private final List<Map<String, Object>> samples = new ArrayList<>();
+
+        private ImportCounters toCounters() {
+            return new ImportCounters(processedEntries, importedEntries, importedExamples, importedPhrases, samples);
         }
     }
 

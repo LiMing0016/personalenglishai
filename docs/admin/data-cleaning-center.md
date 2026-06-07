@@ -1,10 +1,13 @@
-# 数据清洗中心词典探查
+# 数据清洗中心词典入库
 
 ## 目标
 
-数据清洗中心用于把外部学习资料先纳入管理员可治理的入口。第一版先实现词典相关能力：上传或登记词典文件来源、探查 MDX/MDD/XLSX 元信息、沉淀任务记录，并在 Python 侧提供可测试的词典清洗核心，为后续全量解析、字段清洗、版权审核和发布到用户侧做准备。
+数据清洗中心用于把外部学习资料先纳入管理员可治理的入口。词典链路覆盖上传或登记词典文件来源、探查 MDX/MDD/XLSX 元信息、登记词库元数据、异步全量解析正文、写入正式词典内容表，并给管理员展示导入进度、词条样例和失败样例。
 
-第一版不做全量发布到用户侧；上传探查成功后会先把词库元信息落到正式词库管理表，管理员可以看到项目中已安装的词库。管理员点击“开始正文入库”后，后端会创建小批量入库任务并同步调用 Python worker，解析 MDX、清洗结构化字段，再写入词条、音标、释义、例句和短语表。后台会展示导入进度、样例词条和失败样例，方便先判断清洗质量。
+后台“已安装词库”分两层状态：
+
+- `词库元数据已登记`：上传探查成功后写入 `dictionary_library`，管理员可以看到项目已经有哪些词库包。
+- `正文内容已入库`：管理员点击“开始正文入库”后，后端创建 `dictionary_import_job` 异步任务，调用 Python worker 分批解析 MDX/MDD/XLSX，再由 Java 写入 `dictionary_entry`、`dictionary_pronunciation`、`dictionary_sense`、`dictionary_example`、`dictionary_phrase`、`dictionary_resource` 等正式内容表。只有这一步成功后，用户侧单词页才能查询到本地牛津词典正文。
 
 ## 管理员入口
 
@@ -82,13 +85,13 @@
 | `license_status` | VARCHAR(32) | 授权状态 |
 | `storage_type` | VARCHAR(32) | `local`、`object_storage` 等 |
 | `enabled` | TINYINT | 是否启用展示 |
-| `status` | VARCHAR(32) | `installed`、`importing`、`imported`、`disabled` |
+| `status` | VARCHAR(32) | `installed`、`importing`、`imported`、`failed`、`disabled` |
 | `metadata_json` | JSON | 完整探查结果 |
 | `created_at` / `updated_at` | DATETIME | 创建和更新时间 |
 
 ### dictionary_import_job
 
-记录词典正文入库任务。当前按钮默认创建 100 条小批量入库任务，并立即调用 Python worker 执行。后续可把同一张表扩展为异步队列。
+记录词典正文入库任务。当前按钮默认创建全量入库任务，`import_limit=0` 表示不限制词条数。任务先进入 `queued`，随后由后端异步线程执行；HTTP 请求不会等待大文件全量解析完成。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -96,9 +99,10 @@
 | `import_job_uid` | VARCHAR(96) | 入库任务唯一 ID |
 | `dictionary_uid` | VARCHAR(96) | 关联 `dictionary_library.dictionary_uid` |
 | `source_uid` | VARCHAR(96) | 关联原始数据源 |
-| `status` | VARCHAR(32) | `pending`、`running`、`completed`、`failed` |
-| `import_limit` | INT | 本次最多导入词条数，便于先小批量验证 |
+| `status` | VARCHAR(32) | `queued`、`running`、`completed`、`completed_with_warnings`、`failed` |
+| `import_limit` | INT | 本次最多导入词条数；`0` 表示全量导入 |
 | `processed_entries` / `imported_entries` / `failed_entries` | INT | 处理、成功和失败计数 |
+| `imported_examples` / `imported_phrases` | INT | 入库例句和短语计数 |
 | `result_json` | JSON | worker 结果摘要 |
 | `error_message` | TEXT | 失败原因 |
 | `created_by` | BIGINT | 创建管理员用户 ID |
@@ -131,7 +135,7 @@
 | `GET` | `/api/admin/data-cleaning/jobs/{jobUid}` | 查看单个任务 |
 | `GET` | `/api/admin/dictionaries` | 查看已安装词库列表 |
 | `GET` | `/api/admin/dictionaries/{dictionaryUid}` | 查看单个词库信息 |
-| `POST` | `/api/admin/dictionaries/{dictionaryUid}/import-jobs?limit=100` | 创建小批量正文入库任务 |
+| `POST` | `/api/admin/dictionaries/{dictionaryUid}/import-jobs?limit=0` | 创建正文入库任务；`limit=0` 为全量入库 |
 | `GET` | `/api/admin/dictionaries/{dictionaryUid}/import-jobs` | 查看词库正文入库任务 |
 | `GET` | `/api/admin/dictionaries/{dictionaryUid}/entries/samples?limit=10` | 查看已入库词条样例 |
 | `GET` | `/api/admin/dictionaries/import-jobs/{importJobUid}/failures` | 查看入库失败样例 |
@@ -148,6 +152,7 @@
 - 可用环境变量 `DATA_CLEANING_DICTIONARY_UPLOAD_DIR` 覆盖存储目录。
 - 上传完成后会写入 `data_cleaning_source`，并自动创建 `dictionary_probe` 任务。
 - 探查成功后会写入或更新 `dictionary_library`，管理员端“已安装词库”区域会展示该词库。
+- 上传表单中的 MDX/MDD/XLSX/封面路径由上传结果自动回填；服务器本地路径只用于受控内网导入，不作为页面默认硬编码路径。
 
 为支持较大的 MDX/MDD 文件，默认上传限制调整为：
 
@@ -191,11 +196,13 @@ XLSX 例句表：
 
 - 从已解析的 MDX 词条 HTML 中抽取结构化词条。
 - 通过 `python.ai_orchestrator.workflows.dictionary_cleaning.cli` 接收 Java worker 请求，输出结构化 JSON。
+- 支持 `entryBatchSize` 批量输出：全量导入时 Python 不把所有词条一次性塞进返回 JSON，而是写入多个批次 JSON 文件，并在结果里返回 `entryBatchPaths`。
 - 识别牛津 MDX 自定义标签：`h`、`phon`、`pos`、`def`、`chn`、`x`、`unbox`、`idm-g`。
 - 从 XLSX 例句表读取中英双语例句。
 - 按 headword 合并外部例句到词条首个释义下。
 - 汇总词条数、释义数、例句数、短语数和 warning 数。
-- 对真实 `.mdx` / `.mdd` 文件使用 `readmdict` 适配入口；Windows 本地需要同一 Python 环境具备 `readmdict` 和 `lzo`。
+- 对真实 `.mdx` / `.mdd` 文件使用 `readmdict` 适配入口；Windows 本地需要同一 Python 环境具备 `readmdict` 和 LZO 支持。
+- 如果缺少 `readmdict` 或 LZO 依赖，Python worker 会返回明确失败原因；Java 不会把 0 词条导入标记为 `completed`。
 - Java worker 会优先使用仓库内 `python/.venv/Scripts/python.exe` 或 `python/.venv/bin/python`，也可以通过 `app.data-cleaning.python.executable` / `DATA_CLEANING_PYTHON_EXECUTABLE` 显式覆盖。
 
 牛津 MDX 标签到结构化字段的首版映射：
@@ -213,7 +220,6 @@ XLSX 例句表：
 
 当前 Python 清洗核心暂不负责：
 
-- 解包和发布 MDD 图片资源。
 - 直接写数据库；数据库写入由 Java service 负责。
 - 调用 DeepSeek 做学习价值提取。
 - 审核、发布、权限控制和用户侧词库查询。
@@ -221,14 +227,15 @@ XLSX 例句表：
 ## 边界
 
 - 支持浏览器上传和服务器本地路径登记两种方式。
-- 首版同步探查文件元信息；正文入库为同步小批量 worker 调用，适合先验证解析质量，后续再升级为异步队列。
-- Python 侧已具备 MDX 原始词条清洗入口，但 Java 侧尚未接入异步全量导入任务。
-- 首版不解析 MDD 图片资源、不写入用户侧个人词库。
+- 探查任务负责文件元信息和词库元数据登记；正文入库任务负责正式内容表。
+- 正文入库已经是后端异步任务；任务状态以 `dictionary_import_job` 为准。
+- Python 解析、Java 编排和批量写库是分层职责：Python 输出结构化结果，Java 做状态流转、权限、幂等更新和数据库写入。
+- 本链路不写入用户侧个人词库。
 - 未确认授权前，数据只能用于内部验证，不应发布到用户侧。
 
 ## 后续阶段
 
-1. 引入异步任务：支持大文件解析、暂停、重试和错误样例归档。
-2. 建立词典标准表：词条、释义、例句、短语、派生词、图片资源分表。
-3. 增加清洗规则：HTML 清理、字段映射、重复词条合并、例句对齐。
+1. 增加任务暂停、重试、取消和错误样例归档。
+2. 增加字段映射审核台：对不同 MDX 模板的标签映射做可视化确认。
+3. 增加更细的清洗规则：派生词、同义词、反义词、搭配、学习标签和质量评分。
 4. 增加审核发布：按授权状态、质量评分和版本发布到用户侧单词页面。

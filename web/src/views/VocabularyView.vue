@@ -77,6 +77,15 @@
           />
         </section>
 
+        <section v-else-if="!errorMessage" class="lookup-message lookup-message--empty">
+          <header>
+            <div>
+              <strong>先搜索一个单词</strong>
+              <span>查询后这里会展示本次会话最新一次词典结果；刷新页面也会优先恢复最近查询。</span>
+            </div>
+          </header>
+        </section>
+
         <section class="search-meta-grid" aria-label="搜索快捷入口">
           <article class="compact-panel compact-panel--hot">
             <header>
@@ -92,18 +101,19 @@
           <article class="compact-panel">
             <header>
               <h2>最近搜索</h2>
-              <button type="button">清空</button>
+              <button type="button" :disabled="!recentSearches.length" @click="clearRecentSearches">清空</button>
             </header>
-            <ul class="recent-list">
+            <ul v-if="recentSearches.length" class="recent-list">
               <li v-for="item in recentSearches" :key="item">
                 <span aria-hidden="true">○</span>
                 <button type="button" @click="query = item">{{ item }}</button>
               </li>
             </ul>
+            <p v-else class="recent-empty">暂无最近搜索</p>
           </article>
         </section>
 
-        <section class="results-panel">
+        <section v-if="hasSearchContext" class="results-panel">
           <header>
             <h2>搜索结果 <small>({{ words.length * 32 }})</small></h2>
             <button type="button">相关度⌄</button>
@@ -116,7 +126,7 @@
               class="result-row"
               :class="{ selected: selectedWordId === word.id }"
               role="row"
-              @click="selectedWordId = word.id"
+              @click="selectStaticWord(word.id)"
             >
               <strong>{{ word.word }}</strong>
               <span>{{ word.phonetic }}</span>
@@ -359,7 +369,7 @@ interface LearningWord {
   id: string
   word: string
   phonetic: string
-  partOfSpeech: 'adj' | 'n' | 'v'
+  partOfSpeech: string
   meaning: string
   example: string
   translation: string
@@ -376,18 +386,21 @@ interface LearningWord {
 }
 
 const maxVisibleDefinitions = 3
+const latestLookupStorageKey = 'vocabulary.latestLookup'
+const recentSearchesStorageKey = 'vocabulary.recentSearches'
 const route = useRoute()
 const router = useRouter()
 const vocabularyViewKeys: VocabularyViewKey[] = ['search', 'modes', 'collection', 'stats']
+const cachedLookup = readCachedLookup()
 const activeView = ref<VocabularyViewKey>(parseVocabularyView(route.query.tab) ?? 'search')
-const selectedWordId = ref('innovative')
-const query = ref('')
-const language = ref<DictionaryLanguage>('en-gb')
+const selectedWordId = ref('')
+const query = ref(cachedLookup?.word ?? '')
+const language = ref<DictionaryLanguage>(cachedLookup?.language ?? 'en-gb')
 const loading = ref(false)
-const result = ref<DictionaryLookupResponse | null>(null)
+const result = ref<DictionaryLookupResponse | null>(cachedLookup?.result ?? null)
 const errorMessage = ref('')
 const debugMessage = ref('')
-const lastLookupAt = ref('')
+const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
 const favoriteWords = ref<DictionaryFavoriteItem[]>([])
 const favoriteTotal = ref(0)
 const favoritePage = ref(1)
@@ -534,7 +547,7 @@ const words = ref<LearningWord[]>([
 ])
 
 const hotSearches = ['innovative', 'strategy', 'sustainable', 'perception', 'launch', 'challenge']
-const recentSearches = ['innovative', 'sustainable', 'perception', 'viable', 'strategy']
+const recentSearches = ref<string[]>(readRecentSearches())
 
 const studyModes = [
   {
@@ -596,13 +609,23 @@ const milestones = [
   { label: '累计学习 100 天', locked: true },
 ]
 
-const selectedWord = computed(() => words.value.find((item) => item.id === selectedWordId.value) ?? words.value[0])
+const selectedWord = computed<LearningWord | null>(() => {
+  const staticWord = words.value.find((item) => item.id === selectedWordId.value)
+  if (staticWord) {
+    return staticWord
+  }
+  if (result.value) {
+    return createLearningWordFromLookup(result.value)
+  }
+  return null
+})
 const reviewQueue = computed(() => words.value.filter((item) => item.inReview))
 const selectedFavoriteItem = computed(() => {
   return favoriteWords.value.find((item) => item.word === selectedFavoriteWord.value) ?? favoriteWords.value[0] ?? null
 })
 const favoritePageCount = computed(() => Math.max(1, Math.ceil(favoriteTotal.value / favoritePageSize.value)))
 const lookupResultWord = computed(() => result.value?.word || selectedWord.value?.word || '')
+const hasSearchContext = computed(() => Boolean(result.value || selectedWordId.value || query.value.trim()))
 const lookupSourceTitle = computed(() => {
   if (result.value?.source === 'local') {
     return '已安装本地词典'
@@ -930,6 +953,128 @@ const FavoriteWordPreview = defineComponent({
   },
 })
 
+interface CachedDictionaryLookup {
+  word: string
+  language: DictionaryLanguage
+  lastLookupAt: string
+  result: DictionaryLookupResponse
+}
+
+function readCachedLookup(): CachedDictionaryLookup | null {
+  try {
+    const raw = window.sessionStorage.getItem(latestLookupStorageKey)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as Partial<CachedDictionaryLookup>
+    if (
+      !parsed.word ||
+      !parsed.result?.word ||
+      (parsed.language !== 'en-gb' && parsed.language !== 'en-us')
+    ) {
+      return null
+    }
+    return {
+      word: parsed.word,
+      language: parsed.language,
+      lastLookupAt: parsed.lastLookupAt || '',
+      result: parsed.result,
+    }
+  } catch {
+    return null
+  }
+}
+
+function readRecentSearches() {
+  try {
+    const raw = window.sessionStorage.getItem(recentSearchesStorageKey)
+    if (!raw) {
+      return []
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => item.trim())
+      .slice(0, 8)
+  } catch {
+    return []
+  }
+}
+
+function persistLatestLookup(lookup: DictionaryLookupResponse, searchedWord: string, lookedUpAt: string) {
+  try {
+    window.sessionStorage.setItem(latestLookupStorageKey, JSON.stringify({
+      word: lookup.word || searchedWord,
+      language: language.value,
+      lastLookupAt: lookedUpAt,
+      result: lookup,
+    }))
+  } catch {
+    // sessionStorage may be unavailable in private mode; the page can still use in-memory state.
+  }
+}
+
+function rememberRecentSearch(word: string) {
+  const normalizedWord = word.trim()
+  if (!normalizedWord) {
+    return
+  }
+  const next = [
+    normalizedWord,
+    ...recentSearches.value.filter((item) => item.toLowerCase() !== normalizedWord.toLowerCase()),
+  ].slice(0, 8)
+  recentSearches.value = next
+  try {
+    window.sessionStorage.setItem(recentSearchesStorageKey, JSON.stringify(next))
+  } catch {
+    // Ignore storage failures; recent searches still work for the current session.
+  }
+}
+
+function clearRecentSearches() {
+  recentSearches.value = []
+  try {
+    window.sessionStorage.removeItem(recentSearchesStorageKey)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function createLearningWordFromLookup(lookup: DictionaryLookupResponse): LearningWord {
+  const firstEntry = lookup.entries[0]
+  const firstDefinition = firstEntry?.definitions[0] || '暂无释义'
+  return {
+    id: lookup.word.toLowerCase(),
+    word: lookup.word,
+    phonetic: lookup.phonetics[0]?.text?.replace(/^(BrE|NAmE)\s*/i, '').trim() || '',
+    partOfSpeech: firstEntry?.partOfSpeech || 'entry',
+    meaning: firstDefinition,
+    example: firstEntry?.examples[0] || '',
+    translation: '',
+    occurrences: lookup.lookupCount ?? 0,
+    status: '新学',
+    mastery: 0,
+    usage: firstDefinition,
+    morphemes: [],
+    synonyms: [],
+    derived: [],
+    inReview: false,
+    favorite: Boolean(lookup.favorite),
+    savedAt: '',
+  }
+}
+
+function selectStaticWord(wordId: string) {
+  selectedWordId.value = wordId
+  result.value = null
+  errorMessage.value = ''
+  debugMessage.value = ''
+  lastLookupAt.value = ''
+}
+
 async function submitLookup() {
   const word = query.value.trim()
   if (!word) {
@@ -945,10 +1090,14 @@ async function submitLookup() {
 
   try {
     result.value = await lookupDictionary(word, language.value)
-    lastLookupAt.value = new Intl.DateTimeFormat('zh-CN', {
+    selectedWordId.value = ''
+    const lookedUpAt = new Intl.DateTimeFormat('zh-CN', {
       hour: '2-digit',
       minute: '2-digit',
     }).format(Date.now())
+    lastLookupAt.value = lookedUpAt
+    rememberRecentSearch(result.value.word || word)
+    persistLatestLookup(result.value, word, lookedUpAt)
   } catch (err) {
     result.value = null
     const normalized = normalizeError(err)
@@ -1451,10 +1600,21 @@ function normalizeError(err: unknown) {
   color: #991b1b;
 }
 
+.lookup-message--empty {
+  color: #334155;
+}
+
 .lookup-message header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+.lookup-message header span {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  line-height: 1.6;
 }
 
 .dictionary-entry {
@@ -1471,6 +1631,12 @@ function normalizeError(err: unknown) {
   margin: 4px 0 0;
   color: #334155;
   line-height: 1.5;
+}
+
+.recent-empty {
+  margin: 14px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 .ghost-button {

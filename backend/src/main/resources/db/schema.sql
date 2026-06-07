@@ -937,7 +937,7 @@ CREATE TABLE IF NOT EXISTS data_cleaning_job (
     job_uid VARCHAR(96) NOT NULL,
     source_uid VARCHAR(96) NOT NULL,
     job_type VARCHAR(64) NOT NULL COMMENT 'dictionary_probe | dictionary_import',
-    status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending | running | completed | failed',
+    status VARCHAR(32) NOT NULL DEFAULT 'queued' COMMENT 'queued | running | completed | completed_with_warnings | failed',
     progress_total INT NOT NULL DEFAULT 0,
     progress_done INT NOT NULL DEFAULT 0,
     result_json JSON NULL,

@@ -240,8 +240,8 @@
             <div class="dictionary-library-side">
               <strong>{{ formatBytes(Number(dictionary.mdxSizeBytes || 0) + Number(dictionary.mddSizeBytes || 0)) }}</strong>
               <span>{{ dictionary.updatedAt || '-' }}</span>
-              <button class="admin-btn admin-btn--secondary" type="button" :disabled="submitting" @click="createDictionaryImport(dictionary.dictionaryUid)">
-                开始正文入库
+              <button class="admin-btn admin-btn--secondary" type="button" :disabled="submitting || isDictionaryImportRunning(dictionary.dictionaryUid)" @click="createDictionaryImport(dictionary.dictionaryUid)">
+                {{ isDictionaryImportRunning(dictionary.dictionaryUid) ? '入库中...' : '开始全文入库' }}
               </button>
             </div>
           </article>
@@ -356,7 +356,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
   adminApi,
   type AdminDataCleaningJob,
@@ -452,6 +452,7 @@ const message = ref('')
 const uploadStatusMessage = ref('')
 const uploadStatusType = ref<'info' | 'success' | 'error'>('info')
 const uploadFiles = ref<File[]>([])
+let refreshTimer: number | null = null
 const form = reactive({
   sourceCode: '',
   displayName: '',
@@ -622,7 +623,7 @@ async function createDictionaryImport(dictionaryUid: string) {
   error.value = ''
   message.value = ''
   try {
-    const job = await adminApi.createAdminDictionaryImportJob(dictionaryUid, 100)
+    const job = await adminApi.createAdminDictionaryImportJob(dictionaryUid)
     dictionaryImportJobs.value = {
       ...dictionaryImportJobs.value,
       [dictionaryUid]: [job, ...(dictionaryImportJobs.value[dictionaryUid] || [])],
@@ -637,13 +638,31 @@ async function createDictionaryImport(dictionaryUid: string) {
       ...dictionaryEntrySamples.value,
       [dictionaryUid]: await adminApi.listAdminDictionaryEntrySamples(dictionaryUid, 5).catch(() => []),
     }
-    message.value = `正文入库任务已${job.status === 'completed' ? '完成' : '创建'}，处理 ${job.processedEntries || 0} 个词条，成功 ${job.importedEntries || 0} 个，失败 ${job.failedEntries || 0} 个。`
+    message.value = importJobMessage(job)
     await loadAll()
   } catch {
     error.value = '创建正文入库任务失败'
   } finally {
     submitting.value = false
   }
+}
+
+function isDictionaryImportRunning(dictionaryUid: string) {
+  const status = latestImportJob(dictionaryUid)?.status
+  return status === 'queued' || status === 'running'
+}
+
+function hasRunningDictionaryImport() {
+  return Object.values(dictionaryImportJobs.value).some((jobs) =>
+    jobs.some((job) => job.status === 'queued' || job.status === 'running'),
+  )
+}
+
+function importJobMessage(job: AdminDictionaryImportJob) {
+  if (job.status === 'queued' || job.status === 'running') {
+    return '全文入库任务已启动，后台会持续处理；页面将自动刷新进度。'
+  }
+  return `正文入库任务已${job.status === 'completed' || job.status === 'completed_with_warnings' ? '完成' : '结束'}，处理 ${job.processedEntries || 0} 个词条，成功 ${job.importedEntries || 0} 个，失败 ${job.failedEntries || 0} 个。`
 }
 
 async function probeExisting(sourceUid: string) {
@@ -790,6 +809,7 @@ function dictionaryStatusLabel(status: string) {
     installed: '已安装',
     importing: '入库中',
     imported: '已入库',
+    completed_with_warnings: '部分完成',
     failed: '失败',
     disabled: '已禁用',
   }[status] || status
@@ -809,7 +829,21 @@ function importFailures(dictionaryUid: string) {
   return failures.slice(0, 3).map((failure) => asRecord(failure))
 }
 
-onMounted(() => loadAll())
+onMounted(() => {
+  loadAll()
+  refreshTimer = window.setInterval(() => {
+    if (hasRunningDictionaryImport()) {
+      loadAll({ clearError: false })
+    }
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+})
 </script>
 
 <style scoped>
@@ -1362,6 +1396,7 @@ onMounted(() => loadAll())
 }
 
 .data-cleaning-status--completed,
+.data-cleaning-status--completed_with_warnings,
 .data-cleaning-status--probed,
 .data-cleaning-status--installed,
 .data-cleaning-status--imported {
@@ -1370,6 +1405,7 @@ onMounted(() => loadAll())
 }
 
 .data-cleaning-status--running,
+.data-cleaning-status--queued,
 .data-cleaning-status--registered,
 .data-cleaning-status--importing {
   background: rgba(37, 99, 235, 0.1);

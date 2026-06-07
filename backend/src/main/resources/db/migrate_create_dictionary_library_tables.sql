@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS dictionary_import_job (
     import_job_uid VARCHAR(96) NOT NULL,
     dictionary_uid VARCHAR(96) NOT NULL,
     source_uid VARCHAR(96) NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending | running | completed | failed',
+    status VARCHAR(32) NOT NULL DEFAULT 'queued' COMMENT 'queued | running | completed | completed_with_warnings | failed',
     import_limit INT NULL,
     processed_entries INT NOT NULL DEFAULT 0,
     imported_entries INT NOT NULL DEFAULT 0,

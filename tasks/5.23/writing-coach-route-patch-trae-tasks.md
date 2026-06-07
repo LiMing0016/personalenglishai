@@ -164,7 +164,7 @@
 
 ### 小题 B：普通 coach 请求先走写作路由
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请让普通写作教练消息先经过 `WritingCoachRouteRunner`，再根据路由结果决定是否进入阶段 Agent。
 
@@ -195,7 +195,7 @@
 
 ### 小题 A：后端新增 reply + patches 输出 Schema
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请新增写作教练最终响应 schema，让阶段 Agent 能返回普通回复和可应用 patches。
 
@@ -260,7 +260,7 @@
 
 ### 小题 A：接口层和类型层对齐
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请让前端 assistant 接口能消费后端返回的结构化 `WritingCoachResponse`。
 
@@ -315,7 +315,7 @@
 
 ### 小题 A：升级确认卡片展示
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请升级写作教练面板里的“应用到正文”卡片，让用户能清楚看到 patch 会做什么。
 
