@@ -5,6 +5,7 @@ last_updated: 2026-05-16
 related_code:
   - setup-local.ps1
   - start-local.bat
+  - docker-compose.local.yml
   - docker-compose.yml
   - deploy/
 ---
@@ -16,6 +17,7 @@ related_code:
 ## 当前文档
 
 - [本地开发](./local-dev.md)
+- [Docker 本地开发](./docker-local.md)
 - [启动环境检查](./startup-env-checklist.md)
 - [本地脚本](./local-scripts.md)
 - [仓库目录卫生治理](./repo-hygiene.md)

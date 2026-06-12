@@ -1,0 +1,164 @@
+name: personal-english-ai-local
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: peai-local-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-peai_root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-personal_english_ai}
+      MYSQL_USER: ${MYSQL_USER:-peai}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-peai_password}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - peai_local_mysql_data:/var/lib/mysql
+      - ./backend/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7
+    container_name: peai-local-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - peai_local_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  context-sidecar:
+    build:
+      context: ./python/context_sidecar
+    container_name: peai-local-context-sidecar
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CONTEXT_SIDECAR_REDIS_URL: redis://redis:6379/0
+      CONTEXT_SIDECAR_REDIS_TTL_SECONDS: ${CONTEXT_SIDECAR_REDIS_TTL_SECONDS:-86400}
+      CONTEXT_SIDECAR_REDIS_MAX_MESSAGES: ${CONTEXT_SIDECAR_REDIS_MAX_MESSAGES:-50}
+      CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS: ${CONTEXT_SIDECAR_DEFAULT_RECENT_TURNS:-8}
+    ports:
+      - "${CONTEXT_SIDECAR_PORT:-8001}:8001"
+
+  assistant-orchestrator:
+    build:
+      context: ./python/ai_orchestrator
+    container_name: peai-local-assistant-orchestrator
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      AI_ASSISTANT_MODEL: ${AI_ASSISTANT_MODEL:-gpt-5.4-mini}
+      AI_ASSISTANT_SESSION_DB_PATH: /data/assistant_sessions.db
+      AI_ASSISTANT_PROMPT_SOURCE: ${AI_ASSISTANT_PROMPT_SOURCE:-local}
+      AI_ASSISTANT_REMOTE_PROMPT_STRICT: ${AI_ASSISTANT_REMOTE_PROMPT_STRICT:-false}
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
+    ports:
+      - "${ASSISTANT_ORCHESTRATOR_PORT:-8011}:8002"
+    volumes:
+      - peai_local_assistant_data:/data
+
+  backend:
+    image: maven:3.9-eclipse-temurin-17
+    container_name: peai-local-backend
+    restart: unless-stopped
+    working_dir: /workspace/backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      assistant-orchestrator:
+        condition: service_started
+      context-sidecar:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      SERVER_PORT: 18080
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-personal_english_ai}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-peai_root_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-local-docker-jwt-secret-must-be-at-least-32-bytes}
+      APP_BASE_URL: ${APP_BASE_URL:-http://127.0.0.1:3300}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      AI_PROVIDER_ACTIVE: ${AI_PROVIDER_ACTIVE:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_PROVIDER_OPENAI_API_KEY: ${AI_PROVIDER_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}
+      AI_PROVIDER_OPENAI_BASE_URL: ${AI_PROVIDER_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-https://api.openai.com}}
+      AI_PROVIDER_OPENAI_MODEL: ${AI_PROVIDER_OPENAI_MODEL:-gpt-4o}
+      ASSISTANT_ORCHESTRATOR_BASE_URL: http://assistant-orchestrator:8002
+      AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL: http://context-sidecar:8001
+      AI_CONTEXT_CONVERSATION_PYTHON_ENABLED: ${AI_CONTEXT_CONVERSATION_PYTHON_ENABLED:-false}
+      LANGUAGETOOL_ENABLED: ${LANGUAGETOOL_ENABLED:-false}
+      TEXTGEARS_ENABLED: ${TEXTGEARS_ENABLED:-false}
+    command: mvn spring-boot:run
+    ports:
+      - "${BACKEND_PORT:-18080}:18080"
+    volumes:
+      - ./backend:/workspace/backend
+      - peai_local_maven_repo:/root/.m2
+
+  web:
+    image: node:20-bookworm-slim
+    container_name: peai-local-web
+    restart: unless-stopped
+    working_dir: /workspace/web
+    depends_on:
+      backend:
+        condition: service_started
+      assistant-orchestrator:
+        condition: service_started
+    environment:
+      VITE_API_BASE_URL: http://backend:18080
+      VITE_ASSISTANT_API_BASE_URL: http://127.0.0.1:${ASSISTANT_ORCHESTRATOR_PORT:-8011}
+      VITE_DOCS_BASE_URL: http://127.0.0.1:${DOCS_PORT:-5174}
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    ports:
+      - "${WEB_PORT:-3300}:3000"
+    volumes:
+      - ./web:/workspace/web
+      - peai_local_web_node_modules:/workspace/web/node_modules
+
+  docs:
+    image: node:20-bookworm-slim
+    container_name: peai-local-docs
+    restart: unless-stopped
+    working_dir: /workspace/docs
+    command: sh -c "npm install && npx vitepress dev . --host 0.0.0.0 --port 5174 --strictPort"
+    ports:
+      - "${DOCS_PORT:-5174}:5174"
+    volumes:
+      - ./docs:/workspace/docs
+      - peai_local_docs_node_modules:/workspace/docs/node_modules
+
+volumes:
+  peai_local_mysql_data:
+  peai_local_redis_data:
+  peai_local_assistant_data:
+  peai_local_maven_repo:
+  peai_local_web_node_modules:
+  peai_local_docs_node_modules:
