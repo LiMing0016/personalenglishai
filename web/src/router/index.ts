@@ -127,6 +127,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/app/TranslationPage.vue'),
       },
       {
+        path: 'translation/workspace/:id',
+        name: 'TranslationWorkspace',
+        component: () => import('@/pages/app/TranslationWorkspacePage.vue'),
+        meta: { immersive: true },
+      },
+      {
         path: 'assistant',
         name: 'LearningAssistant',
         component: () => import('@/pages/app/AssistantPage.vue'),

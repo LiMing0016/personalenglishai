@@ -108,6 +108,27 @@ npm run build
 - MySQL 8 或可用的远程 MySQL
 - Redis 7（部分链路需要）
 
+### Docker 本地启动
+
+如果只是想在新电脑快速跑起完整项目，优先使用 Docker：
+
+```powershell
+docker compose -f docker-compose.local.yml up --build
+```
+
+默认地址：
+
+| 服务 | 默认地址 |
+|------|----------|
+| Web | `http://127.0.0.1:3300` |
+| Backend | `http://127.0.0.1:18080` |
+| Python orchestrator | `http://127.0.0.1:8011` |
+| Docs | `http://127.0.0.1:5174` |
+| MySQL | `127.0.0.1:3306` |
+| Redis | `127.0.0.1:6379` |
+
+详细说明见 [Docker 本地开发](docs/runbooks/docker-local.md)。
+
 ### 一键准备 Windows 本地环境
 
 ```powershell
