@@ -17,6 +17,13 @@ public class TranslationDocumentParseResponse {
     private String parseMode;
     private boolean fallbackUsed;
     private long elapsedMs;
+    private List<TranslationDocumentElementDto> elements = new ArrayList<>();
+    private List<TranslationKnowledgeChunkDto> knowledgeChunks = new ArrayList<>();
+    private List<TranslationDocumentAssetDto> assets = new ArrayList<>();
+    private TranslationParseDiagnosisDto diagnosis = new TranslationParseDiagnosisDto();
+    private TranslationDocumentQualityDto quality = new TranslationDocumentQualityDto();
+    private TranslationLanguageProfileDto languageProfile = new TranslationLanguageProfileDto();
+    private TranslationParseJobDto parseJob = new TranslationParseJobDto();
 
     public String getDocumentId() {
         return documentId;
@@ -121,5 +128,61 @@ public class TranslationDocumentParseResponse {
 
     public void setElapsedMs(long elapsedMs) {
         this.elapsedMs = elapsedMs;
+    }
+
+    public List<TranslationDocumentElementDto> getElements() {
+        return elements;
+    }
+
+    public void setElements(List<TranslationDocumentElementDto> elements) {
+        this.elements = elements == null ? new ArrayList<>() : elements;
+    }
+
+    public List<TranslationKnowledgeChunkDto> getKnowledgeChunks() {
+        return knowledgeChunks;
+    }
+
+    public void setKnowledgeChunks(List<TranslationKnowledgeChunkDto> knowledgeChunks) {
+        this.knowledgeChunks = knowledgeChunks == null ? new ArrayList<>() : knowledgeChunks;
+    }
+
+    public List<TranslationDocumentAssetDto> getAssets() {
+        return assets;
+    }
+
+    public void setAssets(List<TranslationDocumentAssetDto> assets) {
+        this.assets = assets == null ? new ArrayList<>() : assets;
+    }
+
+    public TranslationParseDiagnosisDto getDiagnosis() {
+        return diagnosis;
+    }
+
+    public void setDiagnosis(TranslationParseDiagnosisDto diagnosis) {
+        this.diagnosis = diagnosis == null ? new TranslationParseDiagnosisDto() : diagnosis;
+    }
+
+    public TranslationDocumentQualityDto getQuality() {
+        return quality;
+    }
+
+    public void setQuality(TranslationDocumentQualityDto quality) {
+        this.quality = quality == null ? new TranslationDocumentQualityDto() : quality;
+    }
+
+    public TranslationLanguageProfileDto getLanguageProfile() {
+        return languageProfile;
+    }
+
+    public void setLanguageProfile(TranslationLanguageProfileDto languageProfile) {
+        this.languageProfile = languageProfile == null ? new TranslationLanguageProfileDto() : languageProfile;
+    }
+
+    public TranslationParseJobDto getParseJob() {
+        return parseJob;
+    }
+
+    public void setParseJob(TranslationParseJobDto parseJob) {
+        this.parseJob = parseJob == null ? new TranslationParseJobDto() : parseJob;
     }
 }

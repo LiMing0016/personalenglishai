@@ -46,7 +46,7 @@
 
 ### A 小题：实现统一文档导入接口
 
-#### Prompt
+#### Prompt（完成）
 
 请将翻译模块的上传解析入口升级为统一文档导入接口。
 
@@ -103,7 +103,7 @@ mode: immersive | exam
 
 ### B 小题：建立 parser adapter 架构
 
-#### Prompt
+#### Prompt（完成）
 
 请为文档解析建立可扩展的 parser adapter 架构。
 
@@ -188,9 +188,9 @@ interface TranslationDocumentParser {
 
 ### B 小题：实现 DOCX 基础解析
 
-#### Prompt
+#### Prompt（完成）
 
-请使用 Apache POI 实现 DOCX 基础解析，将 Word 文档转换为 `DocumentBlock`。
+请使用 ApacheOI 实现 DOCX 基础解析，将 Word 文档转换为 `DocumentBlock`。
 
 要求：
 
@@ -272,7 +272,7 @@ interface TranslationDocumentParser {
 
 ### B 小题：前端适配统一 DocumentBlock
 
-#### Prompt
+#### Prompt（完成）
 
 请更新前端工作台数据模型，让工作台只消费统一 `DocumentBlock`。
 
@@ -344,7 +344,7 @@ interface TranslationDocumentParser {
 
 ### B 小题：增强 block 交互与定位
 
-#### Prompt
+#### Prompt（完成）
 
 请增强左侧 Reader 的交互能力。
 
@@ -377,7 +377,7 @@ interface TranslationDocumentParser {
 
 题目类型：frontend + AI integration
 
-难度：偏难
+难度：偏难（完成）
 
 ### A 小题：实现围绕当前 block 的 Agent Console
 

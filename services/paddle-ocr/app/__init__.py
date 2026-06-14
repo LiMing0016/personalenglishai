@@ -1,0 +1,1 @@
+"""PaddleOCR HTTP service package."""

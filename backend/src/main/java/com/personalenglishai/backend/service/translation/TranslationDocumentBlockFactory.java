@@ -20,7 +20,7 @@ final class TranslationDocumentBlockFactory {
         response.setOcrStatus("NOT_REQUIRED");
         response.setPageCount(0);
         response.setBlocks(blocks);
-        return response;
+        return TranslationDocumentKnowledgePipeline.enrich(response);
     }
 
     static List<String> splitParagraphs(String text) {

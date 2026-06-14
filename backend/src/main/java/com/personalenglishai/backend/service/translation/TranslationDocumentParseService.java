@@ -57,7 +57,7 @@ public class TranslationDocumentParseService {
             } else {
                 applyOcrFallback(response, pdfBytes);
             }
-            return response;
+            return TranslationDocumentKnowledgePipeline.enrich(response);
         } catch (IOException e) {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "PDF 解析失败，请确认文件未损坏");
         }

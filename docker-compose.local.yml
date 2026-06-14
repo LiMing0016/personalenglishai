@@ -58,6 +58,18 @@ services:
     ports:
       - "${CONTEXT_SIDECAR_PORT:-8001}:8001"
 
+  paddle-ocr:
+    build:
+      context: ./services/paddle-ocr
+    container_name: peai-local-paddle-ocr
+    restart: unless-stopped
+    environment:
+      PADDLE_OCR_ENABLE_FORMULA: ${PADDLE_OCR_ENABLE_FORMULA:-false}
+    ports:
+      - "${PADDLE_OCR_PORT:-8090}:8090"
+    volumes:
+      - peai_local_paddle_ocr_cache:/root/.paddleocr
+
   assistant-orchestrator:
     build:
       context: ./python/ai_orchestrator
@@ -113,6 +125,11 @@ services:
       ASSISTANT_ORCHESTRATOR_BASE_URL: http://assistant-orchestrator:8002
       AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL: http://context-sidecar:8001
       AI_CONTEXT_CONVERSATION_PYTHON_ENABLED: ${AI_CONTEXT_CONVERSATION_PYTHON_ENABLED:-false}
+      APP_OCR_PROVIDER: ${APP_OCR_PROVIDER:-tesseract}
+      APP_OCR_PADDLE_ENABLED: ${APP_OCR_PADDLE_ENABLED:-true}
+      APP_OCR_PADDLE_BASE_URL: ${APP_OCR_PADDLE_BASE_URL:-http://paddle-ocr:8090}
+      APP_OCR_PADDLE_ENDPOINT: ${APP_OCR_PADDLE_ENDPOINT:-/ocr/pdf}
+      APP_OCR_PADDLE_LANGUAGE: ${APP_OCR_PADDLE_LANGUAGE:-ch,eng}
       LANGUAGETOOL_ENABLED: ${LANGUAGETOOL_ENABLED:-false}
       TEXTGEARS_ENABLED: ${TEXTGEARS_ENABLED:-false}
     command: mvn spring-boot:run
@@ -159,6 +176,7 @@ volumes:
   peai_local_mysql_data:
   peai_local_redis_data:
   peai_local_assistant_data:
+  peai_local_paddle_ocr_cache:
   peai_local_maven_repo:
   peai_local_web_node_modules:
   peai_local_docs_node_modules:

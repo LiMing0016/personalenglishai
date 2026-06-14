@@ -68,7 +68,7 @@ public class DocumentParseOrchestrator {
             mergedWarnings.addAll(response.getWarnings());
             response.setWarnings(mergedWarnings);
         }
-        return response;
+        return TranslationDocumentKnowledgePipeline.enrich(response);
     }
 
     private BizException unsupported() {

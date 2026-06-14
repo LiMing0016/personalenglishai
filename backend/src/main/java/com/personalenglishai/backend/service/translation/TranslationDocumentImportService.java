@@ -32,7 +32,7 @@ public class TranslationDocumentImportService {
         }
 
         if (isPdf(document) && parseOrchestrator != null) {
-            return parseOrchestrator.parse(new DocumentParseRequest(
+            TranslationDocumentParseResponse response = parseOrchestrator.parse(new DocumentParseRequest(
                     document.getOriginalFilename(),
                     document.getContentType(),
                     document.getBytes(),
@@ -40,16 +40,17 @@ public class TranslationDocumentImportService {
                     document.getParseMode(),
                     document.getMode()
             ));
+            return TranslationDocumentKnowledgePipeline.enrich(response);
         }
 
-        return parsers.stream()
-                .filter(parser -> parser.supports(document))
+        TranslationDocumentParser parser = parsers.stream()
+                .filter(candidate -> candidate.supports(document))
                 .findFirst()
-                .map(parser -> parser.parse(document))
                 .orElseThrow(() -> new BizException(
                         ErrorCode.COMMON_VALIDATION_ERROR,
                         "暂不支持该文件格式，请上传 PDF、DOCX、TXT 或 MD"
                 ));
+        return TranslationDocumentKnowledgePipeline.enrich(parser.parse(document));
     }
 
     private void validate(UploadedTranslationDocument document) {

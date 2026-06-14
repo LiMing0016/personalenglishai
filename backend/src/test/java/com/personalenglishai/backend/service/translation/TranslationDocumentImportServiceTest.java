@@ -37,6 +37,13 @@ class TranslationDocumentImportServiceTest {
         assertThat(response.getBlocks()).hasSize(2);
         assertThat(response.getBlocks().get(0).getType()).isEqualTo("paragraph");
         assertThat(response.getBlocks().get(1).getText()).contains("Second paragraph");
+        assertThat(response.getElements()).hasSize(2);
+        assertThat(response.getKnowledgeChunks()).isNotEmpty();
+        assertThat(response.getDiagnosis().getTextLayer()).isEqualTo("GOOD");
+        assertThat(response.getQuality().getDocumentQualityScore()).isGreaterThan(0.7);
+        assertThat(response.getLanguageProfile().getPrimaryLanguage()).isEqualTo("en");
+        assertThat(response.getParseJob().getStage()).isEqualTo("READY");
+        assertThat(response.getParseJob().getProgress()).isEqualTo(1.0);
     }
 
     @Test
@@ -59,6 +66,12 @@ class TranslationDocumentImportServiceTest {
         assertThat(response.getBlocks()).extracting("type")
                 .containsExactly("heading", "paragraph", "list", "list");
         assertThat(response.getBlocks().get(0).getText()).isEqualTo("Main Title");
+        assertThat(response.getElements()).extracting("type")
+                .containsExactly("heading", "paragraph", "list", "list");
+        assertThat(response.getKnowledgeChunks()).anySatisfy(chunk ->
+                assertThat(chunk.getSourceElementIds()).contains(response.getElements().get(0).getId()));
+        assertThat(response.getKnowledgeChunks().get(0).getSectionPath()).contains("Main Title");
+        assertThat(response.getLanguageProfile().getSecondaryLanguages()).isEmpty();
     }
 
     @Test
@@ -76,6 +89,14 @@ class TranslationDocumentImportServiceTest {
         assertThat(response.getBlocks().get(1).getText()).contains("Word documents should become readable blocks");
         assertThat(response.getBlocks().get(2).getType()).isEqualTo("table");
         assertThat(response.getBlocks().get(2).getText()).contains("Phrase", "Meaning");
+        assertThat(response.getElements()).hasSize(3);
+        assertThat(response.getKnowledgeChunks()).anySatisfy(chunk ->
+                assertThat(chunk.getChunkType()).isIn("section", "table", "paragraph"));
+        assertThat(response.getAssets()).anySatisfy(asset -> {
+            assertThat(asset.getAssetType()).isEqualTo("table");
+            assertThat(asset.getRecognitionStatus()).isEqualTo("READY");
+            assertThat(asset.getRecognizedText()).contains("Phrase", "break down");
+        });
     }
 
     @Test

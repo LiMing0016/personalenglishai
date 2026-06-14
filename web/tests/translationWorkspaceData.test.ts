@@ -164,6 +164,7 @@ const parsedPdfDraft = createTranslationWorkspaceDraftFromParsedDocument(
   fixedNow,
 )
 
+assert.equal(parsedPdfDraft.id, 'parsed-doc-1')
 assert.equal(parsedPdfDraft.sourceType, 'pdf')
 assert.equal(parsedPdfDraft.sourceLabel, 'PDF')
 assert.equal(parsedPdfDraft.pdfPreviewUrl, 'blob:http://localhost/pdf-preview')
@@ -207,6 +208,7 @@ const parsedDocxDraft = createTranslationWorkspaceDraftFromParsedDocument(
   fixedNow,
 )
 
+assert.equal(parsedDocxDraft.id, 'parsed-docx-1')
 assert.equal(parsedDocxDraft.sourceType, 'text')
 assert.equal(parsedDocxDraft.sourceLabel, 'DOCX')
 assert.equal(parsedDocxDraft.subtitle.includes('lesson.docx'), true)
