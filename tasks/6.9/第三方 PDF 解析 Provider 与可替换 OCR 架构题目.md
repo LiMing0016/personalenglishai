@@ -72,7 +72,7 @@ public interface DocumentParseProvider {
 
 ### B 小题：实现 DocumentParseOrchestrator 与 fallback 机制
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请实现 `DocumentParseOrchestrator`，统一负责选择 Provider、执行解析、处理失败和 fallback。
 
@@ -182,7 +182,7 @@ app:
 
 ### B 小题：生成 AI 使用的 LearningChunk
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请在后端或前端数据层生成 `LearningChunk`，用于 AI 翻译、Agent 问答和学习资产沉淀。
 
@@ -230,7 +230,7 @@ app:
 
 ### A 小题：实现 ThirdPartyLayoutDocumentParseProvider 骨架
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请实现第三方高质量 PDF 解析 Provider 的后端骨架，用于后续接入 Marker/Surya、Datalab API、Google Document AI、AWS Textract 或 Azure Document Intelligence。
 
@@ -270,7 +270,7 @@ app:
 
 ### B 小题：实现 Provider 原始响应适配层
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请实现第三方解析响应到 `DocumentNode` 的适配层。
 
@@ -324,7 +324,7 @@ app:
 
 ### A 小题：新建翻译弹窗支持解析模式
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请在翻译 Hub 的“新建翻译”弹窗中增加 PDF 解析模式选择。
 
@@ -357,7 +357,7 @@ app:
 
 ### B 小题：工作台展示解析质量与 Provider 信息
 
-#### 题目 Prompt
+#### 题目 Prompt（完成）
 
 请在 AI 精读工作台中展示必要但不打扰的解析状态信息。
 

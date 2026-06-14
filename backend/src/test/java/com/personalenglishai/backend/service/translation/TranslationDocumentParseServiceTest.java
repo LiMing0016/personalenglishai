@@ -43,6 +43,33 @@ class TranslationDocumentParseServiceTest {
     }
 
     @Test
+    void enrichesParsedPdfWithDocumentElementsDiagnosisQualityAndChunks() {
+        byte[] pdf = textPdf("""
+                Chapter 1
+
+                AI reading tools should keep every answer grounded in the source document.
+
+                Good chunks preserve page numbers and source element ids.
+                """);
+
+        TranslationDocumentParseResponse response = service.parsePdf("article.pdf", pdf);
+
+        assertThat(response.getElements()).hasSize(response.getBlocks().size());
+        assertThat(response.getElements().get(0).getRecognitionStatus()).isEqualTo("READY");
+        assertThat(response.getElements().get(0).getProvider()).isEqualTo("pdfbox");
+        assertThat(response.getDiagnosis().getTextLayer()).isEqualTo("GOOD");
+        assertThat(response.getDiagnosis().isOcrRecommended()).isFalse();
+        assertThat(response.getQuality().getDocumentQualityScore()).isGreaterThan(0.7);
+        assertThat(response.getKnowledgeChunks()).isNotEmpty();
+        assertThat(response.getKnowledgeChunks().get(0).getSourceElementIds()).isNotEmpty();
+        assertThat(response.getKnowledgeChunks().get(0).getPageNumbers()).contains(1);
+        assertThat(response.getKnowledgeChunks().get(0).getSectionPath()).contains("Chapter 1");
+        assertThat(response.getParseJob().getProvider()).isEqualTo("pdfbox");
+        assertThat(response.getParseJob().getStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getLanguageProfile().getPrimaryLanguage()).isEqualTo("en");
+    }
+
+    @Test
     void marksBlankPdfAsRequiringOcr() {
         TranslationDocumentParseResponse response = service.parsePdf("scan.pdf", textPdf("   \n\n   "));
 
@@ -50,6 +77,16 @@ class TranslationDocumentParseServiceTest {
         assertThat(response.getOcrStatus()).isEqualTo("REQUIRED");
         assertThat(response.getBlocks()).isEmpty();
         assertThat(response.getWarnings()).anyMatch(warning -> warning.contains("OCR"));
+        assertThat(response.getDiagnosis().getTextLayer()).isEqualTo("NONE");
+        assertThat(response.getDiagnosis().isOcrRecommended()).isTrue();
+        assertThat(response.getQuality().getDocumentQualityScore()).isLessThan(0.5);
+        assertThat(response.getParseJob().getStatus()).isEqualTo("NEEDS_OCR");
+        assertThat(response.getParseJob().getStage()).isEqualTo("PARSING");
+        assertThat(response.getAssets()).anySatisfy(asset -> {
+            assertThat(asset.getAssetType()).isEqualTo("page_snapshot");
+            assertThat(asset.getRecognitionStatus()).isEqualTo("NEEDS_OCR");
+            assertThat(asset.getPageNumber()).isEqualTo(1);
+        });
     }
 
     @Test

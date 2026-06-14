@@ -67,6 +67,18 @@ assert.ok(
   'workspace should load drafts created from the Hub',
 )
 assert.ok(
+  workspaceSource.includes('getTranslationDocumentKnowledge'),
+  'workspace should restore persisted document knowledge from the backend before falling back to local drafts',
+)
+assert.ok(
+  workspaceSource.includes('createTranslationWorkspaceDraftFromParsedDocument'),
+  'workspace should convert backend document knowledge into the same reading model used after upload',
+)
+assert.ok(
+  workspaceSource.includes('workspaceLoading'),
+  'workspace should expose a loading state while persisted document knowledge is being restored',
+)
+assert.ok(
   workspaceSource.includes('activeBlockId'),
   'workspace should track the active document block for agent context',
 )

@@ -441,7 +441,7 @@ Agent 始终知道：
 - 使用 PDFBox 提取文本层，并按页输出有序 `DocumentBlock`。
 - 对标题、完整句和段落做基础学习块切分。
 - 当 PDF 文本层为空或过少时返回 `parseStatus=NEEDS_OCR`、`ocrStatus=REQUIRED`。
-- 文本层不足时会尝试调用 Tesseract 命令行 OCR，并将 OCR 结果转成同一套 `DocumentBlock`。
+- 文本层不足时会尝试调用当前配置的 OCR Provider；本地 PaddleOCR 是扫描 PDF 主方案，OCR 结果转成同一套 `DocumentBlock`。
 - DOCX 通过 Apache POI 解析段落和简单表格，旧版 `.doc` 第一版提示用户转为 DOCX。
 - TXT / MD 在后端统一解析，前端不再自行临时拆分文本。
 - v1 暂不创建异步 OCR 任务，OCR 引擎不可用时返回 warning 让前端展示兜底入口。
@@ -468,14 +468,19 @@ OCR 状态：
 - OCR 完成。
 - OCR 低置信度，需要校正。
 
-当前后端 v1 已实现扫描型 PDF 检测、Tesseract OCR 识别入口和 OCR 结果转 `DocumentBlock`；bbox、置信度和任务轮询仍属于下一阶段。
+当前后端 v1 已实现扫描型 PDF 检测、OCR Provider 切换入口和 OCR 结果转 `DocumentBlock`；本地 OCR 主 Provider 采用 PaddleOCR，Tesseract 仅作为兼容兜底。bbox、置信度和任务轮询仍属于下一阶段。
 
 OCR 配置：
 
-- `app.ocr.tesseract-path`：Tesseract 可执行文件路径，默认 `tesseract`。
-- `app.ocr.language`：识别语言，默认 `eng`。
-- `app.ocr.dpi`：PDF 渲染 DPI，默认 `220`。
-- `app.ocr.timeout-seconds`：单次 OCR 超时时间，默认 `45`。
+- `app.ocr.provider`：OCR Provider，默认 `tesseract`，本地 PaddleOCR 设置为 `paddle`。
+- `app.ocr.paddle.base-url`：本地 PaddleOCR 服务地址，默认 `http://127.0.0.1:8090`。
+- `app.ocr.paddle.endpoint`：本地 PaddleOCR PDF 识别接口，默认 `/ocr/pdf`。
+- `app.ocr.paddle.language`：PaddleOCR 识别语言，默认 `ch,eng`。
+- `app.ocr.paddle.timeout-ms`：PaddleOCR 单次调用超时时间，默认 `60000`。
+- `app.ocr.tesseract-path`：Tesseract 兼容兜底可执行文件路径，默认 `tesseract`。
+- `app.ocr.language`：Tesseract 识别语言，默认 `eng`。
+- `app.ocr.dpi`：Tesseract PDF 渲染 DPI，默认 `220`。
+- `app.ocr.timeout-seconds`：Tesseract 单次 OCR 超时时间，默认 `45`。
 
 ### 6.3 真实 AI 段落翻译
 

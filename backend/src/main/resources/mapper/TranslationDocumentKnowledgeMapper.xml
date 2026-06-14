@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.translation.TranslationDocumentKnowledgeMapper">
+
+    <resultMap id="SnapshotResultMap" type="com.personalenglishai.backend.entity.translation.TranslationDocumentParseSnapshotRecord">
+        <id column="id" property="id"/>
+        <result column="document_id" property="documentId"/>
+        <result column="file_name" property="fileName"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="parse_status" property="parseStatus"/>
+        <result column="ocr_status" property="ocrStatus"/>
+        <result column="provider" property="provider"/>
+        <result column="parse_mode" property="parseMode"/>
+        <result column="fallback_used" property="fallbackUsed"/>
+        <result column="page_count" property="pageCount"/>
+        <result column="block_count" property="blockCount"/>
+        <result column="response_json" property="responseJson"/>
+        <result column="diagnosis_json" property="diagnosisJson"/>
+        <result column="quality_json" property="qualityJson"/>
+        <result column="language_profile_json" property="languageProfileJson"/>
+        <result column="parse_job_json" property="parseJobJson"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="ChunkResultMap" type="com.personalenglishai.backend.entity.translation.TranslationKnowledgeChunkRecord">
+        <id column="id" property="id"/>
+        <result column="document_id" property="documentId"/>
+        <result column="chunk_id" property="chunkId"/>
+        <result column="chunk_order" property="chunkOrder"/>
+        <result column="chunk_type" property="chunkType"/>
+        <result column="content" property="content"/>
+        <result column="summary" property="summary"/>
+        <result column="source_element_ids_json" property="sourceElementIdsJson"/>
+        <result column="page_numbers_json" property="pageNumbersJson"/>
+        <result column="first_page_number" property="firstPageNumber"/>
+        <result column="token_count" property="tokenCount"/>
+        <result column="quality_score" property="qualityScore"/>
+        <result column="embedding_status" property="embeddingStatus"/>
+        <result column="granularity" property="granularity"/>
+        <result column="start_element_order" property="startElementOrder"/>
+        <result column="end_element_order" property="endElementOrder"/>
+        <result column="section_path_json" property="sectionPathJson"/>
+        <result column="parent_chunk_id" property="parentChunkId"/>
+        <result column="prev_chunk_id" property="prevChunkId"/>
+        <result column="next_chunk_id" property="nextChunkId"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <delete id="deleteByDocumentId">
+        DELETE FROM translation_document_parse_snapshot
+        WHERE document_id = #{documentId}
+    </delete>
+
+    <insert id="insertSnapshot" parameterType="com.personalenglishai.backend.entity.translation.TranslationDocumentParseSnapshotRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO translation_document_parse_snapshot (
+            document_id,
+            file_name,
+            source_type,
+            parse_status,
+            ocr_status,
+            provider,
+            parse_mode,
+            fallback_used,
+            page_count,
+            block_count,
+            response_json,
+            diagnosis_json,
+            quality_json,
+            language_profile_json,
+            parse_job_json
+        ) VALUES (
+            #{documentId},
+            #{fileName},
+            #{sourceType},
+            #{parseStatus},
+            #{ocrStatus},
+            #{provider},
+            #{parseMode},
+            COALESCE(#{fallbackUsed}, FALSE),
+            COALESCE(#{pageCount}, 0),
+            COALESCE(#{blockCount}, 0),
+            #{responseJson},
+            #{diagnosisJson},
+            #{qualityJson},
+            #{languageProfileJson},
+            #{parseJobJson}
+        )
+    </insert>
+
+    <insert id="insertElement" parameterType="com.personalenglishai.backend.entity.translation.TranslationDocumentElementRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO translation_document_element (
+            document_id,
+            element_id,
+            element_type,
+            element_order,
+            page_number,
+            text,
+            bbox,
+            provider,
+            confidence,
+            recognition_status,
+            quality_score,
+            metadata_json
+        ) VALUES (
+            #{documentId},
+            #{elementId},
+            #{elementType},
+            #{elementOrder},
+            COALESCE(#{pageNumber}, 0),
+            #{text},
+            #{bbox},
+            #{provider},
+            #{confidence},
+            #{recognitionStatus},
+            #{qualityScore},
+            #{metadataJson}
+        )
+    </insert>
+
+    <insert id="insertChunk" parameterType="com.personalenglishai.backend.entity.translation.TranslationKnowledgeChunkRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO translation_knowledge_chunk (
+            document_id,
+            chunk_id,
+            chunk_order,
+            chunk_type,
+            content,
+            summary,
+            source_element_ids_json,
+            page_numbers_json,
+            first_page_number,
+            token_count,
+            quality_score,
+            embedding_status,
+            granularity,
+            start_element_order,
+            end_element_order,
+            section_path_json,
+            parent_chunk_id,
+            prev_chunk_id,
+            next_chunk_id
+        ) VALUES (
+            #{documentId},
+            #{chunkId},
+            #{chunkOrder},
+            #{chunkType},
+            #{content},
+            #{summary},
+            #{sourceElementIdsJson},
+            #{pageNumbersJson},
+            #{firstPageNumber},
+            COALESCE(#{tokenCount}, 0),
+            #{qualityScore},
+            COALESCE(#{embeddingStatus}, 'NOT_REQUIRED'),
+            COALESCE(#{granularity}, 'small'),
+            COALESCE(#{startElementOrder}, 0),
+            COALESCE(#{endElementOrder}, 0),
+            #{sectionPathJson},
+            #{parentChunkId},
+            #{prevChunkId},
+            #{nextChunkId}
+        )
+    </insert>
+
+    <insert id="insertAsset" parameterType="com.personalenglishai.backend.entity.translation.TranslationDocumentAssetRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO translation_document_asset (
+            document_id,
+            asset_id,
+            asset_type,
+            page_number,
+            source_element_id,
+            bbox,
+            recognized_text,
+            provider,
+            recognition_status,
+            confidence,
+            metadata_json
+        ) VALUES (
+            #{documentId},
+            #{assetId},
+            #{assetType},
+            COALESCE(#{pageNumber}, 0),
+            #{sourceElementId},
+            #{bbox},
+            #{recognizedText},
+            #{provider},
+            #{recognitionStatus},
+            #{confidence},
+            #{metadataJson}
+        )
+    </insert>
+
+    <select id="findSnapshotByDocumentId" resultMap="SnapshotResultMap">
+        SELECT *
+        FROM translation_document_parse_snapshot
+        WHERE document_id = #{documentId}
+        LIMIT 1
+    </select>
+
+    <select id="selectChunksByDocumentId" resultMap="ChunkResultMap">
+        SELECT *
+        FROM translation_knowledge_chunk
+        WHERE document_id = #{documentId}
+        ORDER BY chunk_order ASC
+    </select>
+</mapper>

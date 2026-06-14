@@ -164,7 +164,7 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
   const fallbackText = warningText || '文档暂未解析出可展示的文本，请稍后重试或改用粘贴文本。'
 
   return {
-    id: `translation-${now.getTime()}`,
+    id: parsedDocument.documentId || `translation-${now.getTime()}`,
     title: stripFileExtension(fileName),
     subtitle: buildParsedDocumentSubtitle(fileName, parsedDocument),
     sourceLabel,

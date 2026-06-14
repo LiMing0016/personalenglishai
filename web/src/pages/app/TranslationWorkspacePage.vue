@@ -250,9 +250,9 @@
     </main>
 
     <section v-else class="missing-state">
-      <p>TRANSLATION NOT FOUND</p>
-      <h1>没有找到这篇精读材料</h1>
-      <span>可能是本地草稿已清理，或者链接里的翻译 ID 不存在。</span>
+      <p>{{ workspaceLoading ? 'LOADING TRANSLATION' : 'TRANSLATION NOT FOUND' }}</p>
+      <h1>{{ workspaceLoading ? '正在恢复精读材料' : '没有找到这篇精读材料' }}</h1>
+      <span>{{ workspaceLoading ? '正在从后端知识底座读取文档结构和学习上下文。' : workspaceLoadError || '可能是知识快照不存在，或者链接里的翻译 ID 不存在。' }}</span>
       <button type="button" @click="goBackToHub">返回</button>
     </section>
 
@@ -273,16 +273,20 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { getTranslationDocumentKnowledge } from '@/api/translation'
 import PdfLearningCanvas from '@/components/translation/PdfLearningCanvas.vue'
 import { showToast } from '@/utils/toast'
 import type { TranslationSourceType } from './translationHubData'
 import {
   buildAssetStats,
   buildIntensiveReadingDocument,
+  createTranslationWorkspaceDraftFromParsedDocument,
   loadTranslationWorkspaceDraft,
   type DocumentBlock,
+  type IntensiveReadingDocument,
   type IntensiveAgentMode,
   type LearningAssetType,
+  type TranslationWorkspaceDraft,
 } from './translationWorkspaceData'
 
 type AgentMessageRole = 'user' | 'assistant'
@@ -309,6 +313,9 @@ const targetPdfPage = ref(1)
 const currentPdfPage = ref(1)
 const pageNotes = ref<Record<number, string>>({})
 const workspaceShellRef = ref<HTMLElement | null>(null)
+const readingDocument = ref<IntensiveReadingDocument | null>(null)
+const workspaceLoading = ref(false)
+const workspaceLoadError = ref('')
 const outlineColumnWidth = ref(280)
 const agentColumnWidth = ref(430)
 const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
@@ -343,15 +350,6 @@ const agentColumnMinWidth = 340
 const agentColumnMaxWidth = 620
 const centerColumnMinWidth = 560
 const resizerColumnsWidth = 16
-
-const readingDocument = computed(() => {
-  if (typeof window === 'undefined') return null
-  const id = String(route.params.id ?? '')
-  if (!id) return null
-  const draft = loadTranslationWorkspaceDraft(window.localStorage, id)
-  if (!draft) return null
-  return buildIntensiveReadingDocument(draft)
-})
 
 const activeBlock = computed(() => {
   const document = readingDocument.value
@@ -401,6 +399,14 @@ watch(readingDocument, (document) => {
   restorePageNotes()
 }, { immediate: true })
 
+watch(
+  () => String(route.params.id ?? ''),
+  (id) => {
+    void restoreWorkspaceDocument(id)
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(() => {
   stopWorkspaceResize()
 })
@@ -412,6 +418,51 @@ const assetStats = computed(() => {
 
 function goBackToHub() {
   void router.push('/app/translation')
+}
+
+async function restoreWorkspaceDocument(id: string) {
+  readingDocument.value = null
+  activeBlockId.value = ''
+  workspaceLoadError.value = ''
+  if (!id) {
+    workspaceLoadError.value = '缺少翻译 ID。'
+    return
+  }
+
+  workspaceLoading.value = true
+  try {
+    const persisted = await getTranslationDocumentKnowledge(id)
+    const localDraft = loadLocalWorkspaceDraft(id)
+    const draft = createTranslationWorkspaceDraftFromParsedDocument(
+      {
+        mode: localDraft?.mode ?? restoreTranslationMode(),
+        pdfPreviewUrl: localDraft?.pdfPreviewUrl,
+      },
+      persisted,
+    )
+    activeMode.value = draft.mode
+    readingDocument.value = buildIntensiveReadingDocument(draft)
+  } catch {
+    const localDraft = loadLocalWorkspaceDraft(id)
+    if (localDraft) {
+      activeMode.value = localDraft.mode
+      readingDocument.value = buildIntensiveReadingDocument(localDraft)
+      workspaceLoadError.value = ''
+      return
+    }
+    workspaceLoadError.value = '后端知识快照不存在，且没有可兼容恢复的本地草稿。'
+  } finally {
+    workspaceLoading.value = false
+  }
+}
+
+function loadLocalWorkspaceDraft(id: string): TranslationWorkspaceDraft | null {
+  if (typeof window === 'undefined') return null
+  return loadTranslationWorkspaceDraft(window.localStorage, id)
+}
+
+function restoreTranslationMode() {
+  return activeMode.value === 'exam' ? 'exam' : 'immersive'
 }
 
 function selectBlock(blockId: string) {

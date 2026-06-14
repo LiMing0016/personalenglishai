@@ -51,6 +51,18 @@ app:
     enabled: ${SMS_ENABLED:false}
   dev-admin-login:
     enabled: ${APP_DEV_ADMIN_LOGIN_ENABLED:false}
+  ocr:
+    provider: ${APP_OCR_PROVIDER:tesseract}
+    tesseract-path: ${APP_OCR_TESSERACT_PATH:tesseract}
+    language: ${APP_OCR_LANGUAGE:eng}
+    dpi: ${APP_OCR_DPI:220}
+    timeout-seconds: ${APP_OCR_TIMEOUT_SECONDS:45}
+    paddle:
+      enabled: ${APP_OCR_PADDLE_ENABLED:true}
+      base-url: ${APP_OCR_PADDLE_BASE_URL:http://127.0.0.1:8090}
+      endpoint: ${APP_OCR_PADDLE_ENDPOINT:/ocr/pdf}
+      language: ${APP_OCR_PADDLE_LANGUAGE:ch,eng}
+      timeout-ms: ${APP_OCR_PADDLE_TIMEOUT_MS:60000}
 
 server:
   port: ${SERVER_PORT:18080}

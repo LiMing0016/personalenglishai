@@ -20,6 +20,17 @@ assert.ok(
   'translation import API should send parseMode to backend',
 )
 assert.ok(
+  apiSource.includes('getTranslationDocumentKnowledge') &&
+  apiSource.includes("http.get<TranslationDocumentParseResponse>(`/translation/documents/${documentId}/knowledge`)"),
+  'translation API should retrieve persisted document knowledge by documentId',
+)
+for (const responseField of ['elements', 'knowledgeChunks', 'diagnosis', 'quality', 'assets', 'languageProfile', 'parseJob']) {
+  assert.ok(
+    apiSource.includes(responseField),
+    `translation import API should expose ${responseField} from the document knowledge pipeline`,
+  )
+}
+assert.ok(
   pageSource.includes('标准解析') && pageSource.includes('高质量解析'),
   'new translation panel should let PDF users choose parse quality',
 )
