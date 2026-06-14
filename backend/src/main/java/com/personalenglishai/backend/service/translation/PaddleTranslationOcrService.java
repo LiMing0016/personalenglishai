@@ -103,7 +103,7 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
         List<TranslationOcrPageText> pages = new ArrayList<>();
         for (JsonNode pageNode : pagesNode) {
             int pageNumber = pageNode.path("pageNumber").asInt(pages.size() + 1);
-            String text = pageNode.path("text").asText("");
+            String text = extractPageText(pageNode);
             if (!text.isBlank()) {
                 pages.add(new TranslationOcrPageText(pageNumber, text));
             }
@@ -112,6 +112,36 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
             return TranslationOcrResult.failed(root.path("message").asText("PaddleOCR 未识别到有效文本"));
         }
         return TranslationOcrResult.succeeded(pages);
+    }
+
+    private String extractPageText(JsonNode pageNode) {
+        String explicitText = pageNode.path("text").asText("");
+        List<String> lines = new ArrayList<>();
+        if (!explicitText.isBlank()) {
+            lines.add(explicitText);
+        }
+
+        JsonNode blocksNode = pageNode.path("blocks");
+        if (blocksNode.isArray()) {
+            for (JsonNode blockNode : blocksNode) {
+                String blockText = blockNode.path("text").asText("");
+                if (!blockText.isBlank()) {
+                    lines.add(blockText);
+                }
+            }
+        }
+
+        JsonNode formulasNode = pageNode.path("formulas");
+        if (formulasNode.isArray()) {
+            for (JsonNode formulaNode : formulasNode) {
+                String latex = formulaNode.path("latex").asText("");
+                if (!latex.isBlank()) {
+                    lines.add("[FORMULA: " + latex + "]");
+                }
+            }
+        }
+
+        return String.join("\n", lines).trim();
     }
 
     private static String trimTrailingSlash(String value) {

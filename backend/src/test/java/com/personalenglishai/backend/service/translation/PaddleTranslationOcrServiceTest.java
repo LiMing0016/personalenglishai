@@ -90,4 +90,55 @@ class PaddleTranslationOcrServiceTest {
         assertThat(result.getStatus()).isEqualTo("UNAVAILABLE");
         assertThat(result.getMessage()).contains("PaddleOCR");
     }
+
+    @Test
+    void mapsStructuredBlocksAndFormulaPlaceholdersWhenTextIsMissing() throws IOException {
+        byte[] pdfBytes = "%PDF-structured".getBytes(StandardCharsets.UTF_8);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/ocr/pdf", exchange -> {
+            String response = """
+                    {
+                      "status": "PARTIAL",
+                      "pages": [
+                        {
+                          "pageNumber": 3,
+                          "blocks": [
+                            {"text": "First OCR block", "confidence": 0.98, "order": 1},
+                            {"text": "Second OCR block", "confidence": 0.94, "order": 2}
+                          ],
+                          "formulas": [
+                            {"latex": "E = mc^2", "confidence": 0.88}
+                          ],
+                          "warnings": ["LOW_CONFIDENCE"]
+                        }
+                      ]
+                    }
+                    """;
+            byte[] body = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        PaddleTranslationOcrService service = new PaddleTranslationOcrService(
+                true,
+                "http://127.0.0.1:" + server.getAddress().getPort(),
+                "/ocr/pdf",
+                "ch,eng",
+                1500,
+                objectMapper
+        );
+
+        TranslationOcrResult result = service.recognizePdf(pdfBytes);
+
+        assertThat(result.isSucceeded()).isTrue();
+        assertThat(result.getPages()).hasSize(1);
+        assertThat(result.getPages().get(0).getPageNumber()).isEqualTo(3);
+        assertThat(result.getPages().get(0).getText())
+                .contains("First OCR block")
+                .contains("Second OCR block")
+                .contains("[FORMULA: E = mc^2]");
+    }
 }
