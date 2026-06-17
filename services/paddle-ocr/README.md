@@ -23,6 +23,7 @@ curl http://127.0.0.1:8090/health
 ```
 
 第一次启动会下载 PaddleOCR 模型，耗时和网络、磁盘有关。CPU 模式可用，但大 PDF 会比较慢；GPU 部署后续可以单独做镜像。
+当前镜像固定使用 `paddleocr==3.7.0` 与 `paddlepaddle==3.2.2`，这是已通过本地 CPU 容器烟测的组合，避免自动安装到不兼容的最新 PaddlePaddle 版本。
 
 ## 后端连接方式
 

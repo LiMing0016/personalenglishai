@@ -18,6 +18,8 @@ import java.util.UUID;
 @Service
 public class TranslationDocumentParseService {
     private static final int MIN_EXTRACTED_TEXT_CHARS = 20;
+    private static final int MIN_USABLE_TEXT_CHARS = 80;
+    private static final double MIN_TEXT_LAYER_PAGE_COVERAGE = 0.03;
     private final TranslationOcrService ocrService;
 
     @Autowired
@@ -51,7 +53,7 @@ public class TranslationDocumentParseService {
 
             TranslationDocumentParseResponse response = baseResponse(originalFilename, document.getNumberOfPages());
             response.setBlocks(blocks);
-            if (hasEnoughText(blocks)) {
+            if (hasUsableTextLayer(blocks, document.getNumberOfPages())) {
                 response.setParseStatus("SUCCEEDED");
                 response.setOcrStatus("NOT_REQUIRED");
             } else {
@@ -102,7 +104,7 @@ public class TranslationDocumentParseService {
                 response.setParseStatus("SUCCEEDED");
                 response.setOcrStatus("SUCCEEDED");
                 response.setBlocks(ocrBlocks);
-                response.setWarnings(List.of("PDF 文本层为空，已使用 OCR 结果生成精读材料。"));
+                response.setWarnings(List.of("PDF 文本层为空或质量较低，已使用 OCR 结果生成精读材料。"));
                 return;
             }
         }
@@ -110,8 +112,8 @@ public class TranslationDocumentParseService {
         response.setParseStatus("NEEDS_OCR");
         response.setOcrStatus("REQUIRED");
         response.setBlocks(List.of());
-        String message = ocrResult.getMessage() == null ? "PDF 文本层为空或过少，需要 OCR 后再进入精读解析。" : ocrResult.getMessage();
-        response.setWarnings(List.of("PDF 文本层为空或过少，需要 OCR 后再进入精读解析。", message));
+        String message = ocrResult.getMessage() == null ? "PDF 文本层为空、过少或质量较低，需要 OCR 后再进入精读解析。" : ocrResult.getMessage();
+        response.setWarnings(List.of("PDF 文本层为空、过少或质量较低，需要 OCR 后再进入精读解析。", message));
     }
 
     private List<TranslationDocumentBlockDto> buildBlocksFromOcr(TranslationOcrResult ocrResult) {
@@ -159,6 +161,69 @@ public class TranslationDocumentParseService {
                 .mapToInt(text -> text.replaceAll("\\s+", "").length())
                 .sum();
         return textLength >= MIN_EXTRACTED_TEXT_CHARS;
+    }
+
+    private boolean hasUsableTextLayer(List<TranslationDocumentBlockDto> blocks, int pageCount) {
+        if (!hasEnoughText(blocks)) {
+            return false;
+        }
+        String text = blocks.stream()
+                .map(TranslationDocumentBlockDto::getText)
+                .filter(value -> value != null && !value.isBlank())
+                .reduce("", (left, right) -> left + "\n" + right);
+        int compactLength = text.replaceAll("\\s+", "").length();
+        if (compactLength < MIN_USABLE_TEXT_CHARS) {
+            return false;
+        }
+        if (hasPromotionalNoise(text) || hasGarbledText(text)) {
+            return false;
+        }
+        long activePages = blocks.stream()
+                .map(TranslationDocumentBlockDto::getPageNumber)
+                .filter(page -> page != null && page > 0)
+                .distinct()
+                .count();
+        if (pageCount >= 20 && activePages > 0) {
+            double coverage = activePages / (double) pageCount;
+            return coverage >= MIN_TEXT_LAYER_PAGE_COVERAGE || compactLength >= 4000;
+        }
+        return true;
+    }
+
+    private boolean hasPromotionalNoise(String text) {
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        if (normalized.isBlank()) {
+            return false;
+        }
+        String[] markers = {
+                "微信公众号", "关注微信", "qq群", "qq:", "qq：", "持续更新",
+                "订阅", "扫码", "免费资料", "发普", "37药", "378327010"
+        };
+        int hits = 0;
+        for (String marker : markers) {
+            if (normalized.contains(marker.toLowerCase(Locale.ROOT))) {
+                hits++;
+            }
+        }
+        return hits >= 2;
+    }
+
+    private boolean hasGarbledText(String text) {
+        if (text == null || text.isBlank()) {
+            return true;
+        }
+        long replacementChars = text.chars().filter(ch -> ch == '\uFFFD').count();
+        if (replacementChars >= 2) {
+            return true;
+        }
+        String compact = text.replaceAll("\\s+", "");
+        if (compact.isEmpty()) {
+            return true;
+        }
+        long controlOrUnknown = compact.chars()
+                .filter(ch -> Character.isISOControl(ch) || ch == '\uFFFD')
+                .count();
+        return controlOrUnknown / (double) compact.length() > 0.01;
     }
 
     private void appendLine(StringBuilder current, String line) {

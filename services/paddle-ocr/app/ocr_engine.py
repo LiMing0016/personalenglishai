@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 from typing import Any
 
 from app.schemas import TextBlock
@@ -22,7 +23,7 @@ class TextOcrEngine:
             paddleocr_module = importlib.import_module("paddleocr")
             paddleocr_class = getattr(paddleocr_module, "PaddleOCR")
             self.version = getattr(paddleocr_module, "__version__", None)
-            self._ocr = paddleocr_class(use_angle_cls=True, lang=self.default_language)
+            self._ocr = paddleocr_class(**build_paddle_ocr_kwargs(paddleocr_class, self.default_language))
             self.sdk_loaded = True
         except Exception as exc:  # PaddleOCR is optional at app boot time.
             self.unavailable_reason = str(exc)
@@ -32,7 +33,7 @@ class TextOcrEngine:
     def recognize_image(self, image_path: str, language: str | None = None) -> list[TextBlock]:
         if not self.sdk_loaded or self._ocr is None:
             raise RuntimeError(self.unavailable_reason or "PaddleOCR SDK is not loaded")
-        raw_result = self._ocr.ocr(image_path, cls=True)
+        raw_result = predict_ocr(self._ocr, image_path)
         return normalize_paddle_ocr_result(raw_result)
 
 
@@ -43,6 +44,34 @@ def normalize_language(language: str | None) -> str:
     if normalized in {"ch,eng", "zh,en", "zh-cn,en", "chinese,english"}:
         return "ch"
     return normalized.split(",")[0] or "ch"
+
+
+def build_paddle_ocr_kwargs(paddleocr_class: Any, language: str) -> dict[str, Any]:
+    signature = inspect.signature(paddleocr_class)
+    parameters = signature.parameters
+    if "use_doc_orientation_classify" in parameters:
+        return {
+            "lang": language,
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": True,
+        }
+    return {"lang": language, "use_angle_cls": True}
+
+
+def predict_ocr(ocr: Any, image_path: str) -> Any:
+    predict = getattr(ocr, "predict", None)
+    if callable(predict):
+        try:
+            return predict(image_path, use_textline_orientation=True)
+        except TypeError:
+            return predict(image_path)
+
+    legacy_ocr = getattr(ocr, "ocr")
+    try:
+        return legacy_ocr(image_path, cls=True)
+    except TypeError:
+        return legacy_ocr(image_path)
 
 
 def normalize_paddle_ocr_result(raw_result: Any) -> list[TextBlock]:
@@ -134,6 +163,7 @@ def _parse_row(row: Any) -> TextBlock | None:
 
 
 def _normalize_bbox(value: Any) -> list[list[float]]:
+    value = _to_plain_sequence(value)
     if not isinstance(value, (list, tuple)):
         return []
     bbox: list[list[float]] = []
@@ -144,9 +174,10 @@ def _normalize_bbox(value: Any) -> list[list[float]]:
 
 
 def _looks_like_bbox(value: Any) -> bool:
+    value = _to_plain_sequence(value)
     if not isinstance(value, (list, tuple)) or not value:
         return False
-    first = value[0]
+    first = _to_plain_sequence(value[0])
     return isinstance(first, (list, tuple)) and len(first) >= 2 and _is_number_like(first[0]) and _is_number_like(first[1])
 
 
@@ -187,3 +218,9 @@ def _is_number_like(value: Any) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+def _to_plain_sequence(value: Any) -> Any:
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    return value

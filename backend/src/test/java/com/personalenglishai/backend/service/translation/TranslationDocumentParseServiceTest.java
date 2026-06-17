@@ -111,6 +111,34 @@ class TranslationDocumentParseServiceTest {
     }
 
     @Test
+    void usesOcrTextWhenPdfTextLayerLooksLikePromotionalNoise() {
+        TranslationDocumentParseService ocrService = new TranslationDocumentParseService(
+                pdfBytes -> TranslationOcrResult.succeeded(List.of(
+                        new TranslationOcrPageText(1, """
+                                The importance of environmental protection
+
+                                People should protect forests and reduce pollution in daily life.
+                                """)
+                ))
+        );
+
+        byte[] pdf = textPdf("""
+                Follow account for continuous updates. QQ: 378327010.
+                environmental awareness protection ecosystem QQ: 378327010 en?ir?nment?friend
+                QQ: 378327010 free materials and subscription updates.
+                """);
+
+        TranslationDocumentParseResponse response = ocrService.parsePdf("scan.pdf", pdf);
+
+        assertThat(response.getParseStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getOcrStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getBlocks()).anySatisfy(block ->
+                assertThat(block.getText()).contains("environmental protection"));
+        assertThat(response.getBlocks()).noneSatisfy(block ->
+                assertThat(block.getText()).contains("微信公众号"));
+    }
+
+    @Test
     void rejectsNonPdfFileName() {
         assertThatThrownBy(() -> service.parsePdf("article.txt", "hello".getBytes(StandardCharsets.UTF_8)))
                 .isInstanceOf(BizException.class)
