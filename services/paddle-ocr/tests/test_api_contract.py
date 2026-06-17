@@ -13,7 +13,7 @@ class FakeEngine:
     version = "test"
     unavailable_reason = None
 
-    def recognize_image(self, image_path, language):
+    def recognize_image(self, image_path, language, **kwargs):
         return [
             TextBlock(
                 text="hello",
@@ -25,7 +25,16 @@ class FakeEngine:
 
 
 class FakeRenderer:
+    def __init__(self):
+        self.last_render_args = None
+
     def render_pdf(self, document_bytes, page_start=None, page_end=None, max_pages=20, dpi=220):
+        self.last_render_args = {
+            "page_start": page_start,
+            "page_end": page_end,
+            "max_pages": max_pages,
+            "dpi": dpi,
+        }
         return [
             {
                 "pageNumber": 1,
@@ -42,7 +51,8 @@ class FakeRenderer:
 
 class ApiContractTest(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(create_app(text_engine=FakeEngine(), renderer=FakeRenderer()))
+        self.renderer = FakeRenderer()
+        self.client = TestClient(create_app(text_engine=FakeEngine(), renderer=self.renderer))
 
     def test_health_reports_provider_and_sdk_status(self):
         response = self.client.get("/health")
@@ -65,6 +75,37 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(body["recognizedPageCount"], 1)
         self.assertEqual(body["pages"][0]["pageNumber"], 1)
         self.assertEqual(body["pages"][0]["blocks"][0]["text"], "hello")
+        self.assertEqual(body["pages"][0]["elements"][0]["type"], "paragraph")
+        self.assertEqual(body["pages"][0]["elements"][0]["text"], "hello")
+        self.assertEqual(body["pages"][0]["elements"][0]["source"], "paddle_ocr")
+        self.assertEqual(body["pages"][0]["elements"][0]["rawType"], "text")
+
+    def test_pdf_ocr_accepts_high_quality_options_and_reports_degraded_capabilities(self):
+        pdf_base64 = base64.b64encode(b"%PDF-1.4 fake").decode("ascii")
+
+        response = self.client.post(
+            "/ocr/pdf",
+            json={
+                "documentBase64": pdf_base64,
+                "language": "ch,eng",
+                "parseMode": "high_quality",
+                "maxPages": 3,
+                "dpi": 300,
+                "enableLayout": True,
+                "enableTable": True,
+                "enableFormula": False,
+                "enableOrientation": True,
+                "enableUnwarping": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(self.renderer.last_render_args["max_pages"], 3)
+        self.assertEqual(self.renderer.last_render_args["dpi"], 300)
+        self.assertEqual(body["metadata"]["parseMode"], "high_quality")
+        self.assertIn("LAYOUT_ENGINE_UNAVAILABLE", body["pages"][0]["warnings"])
+        self.assertIn("TABLE_ENGINE_UNAVAILABLE", body["pages"][0]["warnings"])
 
     def test_image_ocr_returns_same_page_contract(self):
         image_base64 = base64.b64encode(b"fake-image").decode("ascii")

@@ -30,10 +30,21 @@ class TextOcrEngine:
             self.sdk_loaded = False
             self._ocr = None
 
-    def recognize_image(self, image_path: str, language: str | None = None) -> list[TextBlock]:
+    def recognize_image(
+        self,
+        image_path: str,
+        language: str | None = None,
+        enable_orientation: bool = True,
+        enable_unwarping: bool = False,
+    ) -> list[TextBlock]:
         if not self.sdk_loaded or self._ocr is None:
             raise RuntimeError(self.unavailable_reason or "PaddleOCR SDK is not loaded")
-        raw_result = predict_ocr(self._ocr, image_path)
+        raw_result = predict_ocr(
+            self._ocr,
+            image_path,
+            enable_orientation=enable_orientation,
+            enable_unwarping=enable_unwarping,
+        )
         return normalize_paddle_ocr_result(raw_result)
 
 
@@ -59,13 +70,26 @@ def build_paddle_ocr_kwargs(paddleocr_class: Any, language: str) -> dict[str, An
     return {"lang": language, "use_angle_cls": True}
 
 
-def predict_ocr(ocr: Any, image_path: str) -> Any:
+def predict_ocr(
+    ocr: Any,
+    image_path: str,
+    enable_orientation: bool = True,
+    enable_unwarping: bool = False,
+) -> Any:
     predict = getattr(ocr, "predict", None)
     if callable(predict):
+        kwargs = {
+            "use_textline_orientation": bool(enable_orientation),
+        }
+        if enable_unwarping:
+            kwargs["use_doc_unwarping"] = True
         try:
-            return predict(image_path, use_textline_orientation=True)
+            return predict(image_path, **kwargs)
         except TypeError:
-            return predict(image_path)
+            try:
+                return predict(image_path, use_textline_orientation=bool(enable_orientation))
+            except TypeError:
+                return predict(image_path)
 
     legacy_ocr = getattr(ocr, "ocr")
     try:

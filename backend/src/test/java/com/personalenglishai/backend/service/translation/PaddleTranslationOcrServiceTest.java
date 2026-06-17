@@ -72,6 +72,14 @@ class PaddleTranslationOcrServiceTest {
         assertThat(capturedRequests.get(0).get("documentBase64").asText())
                 .isEqualTo(Base64.getEncoder().encodeToString(pdfBytes));
         assertThat(capturedRequests.get(0).get("language").asText()).isEqualTo("ch,eng");
+        assertThat(capturedRequests.get(0).path("parseMode").asText()).isEqualTo("standard");
+        assertThat(capturedRequests.get(0).path("maxPages").asInt()).isEqualTo(500);
+        assertThat(capturedRequests.get(0).path("dpi").asInt()).isEqualTo(220);
+        assertThat(capturedRequests.get(0).path("enableLayout").asBoolean()).isFalse();
+        assertThat(capturedRequests.get(0).path("enableTable").asBoolean()).isFalse();
+        assertThat(capturedRequests.get(0).path("enableFormula").asBoolean()).isFalse();
+        assertThat(capturedRequests.get(0).path("enableOrientation").asBoolean()).isTrue();
+        assertThat(capturedRequests.get(0).path("enableUnwarping").asBoolean()).isFalse();
     }
 
     @Test
@@ -102,9 +110,22 @@ class PaddleTranslationOcrServiceTest {
                       "pages": [
                         {
                           "pageNumber": 3,
+                          "text": "First OCR block\\nSecond OCR block",
                           "blocks": [
                             {"text": "First OCR block", "confidence": 0.98, "order": 1},
                             {"text": "Second OCR block", "confidence": 0.94, "order": 2}
+                          ],
+                          "elements": [
+                            {
+                              "type": "paragraph",
+                              "text": "First OCR block",
+                              "bbox": [[1,2],[3,2],[3,4],[1,4]],
+                              "confidence": 0.98,
+                              "order": 1,
+                              "source": "paddle_ocr",
+                              "rawType": "text",
+                              "warnings": ["LOW_CONFIDENCE_TEXT"]
+                            }
                           ],
                           "formulas": [
                             {"latex": "E = mc^2", "confidence": 0.88}
@@ -137,8 +158,11 @@ class PaddleTranslationOcrServiceTest {
         assertThat(result.getPages()).hasSize(1);
         assertThat(result.getPages().get(0).getPageNumber()).isEqualTo(3);
         assertThat(result.getPages().get(0).getText())
-                .contains("First OCR block")
-                .contains("Second OCR block")
-                .contains("[FORMULA: E = mc^2]");
+                .isEqualTo("First OCR block\nSecond OCR block\n[FORMULA: E = mc^2]");
+        assertThat(result.getPages().get(0).getElements()).hasSize(2);
+        assertThat(result.getPages().get(0).getElements().get(0).getText()).isEqualTo("First OCR block");
+        assertThat(result.getPages().get(0).getElements().get(0).getBbox()).contains("[[1,2]");
+        assertThat(result.getPages().get(0).getElements().get(0).getSource()).isEqualTo("paddle_ocr");
+        assertThat(result.getRawResponse()).contains("\"status\": \"PARTIAL\"");
     }
 }

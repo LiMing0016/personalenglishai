@@ -17,6 +17,7 @@ public class TranslationDocumentParseResponse {
     private String parseMode;
     private boolean fallbackUsed;
     private long elapsedMs;
+    private String rawOcrResponse;
     private List<TranslationDocumentElementDto> elements = new ArrayList<>();
     private List<TranslationKnowledgeChunkDto> knowledgeChunks = new ArrayList<>();
     private List<TranslationDocumentAssetDto> assets = new ArrayList<>();
@@ -128,6 +129,14 @@ public class TranslationDocumentParseResponse {
 
     public void setElapsedMs(long elapsedMs) {
         this.elapsedMs = elapsedMs;
+    }
+
+    public String getRawOcrResponse() {
+        return rawOcrResponse;
+    }
+
+    public void setRawOcrResponse(String rawOcrResponse) {
+        this.rawOcrResponse = rawOcrResponse;
     }
 
     public List<TranslationDocumentElementDto> getElements() {

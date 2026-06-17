@@ -7,8 +7,18 @@
 - `GET /health`：健康检查，返回 PaddleOCR SDK 是否加载成功。
 - `POST /ocr/pdf`：接收 PDF base64，按页渲染后 OCR。
 - `POST /ocr/image`：接收 PNG/JPG/JPEG base64，输出单页 OCR 结果。
-- 输出页码、整页文本、文本块、bbox、confidence、warnings。
-- 公式识别通过 `enableFormula` 和 `PADDLE_OCR_ENABLE_FORMULA` 预留开关。当前默认关闭；未配置公式模型时返回 warning，不阻塞文本 OCR。
+- 输出页码、整页文本、文本块、结构化 `elements`、bbox、confidence、qualityScore、warnings。
+- 支持 `standard` 和 `high_quality` 两种 `parseMode`。
+- 公式、表格、版面能力按可用性接入：当前服务没有独立模型时返回 `*_ENGINE_UNAVAILABLE` warning，不阻塞文本 OCR。
+
+## 运行模式
+
+| 模式 | 推荐运行环境 | 用途 | 说明 |
+| --- | --- | --- | --- |
+| `standard` | 当前 Docker CPU、本机开发环境 | 稳定 OCR 文本、bbox、confidence、elements | 默认模式，保持低依赖和旧链路兼容 |
+| `high_quality` | MacBook Pro M 系列、GPU 机器、独立 OCR 服务器 | 请求版面、表格、公式、方向检测、页面矫正 | 当前先提供契约和降级 warning，后续接完整 PaddleOCR document pipeline |
+
+当前 Windows 项目不需要本机直接跑 Apple Silicon 能力。推荐把 Mac 或 GPU 机器作为远程 OCR 服务，在后端配置 `APP_OCR_PADDLE_BASE_URL=http://<remote-ip>:8090` 调用。
 
 ## 本机 Docker 启动
 
@@ -33,6 +43,14 @@ curl http://127.0.0.1:8090/health
 APP_OCR_PROVIDER=paddle
 APP_OCR_PADDLE_BASE_URL=http://127.0.0.1:8090
 APP_OCR_PADDLE_ENDPOINT=/ocr/pdf
+APP_OCR_PADDLE_PARSE_MODE=standard
+APP_OCR_PADDLE_MAX_PAGES=500
+APP_OCR_PADDLE_DPI=220
+APP_OCR_PADDLE_ENABLE_LAYOUT=false
+APP_OCR_PADDLE_ENABLE_TABLE=false
+APP_OCR_PADDLE_ENABLE_FORMULA=false
+APP_OCR_PADDLE_ENABLE_ORIENTATION=true
+APP_OCR_PADDLE_ENABLE_UNWARPING=false
 ```
 
 Docker Compose 网络内运行后端时：
@@ -47,6 +65,12 @@ APP_OCR_PADDLE_BASE_URL=http://paddle-ocr:8090
 ```bash
 APP_OCR_PROVIDER=paddle
 APP_OCR_PADDLE_BASE_URL=http://<remote-ip>:8090
+APP_OCR_PADDLE_PARSE_MODE=high_quality
+APP_OCR_PADDLE_ENABLE_LAYOUT=true
+APP_OCR_PADDLE_ENABLE_TABLE=true
+APP_OCR_PADDLE_ENABLE_FORMULA=true
+APP_OCR_PADDLE_ENABLE_ORIENTATION=true
+APP_OCR_PADDLE_ENABLE_UNWARPING=true
 ```
 
 需要确认远程电脑防火墙放行 `8090`，且两台电脑处于可互通的局域网或 VPN。
@@ -66,8 +90,13 @@ python scripts/smoke_ocr.py --base-url http://127.0.0.1:8090 --pdf sample.pdf
   "pageStart": 1,
   "pageEnd": 3,
   "maxPages": 20,
+  "parseMode": "standard",
   "enableTextOcr": true,
+  "enableLayout": false,
+  "enableTable": false,
   "enableFormula": false,
+  "enableOrientation": true,
+  "enableUnwarping": false,
   "dpi": 220
 }
 ```
@@ -84,6 +113,20 @@ python scripts/smoke_ocr.py --base-url http://127.0.0.1:8090 --pdf sample.pdf
     {
       "pageNumber": 1,
       "text": "...",
+      "rawText": "...",
+      "cleanedText": "...",
+      "elements": [
+        {
+          "type": "paragraph",
+          "text": "...",
+          "bbox": [[0, 0], [10, 0], [10, 10], [0, 10]],
+          "confidence": 0.98,
+          "order": 1,
+          "source": "paddle_ocr",
+          "rawType": "text",
+          "warnings": []
+        }
+      ],
       "blocks": [
         {
           "text": "...",
@@ -94,11 +137,20 @@ python scripts/smoke_ocr.py --base-url http://127.0.0.1:8090 --pdf sample.pdf
       ],
       "formulas": [],
       "confidence": 0.98,
+      "qualityScore": 0.98,
+      "layoutStatus": "NOT_REQUESTED",
+      "tableStatus": "NOT_REQUESTED",
+      "formulaStatus": "NOT_REQUESTED",
       "warnings": []
     }
   ],
   "warnings": [],
-  "elapsedMs": 1234
+  "elapsedMs": 1234,
+  "metadata": {
+    "parseMode": "standard",
+    "maxPages": 20,
+    "dpi": 220
+  }
 }
 ```
 

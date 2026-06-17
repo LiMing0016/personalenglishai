@@ -10,7 +10,7 @@ from app.formula_engine import FormulaRecognitionEngine
 from app.ocr_engine import TextOcrEngine, merge_blocks_text, sort_blocks_reading_order
 from app.pdf_renderer import PdfRenderer, cleanup_rendered, decode_base64
 from app.quality import aggregate_document_status, assess_page_quality
-from app.schemas import HealthResponse, OcrImageRequest, OcrPage, OcrPdfRequest, OcrResponse
+from app.schemas import ElementBlock, HealthResponse, OcrImageRequest, OcrPage, OcrPdfRequest, OcrResponse
 
 
 def create_app(
@@ -55,11 +55,28 @@ def create_app(
                     page,
                     language=request.language,
                     enable_text_ocr=request.enableTextOcr,
-                    enable_formula=request.enableFormula,
+                    enable_layout=request.feature_enabled("enableLayout"),
+                    enable_table=request.feature_enabled("enableTable"),
+                    enable_formula=request.feature_enabled("enableFormula"),
+                    enable_orientation=request.feature_enabled("enableOrientation"),
+                    enable_unwarping=request.feature_enabled("enableUnwarping"),
                 )
                 for page in _page_iter(rendered)
             ]
-            return _build_response(pages, started)
+            return _build_response(
+                pages,
+                started,
+                metadata={
+                    "parseMode": request.parseMode,
+                    "maxPages": request.maxPages,
+                    "dpi": request.dpi,
+                    "enableLayout": request.feature_enabled("enableLayout"),
+                    "enableTable": request.feature_enabled("enableTable"),
+                    "enableFormula": request.feature_enabled("enableFormula"),
+                    "enableOrientation": request.feature_enabled("enableOrientation"),
+                    "enableUnwarping": request.feature_enabled("enableUnwarping"),
+                },
+            )
         except Exception as exc:
             return _error_response(str(exc), started)
         finally:
@@ -78,9 +95,24 @@ def create_app(
                 rendered_page,
                 language=request.language,
                 enable_text_ocr=request.enableTextOcr,
-                enable_formula=request.enableFormula,
+                enable_layout=request.feature_enabled("enableLayout"),
+                enable_table=request.feature_enabled("enableTable"),
+                enable_formula=request.feature_enabled("enableFormula"),
+                enable_orientation=request.feature_enabled("enableOrientation"),
+                enable_unwarping=request.feature_enabled("enableUnwarping"),
             )
-            return _build_response([page], started)
+            return _build_response(
+                [page],
+                started,
+                metadata={
+                    "parseMode": request.parseMode,
+                    "enableLayout": request.feature_enabled("enableLayout"),
+                    "enableTable": request.feature_enabled("enableTable"),
+                    "enableFormula": request.feature_enabled("enableFormula"),
+                    "enableOrientation": request.feature_enabled("enableOrientation"),
+                    "enableUnwarping": request.feature_enabled("enableUnwarping"),
+                },
+            )
         except Exception as exc:
             return _error_response(str(exc), started)
         finally:
@@ -95,7 +127,11 @@ def _recognize_page(
     page: Any,
     language: str,
     enable_text_ocr: bool,
+    enable_layout: bool,
+    enable_table: bool,
     enable_formula: bool,
+    enable_orientation: bool,
+    enable_unwarping: bool,
 ) -> OcrPage:
     warnings = list(_page_value(page, "warnings", []))
     blocks = []
@@ -105,33 +141,64 @@ def _recognize_page(
             if not getattr(app.state.text_engine, "sdk_loaded", False):
                 warnings.append("TEXT_OCR_ENGINE_UNAVAILABLE")
             else:
-                blocks = app.state.text_engine.recognize_image(_page_value(page, "path"), language)
+                blocks = app.state.text_engine.recognize_image(
+                    _page_value(page, "path"),
+                    language,
+                    enable_orientation=enable_orientation,
+                    enable_unwarping=enable_unwarping,
+                )
         except Exception as exc:
             warnings.append(f"TEXT_OCR_FAILED:{exc}")
+
+    layout_status = "NOT_REQUESTED"
+    if enable_layout:
+        layout_status = "FALLBACK_TEXT"
+        warnings.append("LAYOUT_ENGINE_UNAVAILABLE")
+
+    table_status = "NOT_REQUESTED"
+    if enable_table:
+        table_status = "UNAVAILABLE"
+        warnings.append("TABLE_ENGINE_UNAVAILABLE")
+
+    formula_status = "NOT_REQUESTED"
     if enable_formula:
-        page_formulas, formula_warnings = app.state.formula_engine.recognize_formulas(_page_value(page, "path"))
-        formulas.extend(page_formulas)
-        warnings.extend(formula_warnings)
+        if not getattr(app.state.formula_engine, "enabled", False):
+            formula_status = "UNAVAILABLE"
+            warnings.append("FORMULA_ENGINE_UNAVAILABLE")
+        else:
+            page_formulas, formula_warnings = app.state.formula_engine.recognize_formulas(_page_value(page, "path"))
+            formulas.extend(page_formulas)
+            warnings.extend(formula_warnings)
+            formula_status = "SUCCEEDED" if page_formulas else ("UNAVAILABLE" if formula_warnings else "EMPTY")
 
     blocks = sort_blocks_reading_order(blocks)
-    text = merge_blocks_text(blocks)
+    raw_text = merge_blocks_text(blocks)
+    text = raw_text
     if formulas:
         text = _append_formula_placeholders(text, formulas)
+    elements = _blocks_to_elements(blocks)
+    elements.extend(_formulas_to_elements(formulas, start_order=len(elements) + 1))
 
     return assess_page_quality(
         OcrPage(
             pageNumber=int(_page_value(page, "pageNumber", 1)),
             text=text,
+            rawText=raw_text,
+            cleanedText=text,
             blocks=blocks,
             formulas=formulas,
+            elements=elements,
             width=_page_value(page, "width"),
             height=_page_value(page, "height"),
+            layoutStatus=layout_status,
+            tableStatus=table_status,
+            formulaStatus=formula_status,
             warnings=list(dict.fromkeys(warnings)),
         )
     )
 
 
-def _build_response(pages: list[OcrPage], started: float) -> OcrResponse:
+def _build_response(pages: list[OcrPage], started: float, metadata: dict[str, Any] | None = None) -> OcrResponse:
     status = aggregate_document_status(pages)
     return OcrResponse(
         status=status.status,
@@ -142,6 +209,7 @@ def _build_response(pages: list[OcrPage], started: float) -> OcrResponse:
         pageCount=status.pageCount,
         recognizedPageCount=status.recognizedPageCount,
         message=None if status.status != "FAILED" else "PaddleOCR 未识别到有效内容",
+        metadata=metadata or {},
     )
 
 
@@ -176,6 +244,46 @@ def _append_formula_placeholders(text: str, formulas) -> str:
     if not text:
         return "\n".join(placeholders)
     return text + "\n" + "\n".join(placeholders)
+
+
+def _blocks_to_elements(blocks) -> list[ElementBlock]:
+    elements: list[ElementBlock] = []
+    for index, block in enumerate(sort_blocks_reading_order(blocks), start=1):
+        if not block.text.strip():
+            continue
+        elements.append(
+            ElementBlock(
+                type="paragraph",
+                text=block.text.strip(),
+                bbox=block.bbox,
+                confidence=block.confidence,
+                order=index,
+                source="paddle_ocr",
+                rawType="text",
+            )
+        )
+    return elements
+
+
+def _formulas_to_elements(formulas, start_order: int) -> list[ElementBlock]:
+    elements: list[ElementBlock] = []
+    for offset, formula in enumerate(formulas):
+        text = formula.latex or formula.imageRef or ""
+        if not text:
+            continue
+        elements.append(
+            ElementBlock(
+                type="formula",
+                text=text,
+                bbox=formula.bbox,
+                confidence=formula.confidence,
+                order=start_order + offset,
+                source="paddle_ocr_formula",
+                rawType="formula",
+                warnings=formula.warnings,
+            )
+        )
+    return elements
 
 
 def _elapsed_ms(started: float) -> int:

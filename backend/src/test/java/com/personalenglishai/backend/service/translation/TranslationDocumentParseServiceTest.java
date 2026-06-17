@@ -111,6 +111,48 @@ class TranslationDocumentParseServiceTest {
     }
 
     @Test
+    void preservesStructuredOcrElementsForKnowledgePipeline() {
+        TranslationOcrElement element = new TranslationOcrElement(
+                "paragraph",
+                "OCR paragraph with precise location.",
+                "[[10,20],[120,20],[120,60],[10,60]]",
+                0.93,
+                1,
+                "paddle_ocr",
+                "text",
+                List.of("LOW_CONFIDENCE_TEXT")
+        );
+        TranslationDocumentParseService ocrService = new TranslationDocumentParseService(
+                pdfBytes -> TranslationOcrResult.succeeded(List.of(
+                        new TranslationOcrPageText(
+                                1,
+                                "OCR paragraph with precise location.",
+                                List.of(element),
+                                List.of("SPARSE_TEXT"),
+                                800,
+                                1200,
+                                0.93,
+                                "raw OCR paragraph",
+                                "OCR paragraph with precise location."
+                        )
+                ), "{\"pages\":[{\"pageNumber\":1}]}")
+        );
+
+        TranslationDocumentParseResponse response = ocrService.parsePdf("scan.pdf", textPdf("   \n\n   "));
+
+        assertThat(response.getParseStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getProvider()).isEqualTo("paddle_ocr");
+        assertThat(response.isFallbackUsed()).isTrue();
+        assertThat(response.getElements()).hasSize(1);
+        assertThat(response.getElements().get(0).getId()).isEqualTo("p1-ocr-e1");
+        assertThat(response.getElements().get(0).getBbox()).contains("[[10,20]");
+        assertThat(response.getElements().get(0).getMetadata())
+                .containsEntry("source", "paddle_ocr")
+                .containsEntry("rawType", "text");
+        assertThat(response.getKnowledgeChunks().get(0).getSourceElementIds()).containsExactly("p1-ocr-e1");
+    }
+
+    @Test
     void usesOcrTextWhenPdfTextLayerLooksLikePromotionalNoise() {
         TranslationDocumentParseService ocrService = new TranslationDocumentParseService(
                 pdfBytes -> TranslationOcrResult.succeeded(List.of(
