@@ -95,6 +95,18 @@ assert.ok(
   'workspace should keep selected PDF text as the agent context',
 )
 assert.ok(
+  workspaceSource.includes('selectedPdfContext'),
+  'workspace should keep structured PDF selection context for source-aware agent questions',
+)
+assert.ok(
+  workspaceSource.includes('handlePdfSelectionChange'),
+  'workspace should normalize PDF selection payloads before sending them to the Agent area',
+)
+assert.ok(
+  workspaceSource.includes('buildDocumentSelectionContext'),
+  'workspace should build source context with documentId, pageNumber, elementId, and bbox',
+)
+assert.ok(
   workspaceSource.includes("documentView.value = 'pdf-canvas'"),
   'workspace should open PDF documents in the learning canvas by default',
 )

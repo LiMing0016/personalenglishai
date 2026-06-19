@@ -141,7 +141,7 @@
           :target-page="targetPdfPage"
           @select-block="selectBlock"
           @ask-agent="askAgent"
-          @selection-change="selectedPdfText = $event"
+          @selection-change="handlePdfSelectionChange"
           @page-change="currentPdfPage = $event"
         />
       </section>
@@ -187,6 +187,9 @@
         <section class="agent-context">
           <p class="answer-label">上下文</p>
           <strong>{{ selectedPdfText ? '当前选区' : '当前页 / 当前段落' }}</strong>
+          <small v-if="selectedPdfContext">
+            Page {{ selectedPdfContext.pageNumber }} · {{ selectedPdfContext.elementId }}
+          </small>
           <blockquote>{{ agentContextText }}</blockquote>
         </section>
 
@@ -279,10 +282,12 @@ import { showToast } from '@/utils/toast'
 import type { TranslationSourceType } from './translationHubData'
 import {
   buildAssetStats,
+  buildDocumentSelectionContext,
   buildIntensiveReadingDocument,
   createTranslationWorkspaceDraftFromParsedDocument,
   loadTranslationWorkspaceDraft,
   type DocumentBlock,
+  type DocumentSelectionContext,
   type IntensiveReadingDocument,
   type IntensiveAgentMode,
   type LearningAssetType,
@@ -296,11 +301,21 @@ interface LocalAgentMessage {
   id: string
   role: AgentMessageRole
   content: string
+  sourceContext?: DocumentSelectionContext | null
 }
 
 interface OutlineGroup {
   page: number
   blocks: DocumentBlock[]
+}
+
+interface PdfSelectionPayload {
+  text: string
+  documentId: string
+  pageNumber: number
+  blockId: string | null
+  elementId: string | null
+  bbox: string | null
 }
 
 const route = useRoute()
@@ -309,6 +324,7 @@ const activeMode = ref<IntensiveAgentMode>('immersive')
 const activeBlockId = ref('')
 const documentView = ref<'text' | 'pdf-canvas'>('text')
 const selectedPdfText = ref('')
+const selectedPdfContext = ref<DocumentSelectionContext | null>(null)
 const targetPdfPage = ref(1)
 const currentPdfPage = ref(1)
 const pageNotes = ref<Record<number, string>>({})
@@ -368,7 +384,7 @@ const activeInsight = computed(() => {
 })
 
 const agentContextText = computed(() => {
-  return selectedPdfText.value || activeBlock.value?.text || ''
+  return selectedPdfContext.value?.text || selectedPdfText.value || activeBlock.value?.text || ''
 })
 
 const outlineGroups = computed<OutlineGroup[]>(() => {
@@ -467,13 +483,13 @@ function restoreTranslationMode() {
 
 function selectBlock(blockId: string) {
   activeBlockId.value = blockId
-  selectedPdfText.value = ''
+  clearPdfSelection()
 }
 
 function selectOutlinePage(page: number) {
   currentPdfPage.value = page
   targetPdfPage.value = page
-  selectedPdfText.value = ''
+  clearPdfSelection()
   const firstBlock = outlineGroups.value.find((group) => group.page === page)?.blocks[0]
   if (firstBlock) activeBlockId.value = firstBlock.id
 }
@@ -482,7 +498,26 @@ function selectOutlineBlock(blockId: string, page: number) {
   activeBlockId.value = blockId
   targetPdfPage.value = page
   currentPdfPage.value = page
+  clearPdfSelection()
+}
+
+function handlePdfSelectionChange(payload: PdfSelectionPayload) {
+  selectedPdfText.value = payload.text
+  selectedPdfContext.value = payload.text.trim() && payload.elementId
+    ? {
+        documentId: payload.documentId,
+        pageNumber: payload.pageNumber,
+        blockId: payload.blockId ?? payload.elementId,
+        elementId: payload.elementId,
+        bbox: payload.bbox,
+        text: payload.text,
+      }
+    : null
+}
+
+function clearPdfSelection() {
   selectedPdfText.value = ''
+  selectedPdfContext.value = null
 }
 
 function restorePageNotes() {
@@ -586,17 +621,28 @@ function submitAgentQuestion() {
   if (!question || !activeBlock.value) return
 
   const currentBlock = activeBlock.value
+  const sourceContext = resolveAgentSourceContext()
   agentMessages.value.push({
     id: `user-${Date.now()}`,
     role: 'user',
     content: question,
+    sourceContext,
   })
   agentMessages.value.push({
     id: `assistant-${Date.now()}`,
     role: 'assistant',
     content: `已基于 P${currentBlock.order} 和「${modeLabels[activeMode.value]}」模式生成回答草稿。真实 Agent 接入后会引用原文、译文和已保存资产。`,
+    sourceContext,
   })
   agentPrompt.value = ''
+}
+
+function resolveAgentSourceContext(): DocumentSelectionContext | null {
+  if (selectedPdfContext.value) return selectedPdfContext.value
+  const document = readingDocument.value
+  const block = activeBlock.value
+  if (!document || !block) return null
+  return buildDocumentSelectionContext(document.id, block)
 }
 
 function saveAsset(type: LearningAssetType) {
@@ -1444,6 +1490,14 @@ textarea {
   line-height: 1.7;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+}
+
+.agent-context small {
+  display: block;
+  margin-top: 5px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .agent-answer--ide,

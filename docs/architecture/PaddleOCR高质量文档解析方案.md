@@ -16,9 +16,11 @@ related_docs:
 
 ## 当前结论
 
-文档学习闭环的第一优先级不是“把 PDF 页面看起来还原得很漂亮”，而是把 PDF、图片、公式、表格等资料元素提取成可定位、可诊断、可进入 Agent 问答的结构化知识。当前采用 `standard` 和 `high_quality` 两种解析模式：`standard` 保持现有 Docker CPU OCR 可用，`high_quality` 先以远程 PaddleOCR 服务契约设计，后续由 Mac/M 系列或独立 GPU 机器提供更强的版面、表格和公式能力。
+文档学习闭环的第一优先级不是“把 PDF 页面看起来还原得很漂亮”，而是把 PDF、图片、公式、表格等资料元素提取成可定位、可诊断、可进入 Agent 问答的结构化知识。当前采用 `standard` 和 `high_quality` 两种解析模式：`standard` 保持现有 Docker CPU OCR 可用，`high_quality` 通过远程 PaddleOCR 服务优先调用 `PPStructureV3` 文档解析 pipeline，尽量提供版面、表格和公式元素。
 
 第一阶段已经落地的目标是：统一 OCR 输出契约、保留 `elements`、保留 bbox/confidence/source/warnings、后端不再重复拼接 `page.text + blocks`，并让 parse snapshot 保存完整 OCR 原始响应。
+
+第二阶段已经落地两件事：`high_quality` 模式接入 PaddleOCR `PPStructureV3` 适配层，前端 PDF 选区上下文开始携带 `documentId/pageNumber/elementId/bbox`，为后续 Agent source citation 做准备。
 
 ## 背景
 
@@ -44,7 +46,7 @@ related_docs:
 
 本文不覆盖：
 
-- 前端 PDF 选区交互的完整实现。
+- 前端 PDF 选区到真实 Agent 问答 API 的完整闭环。
 - embedding/rerank 的最终检索排序策略。
 - Apple Silicon 上 PaddleOCR 模型安装细节。
 - 商业 OCR API 的接入决策。
@@ -54,11 +56,11 @@ related_docs:
 | 能力 | 当前第一阶段 | NotebookLM / Acrobat 类目标 | 后续方向 |
 | --- | --- | --- | --- |
 | 文本提取 | PDFBox + PaddleOCR fallback | 多引擎文本层和 OCR 质量评估 | 增加 per-page quality gate |
-| OCR | PaddleOCR 文本检测和识别 | OCR + 版面结构恢复 | 接入 PaddleOCR pipeline |
+| OCR | PaddleOCR 文本检测和识别 + high_quality PPStructureV3 适配层 | OCR + 版面结构恢复 | 继续做真实样本调优 |
 | 阅读顺序 | block 排序 | 接近真实阅读顺序 | 版面分区后排序 |
 | 标题/段落 | 规则推断 | 章节、标题、段落、列表 | layout element type |
-| 表格 | 契约和降级 warning | 表格结构识别 | high_quality 接 table engine |
-| 公式 | 契约和降级 warning | 公式识别或视觉理解 | high_quality 接 formula engine |
+| 表格 | high_quality 适配 PPStructureV3 table element，缺模型时降级 | 表格结构识别 | 后续强化表格 HTML/Markdown 渲染 |
+| 公式 | high_quality 适配 PPStructureV3 formula element，缺模型时降级 | 公式识别或视觉理解 | 后续强化公式展示和二次校验 |
 | 图片/图表 | 暂未理解 | 图片说明、图表内容 | 后续视觉模型补图表摘要 |
 | 引用定位 | pageNumber + elementId + bbox | inline citations | chunk 引用 sourceElementIds |
 | 质量诊断 | confidence/warnings | 逐页质量评分和兜底策略 | 扩展乱码率、阅读顺序评分 |
@@ -68,7 +70,7 @@ related_docs:
 | 模式 | 运行位置 | 默认目标 | 默认能力 |
 | --- | --- | --- | --- |
 | `standard` | 当前 Docker CPU 或普通本机 | 保持稳定、低依赖、可在开发机跑通 | 文本 OCR、bbox、confidence、elements、基础 quality warning |
-| `high_quality` | MacBook Pro M 系列、GPU 机器或独立 OCR 服务器 | 尽量提取版面、表格、公式和方向矫正 | layout/table/formula/orientation/unwarping 开关默认打开，不可用时返回 warning |
+| `high_quality` | MacBook Pro M 系列、GPU 机器或独立 OCR 服务器 | 尽量提取版面、表格、公式和方向矫正 | 通过 PaddleOCR `PPStructureV3` 适配层提取 elements，不可用时返回 warning |
 
 重要约束：
 
@@ -179,7 +181,7 @@ sequenceDiagram
     Parser-->>Backend: "blocks/elements from PDFBox"
   else "文本层为空或质量差"
     Parser->>OCR: "POST /ocr/pdf with parseMode/options"
-    OCR-->>Parser: "pages/elements/warnings/raw response"
+    OCR-->>Parser: "standard text OCR or high_quality PPStructureV3 elements"
     Parser-->>Backend: "OCR elements -> document elements"
   end
   Backend->>Store: "保存 response_json/elements/chunks/assets"
@@ -209,6 +211,7 @@ sequenceDiagram
 - `LAYOUT_ENGINE_UNAVAILABLE`：请求版面分析但当前服务没有独立 layout engine。
 - `TABLE_ENGINE_UNAVAILABLE`：请求表格识别但当前服务没有独立 table engine。
 - `FORMULA_ENGINE_UNAVAILABLE`：请求公式识别但公式模型未加载。
+- `PPSTRUCTURE_EMPTY_RESULT`：`PPStructureV3` 已调用但没有返回可用结构元素。
 
 后续增强：
 
@@ -232,6 +235,8 @@ sequenceDiagram
 - `/ocr/pdf` 支持 `parseMode/maxPages/dpi/enableLayout/enableTable/enableFormula/enableOrientation/enableUnwarping`。
 - 响应每页至少有 `elements`，普通 OCR 文本映射为 `paragraph` element。
 - 请求表格、版面、公式但能力不可用时返回明确 warning，不阻塞文本 OCR。
+- `high_quality` 在 `PPStructureV3` 可用时返回 `heading/table/formula` 等 elements，并设置 `layoutStatus/tableStatus/formulaStatus`。
+- 前端 PDF 选区上下文包含 `documentId/pageNumber/elementId/bbox/text`。
 - 后端请求 PaddleOCR 时传递配置字段。
 - 后端不再重复拼接 `page.text + blocks`。
 - OCR elements 可进入 `TranslationDocumentElementDto`，保留 `bbox/confidence/provider/metadata`。
@@ -244,7 +249,12 @@ sequenceDiagram
 cd services/paddle-ocr
 python -m unittest discover -s tests
 
-cd ../../backend
+cd ../../web
+npx tsx tests\translationSelectionContext.test.ts
+npx tsx tests\pdfLearningCanvas.test.ts
+npx tsx tests\translationWorkspacePage.test.ts
+
+cd ../backend
 .\mvnw.cmd -q "-Dtest=PaddleTranslationOcrServiceTest,TranslationDocumentParseServiceTest" test
 
 cd ../docs
@@ -253,8 +263,6 @@ npm run build
 
 ## 下一阶段
 
-- 在 Mac/M 系列机器上部署 high_quality PaddleOCR 服务。
-- 接入 PaddleOCR 文档 OCR pipeline 的 layout/table/formula 能力。
-- 让前端 PDF 选区携带 `documentId/pageNumber/elementId/bbox`。
 - Agent 问答使用 source chunks，并在回答中返回引用定位。
 - 增加扫描 PDF、乱码文本层 PDF、中英混排、表格、公式和长 PDF 的集成样本集。
+- 在 Mac/M 系列机器上做真实 high_quality 模型环境验收和性能调优。

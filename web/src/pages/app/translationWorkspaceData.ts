@@ -1,5 +1,9 @@
 import type { TranslationMode, TranslationRecord, TranslationSourceType } from './translationHubData'
-import type { TranslationDocumentParseResponse } from '../../api/translation'
+import type {
+  TranslationDocumentBlockDto,
+  TranslationDocumentElementDto,
+  TranslationDocumentParseResponse,
+} from '../../api/translation'
 
 export type WorkspaceSegmentStatus = 'pending' | 'translated'
 export type IntensiveAgentMode = TranslationMode | 'foreign' | 'technical'
@@ -19,6 +23,9 @@ export interface TranslationWorkspaceSegment {
   translationStatus: WorkspaceSegmentStatus
   blockType?: DocumentBlockType
   pageNumber?: number
+  elementId?: string
+  bbox?: string | null
+  confidence?: number | null
 }
 
 export interface TranslationWorkspaceDraft extends TranslationRecord {
@@ -51,10 +58,22 @@ export interface IntensiveReadingDocument {
 
 export interface DocumentBlock {
   id: string
+  elementId?: string
   type: DocumentBlockType
   order: number
   text: string
   pageNumber?: number
+  bbox?: string | null
+  confidence?: number | null
+}
+
+export interface DocumentSelectionContext {
+  documentId: string
+  pageNumber: number
+  blockId: string
+  elementId: string
+  bbox: string | null
+  text: string
 }
 
 export interface TranslationInsight {
@@ -158,7 +177,9 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
 ): TranslationWorkspaceDraft {
   const fileName = parsedDocument.fileName || 'uploaded.pdf'
   const blocks = Array.isArray(parsedDocument.blocks) ? parsedDocument.blocks : []
-  const sourceText = blocks.map((block) => block.text.trim()).filter(Boolean).join('\n\n')
+  const elements = Array.isArray(parsedDocument.elements) ? parsedDocument.elements : []
+  const sourceItems = elements.length > 0 ? elements : blocks
+  const sourceText = sourceItems.map((block) => block.text.trim()).filter(Boolean).join('\n\n')
   const warningText = parsedDocument.warnings?.filter(Boolean).join('\n') ?? ''
   const sourceLabel = normalizeParsedSourceLabel(parsedDocument.sourceType, fileName)
   const fallbackText = warningText || '文档暂未解析出可展示的文本，请稍后重试或改用粘贴文本。'
@@ -178,15 +199,8 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
     fileName,
     sourceText: sourceText || fallbackText,
     pdfPreviewUrl: input.pdfPreviewUrl,
-    segments: blocks.length > 0
-      ? blocks.map((block, index) => ({
-          id: block.id || `segment-${index + 1}`,
-          source: block.text,
-          translation: '等待 AI 翻译',
-          translationStatus: 'pending' as const,
-          blockType: normalizeDocumentBlockType(block.type),
-          pageNumber: block.pageNumber,
-        }))
+    segments: sourceItems.length > 0
+      ? sourceItems.map((block, index) => buildWorkspaceSegmentFromParsedItem(block, index))
       : buildWorkspaceSegments(fallbackText),
     parseStatus: parsedDocument.parseStatus,
     ocrStatus: parsedDocument.ocrStatus,
@@ -247,10 +261,13 @@ export function listTranslationWorkspaceDrafts(storage: Storage): TranslationWor
 export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft): IntensiveReadingDocument {
   const blocks = draft.segments.map<DocumentBlock>((segment, index) => ({
     id: shouldPreserveSegmentId(segment.id) ? segment.id : `block-${index + 1}`,
+    elementId: segment.elementId ?? (shouldPreserveSegmentId(segment.id) ? segment.id : undefined),
     type: segment.blockType ?? 'paragraph',
     order: index + 1,
     text: segment.source,
     pageNumber: segment.pageNumber ?? (index < 3 ? 1 : Math.floor(index / 3) + 1),
+    bbox: segment.bbox ?? null,
+    confidence: segment.confidence ?? null,
   }))
 
   const insights = blocks.map((block, index) => buildInsight(block, index))
@@ -281,6 +298,22 @@ export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft):
     blocks,
     insights,
     assets,
+  }
+}
+
+export function buildDocumentSelectionContext(
+  documentId: string,
+  block: DocumentBlock,
+  selectedText?: string | null,
+): DocumentSelectionContext {
+  const text = selectedText?.trim() || block.text
+  return {
+    documentId,
+    pageNumber: block.pageNumber || 1,
+    blockId: block.id,
+    elementId: block.elementId || block.id,
+    bbox: block.bbox ?? null,
+    text,
   }
 }
 
@@ -416,6 +449,24 @@ function normalizeWhitespace(value: string): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+function buildWorkspaceSegmentFromParsedItem(
+  block: TranslationDocumentBlockDto | TranslationDocumentElementDto,
+  index: number,
+): TranslationWorkspaceSegment {
+  const element = block as TranslationDocumentElementDto
+  return {
+    id: block.id || `segment-${index + 1}`,
+    elementId: element.id || block.id || `segment-${index + 1}`,
+    source: block.text,
+    translation: '等待 AI 翻译',
+    translationStatus: 'pending',
+    blockType: normalizeDocumentBlockType(block.type),
+    pageNumber: block.pageNumber,
+    bbox: element.bbox ?? null,
+    confidence: block.confidence ?? null,
+  }
 }
 
 function splitSentences(text: string): string[] {

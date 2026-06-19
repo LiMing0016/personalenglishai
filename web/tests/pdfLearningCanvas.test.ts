@@ -20,6 +20,7 @@ assert.ok(
 )
 
 for (const requiredCanvasFeature of [
+  'interface PdfSelectionPayload',
   'pdfjs-dist/build/pdf.mjs',
   'pdf.worker.mjs?url',
   'pdf-canvas-layer',
@@ -38,6 +39,11 @@ for (const requiredCanvasFeature of [
   'turnPageFromScroll',
   'targetPage',
   'pageChange',
+  'resolveSelectionPayload',
+  'documentId: props.documentId',
+  'elementId: block?.elementId ?? block?.id ?? null',
+  'bbox: block?.bbox ?? null',
+  "emit('selectionChange', payload)",
 ]) {
   assert.ok(
     canvasSource.includes(requiredCanvasFeature),
@@ -89,11 +95,17 @@ assert.ok(
   canvasSource.includes('if (isRenderingPage)'),
   'PDF learning canvas should serialize renders so pdf.js does not draw into the same canvas concurrently',
 )
+assert.ok(
+  canvasSource.includes('selectionChange: [payload: PdfSelectionPayload]'),
+  'PDF learning canvas should emit structured selection metadata for source-aware agent questions',
+)
 
 for (const requiredWorkspaceFeature of [
   'PdfLearningCanvas',
   'PDF 学习画布',
   'selectedPdfText',
+  'selectedPdfContext',
+  'handlePdfSelectionChange',
   '当前选区',
   '当前页',
 ]) {

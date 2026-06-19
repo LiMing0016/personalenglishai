@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.document_pipeline import DocumentPipelineEngine, elements_to_text_blocks, merge_elements_text
 from app.formula_engine import FormulaRecognitionEngine
 from app.ocr_engine import TextOcrEngine, merge_blocks_text, sort_blocks_reading_order
 from app.pdf_renderer import PdfRenderer, cleanup_rendered, decode_base64
@@ -17,11 +18,13 @@ def create_app(
     text_engine: TextOcrEngine | None = None,
     renderer: PdfRenderer | None = None,
     formula_engine: FormulaRecognitionEngine | None = None,
+    document_engine: DocumentPipelineEngine | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Personal English AI PaddleOCR Service", version="0.1.0")
     app.state.text_engine = text_engine or TextOcrEngine()
     app.state.renderer = renderer or PdfRenderer()
     app.state.formula_engine = formula_engine or FormulaRecognitionEngine()
+    app.state.document_engine = document_engine or DocumentPipelineEngine()
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -136,6 +139,51 @@ def _recognize_page(
     warnings = list(_page_value(page, "warnings", []))
     blocks = []
     formulas = []
+    document_elements: list[ElementBlock] = []
+    document_pipeline_requested = enable_layout or enable_table or enable_formula
+
+    layout_status = "NOT_REQUESTED"
+    table_status = "NOT_REQUESTED"
+    formula_status = "NOT_REQUESTED"
+
+    if document_pipeline_requested:
+        document_engine = app.state.document_engine
+        if getattr(document_engine, "sdk_loaded", False):
+            try:
+                result = document_engine.recognize_image(
+                    _page_value(page, "path"),
+                    language=language,
+                    enable_layout=enable_layout,
+                    enable_table=enable_table,
+                    enable_formula=enable_formula,
+                    enable_orientation=enable_orientation,
+                    enable_unwarping=enable_unwarping,
+                )
+                document_elements = _coerce_document_elements(result)
+                warnings.extend(_coerce_document_warnings(result))
+                if enable_layout:
+                    layout_status = "SUCCEEDED" if document_elements else "EMPTY"
+                if enable_table:
+                    table_status = "SUCCEEDED" if _has_element_type(document_elements, "table") else "EMPTY"
+                if enable_formula:
+                    formula_status = "SUCCEEDED" if _has_element_type(document_elements, "formula") else "EMPTY"
+            except Exception as exc:
+                if enable_layout:
+                    layout_status = "FALLBACK_TEXT"
+                    warnings.append(f"LAYOUT_ENGINE_FAILED:{exc}")
+                if enable_table:
+                    table_status = "UNAVAILABLE"
+                    warnings.append(f"TABLE_ENGINE_FAILED:{exc}")
+                if enable_formula:
+                    formula_status = "UNAVAILABLE"
+                    warnings.append(f"FORMULA_ENGINE_FAILED:{exc}")
+        else:
+            if enable_layout:
+                layout_status = "FALLBACK_TEXT"
+                warnings.append("LAYOUT_ENGINE_UNAVAILABLE")
+            if enable_table:
+                table_status = "UNAVAILABLE"
+                warnings.append("TABLE_ENGINE_UNAVAILABLE")
     if enable_text_ocr:
         try:
             if not getattr(app.state.text_engine, "sdk_loaded", False):
@@ -150,20 +198,10 @@ def _recognize_page(
         except Exception as exc:
             warnings.append(f"TEXT_OCR_FAILED:{exc}")
 
-    layout_status = "NOT_REQUESTED"
-    if enable_layout:
-        layout_status = "FALLBACK_TEXT"
-        warnings.append("LAYOUT_ENGINE_UNAVAILABLE")
-
-    table_status = "NOT_REQUESTED"
-    if enable_table:
-        table_status = "UNAVAILABLE"
-        warnings.append("TABLE_ENGINE_UNAVAILABLE")
-
-    formula_status = "NOT_REQUESTED"
-    if enable_formula:
+    if enable_formula and not _has_element_type(document_elements, "formula"):
         if not getattr(app.state.formula_engine, "enabled", False):
-            formula_status = "UNAVAILABLE"
+            if formula_status == "NOT_REQUESTED":
+                formula_status = "UNAVAILABLE"
             warnings.append("FORMULA_ENGINE_UNAVAILABLE")
         else:
             page_formulas, formula_warnings = app.state.formula_engine.recognize_formulas(_page_value(page, "path"))
@@ -172,12 +210,15 @@ def _recognize_page(
             formula_status = "SUCCEEDED" if page_formulas else ("UNAVAILABLE" if formula_warnings else "EMPTY")
 
     blocks = sort_blocks_reading_order(blocks)
+    if not blocks and document_elements:
+        blocks = elements_to_text_blocks(document_elements)
     raw_text = merge_blocks_text(blocks)
-    text = raw_text
-    if formulas:
-        text = _append_formula_placeholders(text, formulas)
-    elements = _blocks_to_elements(blocks)
-    elements.extend(_formulas_to_elements(formulas, start_order=len(elements) + 1))
+    elements = document_elements or _blocks_to_elements(blocks)
+    if formulas and not _has_element_type(elements, "formula"):
+        elements.extend(_formulas_to_elements(formulas, start_order=len(elements) + 1))
+    text = merge_elements_text(elements) or raw_text
+    if formulas and not _has_element_type(document_elements, "formula"):
+        text = _append_formula_placeholders(raw_text, formulas)
 
     return assess_page_quality(
         OcrPage(
@@ -284,6 +325,39 @@ def _formulas_to_elements(formulas, start_order: int) -> list[ElementBlock]:
             )
         )
     return elements
+
+
+def _coerce_document_elements(result: Any) -> list[ElementBlock]:
+    raw_elements = _result_value(result, "elements", [])
+    elements: list[ElementBlock] = []
+    for index, item in enumerate(raw_elements or [], start=1):
+        if isinstance(item, ElementBlock):
+            element = item
+        elif isinstance(item, dict):
+            element = ElementBlock(**item)
+        else:
+            continue
+        if element.order <= 0:
+            element.order = index
+        elements.append(element)
+    return sorted(elements, key=lambda item: item.order)
+
+
+def _coerce_document_warnings(result: Any) -> list[str]:
+    warnings = _result_value(result, "warnings", [])
+    if not isinstance(warnings, list):
+        return []
+    return [str(item) for item in warnings if str(item).strip()]
+
+
+def _result_value(result: Any, name: str, default=None):
+    if isinstance(result, dict):
+        return result.get(name, default)
+    return getattr(result, name, default)
+
+
+def _has_element_type(elements: list[ElementBlock], element_type: str) -> bool:
+    return any(element.type == element_type and element.text.strip() for element in elements)
 
 
 def _elapsed_ms(started: float) -> int:

@@ -81,6 +81,15 @@ interface PageAnnotation {
   text: string
 }
 
+interface PdfSelectionPayload {
+  text: string
+  documentId: string
+  pageNumber: number
+  blockId: string | null
+  elementId: string | null
+  bbox: string | null
+}
+
 const props = defineProps<{
   documentId: string
   title: string
@@ -94,7 +103,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectBlock: [blockId: string]
   askAgent: [prompt: string]
-  selectionChange: [text: string]
+  selectionChange: [payload: PdfSelectionPayload]
   pageChange: [page: number]
 }>()
 
@@ -276,8 +285,10 @@ function calculateFitWidthScale(pageWidth: number) {
 
 function captureSelection() {
   const selection = typeof window === 'undefined' ? '' : window.getSelection()?.toString().trim() || ''
-  selectedText.value = selection
-  emit('selectionChange', selection)
+  const payload = resolveSelectionPayload(selection)
+  selectedText.value = payload.text
+  if (payload.blockId) emit('selectBlock', payload.blockId)
+  emit('selectionChange', payload)
 }
 
 async function copySelectionOrPageText() {
@@ -300,6 +311,35 @@ function highlightSelection() {
 function emitAskAgent(prompt: string) {
   const suffix = selectedText.value ? `：${selectedText.value}` : ''
   emit('askAgent', `${prompt}${suffix}`)
+}
+
+function resolveSelectionPayload(text: string): PdfSelectionPayload {
+  const block = resolveSelectedBlock(text)
+  return {
+    text,
+    documentId: props.documentId,
+    pageNumber: block?.pageNumber ?? currentPage.value,
+    blockId: block?.id ?? null,
+    elementId: block?.elementId ?? block?.id ?? null,
+    bbox: block?.bbox ?? null,
+  }
+}
+
+function resolveSelectedBlock(text: string): DocumentBlock | null {
+  const normalizedSelection = normalizeSelectionText(text)
+  const pageBlocks = props.blocks.filter((block) => (block.pageNumber || 1) === currentPage.value)
+  const activeBlock = pageBlocks.find((block) => block.id === props.activeBlockId)
+  if (!normalizedSelection) {
+    return activeBlock ?? pageBlocks[0] ?? null
+  }
+  return pageBlocks.find((block) => {
+    const normalizedBlock = normalizeSelectionText(block.text)
+    return normalizedBlock.includes(normalizedSelection) || normalizedSelection.includes(normalizedBlock)
+  }) ?? activeBlock ?? pageBlocks[0] ?? null
+}
+
+function normalizeSelectionText(value: string) {
+  return value.replace(/\s+/g, ' ').trim()
 }
 
 function goToPage(page: number) {
