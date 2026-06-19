@@ -49,6 +49,7 @@ export default defineConfig({
       { text: '产品', link: '/product/' },
       { text: '架构', link: '/architecture/' },
       { text: '接口', link: '/api/' },
+      { text: 'iPadOS 联调', link: '/ios-integration/README' },
       { text: '数据', link: '/data/' },
       { text: 'AI', link: '/ai/' },
       { text: 'Admin', link: '/admin/' },
@@ -112,6 +113,20 @@ export default defineConfig({
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
+          ]
+        }
+      ],
+      '/ios-integration/': [
+        {
+          text: 'iPadOS 联调',
+          items: [
+            { text: '联调总览', link: '/ios-integration/README' },
+            { text: 'AI 助手 API 契约', link: '/ios-integration/ai-assistant-api-contract' },
+            { text: '认证 API 契约', link: '/ios-integration/auth-api-contract' },
+            { text: '本地开发与 Docker', link: '/ios-integration/local-dev-and-docker' },
+            { text: '联调验收清单', link: '/ios-integration/integration-checklist' },
+            { text: '排障指南', link: '/ios-integration/troubleshooting' },
+            { text: '变更记录', link: '/ios-integration/changelog' }
           ]
         }
       ],
