@@ -1,11 +1,15 @@
 ---
+title: 文档中心
 status: active
 owner: project
-last_updated: 2026-05-10
+last_updated: 2026-06-18
+review_cycle: monthly
 related_code:
   - web/
   - backend/
   - python/ai_orchestrator/
+related_docs:
+  - docs/ios-integration/README.md
 ---
 
 # Personal English AI 文档中心
@@ -19,6 +23,7 @@ related_code:
 - [产品](./product/)：当前产品范围、用户规则和业务说明。
 - [架构](./architecture/)：前端、后端、Python agent 服务和支撑系统如何协作。
 - [接口](./api/)：当前前后端接口契约。
+- [iPadOS 联调](./ios-integration/README)：iPad 端和后端联调的接口事实来源、Docker 启动、验收和排障。
 - [数据](./data/)：数据库、迁移和持久化规则。
 - [AI](./ai/)：评分、语法、Prompt、助手路由和 agent 工作流。
 - [Admin](./admin/)：管理员端的信息架构、运营治理后台和项目资产管理规则。
