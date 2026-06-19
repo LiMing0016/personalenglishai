@@ -33,7 +33,10 @@ final class TranslationDocumentKnowledgePipeline {
         response.setBlocks(cleanedBlocks);
 
         String provider = resolveProvider(response);
-        List<TranslationDocumentElementDto> elements = buildElements(cleanedBlocks, provider, response.getParseStatus());
+        List<TranslationDocumentElementDto> sourceElements = response.getElements();
+        List<TranslationDocumentElementDto> elements = sourceElements == null || sourceElements.isEmpty()
+                ? buildElements(cleanedBlocks, provider, response.getParseStatus())
+                : cleanElements(sourceElements, provider, response.getParseStatus());
         List<TranslationKnowledgeChunkDto> chunks = buildChunks(response.getDocumentId(), elements);
         TranslationParseDiagnosisDto diagnosis = diagnose(response, elements);
         TranslationDocumentQualityDto quality = scoreDocument(diagnosis, elements, chunks);
@@ -83,6 +86,40 @@ final class TranslationDocumentKnowledgePipeline {
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("source", "translation_document_parse");
             metadata.put("originalType", block.getType());
+            element.setMetadata(metadata);
+            elements.add(element);
+        }
+        return elements;
+    }
+
+    private static List<TranslationDocumentElementDto> cleanElements(
+            List<TranslationDocumentElementDto> sourceElements,
+            String provider,
+            String parseStatus) {
+        List<TranslationDocumentElementDto> elements = new ArrayList<>();
+        int order = 1;
+        for (TranslationDocumentElementDto element : sourceElements == null ? List.<TranslationDocumentElementDto>of() : sourceElements) {
+            String text = cleanText(element.getText());
+            if (text.isBlank() || isPageNumberLine(text)) {
+                continue;
+            }
+            if (element.getId() == null || element.getId().isBlank()) {
+                element.setId("e" + order);
+            }
+            element.setType(normalizeType(element.getType()));
+            element.setOrder(order++);
+            element.setText(text);
+            if (element.getProvider() == null || element.getProvider().isBlank()) {
+                element.setProvider(provider);
+            }
+            if (element.getRecognitionStatus() == null || element.getRecognitionStatus().isBlank()) {
+                element.setRecognitionStatus("SUCCEEDED".equals(parseStatus) ? "READY" : "NEEDS_OCR");
+            }
+            if (element.getQualityScore() <= 0) {
+                element.setQualityScore(scoreElement(text, element.getPageNumber()));
+            }
+            Map<String, Object> metadata = new LinkedHashMap<>(element.getMetadata());
+            metadata.putIfAbsent("source", "translation_document_parse");
             element.setMetadata(metadata);
             elements.add(element);
         }

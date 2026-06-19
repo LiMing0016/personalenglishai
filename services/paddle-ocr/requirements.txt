@@ -3,5 +3,5 @@ uvicorn[standard]==0.30.6
 pydantic>=2.8,<3
 pillow>=10.4,<12
 pymupdf>=1.24,<2
-paddlepaddle>=3.0.0,<4
-paddleocr>=3.0.0,<4
+paddlepaddle==3.2.2
+paddleocr==3.7.0

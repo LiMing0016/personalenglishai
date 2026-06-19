@@ -1,11 +1,14 @@
 ---
+title: 架构
 status: active
 owner: project
-last_updated: 2026-05-16
+last_updated: 2026-06-18
+review_cycle: monthly
 related_code:
   - web/
   - backend/
   - python/
+related_docs: []
 ---
 
 # 架构
@@ -30,3 +33,4 @@ Personal English AI 是一个全栈英语学习应用：
 - [文档知识提取管线设计](./文档知识提取管线设计.md)
 - [仓库结构规范](./repository-structure.md)
 - [写作任务元数据](./writing-task-metadata.md)
+- [PaddleOCR高质量文档解析方案](./PaddleOCR高质量文档解析方案.md)

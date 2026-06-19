@@ -3,6 +3,14 @@ import unittest
 from app.ocr_engine import merge_blocks_text, normalize_paddle_ocr_result, sort_blocks_reading_order
 
 
+class ArrayLike:
+    def __init__(self, values):
+        self.values = values
+
+    def tolist(self):
+        return self.values
+
+
 class OcrEngineTest(unittest.TestCase):
     def test_normalizes_common_paddle_result_shape(self):
         raw_result = [
@@ -32,6 +40,24 @@ class OcrEngineTest(unittest.TestCase):
         sorted_blocks = sort_blocks_reading_order(blocks)
 
         self.assertEqual([block.text for block in sorted_blocks], ["left", "right", "next"])
+
+    def test_normalizes_paddle_3_result_shape_with_array_boxes(self):
+        raw_result = [
+            {
+                "dt_polys": [
+                    ArrayLike([[40, 60], [160, 60], [160, 90], [40, 90]]),
+                    ArrayLike([[40, 110], [220, 110], [220, 140], [40, 140]]),
+                ],
+                "rec_texts": ["Hello OCR", "Personal English AI"],
+                "rec_scores": [0.99, 0.97],
+            }
+        ]
+
+        blocks = normalize_paddle_ocr_result(raw_result)
+
+        self.assertEqual([block.text for block in blocks], ["Hello OCR", "Personal English AI"])
+        self.assertEqual(blocks[0].bbox[0], [40.0, 60.0])
+        self.assertAlmostEqual(blocks[1].confidence, 0.97)
 
     def test_merges_same_line_and_preserves_paragraph_breaks(self):
         blocks = normalize_paddle_ocr_result(

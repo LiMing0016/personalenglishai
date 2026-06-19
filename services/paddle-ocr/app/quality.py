@@ -10,6 +10,7 @@ def assess_page_quality(page: OcrPage) -> OcrPage:
     if not page.blocks and not page.text.strip():
         warnings.append("EMPTY_PAGE")
         page.confidence = 0.0
+        page.qualityScore = 0.0
         page.warnings = list(dict.fromkeys(warnings))
         return page
 
@@ -25,6 +26,8 @@ def assess_page_quality(page: OcrPage) -> OcrPage:
 
     page.confidence = round(max(0.0, min(1.0, confidence)), 4)
     page.warnings = list(dict.fromkeys(warnings))
+    warning_penalty = 0.08 * len([warning for warning in page.warnings if warning not in {"SPARSE_TEXT"}])
+    page.qualityScore = round(max(0.0, min(1.0, page.confidence - warning_penalty)), 4)
     return page
 
 

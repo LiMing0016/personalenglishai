@@ -97,6 +97,8 @@ export default defineConfig({
             { text: '助手会话管理', link: '/architecture/assistant-conversation-management' },
             { text: '仓库结构规范', link: '/architecture/repository-structure' },
             { text: '词典集成', link: '/architecture/dictionary-oxford' },
+            { text: '文档知识提取管线', link: '/architecture/文档知识提取管线设计' },
+            { text: 'PaddleOCR 高质量文档解析', link: '/architecture/PaddleOCR高质量文档解析方案' },
             { text: '写作任务元数据', link: '/architecture/writing-task-metadata' }
           ]
         }
