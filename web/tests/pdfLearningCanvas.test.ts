@@ -21,11 +21,36 @@ assert.ok(
 
 for (const requiredCanvasFeature of [
   'interface PdfSelectionPayload',
+  'interface GeometrySelectionBox',
+  'interface TextSpanHit',
+  'findTextCharacterHits',
+  'mergeCharacterHitsIntoBoxes',
+  'document.createRange()',
+  'range.setStart',
+  'range.setEnd',
+  'range.getBoundingClientRect()',
+  'range.detach?.()',
   'pdfjs-dist/build/pdf.mjs',
   'pdf.worker.mjs?url',
   'pdf-canvas-layer',
   'pdf-text-layer',
   'pdf-annotation-layer',
+  'selection-geometry-box',
+  'pdfjs-dist/web/pdf_viewer.mjs',
+  'TextLayerBuilder',
+  'textContentParams',
+  'textLayerBuilder',
+  'textLayerAbortController',
+  'selectionBoxes',
+  'beginGeometrySelection',
+  'updateGeometrySelection',
+  'finishGeometrySelection',
+  'cancelGeometrySelection',
+  'getTextLayerPoint',
+  'updateSelectionFromGeometry',
+  "querySelectorAll('.textLayer span')",
+  'window.getSelection()?.removeAllRanges()',
+  '--total-scale-factor',
   '高亮选区',
   '复制文本层',
   'fit-width',
@@ -40,9 +65,13 @@ for (const requiredCanvasFeature of [
   'targetPage',
   'pageChange',
   'resolveSelectionPayload',
+  'resolveDocumentSelectionContextFromText',
   'documentId: props.documentId',
-  'elementId: block?.elementId ?? block?.id ?? null',
-  'bbox: block?.bbox ?? null',
+  'blocks: props.blocks',
+  'activeBlockId: props.activeBlockId',
+  'selectedText: text',
+  'elementId: context?.elementId ?? null',
+  'bbox: bbox ?? context?.bbox ?? null',
   "emit('selectionChange', payload)",
 ]) {
   assert.ok(
@@ -58,6 +87,22 @@ assert.ok(
 assert.ok(
   !canvasSource.includes('pdf-parsed-text-layer'),
   'PDF learning canvas should not squeeze the center page with a parsed text side rail',
+)
+assert.ok(
+  !canvasSource.includes('pdf-text-token'),
+  'PDF learning canvas should not hand-roll transparent text tokens because that causes broad inaccurate browser selections',
+)
+assert.ok(
+  !canvasSource.includes('@mouseup="captureSelection"'),
+  'PDF learning canvas should not use native mouseup selection because pdf.js text-layer DOM order can over-select later lines',
+)
+assert.ok(
+  canvasSource.includes('user-select: none'),
+  'PDF learning canvas should disable native browser selection and use geometry-based selection boxes',
+)
+assert.ok(
+  !canvasSource.includes('transform: `scaleX('),
+  'PDF learning canvas should not estimate text token width with scaleX; pdf.js TextLayer should own text positioning',
 )
 assert.ok(
   !canvasSource.includes('const scale = ref(1.1)'),

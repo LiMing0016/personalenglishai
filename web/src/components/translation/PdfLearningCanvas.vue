@@ -1,5 +1,5 @@
 <template>
-  <div class="pdf-learning-canvas">
+  <div class="pdf-learning-canvas" :class="{ 'geometry-selecting': isGeometrySelecting }">
     <header class="pdf-canvas-toolbar" aria-label="PDF 学习画布工具栏">
       <div>
         <p>PDF 学习画布</p>
@@ -27,25 +27,25 @@
       @wheel="handleStageWheel">
       <div v-if="loadError" class="pdf-page-fallback">
         <strong>当前会话 PDF 原貌预览不可用</strong>
-        <span>可以继续使用左侧解析大纲做定位，并在右侧 Agent 面板完成笔记和提问。刷新后需要重新上传才能恢复 PDF 原貌。</span>
+        <span>可以继续使用左侧解析大纲做定位，并在右侧 Agent 面板完成笔记和提问。请检查后端原文件记录是否存在，或重新上传恢复 PDF 原貌。</span>
       </div>
 
       <div v-else class="pdf-page-shell">
         <canvas ref="canvasRef" class="pdf-canvas-layer" aria-label="PDF 原貌画布"></canvas>
         <div
+          ref="textLayerRef"
           class="pdf-text-layer"
           aria-label="复制文本层"
-          @mouseup="captureSelection"
-          @keyup="captureSelection">
-          <span
-            v-for="item in textItems"
-            :key="item.id"
-            class="pdf-text-token"
-            :style="item.style">
-            {{ item.text }}
-          </span>
-        </div>
+          @pointerdown="beginGeometrySelection"
+          @pointermove="updateGeometrySelection"
+          @pointerup="finishGeometrySelection"
+          @pointercancel="cancelGeometrySelection" />
         <div class="pdf-annotation-layer" aria-label="PDF 批注层">
+          <span
+            v-for="box in selectionBoxes"
+            :key="box.id"
+            class="selection-geometry-box"
+            :style="box.style" />
           <button v-if="selectedText" type="button" class="selection-pin" @click="emitAskAgent('解释当前选区')">
             当前选区
           </button>
@@ -64,15 +64,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs'
+import { TextLayerBuilder } from 'pdfjs-dist/web/pdf_viewer.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
-import type { DocumentBlock } from '@/pages/app/translationWorkspaceData'
-
-interface TextLayerItem {
-  id: string
-  text: string
-  style: Record<string, string>
-}
+import {
+  resolveDocumentSelectionContextFromText,
+  type DocumentBlock,
+} from '@/pages/app/translationWorkspaceData'
+import { getToken } from '@/utils/token'
 
 interface PageAnnotation {
   id: string
@@ -88,6 +87,30 @@ interface PdfSelectionPayload {
   blockId: string | null
   elementId: string | null
   bbox: string | null
+}
+
+interface Point {
+  x: number
+  y: number
+}
+
+interface GeometryRect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+  width: number
+  height: number
+}
+
+interface TextSpanHit extends GeometryRect {
+  text: string
+  centerY: number
+}
+
+interface GeometrySelectionBox {
+  id: string
+  style: Record<string, string>
 }
 
 const props = defineProps<{
@@ -112,25 +135,38 @@ type ZoomMode = 'fit-width' | 'manual'
 const minScale = 0.5
 const maxScale = 3
 const fitWidthGutter = 28
+const selectionLinePadding = 4
+const selectionMinDragDistance = 2
 
 let resizeObserver: ResizeObserver | null = null
 let scrollPageTurnLock = false
 let isRenderingPage = false
 let needsPageRender = false
 let syncScaleFromRender = false
+let textLayerBuilder: {
+  cancel: () => void
+  render: (params: { viewport: any; textContentParams?: Record<string, unknown> }) => Promise<void>
+  div: HTMLElement
+} | null = null
+let textLayerAbortController: AbortController | null = null
+let activePointerId: number | null = null
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const textLayerRef = ref<HTMLElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const pdfDocument = shallowRef<any>(null)
 const currentPage = ref(1)
 const scale = ref(1)
 const zoomMode = ref<ZoomMode>('fit-width')
-const textItems = ref<TextLayerItem[]>([])
 const selectedText = ref('')
 const annotations = ref<PageAnnotation[]>([])
 const loadError = ref(false)
 const renderedPageCount = ref(0)
 const pendingPageScrollPosition = ref<'top' | 'bottom' | null>(null)
+const selectionBoxes = ref<GeometrySelectionBox[]>([])
+const selectionDragStart = ref<Point | null>(null)
+const selectionDragEnd = ref<Point | null>(null)
+const isGeometrySelecting = ref(false)
 
 ;(pdfjsLib.GlobalWorkerOptions as { workerSrc: string }).workerSrc = pdfWorkerUrl
 
@@ -155,6 +191,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
+  resetTextLayer()
 })
 
 watch(() => props.src, () => {
@@ -176,7 +213,7 @@ watch(() => props.targetPage, (page) => {
 })
 
 async function loadPdf() {
-  textItems.value = []
+  resetTextLayer()
   loadError.value = false
   pdfDocument.value = null
   renderedPageCount.value = 0
@@ -187,7 +224,12 @@ async function loadPdf() {
   }
 
   try {
-    const loadingTask = pdfjsLib.getDocument({ url: props.src })
+    const token = getToken()
+    const loadingTask = pdfjsLib.getDocument({
+      url: props.src,
+      httpHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
+      withCredentials: true,
+    })
     pdfDocument.value = await loadingTask.promise
     renderedPageCount.value = pdfDocument.value.numPages || 0
     currentPage.value = Math.min(currentPage.value, resolvedPageCount.value)
@@ -214,7 +256,8 @@ async function renderCurrentPage() {
 
   const pdf = pdfDocument.value
   const canvas = canvasRef.value
-  if (!pdf || !canvas) return
+  const textLayer = textLayerRef.value
+  if (!pdf || !canvas || !textLayer) return
 
   isRenderingPage = true
   try {
@@ -254,23 +297,42 @@ async function renderCurrentPage() {
 }
 
 async function renderTextLayer(page: any, viewport: any, renderScale = scale.value) {
-  const content = await page.getTextContent()
-  const tokens = (content.items || []) as Array<any>
-  textItems.value = tokens.map((item, index) => {
-    const transform = pdfjsLib.Util.transform(viewport.transform, item.transform)
-    const fontHeight = Math.hypot(transform[2], transform[3])
-    return {
-      id: `text-${currentPage.value}-${index}`,
-      text: item.str,
-      style: {
-        left: `${transform[4]}px`,
-        top: `${transform[5] - fontHeight}px`,
-        fontSize: `${Math.max(8, fontHeight)}px`,
-        transform: `scaleX(${item.width ? Math.max(0.2, (item.width * renderScale) / Math.max(1, item.str.length * fontHeight * 0.55)) : 1})`,
-        transformOrigin: 'left top',
-      },
-    }
+  const textLayer = textLayerRef.value
+  if (!textLayer) return
+
+  resetTextLayer()
+  textLayer.style.width = `${viewport.width}px`
+  textLayer.style.height = `${viewport.height}px`
+  textLayer.style.setProperty('--total-scale-factor', `${renderScale}`)
+
+  textLayerAbortController = new AbortController()
+  textLayerBuilder = new TextLayerBuilder({
+    pdfPage: page,
+    abortSignal: textLayerAbortController.signal,
+    onAppend: (layerDiv: HTMLElement) => {
+      layerDiv.style.width = `${viewport.width}px`
+      layerDiv.style.height = `${viewport.height}px`
+      layerDiv.style.setProperty('--total-scale-factor', `${renderScale}`)
+      textLayer.append(layerDiv)
+    },
   })
+  await textLayerBuilder.render({
+    viewport,
+    textContentParams: {
+      includeMarkedContent: true,
+      disableNormalization: true,
+    },
+  })
+}
+
+function resetTextLayer() {
+  textLayerBuilder?.cancel()
+  textLayerBuilder = null
+  textLayerAbortController?.abort()
+  textLayerAbortController = null
+  textLayerRef.value?.replaceChildren()
+  textLayerRef.value?.style.removeProperty('--total-scale-factor')
+  cancelGeometrySelection()
 }
 
 function calculateFitWidthScale(pageWidth: number) {
@@ -283,9 +345,308 @@ function calculateFitWidthScale(pageWidth: number) {
   return clampScale(availableWidth / pageWidth)
 }
 
-function captureSelection() {
-  const selection = typeof window === 'undefined' ? '' : window.getSelection()?.toString().trim() || ''
-  const payload = resolveSelectionPayload(selection)
+function beginGeometrySelection(event: PointerEvent) {
+  if (event.button !== 0) return
+  const point = getTextLayerPoint(event)
+  if (!point) return
+
+  event.preventDefault()
+  window.getSelection()?.removeAllRanges()
+  activePointerId = event.pointerId
+  isGeometrySelecting.value = true
+  selectionDragStart.value = point
+  selectionDragEnd.value = point
+  selectedText.value = ''
+  selectionBoxes.value = []
+  textLayerRef.value?.setPointerCapture?.(event.pointerId)
+}
+
+function updateGeometrySelection(event: PointerEvent) {
+  if (!isGeometrySelecting.value || activePointerId !== event.pointerId) return
+  const point = getTextLayerPoint(event)
+  if (!point) return
+
+  event.preventDefault()
+  selectionDragEnd.value = point
+  updateSelectionFromGeometry()
+}
+
+function finishGeometrySelection(event: PointerEvent) {
+  if (!isGeometrySelecting.value || activePointerId !== event.pointerId) return
+
+  event.preventDefault()
+  const point = getTextLayerPoint(event)
+  if (point) selectionDragEnd.value = point
+  updateSelectionFromGeometry()
+  textLayerRef.value?.releasePointerCapture?.(event.pointerId)
+  isGeometrySelecting.value = false
+  activePointerId = null
+  window.getSelection()?.removeAllRanges()
+}
+
+function cancelGeometrySelection(event?: PointerEvent) {
+  if (event && activePointerId !== event.pointerId) return
+  if (event && activePointerId !== null) {
+    textLayerRef.value?.releasePointerCapture?.(event.pointerId)
+  }
+  isGeometrySelecting.value = false
+  activePointerId = null
+  selectionDragStart.value = null
+  selectionDragEnd.value = null
+  selectionBoxes.value = []
+  selectedText.value = ''
+}
+
+function getTextLayerPoint(event: PointerEvent): Point | null {
+  const textLayer = textLayerRef.value
+  if (!textLayer) return null
+
+  const rect = textLayer.getBoundingClientRect()
+  return {
+    x: clampCoordinate(event.clientX - rect.left, rect.width),
+    y: clampCoordinate(event.clientY - rect.top, rect.height),
+  }
+}
+
+function updateSelectionFromGeometry() {
+  const selectionRect = getCurrentSelectionRect()
+  if (!selectionRect) return
+
+  if (selectionRect.width < selectionMinDragDistance && selectionRect.height < selectionMinDragDistance) {
+    selectedText.value = ''
+    selectionBoxes.value = []
+    applySelectionPayload('', null)
+    return
+  }
+
+  const hits = findTextSpanHits(selectionRect)
+  const text = buildSelectedTextFromHits(hits)
+  selectionBoxes.value = mergeCharacterHitsIntoBoxes(hits).map((hit, index) => ({
+    id: `selection-box-${currentPage.value}-${index}`,
+    style: {
+      left: `${hit.left}px`,
+      top: `${hit.top}px`,
+      width: `${hit.width}px`,
+      height: `${hit.height}px`,
+    },
+  }))
+  applySelectionPayload(text, formatSelectionBbox(hits))
+}
+
+function getCurrentSelectionRect(): GeometryRect | null {
+  const start = selectionDragStart.value
+  const end = selectionDragEnd.value
+  if (!start || !end) return null
+
+  const left = Math.min(start.x, end.x)
+  const right = Math.max(start.x, end.x)
+  const top = Math.min(start.y, end.y)
+  const bottom = Math.max(start.y, end.y)
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+  }
+}
+
+function findTextSpanHits(selectionRect: GeometryRect): TextSpanHit[] {
+  const textLayer = textLayerRef.value
+  if (!textLayer) return []
+
+  const layerRect = textLayer.getBoundingClientRect()
+  const spans = Array.from(textLayer.querySelectorAll('.textLayer span'))
+  const hits: TextSpanHit[] = []
+  for (const span of spans) {
+    if (!(span instanceof HTMLElement)) continue
+    if (span.getAttribute('role') === 'img') continue
+
+    const text = span.textContent ?? ''
+    if (!text.trim()) continue
+
+    const spanRect = span.getBoundingClientRect()
+    const spanHit: TextSpanHit = {
+      text,
+      left: spanRect.left - layerRect.left,
+      top: spanRect.top - layerRect.top,
+      right: spanRect.right - layerRect.left,
+      bottom: spanRect.bottom - layerRect.top,
+      width: spanRect.width,
+      height: spanRect.height,
+      centerY: spanRect.top - layerRect.top + spanRect.height / 2,
+    }
+    if (!isSpanInsideSelection(spanHit, selectionRect)) continue
+
+    const characterHits = findTextCharacterHits(span, selectionRect, layerRect)
+    hits.push(...(characterHits.length > 0 ? characterHits : [spanHit]))
+  }
+
+  return hits.sort(compareVisualOrder)
+}
+
+function findTextCharacterHits(span: HTMLElement, selectionRect: GeometryRect, layerRect: DOMRect): TextSpanHit[] {
+  const textNode = getSpanTextNode(span)
+  if (!textNode || !textNode.data.trim()) {
+    return clipSpanTextByGeometry(span, selectionRect, layerRect)
+  }
+
+  const range = document.createRange()
+  const hits: TextSpanHit[] = []
+  try {
+    for (let index = 0; index < textNode.data.length; index += 1) {
+      range.setStart(textNode, index)
+      range.setEnd(textNode, index + 1)
+      const rect = range.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) continue
+
+      const hit: TextSpanHit = {
+        text: textNode.data[index] ?? '',
+        left: rect.left - layerRect.left,
+        top: rect.top - layerRect.top,
+        right: rect.right - layerRect.left,
+        bottom: rect.bottom - layerRect.top,
+        width: rect.width,
+        height: rect.height,
+        centerY: rect.top - layerRect.top + rect.height / 2,
+      }
+      if (isSpanInsideSelection(hit, selectionRect)) hits.push(hit)
+    }
+  } finally {
+    range.detach?.()
+  }
+  return hits
+}
+
+function getSpanTextNode(span: HTMLElement): Text | null {
+  for (const node of Array.from(span.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) return node as Text
+  }
+  return null
+}
+
+function clipSpanTextByGeometry(span: HTMLElement, selectionRect: GeometryRect, layerRect: DOMRect): TextSpanHit[] {
+  const text = span.textContent ?? ''
+  if (!text.trim()) return []
+
+  const rect = span.getBoundingClientRect()
+  const spanLeft = rect.left - layerRect.left
+  const spanRight = rect.right - layerRect.left
+  const spanWidth = Math.max(1, spanRight - spanLeft)
+  const startRatio = clampRatio((selectionRect.left - spanLeft) / spanWidth)
+  const endRatio = clampRatio((selectionRect.right - spanLeft) / spanWidth)
+  const startIndex = Math.max(0, Math.floor(text.length * Math.min(startRatio, endRatio)))
+  const endIndex = Math.min(text.length, Math.ceil(text.length * Math.max(startRatio, endRatio)))
+  const clippedText = text.slice(startIndex, endIndex)
+  if (!clippedText.trim()) return []
+
+  return [{
+    text: clippedText,
+    left: Math.max(spanLeft, selectionRect.left),
+    top: rect.top - layerRect.top,
+    right: Math.min(spanRight, selectionRect.right),
+    bottom: rect.bottom - layerRect.top,
+    width: Math.max(1, Math.min(spanRight, selectionRect.right) - Math.max(spanLeft, selectionRect.left)),
+    height: rect.height,
+    centerY: rect.top - layerRect.top + rect.height / 2,
+  }]
+}
+
+function isSpanInsideSelection(hit: TextSpanHit, selectionRect: GeometryRect) {
+  const horizontalIntersects = hit.right >= selectionRect.left && hit.left <= selectionRect.right
+  if (!horizontalIntersects) return false
+
+  if (selectionRect.height <= Math.max(selectionLinePadding * 2, hit.height * 0.9)) {
+    return hit.centerY >= selectionRect.top - selectionLinePadding
+      && hit.centerY <= selectionRect.bottom + selectionLinePadding
+  }
+
+  const overlapWidth = Math.max(0, Math.min(hit.right, selectionRect.right) - Math.max(hit.left, selectionRect.left))
+  const overlapHeight = Math.max(0, Math.min(hit.bottom, selectionRect.bottom) - Math.max(hit.top, selectionRect.top))
+  const hitArea = Math.max(1, hit.width * hit.height)
+  return (overlapWidth * overlapHeight) / hitArea >= 0.18
+}
+
+function compareVisualOrder(left: TextSpanHit, right: TextSpanHit) {
+  const topDelta = left.top - right.top
+  if (Math.abs(topDelta) > Math.max(6, Math.min(left.height, right.height) * 0.6)) return topDelta
+  return left.left - right.left
+}
+
+function buildSelectedTextFromHits(hits: TextSpanHit[]) {
+  if (hits.length === 0) return ''
+
+  const lines: TextSpanHit[][] = []
+  for (const hit of hits) {
+    const previousLine = lines[lines.length - 1]
+    const previousHit = previousLine?.[0]
+    if (!previousLine || !previousHit || Math.abs(hit.centerY - previousHit.centerY) > Math.max(6, hit.height * 0.7)) {
+      lines.push([hit])
+    } else {
+      previousLine.push(hit)
+    }
+  }
+
+  return lines
+    .map((line) => joinVisualLine(line.sort((left, right) => left.left - right.left)))
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+}
+
+function joinVisualLine(line: TextSpanHit[]) {
+  let text = ''
+  let previous: TextSpanHit | null = null
+  for (const hit of line) {
+    const value = hit.text
+    if (!value) continue
+
+    const shouldInsertSpace = previous
+      && hit.left - previous.right > Math.max(2, previous.height * 0.15)
+      && /[A-Za-z0-9]$/.test(text)
+      && /^[A-Za-z0-9]/.test(value)
+    text += `${shouldInsertSpace ? ' ' : ''}${value}`
+    previous = hit
+  }
+  return text.replace(/[ \t]+/g, ' ').trim()
+}
+
+function mergeCharacterHitsIntoBoxes(hits: TextSpanHit[]) {
+  const boxes: TextSpanHit[] = []
+  for (const hit of hits) {
+    const previous = boxes[boxes.length - 1]
+    const canMerge = previous
+      && Math.abs(hit.centerY - previous.centerY) <= Math.max(5, hit.height * 0.45)
+      && hit.left - previous.right <= Math.max(3, hit.height * 0.25)
+    if (canMerge) {
+      previous.text += hit.text
+      previous.right = Math.max(previous.right, hit.right)
+      previous.bottom = Math.max(previous.bottom, hit.bottom)
+      previous.width = previous.right - previous.left
+      previous.height = Math.max(previous.height, hit.height)
+      previous.centerY = previous.top + previous.height / 2
+    } else {
+      boxes.push({ ...hit })
+    }
+  }
+  return boxes
+}
+
+function formatSelectionBbox(hits: TextSpanHit[]) {
+  if (hits.length === 0) return null
+
+  const left = Math.min(...hits.map((hit) => hit.left))
+  const top = Math.min(...hits.map((hit) => hit.top))
+  const right = Math.max(...hits.map((hit) => hit.right))
+  const bottom = Math.max(...hits.map((hit) => hit.bottom))
+  return [left, top, right - left, bottom - top]
+    .map((value) => Number(value.toFixed(2)))
+    .join(',')
+}
+
+function applySelectionPayload(text: string, bbox: string | null) {
+  const payload = resolveSelectionPayload(text.trim(), bbox)
   selectedText.value = payload.text
   if (payload.blockId) emit('selectBlock', payload.blockId)
   emit('selectionChange', payload)
@@ -313,33 +674,22 @@ function emitAskAgent(prompt: string) {
   emit('askAgent', `${prompt}${suffix}`)
 }
 
-function resolveSelectionPayload(text: string): PdfSelectionPayload {
-  const block = resolveSelectedBlock(text)
+function resolveSelectionPayload(text: string, bbox: string | null = null): PdfSelectionPayload {
+  const context = resolveDocumentSelectionContextFromText({
+    documentId: props.documentId,
+    blocks: props.blocks,
+    pageNumber: currentPage.value,
+    activeBlockId: props.activeBlockId,
+    selectedText: text,
+  })
   return {
     text,
     documentId: props.documentId,
-    pageNumber: block?.pageNumber ?? currentPage.value,
-    blockId: block?.id ?? null,
-    elementId: block?.elementId ?? block?.id ?? null,
-    bbox: block?.bbox ?? null,
+    pageNumber: context?.pageNumber ?? currentPage.value,
+    blockId: context?.blockId ?? null,
+    elementId: context?.elementId ?? null,
+    bbox: bbox ?? context?.bbox ?? null,
   }
-}
-
-function resolveSelectedBlock(text: string): DocumentBlock | null {
-  const normalizedSelection = normalizeSelectionText(text)
-  const pageBlocks = props.blocks.filter((block) => (block.pageNumber || 1) === currentPage.value)
-  const activeBlock = pageBlocks.find((block) => block.id === props.activeBlockId)
-  if (!normalizedSelection) {
-    return activeBlock ?? pageBlocks[0] ?? null
-  }
-  return pageBlocks.find((block) => {
-    const normalizedBlock = normalizeSelectionText(block.text)
-    return normalizedBlock.includes(normalizedSelection) || normalizedSelection.includes(normalizedBlock)
-  }) ?? activeBlock ?? pageBlocks[0] ?? null
-}
-
-function normalizeSelectionText(value: string) {
-  return value.replace(/\s+/g, ' ').trim()
 }
 
 function goToPage(page: number) {
@@ -415,6 +765,14 @@ function clampScale(nextScale: number) {
   return Math.min(maxScale, Math.max(minScale, Number(nextScale.toFixed(2))))
 }
 
+function clampCoordinate(value: number, maxValue: number) {
+  return Math.min(Math.max(0, value), Math.max(0, maxValue))
+}
+
+function clampRatio(value: number) {
+  return Math.min(Math.max(0, value), 1)
+}
+
 function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   return blocks.reduce((max, block) => Math.max(max, block.pageNumber || 1), 1)
 }
@@ -426,6 +784,10 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   background: #f8fafc;
+}
+
+.pdf-learning-canvas.geometry-selecting {
+  cursor: text;
 }
 
 .pdf-canvas-toolbar {
@@ -521,26 +883,85 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 .pdf-text-layer {
   position: absolute;
   inset: 0;
-  overflow: hidden;
-  user-select: text;
-}
-
-.pdf-text-token {
-  position: absolute;
+  z-index: 1;
+  overflow: clip;
   color: transparent;
   line-height: 1;
-  white-space: pre;
+  text-align: initial;
+  user-select: none;
   cursor: text;
+  pointer-events: auto;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
 }
 
-.pdf-text-token::selection {
-  background: rgb(20 184 166 / 32%);
+.pdf-text-layer :deep(.textLayer) {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
   color: transparent;
+  line-height: 1;
+  text-align: initial;
+  user-select: none;
+  cursor: text;
+  pointer-events: auto;
+  transform-origin: 0 0;
+}
+
+.pdf-text-layer :deep(.textLayer :is(span, br)) {
+  position: absolute;
+  color: transparent;
+  cursor: text;
+  white-space: pre;
+  transform-origin: 0% 0%;
+  user-select: none;
+}
+
+.pdf-text-layer :deep(.textLayer > :not(.markedContent)),
+.pdf-text-layer :deep(.textLayer .markedContent span:not(.markedContent)) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--total-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x));
+}
+
+.pdf-text-layer :deep(.textLayer .markedContent) {
+  display: contents;
+}
+
+.pdf-text-layer :deep(.textLayer span[role="img"]) {
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-text-layer :deep(.textLayer .endOfContent) {
+  position: absolute;
+  z-index: 0;
+  inset: 100% 0 0;
+  display: block;
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-text-layer :deep(.textLayer.selecting .endOfContent) {
+  top: 0;
 }
 
 .pdf-annotation-layer {
   position: absolute;
   inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.selection-geometry-box {
+  position: absolute;
+  z-index: 1;
+  border-radius: 2px;
+  background: rgb(20 184 166 / 30%);
   pointer-events: none;
 }
 
