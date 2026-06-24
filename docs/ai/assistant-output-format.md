@@ -1,3 +1,18 @@
+---
+title: 学习助手 Markdown 主题与英语输出规范方案
+status: active
+owner: ai
+last_updated: 2026-06-24
+review_cycle: monthly
+related_code:
+  - web/src/components/assistant/AssistantChatView.vue
+  - web/src/components/assistant/LearningAssetCanvas.vue
+  - backend/src/main/java/com/personalenglishai/backend/service/learning/LearningCanvasOrganizeService.java
+related_docs:
+  - /api/learning-notes
+  - /data/learning-note-schema
+---
+
 # 学习助手 Markdown 主题与英语输出规范方案
 
 ## 1. 背景
@@ -743,3 +758,77 @@ Streaming 负责让等待过程更自然。
 - 附件上传消息第一版仍走非流式 fallback。
 - `handoff` 事件暂不在前端展示。
 - 复杂 Mermaid、数学公式等流式 Markdown 渲染不在第一版范围内。
+
+## 12. 学习资产画布整理规则
+
+学习资产画布使用 Markdown 作为用户可编辑正文。AI 只能生成或整理 Markdown 候选内容，前端必须让用户确认后再应用。
+
+### 12.1 首版资产类型
+
+首版仅开放：
+
+```text
+vocabulary
+```
+
+后续可以扩展：
+
+```text
+sentence
+grammar
+expression
+```
+
+这些类型复用同一套 `learning_note` 表和 `Learning Notes API`。
+
+### 12.2 默认单词卡模板
+
+`create` 模式应按以下字段组织单词卡：
+
+```md
+# {{title}}
+
+**词性：**
+
+**中文释义：**
+
+**English meaning：**
+
+**原句：**
+
+**AI 例句：**
+
+**常见搭配：**
+
+## 我的笔记
+```
+
+前端本地也保留同款兜底模板，保证用户选词后即使 AI 整理接口不可用，也能立刻编辑。
+
+### 12.3 `format` 模式约束
+
+`format` 模式只用于调整用户现有 Markdown 的结构和排版：
+
+- 可以调整标题、加粗、引用、列表和段落结构。
+- 必须尽量保留用户原意。
+- 不得删除用户的个人笔记。
+- 不得输出解释性前后缀。
+
+### 12.4 前端应用规则
+
+AI 整理接口返回：
+
+```json
+{
+  "candidateMarkdown": "# nuanced\n\n**中文释义：** 细致入微的"
+}
+```
+
+前端必须展示为候选预览：
+
+1. 用户点击 `AI 整理` 或 `调整格式`。
+2. 右侧画布出现候选 Markdown。
+3. 用户点击 `应用候选` 后，才覆盖当前正文。
+4. 用户点击 `取消候选` 时，当前正文不变。
+
+这个规则用于保护用户正在编辑的学习笔记。

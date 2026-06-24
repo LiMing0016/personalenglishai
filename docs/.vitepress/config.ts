@@ -114,6 +114,7 @@ export default defineConfig({
             { text: 'Admin 订阅与额度', link: '/api/admin-subscription' },
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
+            { text: 'Learning Notes', link: '/api/learning-notes' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
           ]
         }
@@ -138,7 +139,8 @@ export default defineConfig({
           text: '数据',
           items: [
             { text: '数据总览', link: '/data/' },
-            { text: '评分持久化', link: '/data/scoring-persistence-schema' }
+            { text: '评分持久化', link: '/data/scoring-persistence-schema' },
+            { text: 'Learning Note', link: '/data/learning-note-schema' }
           ]
         }
       ],
