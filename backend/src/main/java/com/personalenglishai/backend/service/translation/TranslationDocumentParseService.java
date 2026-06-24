@@ -4,8 +4,16 @@ import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentBlockDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentElementDto;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentOutlineItemDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.interactive.action.PDAction;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionGoTo;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDDestination;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,12 +25,24 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class TranslationDocumentParseService {
     private static final int MIN_EXTRACTED_TEXT_CHARS = 20;
     private static final int MIN_USABLE_TEXT_CHARS = 80;
+    private static final int MAX_TOC_SCAN_PAGES = 12;
+    private static final int MIN_TOC_ITEM_COUNT = 2;
     private static final double MIN_TEXT_LAYER_PAGE_COVERAGE = 0.03;
+    private static final Pattern TOC_HEADING_PATTERN = Pattern.compile(
+            "^(目录|目\\s*录|contents|table\\s+of\\s+contents)$",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern TOC_ITEM_PATTERN = Pattern.compile(
+            "^(.+?)(?:\\s*[.·•…]{2,}\\s*|\\s{2,}|\\s+)(\\d{1,4})\\s*$"
+    );
+    private static final Pattern NUMBERED_SECTION_PATTERN = Pattern.compile("^(\\d+(?:\\.\\d+)+)\\b.*");
     private final TranslationOcrService ocrService;
 
     @Autowired
@@ -35,12 +55,15 @@ public class TranslationDocumentParseService {
 
         try (PDDocument document = PDDocument.load(pdfBytes)) {
             List<TranslationDocumentBlockDto> blocks = new ArrayList<>();
+            Map<Integer, String> pageTexts = new LinkedHashMap<>();
             int order = 1;
             for (int page = 1; page <= document.getNumberOfPages(); page++) {
                 PDFTextStripper stripper = new PDFTextStripper();
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
-                List<String> pageBlocks = splitIntoLearningBlocks(stripper.getText(document));
+                String pageText = stripper.getText(document);
+                pageTexts.put(page, pageText);
+                List<String> pageBlocks = splitIntoLearningBlocks(pageText);
                 for (String text : pageBlocks) {
                     blocks.add(new TranslationDocumentBlockDto(
                             "p" + page + "-b" + order,
@@ -56,6 +79,11 @@ public class TranslationDocumentParseService {
 
             TranslationDocumentParseResponse response = baseResponse(originalFilename, document.getNumberOfPages());
             response.setBlocks(blocks);
+            List<TranslationDocumentOutlineItemDto> outline = readDocumentOutline(document);
+            if (outline.isEmpty()) {
+                outline = readTableOfContentsOutline(pageTexts, document.getNumberOfPages());
+            }
+            response.setOutline(outline);
             if (hasUsableTextLayer(blocks, document.getNumberOfPages())) {
                 response.setParseStatus("SUCCEEDED");
                 response.setOcrStatus("NOT_REQUIRED");
@@ -66,6 +94,251 @@ public class TranslationDocumentParseService {
         } catch (IOException e) {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "PDF 解析失败，请确认文件未损坏");
         }
+    }
+
+    private List<TranslationDocumentOutlineItemDto> readDocumentOutline(PDDocument document) throws IOException {
+        PDDocumentOutline documentOutline = document.getDocumentCatalog().getDocumentOutline();
+        if (documentOutline == null || !documentOutline.hasChildren()) {
+            return List.of();
+        }
+
+        List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
+        collectOutlineItems(document, documentOutline.getFirstChild(), 1, outline);
+        return outline;
+    }
+
+    private void collectOutlineItems(
+            PDDocument document,
+            PDOutlineItem item,
+            int level,
+            List<TranslationDocumentOutlineItemDto> outline) throws IOException {
+        PDOutlineItem current = item;
+        while (current != null) {
+            String title = current.getTitle() == null ? "" : current.getTitle().strip();
+            int pageNumber = resolveOutlinePageNumber(document, current);
+            if (!title.isBlank() && pageNumber > 0) {
+                TranslationDocumentOutlineItemDto outlineItem = new TranslationDocumentOutlineItemDto();
+                outlineItem.setId("pdf-outline-" + (outline.size() + 1));
+                outlineItem.setTitle(title);
+                outlineItem.setLevel(Math.max(1, Math.min(6, level)));
+                outlineItem.setPageNumber(pageNumber);
+                outlineItem.setSource("pdf_outline");
+                outlineItem.setConfidence(1.0);
+                outline.add(outlineItem);
+            }
+            if (current.hasChildren()) {
+                collectOutlineItems(document, current.getFirstChild(), level + 1, outline);
+            }
+            current = current.getNextSibling();
+        }
+    }
+
+    private int resolveOutlinePageNumber(PDDocument document, PDOutlineItem item) throws IOException {
+        PDPage destinationPage = item.findDestinationPage(document);
+        if (destinationPage != null) {
+            int pageIndex = document.getPages().indexOf(destinationPage);
+            if (pageIndex >= 0) {
+                return pageIndex + 1;
+            }
+        }
+
+        PDDestination destination = item.getDestination();
+        if (destination == null) {
+            PDAction action = item.getAction();
+            if (action instanceof PDActionGoTo goTo) {
+                destination = goTo.getDestination();
+            }
+        }
+        if (destination instanceof PDPageDestination pageDestination) {
+            PDPage page = pageDestination.getPage();
+            if (page != null) {
+                int pageIndex = document.getPages().indexOf(page);
+                if (pageIndex >= 0) {
+                    return pageIndex + 1;
+                }
+            }
+            int zeroBasedPageNumber = pageDestination.retrievePageNumber();
+            if (zeroBasedPageNumber >= 0) {
+                return zeroBasedPageNumber + 1;
+            }
+        }
+        return 0;
+    }
+
+    private List<TranslationDocumentOutlineItemDto> readTableOfContentsOutline(Map<Integer, String> pageTexts, int pageCount) {
+        List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
+        boolean tocStarted = false;
+        int scanLimit = Math.min(pageCount, MAX_TOC_SCAN_PAGES);
+        for (int page = 1; page <= scanLimit; page++) {
+            List<String> lines = normalizeTocLines(pageTexts.get(page));
+            boolean hasTocHeading = lines.stream().anyMatch(this::isTocHeadingLine);
+            if (!tocStarted && !hasTocHeading) {
+                continue;
+            }
+
+            List<TranslationDocumentOutlineItemDto> pageOutline = parseTableOfContentsPage(lines, pageCount, outline.size());
+            if (pageOutline.isEmpty()) {
+                if (tocStarted) {
+                    break;
+                }
+                continue;
+            }
+
+            tocStarted = true;
+            outline.addAll(pageOutline);
+        }
+        return outline.size() >= MIN_TOC_ITEM_COUNT ? outline : List.of();
+    }
+
+    private List<TranslationDocumentOutlineItemDto> parseTableOfContentsPage(
+            List<String> lines,
+            int pageCount,
+            int outlineOffset) {
+        List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
+        String pendingTitle = "";
+        for (String line : lines) {
+            if (isTocNoiseLine(line)) {
+                continue;
+            }
+
+            Matcher matcher = TOC_ITEM_PATTERN.matcher(line);
+            if (!matcher.matches()) {
+                if (looksLikeWrappedTocTitle(line)) {
+                    pendingTitle = mergeTocTitle(pendingTitle, line);
+                }
+                continue;
+            }
+
+            String title = cleanTocTitle(mergeTocTitle(pendingTitle, matcher.group(1)));
+            pendingTitle = "";
+            int targetPage = parseTocTargetPage(matcher.group(2), pageCount);
+            if (targetPage <= 0 || !isValidTocTitle(title)) {
+                continue;
+            }
+
+            TranslationDocumentOutlineItemDto item = new TranslationDocumentOutlineItemDto();
+            item.setId("toc-outline-" + (outlineOffset + outline.size() + 1));
+            item.setTitle(title);
+            item.setLevel(inferTocLevel(title));
+            item.setPageNumber(targetPage);
+            item.setSource("toc_page");
+            item.setConfidence(0.86);
+            outline.add(item);
+        }
+        return outline;
+    }
+
+    private List<String> normalizeTocLines(String pageText) {
+        if (pageText == null || pageText.isBlank()) {
+            return List.of();
+        }
+        String normalized = pageText
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .replace('\u00A0', ' ');
+        List<String> lines = new ArrayList<>();
+        for (String rawLine : normalized.split("\n")) {
+            String line = rawLine.strip().replaceAll("\\s{2,}", " ");
+            if (!line.isBlank()) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
+    private boolean isTocHeadingLine(String line) {
+        return line != null && TOC_HEADING_PATTERN.matcher(line.strip()).matches();
+    }
+
+    private boolean isTocNoiseLine(String line) {
+        if (line == null || line.isBlank()) {
+            return true;
+        }
+        String normalized = line.strip();
+        if (isTocHeadingLine(normalized) || isPageNumberLine(normalized)) {
+            return true;
+        }
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        return lower.contains("copyright")
+                || lower.contains("all rights reserved")
+                || lower.contains("isbn")
+                || lower.contains("publisher")
+                || lower.contains("press")
+                || lower.contains("edition")
+                || lower.contains("微信公众号")
+                || lower.contains("qq群")
+                || lower.contains("qq:");
+    }
+
+    private boolean looksLikeWrappedTocTitle(String line) {
+        if (line == null || line.isBlank() || line.length() > 120) {
+            return false;
+        }
+        if (isTocNoiseLine(line) || line.matches(".*\\d{1,4}\\s*$")) {
+            return false;
+        }
+        return line.matches("(?i)^(chapter|part|unit)\\s+\\d+\\b.*")
+                || line.matches("^第[一二三四五六七八九十百千0-9]+[章节篇部].*")
+                || line.matches("^\\d+(?:\\.\\d+)+\\b.*")
+                || Character.isUpperCase(line.codePointAt(0));
+    }
+
+    private String mergeTocTitle(String left, String right) {
+        String first = left == null ? "" : left.strip();
+        String second = right == null ? "" : right.strip();
+        if (first.isBlank()) {
+            return second;
+        }
+        if (second.isBlank()) {
+            return first;
+        }
+        return first + " " + second;
+    }
+
+    private String cleanTocTitle(String title) {
+        if (title == null) {
+            return "";
+        }
+        return title
+                .replaceAll("[.·•…]{2,}", " ")
+                .replaceAll("\\s{2,}", " ")
+                .strip();
+    }
+
+    private int parseTocTargetPage(String value, int pageCount) {
+        try {
+            int pageNumber = Integer.parseInt(value);
+            return pageNumber >= 1 && pageNumber <= pageCount ? pageNumber : 0;
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private boolean isValidTocTitle(String title) {
+        if (title == null || title.length() < 2 || title.length() > 160) {
+            return false;
+        }
+        String lower = title.toLowerCase(Locale.ROOT);
+        return !lower.contains("copyright")
+                && !lower.contains("publisher")
+                && !lower.contains("isbn")
+                && !lower.contains("press")
+                && !title.matches("^\\d+$");
+    }
+
+    private int inferTocLevel(String title) {
+        String normalized = title == null ? "" : title.strip();
+        Matcher numbered = NUMBERED_SECTION_PATTERN.matcher(normalized);
+        if (numbered.matches()) {
+            String sectionNumber = numbered.group(1);
+            int dots = (int) sectionNumber.chars().filter(ch -> ch == '.').count();
+            return Math.max(1, Math.min(6, dots + 1));
+        }
+        if (normalized.matches("(?i)^(chapter|part|unit)\\s+\\d+\\b.*")
+                || normalized.matches("^第[一二三四五六七八九十百千0-9]+[章节篇部].*")) {
+            return 1;
+        }
+        return 1;
     }
 
     List<String> splitIntoLearningBlocks(String pageText) {

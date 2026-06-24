@@ -2,6 +2,7 @@ import type { TranslationMode, TranslationRecord, TranslationSourceType } from '
 import type {
   TranslationDocumentBlockDto,
   TranslationDocumentElementDto,
+  TranslationDocumentOutlineItemDto,
   TranslationDocumentParseResponse,
 } from '../../api/translation'
 
@@ -38,6 +39,7 @@ export interface TranslationWorkspaceDraft extends TranslationRecord {
   ocrStatus?: string
   pageCount?: number
   warnings?: string[]
+  outline?: DocumentOutlineItem[]
 }
 
 export interface IntensiveReadingDocument {
@@ -51,9 +53,21 @@ export interface IntensiveReadingDocument {
   progress: number
   pdfPreviewUrl?: string
   pageCount?: number
+  outline: DocumentOutlineItem[]
   blocks: DocumentBlock[]
   insights: TranslationInsight[]
   assets: LearningAsset[]
+}
+
+export interface DocumentOutlineItem {
+  id: string
+  title: string
+  level: number
+  pageNumber: number
+  elementId?: string | null
+  bbox?: string | null
+  source?: string | null
+  confidence?: number | null
 }
 
 export interface DocumentBlock {
@@ -119,7 +133,22 @@ export interface ValidationResult {
   message?: string
 }
 
+export interface ResolveDocumentSelectionContextInput {
+  documentId: string
+  blocks: DocumentBlock[]
+  pageNumber: number
+  selectedText?: string | null
+  activeBlockId?: string | null
+}
+
+export interface SaveTranslationWorkspaceDraftResult {
+  compacted: boolean
+}
+
 const STORAGE_PREFIX = 'peai:translation-workspace:'
+const COMPACT_SOURCE_TEXT_LIMIT = 1800
+const COMPACT_SEGMENT_LIMIT = 8
+const COMPACT_SEGMENT_TEXT_LIMIT = 480
 
 export function validateNewTranslationInput(input: NewTranslationInput): ValidationResult {
   const hasFile = input.selectedFileName.trim().length > 0
@@ -183,6 +212,7 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
   const warningText = parsedDocument.warnings?.filter(Boolean).join('\n') ?? ''
   const sourceLabel = normalizeParsedSourceLabel(parsedDocument.sourceType, fileName)
   const fallbackText = warningText || '文档暂未解析出可展示的文本，请稍后重试或改用粘贴文本。'
+  const outline = buildDraftOutline(parsedDocument.outline ?? [], sourceItems)
 
   return {
     id: parsedDocument.documentId || `translation-${now.getTime()}`,
@@ -198,7 +228,7 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
     createdAt: now.toISOString(),
     fileName,
     sourceText: sourceText || fallbackText,
-    pdfPreviewUrl: input.pdfPreviewUrl,
+    pdfPreviewUrl: parsedDocument.fileUrl || input.pdfPreviewUrl,
     segments: sourceItems.length > 0
       ? sourceItems.map((block, index) => buildWorkspaceSegmentFromParsedItem(block, index))
       : buildWorkspaceSegments(fallbackText),
@@ -206,6 +236,7 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
     ocrStatus: parsedDocument.ocrStatus,
     pageCount: parsedDocument.pageCount,
     warnings: parsedDocument.warnings ?? [],
+    outline,
   }
 }
 
@@ -228,8 +259,20 @@ export function buildWorkspaceSegments(sourceText: string): TranslationWorkspace
   }))
 }
 
-export function saveTranslationWorkspaceDraft(storage: Storage, draft: TranslationWorkspaceDraft): void {
-  storage.setItem(`${STORAGE_PREFIX}${draft.id}`, JSON.stringify(draft))
+export function saveTranslationWorkspaceDraft(
+  storage: Storage,
+  draft: TranslationWorkspaceDraft,
+): SaveTranslationWorkspaceDraftResult {
+  const key = `${STORAGE_PREFIX}${draft.id}`
+  try {
+    storage.setItem(key, JSON.stringify(draft))
+    return { compacted: false }
+  } catch (error) {
+    if (!isStorageQuotaExceeded(error)) throw error
+  }
+
+  storage.setItem(key, JSON.stringify(compactWorkspaceDraftForStorage(draft)))
+  return { compacted: true }
 }
 
 export function loadTranslationWorkspaceDraft(storage: Storage, id: string): TranslationWorkspaceDraft | null {
@@ -269,6 +312,7 @@ export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft):
     bbox: segment.bbox ?? null,
     confidence: segment.confidence ?? null,
   }))
+  const outline = buildDocumentOutline(draft.outline ?? [], blocks)
 
   const insights = blocks.map((block, index) => buildInsight(block, index))
   const assets = insights.flatMap((insight) => [
@@ -295,6 +339,7 @@ export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft):
     progress: draft.progress,
     pdfPreviewUrl: draft.pdfPreviewUrl,
     pageCount: draft.pageCount,
+    outline,
     blocks,
     insights,
     assets,
@@ -315,6 +360,24 @@ export function buildDocumentSelectionContext(
     bbox: block.bbox ?? null,
     text,
   }
+}
+
+export function resolveDocumentSelectionContextFromText(
+  input: ResolveDocumentSelectionContextInput,
+): DocumentSelectionContext | null {
+  const pageNumber = input.pageNumber || 1
+  const pageBlocks = input.blocks.filter((block) => (block.pageNumber || 1) === pageNumber)
+  if (pageBlocks.length === 0) return null
+
+  const selectedText = input.selectedText?.trim() ?? ''
+  const activeBlock = pageBlocks.find((block) => block.id === input.activeBlockId || block.elementId === input.activeBlockId)
+  const selectedBlock = selectedText
+    ? findBestSelectionBlock(pageBlocks, selectedText)
+    : null
+  const block = selectedBlock ?? activeBlock ?? pageBlocks[0]
+  if (!block) return null
+
+  return buildDocumentSelectionContext(input.documentId, block, selectedText || null)
 }
 
 export function buildAssetStats(document: IntensiveReadingDocument): AssetStat[] {
@@ -378,6 +441,55 @@ export function buildAgentModeCapabilities(mode: IntensiveAgentMode): AgentModeC
     { id: 'phrases', title: '短语沉淀', description: '提取短语、生词和语法点。' },
     ...common,
   ]
+}
+
+function findBestSelectionBlock(blocks: DocumentBlock[], selectedText: string): DocumentBlock | null {
+  const normalizedSelection = normalizeComparableText(selectedText)
+  if (!normalizedSelection) return null
+
+  const exactMatch = blocks.find((block) => {
+    const normalizedBlock = normalizeComparableText(block.text)
+    return normalizedBlock.includes(normalizedSelection) || normalizedSelection.includes(normalizedBlock)
+  })
+  if (exactMatch) return exactMatch
+
+  let bestBlock: DocumentBlock | null = null
+  let bestScore = 0
+  for (const block of blocks) {
+    const score = selectionTokenOverlapScore(normalizedSelection, normalizeComparableText(block.text))
+    if (score > bestScore) {
+      bestScore = score
+      bestBlock = block
+    }
+  }
+  return bestScore >= 0.45 ? bestBlock : null
+}
+
+function normalizeComparableText(value: string | null | undefined): string {
+  return (value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/[‐‑‒–—]/g, '-')
+    .trim()
+    .toLowerCase()
+}
+
+function selectionTokenOverlapScore(selection: string, block: string): number {
+  const selectionTokens = tokenizeComparableText(selection)
+  const blockTokens = new Set(tokenizeComparableText(block))
+  if (selectionTokens.length === 0 || blockTokens.size === 0) return 0
+
+  let hits = 0
+  for (const token of selectionTokens) {
+    if (blockTokens.has(token)) hits += 1
+  }
+  return hits / selectionTokens.length
+}
+
+function tokenizeComparableText(value: string): string[] {
+  return value
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
 }
 
 function buildInsight(block: DocumentBlock, index: number): TranslationInsight {
@@ -467,6 +579,136 @@ function buildWorkspaceSegmentFromParsedItem(
     bbox: element.bbox ?? null,
     confidence: block.confidence ?? null,
   }
+}
+
+function buildDraftOutline(
+  outline: TranslationDocumentOutlineItemDto[],
+  sourceItems: Array<TranslationDocumentBlockDto | TranslationDocumentElementDto>,
+): DocumentOutlineItem[] {
+  const normalized = normalizeOutlineItems(outline)
+  if (normalized.length > 0) return normalized
+
+  return sourceItems
+    .filter((item) => isOutlineCandidate(item.type, item.text))
+    .map<DocumentOutlineItem>((item, index) => ({
+      id: `outline-${index + 1}`,
+      title: truncateOutlineTitle(item.text),
+      level: inferOutlineLevel(item.text, item.type),
+      pageNumber: item.pageNumber || 1,
+      elementId: item.id,
+      bbox: 'bbox' in item ? item.bbox ?? null : null,
+      source: 'derived_heading',
+      confidence: item.confidence ?? null,
+    }))
+}
+
+function buildDocumentOutline(outline: DocumentOutlineItem[], blocks: DocumentBlock[]): DocumentOutlineItem[] {
+  const normalized = normalizeOutlineItems(outline)
+  if (normalized.length > 0) return normalized
+
+  return blocks
+    .filter((block) => isOutlineCandidate(block.type, block.text))
+    .map<DocumentOutlineItem>((block, index) => ({
+      id: `outline-${index + 1}`,
+      title: truncateOutlineTitle(block.text),
+      level: inferOutlineLevel(block.text, block.type),
+      pageNumber: block.pageNumber || 1,
+      elementId: block.elementId || block.id,
+      bbox: block.bbox ?? null,
+      source: 'derived_heading',
+      confidence: block.confidence ?? null,
+    }))
+}
+
+function normalizeOutlineItems(
+  outline: Array<TranslationDocumentOutlineItemDto | DocumentOutlineItem>,
+): DocumentOutlineItem[] {
+  return outline
+    .map((item, index) => ({
+      id: item.id || `outline-${index + 1}`,
+      title: truncateOutlineTitle(item.title),
+      level: normalizeOutlineLevel(item.level),
+      pageNumber: item.pageNumber || 1,
+      elementId: item.elementId ?? null,
+      bbox: item.bbox ?? null,
+      source: item.source ?? null,
+      confidence: item.confidence ?? null,
+    }))
+    .filter((item) => item.title.length > 0)
+}
+
+function isOutlineCandidate(type: string | null | undefined, text: string | null | undefined): boolean {
+  const title = text?.trim() ?? ''
+  if (!title) return false
+  if (isHeadingType(type)) return true
+  if (title.replace(/\s+/g, '').length > 80) return false
+  return /^第[一二三四五六七八九十百千万0-9]+[章节篇部]/.test(title)
+    || /^chapter\s+\d+/i.test(title)
+    || /^unit\s+\d+/i.test(title)
+    || /^§?\d+(\.\d+){1,4}\s+.+/.test(title)
+}
+
+function isHeadingType(type: string | null | undefined): boolean {
+  return type === 'heading' || type === 'title'
+}
+
+function inferOutlineLevel(text: string | null | undefined, type: string | null | undefined): number {
+  const title = text?.trim() ?? ''
+  if (!title || type === 'title') return 1
+  if (
+    /^第[一二三四五六七八九十百千万0-9]+[章节篇部]/.test(title)
+    || /^chapter\s+\d+/i.test(title)
+    || /^unit\s+\d+/i.test(title)
+  ) {
+    return 1
+  }
+
+  if (/^§?\d+(\.\d+){1,4}/.test(title)) {
+    const numberPart = title.replace(/^§/, '').split(/\s+/)[0]
+    const level = numberPart.split('.').filter(Boolean).length
+    return normalizeOutlineLevel(level)
+  }
+
+  return 2
+}
+
+function normalizeOutlineLevel(level: number | null | undefined): number {
+  if (!Number.isFinite(level)) return 1
+  return Math.max(1, Math.min(6, Math.floor(Number(level))))
+}
+
+function truncateOutlineTitle(text: string | null | undefined): string {
+  const title = normalizeWhitespace(text ?? '').replace(/\s+/g, ' ').trim()
+  return title.length <= 80 ? title : `${title.slice(0, 80).trimEnd()}...`
+}
+
+function compactWorkspaceDraftForStorage(draft: TranslationWorkspaceDraft): TranslationWorkspaceDraft {
+  const compactWarning = '本地存储空间不足，仅保存文档索引；完整内容会在工作台从后端知识快照加载。'
+  return {
+    ...draft,
+    sourceText: truncateWithMarker(draft.sourceText, COMPACT_SOURCE_TEXT_LIMIT),
+    segments: draft.segments.slice(0, COMPACT_SEGMENT_LIMIT).map((segment) => ({
+      ...segment,
+      source: truncateWithMarker(segment.source, COMPACT_SEGMENT_TEXT_LIMIT),
+      translation: segment.translationStatus === 'translated'
+        ? truncateWithMarker(segment.translation, COMPACT_SEGMENT_TEXT_LIMIT)
+        : segment.translation,
+    })),
+    warnings: Array.from(new Set([...(draft.warnings ?? []), compactWarning])),
+  }
+}
+
+function truncateWithMarker(value: string, limit: number): string {
+  if (value.length <= limit) return value
+  return `${value.slice(0, limit).trimEnd()}\n\n[本地预览已截断，完整内容请从后端知识快照加载]`
+}
+
+function isStorageQuotaExceeded(error: unknown): boolean {
+  if (!(error instanceof DOMException)) return false
+  return error.name === 'QuotaExceededError'
+    || error.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+    || error.code === 22
+    || error.code === 1014
 }
 
 function splitSentences(text: string): string[] {

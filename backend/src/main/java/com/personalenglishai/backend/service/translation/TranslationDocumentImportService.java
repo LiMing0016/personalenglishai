@@ -12,17 +12,23 @@ import java.util.List;
 public class TranslationDocumentImportService {
     private final List<TranslationDocumentParser> parsers;
     private final DocumentParseOrchestrator parseOrchestrator;
+    private final TranslationDocumentKnowledgeStore knowledgeStore;
+    private final TranslationDocumentFileStorage fileStorage;
 
     public TranslationDocumentImportService(List<TranslationDocumentParser> parsers) {
-        this(parsers, null);
+        this(parsers, null, null, null);
     }
 
     @Autowired
     public TranslationDocumentImportService(
             List<TranslationDocumentParser> parsers,
-            DocumentParseOrchestrator parseOrchestrator) {
+            DocumentParseOrchestrator parseOrchestrator,
+            TranslationDocumentKnowledgeStore knowledgeStore,
+            TranslationDocumentFileStorage fileStorage) {
         this.parsers = parsers;
         this.parseOrchestrator = parseOrchestrator;
+        this.knowledgeStore = knowledgeStore;
+        this.fileStorage = fileStorage;
     }
 
     public TranslationDocumentParseResponse importDocument(UploadedTranslationDocument document) {
@@ -40,7 +46,7 @@ public class TranslationDocumentImportService {
                     document.getParseMode(),
                     document.getMode()
             ));
-            return TranslationDocumentKnowledgePipeline.enrich(response);
+            return completeImport(document, TranslationDocumentKnowledgePipeline.enrich(response));
         }
 
         TranslationDocumentParser parser = parsers.stream()
@@ -50,7 +56,25 @@ public class TranslationDocumentImportService {
                         ErrorCode.COMMON_VALIDATION_ERROR,
                         "暂不支持该文件格式，请上传 PDF、DOCX、TXT 或 MD"
                 ));
-        return TranslationDocumentKnowledgePipeline.enrich(parser.parse(document));
+        return completeImport(document, TranslationDocumentKnowledgePipeline.enrich(parser.parse(document)));
+    }
+
+    private TranslationDocumentParseResponse completeImport(
+            UploadedTranslationDocument document,
+            TranslationDocumentParseResponse response) {
+        if (response == null) {
+            return null;
+        }
+        if (isPdf(document) && fileStorage != null && !isBlank(response.getDocumentId())) {
+            StoredTranslationDocumentFile storedFile = fileStorage.save(response.getDocumentId(), document);
+            response.setFileUrl(storedFile.getFileUrl());
+            response.setFilePersisted(true);
+            response.setStorageProvider(storedFile.getStorageProvider());
+        }
+        if (knowledgeStore != null) {
+            knowledgeStore.save(response);
+        }
+        return response;
     }
 
     private void validate(UploadedTranslationDocument document) {
@@ -62,5 +86,9 @@ public class TranslationDocumentImportService {
     private boolean isPdf(UploadedTranslationDocument document) {
         return TranslationDocumentFileTypes.hasExtension(document, "pdf")
                 || TranslationDocumentFileTypes.contentTypeContains(document, "pdf");
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

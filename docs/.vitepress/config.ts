@@ -47,6 +47,7 @@ export default defineConfig({
       { text: '首页', link: '/' },
       { text: '学习', link: '/learning/' },
       { text: '产品', link: '/product/' },
+      { text: '进度', link: '/progress/' },
       { text: '架构', link: '/architecture/' },
       { text: '接口', link: '/api/' },
       { text: 'iPadOS 联调', link: '/ios-integration/README' },
@@ -86,6 +87,15 @@ export default defineConfig({
                 { text: '作文资产学习价值提取预览', link: '/product/翻译页面/作文资产DeepSeek学习价值提取预览方案' }
               ]
             }
+          ]
+        }
+      ],
+      '/progress/': [
+        {
+          text: '进度',
+          items: [
+            { text: '进度总览', link: '/progress/' },
+            { text: '学习材料高质量解析', link: '/progress/学习材料高质量解析进度' }
           ]
         }
       ],

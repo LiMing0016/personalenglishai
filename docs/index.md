@@ -21,6 +21,7 @@ related_docs:
 ## 从这里开始
 
 - [产品](./product/)：当前产品范围、用户规则和业务说明。
+- [进度](./progress/)：当前主线工期、阶段状态和验收推进。
 - [架构](./architecture/)：前端、后端、Python agent 服务和支撑系统如何协作。
 - [接口](./api/)：当前前后端接口契约。
 - [iPadOS 联调](./ios-integration/README)：iPad 端和后端联调的接口事实来源、Docker 启动、验收和排障。

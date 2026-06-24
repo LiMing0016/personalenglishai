@@ -3,6 +3,7 @@ package com.personalenglishai.backend.service.translation;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentBlockDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentAssetDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentElementDto;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentOutlineItemDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentQualityDto;
 import com.personalenglishai.backend.dto.translation.TranslationKnowledgeChunkDto;
@@ -11,6 +12,7 @@ import com.personalenglishai.backend.dto.translation.TranslationParseJobDto;
 import com.personalenglishai.backend.dto.translation.TranslationParseDiagnosisDto;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,7 +44,9 @@ final class TranslationDocumentKnowledgePipeline {
         TranslationDocumentQualityDto quality = scoreDocument(diagnosis, elements, chunks);
         diagnosis.setFallbackRecommended(quality.isFallbackRecommended());
 
+        List<TranslationDocumentOutlineItemDto> explicitOutline = cleanOutline(response.getOutline());
         response.setElements(elements);
+        response.setOutline(explicitOutline.isEmpty() ? buildOutline(elements) : explicitOutline);
         response.setKnowledgeChunks(chunks);
         response.setAssets(buildAssets(response, elements, diagnosis, provider));
         response.setDiagnosis(diagnosis);
@@ -57,7 +61,7 @@ final class TranslationDocumentKnowledgePipeline {
         int order = 1;
         for (TranslationDocumentBlockDto block : blocks == null ? List.<TranslationDocumentBlockDto>of() : blocks) {
             String text = cleanText(block.getText());
-            if (text.isBlank() || isPageNumberLine(text)) {
+            if (text.isBlank() || isPageNumberLine(text) || isLowQualityElementText(text)) {
                 continue;
             }
             block.setText(text);
@@ -74,9 +78,10 @@ final class TranslationDocumentKnowledgePipeline {
         List<TranslationDocumentElementDto> elements = new ArrayList<>();
         for (TranslationDocumentBlockDto block : blocks) {
             TranslationDocumentElementDto element = new TranslationDocumentElementDto();
-            element.setId(block.getId());
+            int elementOrder = elements.size() + 1;
+            element.setId(nonBlank(block.getId(), stableElementId(block.getPageNumber(), elementOrder)));
             element.setType(normalizeType(block.getType()));
-            element.setOrder(block.getOrder());
+            element.setOrder(elementOrder);
             element.setPageNumber(block.getPageNumber());
             element.setText(block.getText());
             element.setProvider(provider);
@@ -84,7 +89,7 @@ final class TranslationDocumentKnowledgePipeline {
             element.setRecognitionStatus("SUCCEEDED".equals(parseStatus) ? "READY" : "NEEDS_OCR");
             element.setQualityScore(scoreElement(block.getText(), block.getPageNumber()));
             Map<String, Object> metadata = new LinkedHashMap<>();
-            metadata.put("source", "translation_document_parse");
+            metadata.put("source", resolveElementSource(provider));
             metadata.put("originalType", block.getType());
             element.setMetadata(metadata);
             elements.add(element);
@@ -97,17 +102,24 @@ final class TranslationDocumentKnowledgePipeline {
             String provider,
             String parseStatus) {
         List<TranslationDocumentElementDto> elements = new ArrayList<>();
-        int order = 1;
-        for (TranslationDocumentElementDto element : sourceElements == null ? List.<TranslationDocumentElementDto>of() : sourceElements) {
+        List<TranslationDocumentElementDto> sortedSourceElements = new ArrayList<>(
+                sourceElements == null ? List.<TranslationDocumentElementDto>of() : sourceElements
+        );
+        sortedSourceElements.sort(Comparator
+                .comparingInt(TranslationDocumentKnowledgePipeline::elementPageSortKey)
+                .thenComparingInt(TranslationDocumentKnowledgePipeline::elementOrderSortKey));
+        for (TranslationDocumentElementDto element : sortedSourceElements) {
             String text = cleanText(element.getText());
-            if (text.isBlank() || isPageNumberLine(text)) {
+            if (text.isBlank() || isPageNumberLine(text) || isLowQualityElementText(text)) {
                 continue;
             }
+            int elementOrder = elements.size() + 1;
+            String originalType = element.getType();
             if (element.getId() == null || element.getId().isBlank()) {
-                element.setId("e" + order);
+                element.setId(stableElementId(element.getPageNumber(), elementOrder));
             }
-            element.setType(normalizeType(element.getType()));
-            element.setOrder(order++);
+            element.setType(normalizeType(originalType));
+            element.setOrder(elementOrder);
             element.setText(text);
             if (element.getProvider() == null || element.getProvider().isBlank()) {
                 element.setProvider(provider);
@@ -119,11 +131,20 @@ final class TranslationDocumentKnowledgePipeline {
                 element.setQualityScore(scoreElement(text, element.getPageNumber()));
             }
             Map<String, Object> metadata = new LinkedHashMap<>(element.getMetadata());
-            metadata.putIfAbsent("source", "translation_document_parse");
+            metadata.putIfAbsent("source", resolveElementSource(element.getProvider()));
+            metadata.putIfAbsent("originalType", originalType);
             element.setMetadata(metadata);
             elements.add(element);
         }
         return elements;
+    }
+
+    private static int elementPageSortKey(TranslationDocumentElementDto element) {
+        return element != null && element.getPageNumber() > 0 ? element.getPageNumber() : Integer.MAX_VALUE;
+    }
+
+    private static int elementOrderSortKey(TranslationDocumentElementDto element) {
+        return element != null && element.getOrder() > 0 ? element.getOrder() : Integer.MAX_VALUE;
     }
 
     private static List<TranslationKnowledgeChunkDto> buildChunks(String documentId, List<TranslationDocumentElementDto> elements) {
@@ -159,6 +180,56 @@ final class TranslationDocumentKnowledgePipeline {
         }
         linkNeighborChunks(chunks);
         return chunks;
+    }
+
+    private static List<TranslationDocumentOutlineItemDto> buildOutline(List<TranslationDocumentElementDto> elements) {
+        List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        int order = 1;
+        for (TranslationDocumentElementDto element : elements) {
+            if (!isOutlineCandidate(element)) {
+                continue;
+            }
+            String title = summarizeSection(element.getText());
+            String key = element.getPageNumber() + "\n" + title;
+            if (title.isBlank() || seen.contains(key)) {
+                continue;
+            }
+            seen.add(key);
+
+            TranslationDocumentOutlineItemDto item = new TranslationDocumentOutlineItemDto();
+            item.setId("outline-" + order++);
+            item.setTitle(title);
+            item.setLevel(inferOutlineLevel(title, element.getType()));
+            item.setPageNumber(element.getPageNumber());
+            item.setElementId(element.getId());
+            item.setBbox(element.getBbox());
+            item.setSource("rule_heading");
+            item.setConfidence(element.getConfidence());
+            outline.add(item);
+        }
+        return outline;
+    }
+
+    private static List<TranslationDocumentOutlineItemDto> cleanOutline(List<TranslationDocumentOutlineItemDto> sourceOutline) {
+        List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
+        int order = 1;
+        for (TranslationDocumentOutlineItemDto item : sourceOutline == null ? List.<TranslationDocumentOutlineItemDto>of() : sourceOutline) {
+            if (item == null || item.getTitle() == null || item.getTitle().isBlank() || item.getPageNumber() <= 0) {
+                continue;
+            }
+            item.setTitle(summarizeSection(item.getTitle()));
+            item.setLevel(Math.max(1, Math.min(6, item.getLevel() <= 0 ? 1 : item.getLevel())));
+            if (item.getId() == null || item.getId().isBlank()) {
+                item.setId("outline-" + order);
+            }
+            if (item.getSource() == null || item.getSource().isBlank()) {
+                item.setSource("document_outline");
+            }
+            outline.add(item);
+            order++;
+        }
+        return outline;
     }
 
     private static TranslationKnowledgeChunkDto toChunk(
@@ -399,11 +470,96 @@ final class TranslationDocumentKnowledgePipeline {
         if (type == null || type.isBlank()) {
             return "paragraph";
         }
-        return type;
+        String normalized = type.strip().toLowerCase(Locale.ROOT).replace('-', '_');
+        return switch (normalized) {
+            case "text", "body", "normal", "plain_text", "block", "paragraph_text" -> "paragraph";
+            case "section", "section_header", "header", "chapter", "subtitle" -> "heading";
+            case "document_title", "main_title" -> "title";
+            case "bullet", "ordered_list", "unordered_list" -> "list";
+            case "figure", "picture", "diagram", "chart" -> "image";
+            case "equation", "math" -> "formula";
+            case "paragraph", "heading", "title", "list", "table", "image", "formula", "caption" -> normalized;
+            default -> "paragraph";
+        };
+    }
+
+    private static String resolveElementSource(String provider) {
+        String normalized = provider == null ? "" : provider.strip().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "pdfbox" -> "pdf_text_layer";
+            case "paddle_ocr" -> "paddle_ocr";
+            case "apache-poi" -> "docx_text_layer";
+            case "markdown" -> "markdown_text";
+            case "plain-text" -> "plain_text";
+            default -> normalized.isBlank() ? "document_parse" : normalized;
+        };
+    }
+
+    private static String stableElementId(int pageNumber, int order) {
+        String pagePart = pageNumber > 0 ? "p" + pageNumber : "p0";
+        return pagePart + "-e" + order;
+    }
+
+    private static String nonBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static boolean isLowQualityElementText(String text) {
+        if (text == null || text.isBlank()) {
+            return true;
+        }
+        String compact = text.replaceAll("\\s+", "");
+        if (compact.isBlank()) {
+            return true;
+        }
+        int suspicious = countGarbled(compact);
+        if (suspicious == 0) {
+            return false;
+        }
+        return suspicious / (double) compact.length() > 0.2 || compact.length() <= 8;
     }
 
     private static boolean isHeading(TranslationDocumentElementDto element) {
         return "heading".equals(element.getType()) || "title".equals(element.getType());
+    }
+
+    private static boolean isOutlineCandidate(TranslationDocumentElementDto element) {
+        if (element == null || element.getText() == null || element.getText().isBlank()) {
+            return false;
+        }
+        if (isHeading(element)) {
+            return true;
+        }
+        String text = element.getText().strip();
+        return compactLength(text) <= 80 && (
+                text.matches("^第[一二三四五六七八九十百千万0-9]+[章节篇部].*")
+                        || text.matches("(?i)^chapter\\s+\\d+.*")
+                        || text.matches("(?i)^unit\\s+\\d+.*")
+                        || text.matches("^§?\\d+(\\.\\d+){1,4}\\s+.+")
+        );
+    }
+
+    private static int inferOutlineLevel(String title, String type) {
+        if (title == null || title.isBlank() || "title".equals(type)) {
+            return 1;
+        }
+        String text = title.strip();
+        if (text.matches("^第[一二三四五六七八九十百千万0-9]+[章节篇部].*")
+                || text.matches("(?i)^chapter\\s+\\d+.*")
+                || text.matches("(?i)^unit\\s+\\d+.*")) {
+            return 1;
+        }
+        if (text.matches("^§?\\d+(\\.\\d+){1,4}.*")) {
+            String numberPart = text.replaceFirst("^§?", "").split("\\s+")[0];
+            int dots = 0;
+            for (int index = 0; index < numberPart.length(); index++) {
+                if (numberPart.charAt(index) == '.') {
+                    dots++;
+                }
+            }
+            return Math.min(6, dots + 1);
+        }
+        return 2;
     }
 
     private static String resolveChunkType(List<TranslationDocumentElementDto> elements) {

@@ -2,8 +2,17 @@ package com.personalenglishai.backend.service.translation;
 
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageDestination;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageXYZDestination;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
+import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,6 +76,51 @@ class TranslationDocumentParseServiceTest {
         assertThat(response.getParseJob().getProvider()).isEqualTo("pdfbox");
         assertThat(response.getParseJob().getStatus()).isEqualTo("SUCCEEDED");
         assertThat(response.getLanguageProfile().getPrimaryLanguage()).isEqualTo("en");
+    }
+
+    @Test
+    void parsesPdfBookmarksIntoExplicitOutlineItems() throws Exception {
+        byte[] pdf = bookmarkedPdf();
+
+        TranslationDocumentParseResponse response = service.parsePdf("bookmarked.pdf", pdf);
+
+        assertThat(response.getParseStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getOutline())
+                .extracting("title")
+                .containsExactly("Chapter 1 Algorithms", "1.1 Growth of Functions", "Chapter 2 Graphs");
+        assertThat(response.getOutline())
+                .extracting("level")
+                .containsExactly(1, 2, 1);
+        assertThat(response.getOutline())
+                .extracting("pageNumber")
+                .containsExactly(1, 1, 2);
+        assertThat(response.getOutline())
+                .extracting("source")
+                .containsOnly("pdf_outline");
+    }
+
+    @Test
+    void recognizesTableOfContentsPageWhenPdfHasNoBookmarks() throws Exception {
+        byte[] pdf = tableOfContentsPdf();
+
+        TranslationDocumentParseResponse response = service.parsePdf("toc.pdf", pdf);
+
+        assertThat(response.getParseStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getOutline())
+                .extracting("title")
+                .containsExactly(
+                        "Chapter 1 Foundations",
+                        "1.1 Algorithms and Models",
+                        "Chapter 2 Source Grounded Answers");
+        assertThat(response.getOutline())
+                .extracting("level")
+                .containsExactly(1, 2, 1);
+        assertThat(response.getOutline())
+                .extracting("pageNumber")
+                .containsExactly(3, 4, 5);
+        assertThat(response.getOutline())
+                .extracting("source")
+                .containsOnly("toc_page");
     }
 
     @Test
@@ -218,6 +272,109 @@ class TranslationDocumentParseServiceTest {
                 .append(xrefOffset).append("\n")
                 .append("%%EOF");
         return pdf.toString().getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private static byte[] bookmarkedPdf() throws Exception {
+        try (PDDocument document = new PDDocument();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            PDPage page1 = new PDPage();
+            PDPage page2 = new PDPage();
+            document.addPage(page1);
+            document.addPage(page2);
+            writePageText(document, page1, "Chapter 1 Algorithms",
+                    "Algorithm analysis helps students connect definitions with examples and source evidence.");
+            writePageText(document, page2, "Chapter 2 Graphs",
+                    "Graph traversal material should stay tied to its page and source bookmark.");
+
+            PDDocumentOutline outline = new PDDocumentOutline();
+            document.getDocumentCatalog().setDocumentOutline(outline);
+            PDOutlineItem chapter1 = outlineItem("Chapter 1 Algorithms", pageDestination(page1));
+            PDOutlineItem section11 = outlineItem("1.1 Growth of Functions", pageDestination(page1));
+            PDOutlineItem chapter2 = outlineItem("Chapter 2 Graphs", pageDestination(page2));
+            chapter1.addLast(section11);
+            outline.addLast(chapter1);
+            outline.addLast(chapter2);
+            chapter1.openNode();
+            outline.openNode();
+
+            document.save(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] tableOfContentsPdf() throws Exception {
+        try (PDDocument document = new PDDocument();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            PDPage contents = new PDPage();
+            PDPage preface = new PDPage();
+            PDPage chapter1 = new PDPage();
+            PDPage section11 = new PDPage();
+            PDPage chapter2 = new PDPage();
+            document.addPage(contents);
+            document.addPage(preface);
+            document.addPage(chapter1);
+            document.addPage(section11);
+            document.addPage(chapter2);
+
+            writePageLines(document, contents,
+                    "Contents",
+                    "Copyright and publisher information should not become a chapter",
+                    "Chapter 1 Foundations ........ 3",
+                    "1.1 Algorithms and Models .... 4",
+                    "Chapter 2 Source Grounded",
+                    "Answers ...................... 5");
+            writePageText(document, preface, "Preface",
+                    "This preface gives enough ordinary text for the parser to consider the PDF text layer usable.");
+            writePageText(document, chapter1, "Chapter 1 Foundations",
+                    "Foundational concepts explain why learning material must keep answers tied to source pages.");
+            writePageText(document, section11, "1.1 Algorithms and Models",
+                    "Algorithm sections need stable references so the agent can answer from selected source content.");
+            writePageText(document, chapter2, "Chapter 2 Source Grounded Answers",
+                    "Grounded answers should cite the page and section that supplied the explanation.");
+
+            document.save(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static void writePageText(PDDocument document, PDPage page, String heading, String body) throws Exception {
+        try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+            content.beginText();
+            content.setFont(PDType1Font.HELVETICA_BOLD, 14);
+            content.newLineAtOffset(50, 740);
+            content.showText(heading);
+            content.newLineAtOffset(0, -24);
+            content.setFont(PDType1Font.HELVETICA, 12);
+            content.showText(body);
+            content.endText();
+        }
+    }
+
+    private static void writePageLines(PDDocument document, PDPage page, String... lines) throws Exception {
+        try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+            content.beginText();
+            content.setFont(PDType1Font.HELVETICA, 12);
+            content.newLineAtOffset(50, 740);
+            content.setLeading(18);
+            for (String line : lines) {
+                content.showText(line);
+                content.newLine();
+            }
+            content.endText();
+        }
+    }
+
+    private static PDOutlineItem outlineItem(String title, PDPageDestination destination) {
+        PDOutlineItem item = new PDOutlineItem();
+        item.setTitle(title);
+        item.setDestination(destination);
+        return item;
+    }
+
+    private static PDPageDestination pageDestination(PDPage page) {
+        PDPageXYZDestination destination = new PDPageXYZDestination();
+        destination.setPage(page);
+        return destination;
     }
 
     private static String buildTextStream(String text) {

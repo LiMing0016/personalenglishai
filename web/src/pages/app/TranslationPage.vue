@@ -460,9 +460,10 @@ async function buildDraftFromCreateForm() {
   }
 
   const parsedDocument = await importTranslationDocument(file, createMode.value, parseMode.value)
-  const pdfPreviewUrl = file.name.toLowerCase().endsWith('.pdf') && typeof URL !== 'undefined'
+  const fallbackPdfPreviewUrl = file.name.toLowerCase().endsWith('.pdf') && typeof URL !== 'undefined'
     ? URL.createObjectURL(file)
     : undefined
+  const pdfPreviewUrl = parsedDocument.fileUrl || fallbackPdfPreviewUrl
   return createTranslationWorkspaceDraftFromParsedDocument({ mode: createMode.value, pdfPreviewUrl }, parsedDocument)
 }
 

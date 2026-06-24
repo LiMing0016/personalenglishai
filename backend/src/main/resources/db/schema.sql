@@ -1161,6 +1161,21 @@ CREATE TABLE IF NOT EXISTS translation_document_parse_snapshot (
     KEY idx_translation_parse_snapshot_status (parse_status, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='translation document parse snapshots';
 
+CREATE TABLE IF NOT EXISTS translation_document_file (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    document_id VARCHAR(96) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(128) NOT NULL,
+    file_size BIGINT NOT NULL DEFAULT 0,
+    sha256 CHAR(64) NOT NULL,
+    storage_provider VARCHAR(32) NOT NULL DEFAULT 'local',
+    storage_key VARCHAR(512) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_translation_document_file_document (document_id),
+    KEY idx_translation_document_file_sha256 (sha256)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='translation document original file metadata';
+
 CREATE TABLE IF NOT EXISTS translation_document_element (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     document_id VARCHAR(96) NOT NULL,

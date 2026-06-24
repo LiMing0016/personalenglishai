@@ -30,6 +30,30 @@ for (const responseField of ['elements', 'knowledgeChunks', 'diagnosis', 'qualit
     `translation import API should expose ${responseField} from the document knowledge pipeline`,
   )
 }
+for (const responseField of ['fileUrl', 'filePersisted', 'storageProvider']) {
+  assert.ok(
+    apiSource.includes(responseField),
+    `translation import API should expose persisted source file metadata field ${responseField}`,
+  )
+}
+assert.ok(
+  apiSource.includes('getTranslationDocumentFileUrl') &&
+  apiSource.includes("`/api/translation/documents/${documentId}/file`"),
+  'translation API should expose the stable backend PDF file URL by documentId',
+)
+for (const apiFeature of [
+  'TranslationDocumentAgentAnswerRequest',
+  'TranslationDocumentAgentAnswerResponse',
+  'TranslationSourceCitationDto',
+  'answerTranslationDocumentQuestion',
+  'http.post<TranslationDocumentAgentAnswerResponse>',
+  "`/translation/documents/${documentId}/agent-answer`",
+]) {
+  assert.ok(
+    apiSource.includes(apiFeature),
+    `translation API should expose source-grounded Agent answer feature ${apiFeature}`,
+  )
+}
 assert.ok(
   pageSource.includes('标准解析') && pageSource.includes('高质量解析'),
   'new translation panel should let PDF users choose parse quality',

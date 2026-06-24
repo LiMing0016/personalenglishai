@@ -35,44 +35,49 @@
           v-if="isOutlineCollapsed"
           type="button"
           class="workspace-drawer-rail workspace-drawer-rail--outline"
-          aria-label="展开左侧 PDF 大纲"
-          title="展开左侧 PDF 大纲"
+          aria-label="展开左侧目录导航"
+          title="展开左侧目录导航"
           @click="toggleOutlineDrawer">
-          大纲
+          目录
         </button>
 
         <div class="outline-header">
           <div>
-            <h2 id="outline-title">PDF 大纲</h2>
+            <h2 id="outline-title">目录导航</h2>
           </div>
           <button
             type="button"
             class="panel-drawer-toggle"
-            aria-label="收起左侧 PDF 大纲"
-            title="收起左侧 PDF 大纲"
+            aria-label="收起左侧目录导航"
+            title="收起左侧目录导航"
             @click="toggleOutlineDrawer">
             收起
           </button>
         </div>
 
-        <nav class="outline-list" aria-label="PDF 页码与大纲">
-          <section v-for="group in outlineGroups" :key="group.page" class="outline-page-group">
+        <nav class="outline-list" aria-label="PDF 页码与目录">
+          <section v-if="outlineItems.length > 0" class="outline-page-group">
             <button
-              type="button"
-              class="outline-page-button"
-              :class="{ active: group.page === currentPdfPage }"
-              @click="selectOutlinePage(group.page)">
-              <span>Page {{ group.page }}</span>
-            </button>
-
-            <button
-              v-for="block in group.blocks"
-              :key="block.id"
+              v-for="item in outlineItems"
+              :key="item.id"
               type="button"
               class="outline-block-button"
-              :class="{ active: block.id === activeBlockId }"
-              @click="selectOutlineBlock(block.id, group.page)">
-              <span>{{ block.type === 'heading' || block.type === 'title' ? block.text : `P${block.order}` }}</span>
+              :class="[`outline-block-button--level-${item.level}`, { active: item.elementId === activeBlock?.elementId || item.elementId === activeBlockId }]"
+              @click="selectOutlineItem(item)">
+              <span>{{ item.title }}</span>
+              <small>Page {{ item.pageNumber }}</small>
+            </button>
+          </section>
+
+          <section v-else class="outline-page-group">
+            <button
+              v-for="page in outlinePageItems"
+              :key="page"
+              type="button"
+              class="outline-page-button"
+              :class="{ active: page === currentPdfPage }"
+              @click="selectOutlinePage(page)">
+              <span>Page {{ page }}</span>
             </button>
           </section>
         </nav>
@@ -82,8 +87,8 @@
         v-if="!isOutlineCollapsed"
         type="button"
         class="workspace-resizer workspace-resizer--outline"
-        aria-label="调整左侧大纲宽度"
-        title="拖动调整左侧大纲宽度"
+        aria-label="调整左侧目录宽度"
+        title="拖动调整左侧目录宽度"
         @pointerdown="startWorkspaceResize('outline', $event)"
       />
 
@@ -139,6 +144,7 @@
           :active-block-id="activeBlockId"
           :page-count="readingDocument.pageCount"
           :target-page="targetPdfPage"
+          :source-highlight="pdfSourceHighlight"
           @select-block="selectBlock"
           @ask-agent="askAgent"
           @selection-change="handlePdfSelectionChange"
@@ -189,6 +195,7 @@
           <strong>{{ selectedPdfText ? '当前选区' : '当前页 / 当前段落' }}</strong>
           <small v-if="selectedPdfContext">
             Page {{ selectedPdfContext.pageNumber }} · {{ selectedPdfContext.elementId }}
+            <template v-if="selectedPdfSelectionType === 'region'"> · region</template>
           </small>
           <blockquote>{{ agentContextText }}</blockquote>
         </section>
@@ -234,6 +241,15 @@
           <article v-for="message in agentMessages" :key="message.id" :class="`message message--${message.role}`">
             <strong>{{ message.role === 'assistant' ? 'Agent' : '我' }}</strong>
             <p>{{ message.content }}</p>
+            <div v-if="message.citations?.length" class="message-citations" aria-label="引用来源">
+              <button
+                v-for="citation in message.citations"
+                :key="`${citation.chunkId}-${citation.elementId || citation.pageNumber}`"
+                type="button"
+                @click="jumpToCitation(citation)">
+                引用 Page {{ citation.pageNumber || '?' }} · {{ citation.elementId || citation.chunkId }}
+              </button>
+            </div>
           </article>
         </section>
 
@@ -246,7 +262,9 @@
           <div class="command-actions">
             <button type="button" @click="saveAsset('note')">保存笔记</button>
             <button type="button" @click="saveAsset('phrase')">加入短语库</button>
-            <button type="submit" class="primary-action">发送</button>
+            <button type="submit" class="primary-action" :disabled="agentAnswerLoading">
+              {{ agentAnswerLoading ? '检索中...' : '发送' }}
+            </button>
           </div>
         </form>
       </aside>
@@ -276,7 +294,12 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getTranslationDocumentKnowledge } from '@/api/translation'
+import {
+  answerTranslationDocumentQuestion,
+  getTranslationDocumentFileUrl,
+  getTranslationDocumentKnowledge,
+  type TranslationSourceCitationDto,
+} from '@/api/translation'
 import PdfLearningCanvas from '@/components/translation/PdfLearningCanvas.vue'
 import { showToast } from '@/utils/toast'
 import type { TranslationSourceType } from './translationHubData'
@@ -286,7 +309,7 @@ import {
   buildIntensiveReadingDocument,
   createTranslationWorkspaceDraftFromParsedDocument,
   loadTranslationWorkspaceDraft,
-  type DocumentBlock,
+  type DocumentOutlineItem,
   type DocumentSelectionContext,
   type IntensiveReadingDocument,
   type IntensiveAgentMode,
@@ -302,12 +325,10 @@ interface LocalAgentMessage {
   role: AgentMessageRole
   content: string
   sourceContext?: DocumentSelectionContext | null
+  citations?: TranslationSourceCitationDto[]
 }
 
-interface OutlineGroup {
-  page: number
-  blocks: DocumentBlock[]
-}
+type PdfSelectionType = 'text' | 'region'
 
 interface PdfSelectionPayload {
   text: string
@@ -316,6 +337,14 @@ interface PdfSelectionPayload {
   blockId: string | null
   elementId: string | null
   bbox: string | null
+  selectionType?: PdfSelectionType
+}
+
+interface PdfSourceHighlight {
+  pageNumber: number
+  bbox: string | null
+  label: string
+  text?: string | null
 }
 
 const route = useRoute()
@@ -325,6 +354,8 @@ const activeBlockId = ref('')
 const documentView = ref<'text' | 'pdf-canvas'>('text')
 const selectedPdfText = ref('')
 const selectedPdfContext = ref<DocumentSelectionContext | null>(null)
+const selectedPdfSelectionType = ref<PdfSelectionType | null>(null)
+const pdfSourceHighlight = ref<PdfSourceHighlight | null>(null)
 const targetPdfPage = ref(1)
 const currentPdfPage = ref(1)
 const pageNotes = ref<Record<number, string>>({})
@@ -338,6 +369,7 @@ const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
 const isOutlineCollapsed = ref(false)
 const isAgentCollapsed = ref(false)
 const agentPrompt = ref('')
+const agentAnswerLoading = ref(false)
 const agentMessages = ref<LocalAgentMessage[]>([
   {
     id: 'agent-welcome',
@@ -387,19 +419,18 @@ const agentContextText = computed(() => {
   return selectedPdfContext.value?.text || selectedPdfText.value || activeBlock.value?.text || ''
 })
 
-const outlineGroups = computed<OutlineGroup[]>(() => {
+const outlineItems = computed<DocumentOutlineItem[]>(() => {
+  return readingDocument.value?.outline ?? []
+})
+
+const outlinePageItems = computed<number[]>(() => {
   const document = readingDocument.value
   if (!document) return []
-  const groups = new Map<number, DocumentBlock[]>()
+  const pages = new Set<number>()
   for (const block of document.blocks) {
-    const page = block.pageNumber || 1
-    const existing = groups.get(page) ?? []
-    existing.push(block)
-    groups.set(page, existing)
+    pages.add(block.pageNumber || 1)
   }
-  return Array.from(groups.entries())
-    .sort(([left], [right]) => left - right)
-    .map(([page, blocks]) => ({ page, blocks }))
+  return Array.from(pages).sort((left, right) => left - right)
 })
 
 const pageNotesStorageKey = computed(() => {
@@ -452,7 +483,7 @@ async function restoreWorkspaceDocument(id: string) {
     const draft = createTranslationWorkspaceDraftFromParsedDocument(
       {
         mode: localDraft?.mode ?? restoreTranslationMode(),
-        pdfPreviewUrl: localDraft?.pdfPreviewUrl,
+        pdfPreviewUrl: resolvePersistedPdfPreviewUrl(id, persisted.fileUrl, localDraft?.pdfPreviewUrl),
       },
       persisted,
     )
@@ -462,7 +493,10 @@ async function restoreWorkspaceDocument(id: string) {
     const localDraft = loadLocalWorkspaceDraft(id)
     if (localDraft) {
       activeMode.value = localDraft.mode
-      readingDocument.value = buildIntensiveReadingDocument(localDraft)
+      readingDocument.value = buildIntensiveReadingDocument({
+        ...localDraft,
+        pdfPreviewUrl: localDraft.pdfPreviewUrl || getTranslationDocumentFileUrl(id),
+      })
       workspaceLoadError.value = ''
       return
     }
@@ -470,6 +504,14 @@ async function restoreWorkspaceDocument(id: string) {
   } finally {
     workspaceLoading.value = false
   }
+}
+
+function resolvePersistedPdfPreviewUrl(
+  documentId: string,
+  persistedFileUrl?: string | null,
+  localFileUrl?: string,
+) {
+  return persistedFileUrl || localFileUrl || getTranslationDocumentFileUrl(documentId)
 }
 
 function loadLocalWorkspaceDraft(id: string): TranslationWorkspaceDraft | null {
@@ -490,8 +532,22 @@ function selectOutlinePage(page: number) {
   currentPdfPage.value = page
   targetPdfPage.value = page
   clearPdfSelection()
-  const firstBlock = outlineGroups.value.find((group) => group.page === page)?.blocks[0]
+  const firstBlock = readingDocument.value?.blocks.find((block) => (block.pageNumber || 1) === page)
   if (firstBlock) activeBlockId.value = firstBlock.id
+}
+
+function selectOutlineItem(item: DocumentOutlineItem) {
+  const page = item.pageNumber || 1
+  const document = readingDocument.value
+  const targetBlock = document?.blocks.find((block) => {
+    return block.id === item.elementId || block.elementId === item.elementId
+  }) ?? document?.blocks.find((block) => (block.pageNumber || 1) === page)
+  if (targetBlock) {
+    activeBlockId.value = targetBlock.id
+  }
+  targetPdfPage.value = page
+  currentPdfPage.value = page
+  clearPdfSelection()
 }
 
 function selectOutlineBlock(blockId: string, page: number) {
@@ -502,15 +558,21 @@ function selectOutlineBlock(blockId: string, page: number) {
 }
 
 function handlePdfSelectionChange(payload: PdfSelectionPayload) {
-  selectedPdfText.value = payload.text
-  selectedPdfContext.value = payload.text.trim() && payload.elementId
+  const selectionType = payload.selectionType ?? 'text'
+  const displayText = payload.text.trim() || (payload.selectionType === 'region' ? '图表/图片区选区' : '')
+  selectedPdfSelectionType.value = displayText ? selectionType : null
+  selectedPdfText.value = displayText
+  if (displayText) {
+    pdfSourceHighlight.value = null
+  }
+  selectedPdfContext.value = displayText && (payload.elementId || payload.bbox || payload.selectionType === 'region')
     ? {
         documentId: payload.documentId,
         pageNumber: payload.pageNumber,
-        blockId: payload.blockId ?? payload.elementId,
-        elementId: payload.elementId,
+        blockId: payload.blockId ?? payload.elementId ?? 'region-selection',
+        elementId: payload.elementId ?? 'region-selection',
         bbox: payload.bbox,
-        text: payload.text,
+        text: displayText,
       }
     : null
 }
@@ -518,6 +580,8 @@ function handlePdfSelectionChange(payload: PdfSelectionPayload) {
 function clearPdfSelection() {
   selectedPdfText.value = ''
   selectedPdfContext.value = null
+  selectedPdfSelectionType.value = null
+  pdfSourceHighlight.value = null
 }
 
 function restorePageNotes() {
@@ -613,28 +677,53 @@ function showPlaceholderAction(label: string) {
 
 function askAgent(question: string) {
   agentPrompt.value = question
-  submitAgentQuestion()
+  void submitAgentQuestion()
 }
 
-function submitAgentQuestion() {
+async function submitAgentQuestion() {
   const question = agentPrompt.value.trim()
-  if (!question || !activeBlock.value) return
+  const document = readingDocument.value
+  if (!question || !activeBlock.value || !document || agentAnswerLoading.value) return
 
   const currentBlock = activeBlock.value
   const sourceContext = resolveAgentSourceContext()
+  const selectedQuestion = question
+  agentPrompt.value = ''
   agentMessages.value.push({
     id: `user-${Date.now()}`,
     role: 'user',
-    content: question,
+    content: selectedQuestion,
     sourceContext,
   })
-  agentMessages.value.push({
-    id: `assistant-${Date.now()}`,
-    role: 'assistant',
-    content: `已基于 P${currentBlock.order} 和「${modeLabels[activeMode.value]}」模式生成回答草稿。真实 Agent 接入后会引用原文、译文和已保存资产。`,
-    sourceContext,
-  })
-  agentPrompt.value = ''
+  agentAnswerLoading.value = true
+  try {
+    const answer = await answerTranslationDocumentQuestion(document.id, {
+      question: selectedQuestion,
+      selectedText: sourceContext?.text ?? currentBlock.text,
+      pageNumber: sourceContext?.pageNumber ?? currentBlock.pageNumber,
+      elementId: sourceContext?.elementId ?? currentBlock.elementId ?? currentBlock.id,
+      bbox: sourceContext?.bbox ?? currentBlock.bbox ?? null,
+      mode: activeMode.value,
+    })
+    agentMessages.value.push({
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      content: answer.answer,
+      sourceContext,
+      citations: answer.citations,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Agent 回答失败'
+    agentMessages.value.push({
+      id: `assistant-error-${Date.now()}`,
+      role: 'assistant',
+      content: `暂时无法基于资料生成回答：${message}`,
+      sourceContext,
+    })
+    showToast('Agent 回答失败，请稍后重试', 'error')
+  } finally {
+    agentAnswerLoading.value = false
+  }
 }
 
 function resolveAgentSourceContext(): DocumentSelectionContext | null {
@@ -643,6 +732,46 @@ function resolveAgentSourceContext(): DocumentSelectionContext | null {
   const block = activeBlock.value
   if (!document || !block) return null
   return buildDocumentSelectionContext(document.id, block)
+}
+
+function jumpToCitation(citation: TranslationSourceCitationDto) {
+  const document = readingDocument.value
+  if (!document) return
+  const pageNumber = citation.pageNumber || currentPdfPage.value || 1
+  const matchedBlock = document.blocks.find((block) => {
+    return block.elementId === citation.elementId || block.id === citation.elementId
+  })
+  if (matchedBlock) {
+    activeBlockId.value = matchedBlock.id
+  }
+  const resolvedElementId = citation.elementId ?? matchedBlock?.elementId ?? matchedBlock?.id ?? citation.chunkId
+  targetPdfPage.value = pageNumber
+  currentPdfPage.value = pageNumber
+  documentView.value = 'pdf-canvas'
+  selectedPdfText.value = citation.quote
+  selectedPdfSelectionType.value = 'text'
+  pdfSourceHighlight.value = buildCitationHighlight(citation, pageNumber)
+  selectedPdfContext.value = {
+    documentId: document.id,
+    pageNumber,
+    blockId: matchedBlock?.id ?? resolvedElementId,
+    elementId: resolvedElementId,
+    bbox: citation.bbox,
+    text: citation.quote,
+  }
+}
+
+function buildCitationHighlight(
+  citation: TranslationSourceCitationDto,
+  pageNumber: number,
+): PdfSourceHighlight | null {
+  if (!citation.bbox) return null
+  return {
+    pageNumber,
+    bbox: citation.bbox,
+    label: '引用定位',
+    text: citation.quote,
+  }
 }
 
 function saveAsset(type: LearningAssetType) {
@@ -1665,6 +1794,30 @@ textarea {
   color: #344054;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.message-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-citations button {
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid #b7e4db;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.message-citations button:hover {
+  border-color: #0f766e;
+  background: #ccfbf1;
 }
 
 .agent-command {

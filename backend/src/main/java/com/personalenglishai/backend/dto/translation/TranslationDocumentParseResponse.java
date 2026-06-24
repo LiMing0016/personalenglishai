@@ -16,9 +16,13 @@ public class TranslationDocumentParseResponse {
     private String provider;
     private String parseMode;
     private boolean fallbackUsed;
+    private String fileUrl;
+    private boolean filePersisted;
+    private String storageProvider;
     private long elapsedMs;
     private String rawOcrResponse;
     private List<TranslationDocumentElementDto> elements = new ArrayList<>();
+    private List<TranslationDocumentOutlineItemDto> outline = new ArrayList<>();
     private List<TranslationKnowledgeChunkDto> knowledgeChunks = new ArrayList<>();
     private List<TranslationDocumentAssetDto> assets = new ArrayList<>();
     private TranslationParseDiagnosisDto diagnosis = new TranslationParseDiagnosisDto();
@@ -123,6 +127,30 @@ public class TranslationDocumentParseResponse {
         this.fallbackUsed = fallbackUsed;
     }
 
+    public String getFileUrl() {
+        return fileUrl;
+    }
+
+    public void setFileUrl(String fileUrl) {
+        this.fileUrl = fileUrl;
+    }
+
+    public boolean isFilePersisted() {
+        return filePersisted;
+    }
+
+    public void setFilePersisted(boolean filePersisted) {
+        this.filePersisted = filePersisted;
+    }
+
+    public String getStorageProvider() {
+        return storageProvider;
+    }
+
+    public void setStorageProvider(String storageProvider) {
+        this.storageProvider = storageProvider;
+    }
+
     public long getElapsedMs() {
         return elapsedMs;
     }
@@ -145,6 +173,14 @@ public class TranslationDocumentParseResponse {
 
     public void setElements(List<TranslationDocumentElementDto> elements) {
         this.elements = elements == null ? new ArrayList<>() : elements;
+    }
+
+    public List<TranslationDocumentOutlineItemDto> getOutline() {
+        return outline;
+    }
+
+    public void setOutline(List<TranslationDocumentOutlineItemDto> outline) {
+        this.outline = outline == null ? new ArrayList<>() : outline;
     }
 
     public List<TranslationKnowledgeChunkDto> getKnowledgeChunks() {

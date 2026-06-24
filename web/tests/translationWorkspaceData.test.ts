@@ -12,7 +12,7 @@ import {
 } from '../src/pages/app/translationWorkspaceData.ts'
 
 class MemoryStorage implements Storage {
-  private readonly values = new Map<string, string>()
+  protected readonly values = new Map<string, string>()
 
   get length() {
     return this.values.size
@@ -36,6 +36,19 @@ class MemoryStorage implements Storage {
 
   setItem(key: string, value: string): void {
     this.values.set(key, value)
+  }
+}
+
+class QuotaStorage extends MemoryStorage {
+  constructor(private readonly maxValueLength: number) {
+    super()
+  }
+
+  setItem(key: string, value: string): void {
+    if (value.length > this.maxValueLength) {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+    super.setItem(key, value)
   }
 }
 
@@ -141,6 +154,9 @@ const parsedPdfDraft = createTranslationWorkspaceDraftFromParsedDocument(
     ocrStatus: 'NOT_REQUIRED',
     pageCount: 2,
     blockCount: 2,
+    fileUrl: '/api/translation/documents/parsed-doc-1/file',
+    filePersisted: true,
+    storageProvider: 'local',
     blocks: [
       {
         id: 'p1-b1',
@@ -159,6 +175,18 @@ const parsedPdfDraft = createTranslationWorkspaceDraftFromParsedDocument(
         confidence: null,
       },
     ],
+    outline: [
+      {
+        id: 'outline-1',
+        title: '第1章 绪论',
+        level: 1,
+        pageNumber: 1,
+        elementId: 'p1-b1',
+        bbox: null,
+        source: 'rule_heading',
+        confidence: 0.9,
+      },
+    ],
     warnings: [],
   },
   fixedNow,
@@ -167,7 +195,7 @@ const parsedPdfDraft = createTranslationWorkspaceDraftFromParsedDocument(
 assert.equal(parsedPdfDraft.id, 'parsed-doc-1')
 assert.equal(parsedPdfDraft.sourceType, 'pdf')
 assert.equal(parsedPdfDraft.sourceLabel, 'PDF')
-assert.equal(parsedPdfDraft.pdfPreviewUrl, 'blob:http://localhost/pdf-preview')
+assert.equal(parsedPdfDraft.pdfPreviewUrl, '/api/translation/documents/parsed-doc-1/file')
 assert.equal(parsedPdfDraft.parseStatus, 'SUCCEEDED')
 assert.equal(parsedPdfDraft.ocrStatus, 'NOT_REQUIRED')
 assert.equal(parsedPdfDraft.pageCount, 2)
@@ -175,13 +203,46 @@ assert.equal(parsedPdfDraft.sourceText.includes('已上传'), false)
 assert.equal(parsedPdfDraft.segments[0].source, 'AI Intensive Reading Product Design')
 assert.equal(parsedPdfDraft.segments[0].blockType, 'heading')
 assert.equal(parsedPdfDraft.segments[1].pageNumber, 2)
+assert.equal(parsedPdfDraft.outline?.[0]?.title, '第1章 绪论')
 
 const parsedReadingDocument = buildIntensiveReadingDocument(parsedPdfDraft)
 assert.equal(parsedReadingDocument.parseStatus, 'PDF 结构解析完成')
-assert.equal(parsedReadingDocument.pdfPreviewUrl, 'blob:http://localhost/pdf-preview')
+assert.equal(parsedReadingDocument.pdfPreviewUrl, '/api/translation/documents/parsed-doc-1/file')
 assert.equal(parsedReadingDocument.blocks[0].id, 'p1-b1')
 assert.equal(parsedReadingDocument.blocks[0].type, 'heading')
 assert.equal(parsedReadingDocument.blocks[1].text.includes('real parsed document content'), true)
+assert.equal(parsedReadingDocument.outline[0].title, '第1章 绪论')
+assert.equal(parsedReadingDocument.outline[0].pageNumber, 1)
+
+const largeParsedDraft = {
+  ...parsedPdfDraft,
+  id: 'large-parsed-doc',
+  sourceText: 'Large PDF text '.repeat(3000),
+  segments: Array.from({ length: 80 }, (_, index) => ({
+    id: `large-el-${index + 1}`,
+    elementId: `large-el-${index + 1}`,
+    source: `Large parsed paragraph ${index + 1} ${'content '.repeat(200)}`,
+    translation: '等待 AI 翻译',
+    translationStatus: 'pending' as const,
+    blockType: 'paragraph' as const,
+    pageNumber: index + 1,
+    bbox: `[${index},${index},100,40]`,
+    confidence: 0.9,
+  })),
+}
+const quotaStorage = new QuotaStorage(12000)
+const quotaSaveResult = saveTranslationWorkspaceDraft(quotaStorage, largeParsedDraft)
+const quotaSavedDraft = loadTranslationWorkspaceDraft(quotaStorage, largeParsedDraft.id)
+assert.equal(quotaSaveResult.compacted, true)
+assert.ok(quotaSavedDraft, 'large parsed drafts should still persist a compact local index when localStorage is full')
+assert.equal(quotaSavedDraft?.id, 'large-parsed-doc')
+assert.equal(quotaSavedDraft?.mode, 'immersive')
+assert.equal(quotaSavedDraft?.pdfPreviewUrl, '/api/translation/documents/parsed-doc-1/file')
+assert.ok((quotaSavedDraft?.segments.length ?? 0) < largeParsedDraft.segments.length)
+assert.ok(
+  quotaSavedDraft?.warnings?.some((warning) => warning.includes('本地存储空间不足')),
+  'compact fallback should explain that full content must be loaded from backend knowledge',
+)
 
 const parsedDocxDraft = createTranslationWorkspaceDraftFromParsedDocument(
   { mode: 'immersive' },
