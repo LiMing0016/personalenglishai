@@ -9,6 +9,7 @@ related_code:
   - backend/src/main/java/com/personalenglishai/backend/controller/auth/v1/AuthControllerV1.java
   - docker-compose.local.yml
 related_docs:
+  - docs/ios-integration/assistant-ios-collaboration-v1.md
   - docs/ios-integration/ai-assistant-api-contract.md
   - docs/ios-integration/auth-api-contract.md
   - docs/ios-integration/local-dev-and-docker.md
@@ -34,6 +35,7 @@ related_docs:
 
 | 文档 | 用途 |
 | --- | --- |
+| [AI 对话助手 iOS 协同开发契约 v1](./assistant-ios-collaboration-v1.md) | 只针对 `/app/assistant` 独立对话助手，说明 iOS / Java / Python 的协同开发边界、intent 映射、SSE、P0/P1/P2 验收 |
 | [AI 助手 API 契约](./ai-assistant-api-contract.md) | AI 助手会话、消息、流式、附件、文件夹、归档、分享，以及待补齐接口的契约 |
 | [认证 API 契约](./auth-api-contract.md) | 登录、注册、刷新、退出、验证码、改密等 iPad 端鉴权接口 |
 | [本地开发与 Docker](./local-dev-and-docker.md) | Docker 启动、端口、iPad Simulator 连接、冒烟命令 |

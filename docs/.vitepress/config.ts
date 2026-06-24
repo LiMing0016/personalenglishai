@@ -123,6 +123,7 @@ export default defineConfig({
           text: 'iPadOS 联调',
           items: [
             { text: '联调总览', link: '/ios-integration/README' },
+            { text: 'AI 对话助手 iOS 协同', link: '/ios-integration/assistant-ios-collaboration-v1' },
             { text: 'AI 助手 API 契约', link: '/ios-integration/ai-assistant-api-contract' },
             { text: '认证 API 契约', link: '/ios-integration/auth-api-contract' },
             { text: '本地开发与 Docker', link: '/ios-integration/local-dev-and-docker' },

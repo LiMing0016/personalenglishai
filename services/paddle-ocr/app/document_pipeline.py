@@ -2,22 +2,26 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import threading
 from typing import Any
 
-from app.ocr_engine import normalize_language, sort_blocks_reading_order
+from app.ocr_engine import apply_common_paddle_kwargs, normalize_language, sort_blocks_reading_order
 from app.schemas import ElementBlock, TextBlock
 
 
 class DocumentPipelineEngine:
     provider = "PaddleOCR-PPStructureV3"
+    not_loaded_message = "PPStructureV3 has not been loaded yet"
 
-    def __init__(self, default_language: str = "ch"):
+    def __init__(self, default_language: str = "ch", load_on_init: bool = False):
         self.default_language = normalize_language(default_language)
         self.sdk_loaded = False
         self.version: str | None = None
-        self.unavailable_reason: str | None = None
+        self.unavailable_reason: str | None = self.not_loaded_message
         self._pipeline: Any | None = None
-        self._load_sdk()
+        self._load_lock = threading.Lock()
+        if load_on_init:
+            self._load_sdk()
 
     def _load_sdk(self) -> None:
         try:
@@ -26,6 +30,7 @@ class DocumentPipelineEngine:
             self.version = getattr(paddleocr_module, "__version__", None)
             self._pipeline = pipeline_class(**build_ppstructure_kwargs(pipeline_class, self.default_language))
             self.sdk_loaded = True
+            self.unavailable_reason = None
         except Exception as exc:
             self.unavailable_reason = str(exc)
             self.sdk_loaded = False
@@ -41,6 +46,10 @@ class DocumentPipelineEngine:
         enable_orientation: bool = True,
         enable_unwarping: bool = True,
     ) -> dict[str, Any]:
+        if not self.sdk_loaded or self._pipeline is None:
+            with self._load_lock:
+                if not self.sdk_loaded or self._pipeline is None:
+                    self._load_sdk()
         if not self.sdk_loaded or self._pipeline is None:
             raise RuntimeError(self.unavailable_reason or "PaddleOCR PPStructureV3 is not loaded")
         raw_result = predict_document_structure(
@@ -61,11 +70,20 @@ def build_ppstructure_kwargs(pipeline_class: Any, language: str) -> dict[str, An
     if "lang" in parameters:
         kwargs["lang"] = language
     if "use_doc_orientation_classify" in parameters:
-        kwargs["use_doc_orientation_classify"] = False
+        kwargs["use_doc_orientation_classify"] = True
     if "use_doc_unwarping" in parameters:
-        kwargs["use_doc_unwarping"] = False
+        kwargs["use_doc_unwarping"] = True
     if "use_textline_orientation" in parameters:
-        kwargs["use_textline_orientation"] = False
+        kwargs["use_textline_orientation"] = True
+    if "use_table_recognition" in parameters:
+        kwargs["use_table_recognition"] = True
+    if "use_formula_recognition" in parameters:
+        kwargs["use_formula_recognition"] = False
+    if "use_region_detection" in parameters:
+        kwargs["use_region_detection"] = True
+    if "format_block_content" in parameters:
+        kwargs["format_block_content"] = True
+    apply_common_paddle_kwargs(kwargs, parameters)
     return kwargs
 
 

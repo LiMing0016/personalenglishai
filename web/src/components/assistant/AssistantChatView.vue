@@ -31,13 +31,19 @@
               <span class="message-attachment-name">{{ attachment.name }}</span>
             </div>
           </div>
-          <div
-            v-if="message.role === 'assistant'"
-            class="message-content message-content--markdown"
-            :class="`message-content--markdown-${markdownTheme}`"
-            v-html="renderAssistantMarkdown(message.content)"
-            @click="onRenderedMarkdownClick"
-          ></div>
+          <template v-if="message.role === 'assistant'">
+            <div
+              class="message-content message-content--markdown"
+              :class="`message-content--markdown-${markdownTheme}`"
+              v-html="renderAssistantMarkdown(message.content)"
+              @click="onRenderedMarkdownClick"
+            ></div>
+            <AssistantBlockRenderer
+              v-if="message.parts?.length"
+              :blocks="message.parts"
+              @action="$emit('chooseStarter', $event)"
+            />
+          </template>
           <p v-else class="message-content message-content--plain">{{ message.content }}</p>
           <div
             v-if="message.role === 'assistant' && message.status === 'done'"
@@ -95,6 +101,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from 'vue'
 
+import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
 import AssistantStarterCards from './AssistantStarterCards.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'

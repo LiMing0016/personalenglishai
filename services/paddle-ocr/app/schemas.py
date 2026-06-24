@@ -120,5 +120,9 @@ class HealthResponse(BaseModel):
     provider: str = "PaddleOCR"
     sdkLoaded: bool
     version: str | None = None
+    documentEngineLoaded: bool = False
+    documentEngineProvider: str | None = None
+    documentEngineVersion: str | None = None
+    documentEngineMessage: str | None = None
     formulaEnabled: bool = False
     message: str | None = None

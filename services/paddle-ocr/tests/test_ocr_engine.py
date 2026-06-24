@@ -1,6 +1,13 @@
 import unittest
+from unittest.mock import patch
 
-from app.ocr_engine import merge_blocks_text, normalize_paddle_ocr_result, sort_blocks_reading_order
+from app.ocr_engine import (
+    build_paddle_ocr_kwargs,
+    merge_blocks_text,
+    normalize_paddle_ocr_result,
+    predict_ocr,
+    sort_blocks_reading_order,
+)
 
 
 class ArrayLike:
@@ -11,7 +18,40 @@ class ArrayLike:
         return self.values
 
 
+class RecordingPredictor:
+    def __init__(self):
+        self.kwargs = None
+
+    def predict(self, image_path, **kwargs):
+        self.kwargs = kwargs
+        return {
+            "dt_polys": [
+                [[0, 0], [20, 0], [20, 10], [0, 10]],
+            ],
+            "rec_texts": ["hello"],
+            "rec_scores": [0.9],
+        }
+
+
+class FakePaddleOcrV3:
+    def __init__(
+        self,
+        lang=None,
+        use_doc_orientation_classify=None,
+        use_doc_unwarping=None,
+        use_textline_orientation=None,
+        cpu_threads=None,
+    ):
+        pass
+
+
 class OcrEngineTest(unittest.TestCase):
+    def test_build_kwargs_passes_configured_cpu_threads(self):
+        with patch.dict("os.environ", {"PADDLE_OCR_CPU_THREADS": "4"}):
+            kwargs = build_paddle_ocr_kwargs(FakePaddleOcrV3, "ch")
+
+        self.assertEqual(kwargs["cpu_threads"], 4)
+
     def test_normalizes_common_paddle_result_shape(self):
         raw_result = [
             [
@@ -73,6 +113,14 @@ class OcrEngineTest(unittest.TestCase):
         text = merge_blocks_text(blocks)
 
         self.assertEqual(text, "Hello world\nNext line")
+
+    def test_predict_ocr_does_not_request_uninitialized_doc_unwarping(self):
+        predictor = RecordingPredictor()
+
+        predict_ocr(predictor, "fake-page.png", enable_orientation=True, enable_unwarping=True)
+
+        self.assertIn("use_textline_orientation", predictor.kwargs)
+        self.assertNotIn("use_doc_unwarping", predictor.kwargs)
 
 
 if __name__ == "__main__":
