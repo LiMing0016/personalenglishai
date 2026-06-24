@@ -1,7 +1,10 @@
 <template>
   <div
     class="assistant-page"
-    :class="{ 'assistant-page--drawer-open': assistantDrawerOpen }"
+    :class="{
+      'assistant-page--drawer-open': assistantDrawerOpen,
+      'assistant-page--learning-canvas-open': Boolean(learningAssetDraft),
+    }"
   >
     <AssistantSidebar
       v-if="assistantDrawerOpen"
@@ -66,6 +69,7 @@
         @copy-message="handleCopyMessage"
         @retry-message="handleRetryAssistantMessage"
         @retry="retryLastMessage"
+        @create-learning-asset="handleCreateLearningAsset"
       />
 
       <div class="composer-dock" :class="{ composerDocked }">
@@ -82,6 +86,22 @@
         />
       </div>
     </div>
+
+    <LearningAssetCanvas
+      v-if="learningAssetDraft"
+      :draft="learningAssetDraft"
+      :candidate-markdown="learningAssetCandidateMarkdown"
+      :is-organizing="isLearningAssetOrganizing"
+      :is-saving="isLearningAssetSaving"
+      :error-message="learningAssetError"
+      @close="closeLearningAssetCanvas"
+      @organize="handleOrganizeLearningAsset"
+      @save="handleSaveLearningAsset"
+      @apply-candidate="applyLearningAssetCandidate"
+      @cancel-candidate="learningAssetCandidateMarkdown = ''"
+      @update:title="updateLearningAssetTitle"
+      @update:content-markdown="updateLearningAssetContent"
+    />
 
     <div v-if="folderDialogMode" class="folder-dialog-backdrop" role="presentation">
       <form class="folder-dialog" @submit.prevent="handleSubmitFolderDialog">
@@ -108,13 +128,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
+import LearningAssetCanvas from '@/components/assistant/LearningAssetCanvas.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
+import {
+  createLearningNote,
+  organizeLearningAssetMarkdown,
+  updateLearningNote,
+} from '@/api/learningNotes'
 import { showToast } from '@/utils/toast'
+import type { AssistantLearningAssetSelection } from '@/components/assistant/AssistantChatView.vue'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
 import {
   PENDING_ASSISTANT_PROMPT_KEY,
@@ -128,6 +155,11 @@ import {
   type AssistantMarkdownTheme,
 } from './assistantMarkdownTheme.ts'
 import { createAssistantState } from './assistantState.ts'
+import { createLearningAssetDraftStore } from './learningAssetDraftStore.ts'
+import {
+  createLearningAssetDraft,
+  type LearningAssetDraft,
+} from '../../types/learningAssets.ts'
 
 const {
   conversations,
@@ -178,6 +210,12 @@ const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
 const archiveSettings = ref<AssistantArchiveSettingsDto | null>(null)
 const archiveDirDraft = ref('')
 const isSavingArchiveDir = ref(false)
+const learningAssetDraftStore = createLearningAssetDraftStore()
+const learningAssetDraft = ref<LearningAssetDraft | null>(null)
+const learningAssetCandidateMarkdown = ref('')
+const isLearningAssetOrganizing = ref(false)
+const isLearningAssetSaving = ref(false)
+const learningAssetError = ref('')
 
 const folderDialogCopy = computed(() =>
   folderDialogMode.value === 'move'
@@ -205,6 +243,123 @@ function closeAssistantDrawer() {
   assistantDrawerOpen.value = false
 }
 
+function restoreLearningAssetDraft(conversationId: string) {
+  learningAssetDraft.value = learningAssetDraftStore.readDraft(conversationId)
+  learningAssetCandidateMarkdown.value = ''
+  learningAssetError.value = ''
+}
+
+function persistLearningAssetDraft(nextDraft: LearningAssetDraft) {
+  learningAssetDraft.value = nextDraft
+  learningAssetDraftStore.saveDraft(nextDraft)
+}
+
+function handleCreateLearningAsset(selection: AssistantLearningAssetSelection) {
+  const draft = createLearningAssetDraft({
+    conversationId: activeConversationId.value,
+    messageId: selection.messageId,
+    title: selection.selectedText,
+    selectedText: selection.selectedText,
+    contextText: selection.contextText,
+  })
+  persistLearningAssetDraft(draft)
+  learningAssetCandidateMarkdown.value = ''
+  learningAssetError.value = ''
+  showToast('已打开单词卡画布', 'success')
+}
+
+function closeLearningAssetCanvas() {
+  learningAssetDraft.value = null
+  learningAssetCandidateMarkdown.value = ''
+  learningAssetError.value = ''
+}
+
+function updateLearningAssetTitle(title: string) {
+  if (!learningAssetDraft.value) return
+  persistLearningAssetDraft({
+    ...learningAssetDraft.value,
+    title,
+    updatedAt: Date.now(),
+  })
+}
+
+function updateLearningAssetContent(contentMarkdown: string) {
+  if (!learningAssetDraft.value) return
+  persistLearningAssetDraft({
+    ...learningAssetDraft.value,
+    contentMarkdown,
+    updatedAt: Date.now(),
+  })
+}
+
+async function handleOrganizeLearningAsset(mode: 'create' | 'format') {
+  if (!learningAssetDraft.value || isLearningAssetOrganizing.value) return
+  isLearningAssetOrganizing.value = true
+  learningAssetError.value = ''
+  try {
+    const result = await organizeLearningAssetMarkdown({
+      type: learningAssetDraft.value.type,
+      title: learningAssetDraft.value.title,
+      selectedText: learningAssetDraft.value.selectedText,
+      contextText: learningAssetDraft.value.contextText,
+      currentMarkdown: learningAssetDraft.value.contentMarkdown,
+      mode,
+    })
+    learningAssetCandidateMarkdown.value = result.candidateMarkdown
+  } catch (error) {
+    learningAssetError.value = readApiErrorMessage(error, 'AI 整理失败')
+  } finally {
+    isLearningAssetOrganizing.value = false
+  }
+}
+
+function applyLearningAssetCandidate() {
+  if (!learningAssetDraft.value || !learningAssetCandidateMarkdown.value) return
+  updateLearningAssetContent(learningAssetCandidateMarkdown.value)
+  learningAssetCandidateMarkdown.value = ''
+}
+
+async function handleSaveLearningAsset() {
+  if (!learningAssetDraft.value || isLearningAssetSaving.value) return
+  const draft = learningAssetDraft.value
+  const title = draft.title.trim()
+  const contentMarkdown = draft.contentMarkdown.trim()
+  if (!title || !contentMarkdown) {
+    learningAssetError.value = '单词和正文不能为空'
+    return
+  }
+
+  isLearningAssetSaving.value = true
+  learningAssetError.value = ''
+  try {
+    const payload = {
+      type: draft.type,
+      title,
+      contentMarkdown,
+      structuredPayload: draft.structuredPayload,
+      sourceConversationId: draft.sourceConversationId,
+      sourceMessageId: draft.sourceMessageId,
+      sourceText: draft.sourceText,
+    }
+    const saved = draft.noteUid
+      ? await updateLearningNote(draft.noteUid, payload)
+      : await createLearningNote(payload)
+    persistLearningAssetDraft({
+      ...draft,
+      noteUid: saved.noteUid,
+      title: saved.title,
+      contentMarkdown: saved.contentMarkdown,
+      structuredPayload: saved.structuredPayload,
+      updatedAt: Date.now(),
+    })
+    showToast('单词卡已保存', 'success')
+  } catch (error) {
+    learningAssetError.value = readApiErrorMessage(error, '保存单词卡失败')
+  } finally {
+    isLearningAssetSaving.value = false
+  }
+}
+
 onMounted(() => {
   void loadRemoteState()
   void loadArchiveSettings()
@@ -223,6 +378,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
 })
+
+watch(activeConversationId, (conversationId) => {
+  restoreLearningAssetDraft(conversationId)
+}, { immediate: true })
 
 function handlePendingPromptEvent(event: Event) {
   const detail = (event as CustomEvent<string | { prompt?: string; selection?: PendingAssistantSelection }>).detail
@@ -461,6 +620,8 @@ const folderConversationGroups = computed(() =>
   --app-rail-width: 64px;
   --assistant-sidebar-width: 280px;
   --assistant-sidebar-current-width: 0px;
+  --learning-canvas-width: 420px;
+  --learning-canvas-current-width: 0px;
   display: flex;
   flex: 1;
   height: 100vh;
@@ -475,6 +636,10 @@ const folderConversationGroups = computed(() =>
 
 .assistant-page--drawer-open {
   --assistant-sidebar-current-width: var(--assistant-sidebar-width);
+}
+
+.assistant-page--learning-canvas-open {
+  --learning-canvas-current-width: var(--learning-canvas-width);
 }
 
 .assistant-main {
@@ -555,7 +720,7 @@ const folderConversationGroups = computed(() =>
 .composer-dock {
   position: fixed;
   left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
-  right: 0;
+  right: var(--learning-canvas-current-width);
   bottom: 0;
   z-index: 40;
   padding: 18px 24px max(6px, env(safe-area-inset-bottom));
@@ -583,6 +748,7 @@ const folderConversationGroups = computed(() =>
 
   .composer-dock {
     left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
+    right: 0;
     padding: 14px 12px max(4px, env(safe-area-inset-bottom));
   }
 }

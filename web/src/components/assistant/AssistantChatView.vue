@@ -33,10 +33,13 @@
           </div>
           <template v-if="message.role === 'assistant'">
             <div
+              :data-assistant-message-id="message.id"
               class="message-content message-content--markdown"
               :class="`message-content--markdown-${markdownTheme}`"
               v-html="renderAssistantMarkdown(message.content)"
               @click="onRenderedMarkdownClick"
+              @mouseup="handleAssistantSelection(message)"
+              @keyup="handleAssistantSelection(message)"
             ></div>
             <AssistantBlockRenderer
               v-if="message.parts?.length"
@@ -95,18 +98,31 @@
         </button>
       </div>
     </div>
+    <LearningAssetSelectionToolbar
+      :selected-text="selectionToolbar.selectedText"
+      :left="selectionToolbar.left"
+      :top="selectionToolbar.top"
+      @create="emitLearningAssetSelection"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, reactive } from 'vue'
 
 import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
 import AssistantStarterCards from './AssistantStarterCards.vue'
+import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
 
-defineProps<{
+export interface AssistantLearningAssetSelection {
+  selectedText: string
+  contextText: string
+  messageId: string
+}
+
+const props = defineProps<{
   messages: AssistantMessage[]
   errorMessage: string
   canRetry: boolean
@@ -120,9 +136,17 @@ const emit = defineEmits<{
   copyMessage: [content: string]
   retryMessage: [messageId: string]
   retry: []
+  createLearningAsset: [selection: AssistantLearningAssetSelection]
 }>()
 
 const previewUrls = new Map<string, string>()
+const selectionToolbar = reactive({
+  selectedText: '',
+  contextText: '',
+  messageId: '',
+  left: 0,
+  top: 0,
+})
 
 function previewUrlById(id: string, file: File) {
   if (!previewUrls.has(id)) {
@@ -135,7 +159,66 @@ function onRenderedMarkdownClick(event: MouseEvent) {
   void copyMarkdownCodeFromClick(event)
 }
 
+function handleAssistantSelection(message: AssistantMessage) {
+  window.setTimeout(() => syncAssistantSelection(message), 0)
+}
+
+function handleDocumentSelectionChange() {
+  window.setTimeout(() => syncAssistantSelection(), 0)
+}
+
+function syncAssistantSelection(fallbackMessage?: AssistantMessage) {
+  const selection = window.getSelection()
+  const selectedText = selection?.toString().trim() ?? ''
+  if (!selection || selection.isCollapsed || !selectedText) {
+    clearLearningAssetSelection()
+    return
+  }
+
+  const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+  const anchorElement = selection.anchorNode instanceof Element
+    ? selection.anchorNode
+    : selection.anchorNode?.parentElement
+  const contentElement = anchorElement?.closest<HTMLElement>('[data-assistant-message-id]')
+  const messageId = contentElement?.dataset.assistantMessageId ?? fallbackMessage?.id
+  const message = props.messages.find((item) => item.id === messageId) ?? fallbackMessage
+
+  if (!range || !contentElement || !message || message.role !== 'assistant') {
+    clearLearningAssetSelection()
+    return
+  }
+
+  const rect = range.getBoundingClientRect()
+  selectionToolbar.selectedText = selectedText
+  selectionToolbar.contextText = message.content
+  selectionToolbar.messageId = message.id
+  selectionToolbar.left = Math.max(12, Math.min(rect.left, window.innerWidth - 360))
+  selectionToolbar.top = Math.max(12, rect.top - 48)
+}
+
+function clearLearningAssetSelection() {
+  selectionToolbar.selectedText = ''
+  selectionToolbar.contextText = ''
+  selectionToolbar.messageId = ''
+}
+
+function emitLearningAssetSelection() {
+  if (!selectionToolbar.selectedText || !selectionToolbar.messageId) return
+  emit('createLearningAsset', {
+    selectedText: selectionToolbar.selectedText,
+    contextText: selectionToolbar.contextText,
+    messageId: selectionToolbar.messageId,
+  })
+  window.getSelection()?.removeAllRanges()
+  clearLearningAssetSelection()
+}
+
+onMounted(() => {
+  document.addEventListener('selectionchange', handleDocumentSelectionChange)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('selectionchange', handleDocumentSelectionChange)
   for (const url of previewUrls.values()) {
     URL.revokeObjectURL(url)
   }

@@ -274,6 +274,32 @@
             <span>{{ favoritePageSize }} 条/页</span>
           </footer>
         </section>
+
+        <section class="saved-note-list" aria-label="AI 单词卡">
+          <header>
+            <div>
+              <h2>AI 单词卡</h2>
+              <span>从学习助手画布保存的 Markdown 单词笔记</span>
+            </div>
+            <button type="button" :disabled="savedVocabularyNotesLoading" @click="loadSavedVocabularyNotes">
+              {{ savedVocabularyNotesLoading ? '同步中' : '刷新' }}
+            </button>
+          </header>
+          <div v-if="savedVocabularyNotesLoading" class="saved-note-empty">正在加载单词卡...</div>
+          <div v-else-if="savedVocabularyNotesError" class="saved-note-empty saved-note-empty--error">
+            {{ savedVocabularyNotesError }}
+          </div>
+          <div v-else-if="!savedVocabularyNotes.length" class="saved-note-empty">
+            暂无 AI 单词卡，可以在学习助手回复里选中单词后新建。
+          </div>
+          <div v-else class="saved-note-grid">
+            <article v-for="note in savedVocabularyNotes" :key="note.noteUid" class="saved-note-item">
+              <strong>{{ note.title }}</strong>
+              <p>{{ previewMarkdown(note.contentMarkdown) }}</p>
+              <small>{{ formatFavoriteDate(note.updatedAt || note.createdAt || '') }}</small>
+            </article>
+          </div>
+        </section>
       </div>
 
       <FavoriteWordPreview
@@ -360,6 +386,8 @@ import { computed, defineComponent, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { listDictionaryFavorites, lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
 import type { DictionaryEntry, DictionaryFavoriteItem, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
+import { listLearningNotes } from '@/api/learningNotes'
+import type { LearningNoteDto } from '@/api/learningNotes'
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
@@ -409,6 +437,9 @@ const favoriteKeyword = ref('')
 const favoriteLoading = ref(false)
 const favoriteError = ref('')
 const selectedFavoriteWord = ref('')
+const savedVocabularyNotes = ref<LearningNoteDto[]>([])
+const savedVocabularyNotesLoading = ref(false)
+const savedVocabularyNotesError = ref('')
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
@@ -1160,6 +1191,19 @@ async function loadFavoriteWords(page = favoritePage.value) {
   }
 }
 
+async function loadSavedVocabularyNotes() {
+  savedVocabularyNotesLoading.value = true
+  savedVocabularyNotesError.value = ''
+  try {
+    const response = await listLearningNotes({ type: 'vocabulary', page: 1, size: 12 })
+    savedVocabularyNotes.value = response.items
+  } catch {
+    savedVocabularyNotesError.value = 'AI 单词卡加载失败，请确认登录状态和后端服务'
+  } finally {
+    savedVocabularyNotesLoading.value = false
+  }
+}
+
 async function removeFavoriteWord(word: string) {
   const targetWord = word.trim()
   if (!targetWord) {
@@ -1219,6 +1263,15 @@ function formatFavoriteDate(value?: string) {
   }).format(date)
 }
 
+function previewMarkdown(markdown: string) {
+  return markdown
+    .replace(/^#+\s+/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || '暂无正文'
+}
+
 function parseVocabularyView(value: unknown): VocabularyViewKey | null {
   const tab = Array.isArray(value) ? value[0] : value
   return typeof tab === 'string' && vocabularyViewKeys.includes(tab as VocabularyViewKey)
@@ -1244,8 +1297,9 @@ watch(() => route.query.tab, (tab) => {
 watch(activeView, (view) => {
   if (view === 'collection') {
     void loadFavoriteWords(1)
+    void loadSavedVocabularyNotes()
   }
-})
+}, { immediate: true })
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
@@ -2889,6 +2943,103 @@ function normalizeError(err: unknown) {
 .favorite-preview-stats dd {
   color: #0f172a;
   font-weight: 900;
+}
+
+.saved-note-list {
+  margin-top: 18px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.saved-note-list > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.saved-note-list h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.saved-note-list header span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.saved-note-list header button {
+  min-height: 34px;
+  border: 1px solid #dce7e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #047857;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.saved-note-list header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.saved-note-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  padding: 24px;
+  color: #64748b;
+  text-align: center;
+}
+
+.saved-note-empty--error {
+  color: #991b1b;
+}
+
+.saved-note-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.saved-note-item {
+  min-width: 0;
+  border: 1px solid #edf2f7;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.saved-note-item strong {
+  display: block;
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.saved-note-item p {
+  display: -webkit-box;
+  min-height: 42px;
+  margin: 8px 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.saved-note-item small {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .stats-kpis {
