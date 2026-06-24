@@ -47,6 +47,7 @@ tmp[0-9a-zA-Z_]*/
 # Claude Code local settings
 .claude/settings.local.json
 .superpowers/
+.worktrees/
 
 # Env (never commit secrets)
 .env
