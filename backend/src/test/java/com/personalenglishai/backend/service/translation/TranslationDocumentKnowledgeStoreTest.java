@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentAssetDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentElementDto;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentStudyNoteDto;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentUserBookmarkDto;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentWorkspaceStateDto;
 import com.personalenglishai.backend.dto.translation.TranslationKnowledgeChunkDto;
 import com.personalenglishai.backend.entity.translation.TranslationDocumentAssetRecord;
 import com.personalenglishai.backend.entity.translation.TranslationDocumentElementRecord;
@@ -48,6 +51,53 @@ class TranslationDocumentKnowledgeStoreTest {
         assertThat(restored.get().getElements()).hasSize(1);
         assertThat(restored.get().getKnowledgeChunks()).hasSize(1);
         assertThat(restored.get().getAssets()).hasSize(1);
+    }
+
+    @Test
+    void persistsWorkspaceStateInsideKnowledgeSnapshot() {
+        FakeKnowledgeMapper mapper = new FakeKnowledgeMapper();
+        TranslationDocumentKnowledgeStore store = new TranslationDocumentKnowledgeStore(new ObjectMapper(), mapper);
+        TranslationDocumentParseResponse response = response();
+        TranslationDocumentWorkspaceStateDto workspaceState = new TranslationDocumentWorkspaceStateDto();
+        workspaceState.setCurrentPage(28);
+        workspaceState.setActiveBlockId("p1");
+        workspaceState.setCollapsedOutlineItemIds(List.of("chapter-1", "section-1-1"));
+
+        TranslationDocumentUserBookmarkDto bookmark = new TranslationDocumentUserBookmarkDto();
+        bookmark.setId("bookmark-1");
+        bookmark.setTitle("复杂度公式");
+        bookmark.setPageNumber(28);
+        bookmark.setLevel(3);
+        bookmark.setElementId("p1");
+        workspaceState.setUserBookmarks(List.of(bookmark));
+
+        TranslationDocumentStudyNoteDto note = new TranslationDocumentStudyNoteDto();
+        note.setId("note-1");
+        note.setDocumentId("translation-001");
+        note.setBookmarkId("bookmark-1");
+        note.setPageNumber(28);
+        note.setBlockId("p1");
+        note.setElementId("p1");
+        note.setTitle("O(n^2)");
+        note.setContent("记录复杂度推导");
+        note.setStatus("saved");
+        note.setSource("manual");
+        workspaceState.setStudyNotes(List.of(note));
+        response.setWorkspaceState(workspaceState);
+
+        store.save(response);
+
+        Optional<TranslationDocumentParseResponse> restored = store.findByDocumentId("translation-001");
+
+        assertThat(restored).isPresent();
+        assertThat(restored.get().getWorkspaceState().getCurrentPage()).isEqualTo(28);
+        assertThat(restored.get().getWorkspaceState().getCollapsedOutlineItemIds()).containsExactly("chapter-1", "section-1-1");
+        assertThat(restored.get().getWorkspaceState().getUserBookmarks())
+                .extracting(TranslationDocumentUserBookmarkDto::getTitle)
+                .containsExactly("复杂度公式");
+        assertThat(restored.get().getWorkspaceState().getStudyNotes())
+                .extracting(TranslationDocumentStudyNoteDto::getBookmarkId)
+                .containsExactly("bookmark-1");
     }
 
     @Test

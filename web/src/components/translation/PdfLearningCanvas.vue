@@ -22,6 +22,7 @@
         </button>
         <button type="button" :disabled="!hasActiveSelection" @click="highlightSelection">高亮选区</button>
         <button type="button" :disabled="!hasActiveSelection" @click="emitAskAgent('解释当前选区')">问 Agent</button>
+        <button type="button" :disabled="!hasActiveSelection" @click="emitNoteSelection">记笔记</button>
       </div>
     </header>
 
@@ -60,6 +61,18 @@
           <button v-if="hasActiveSelection" type="button" class="selection-pin" @click="emitAskAgent('解释当前选区')">
             {{ selectedSelectionType === 'region' ? '图表区域' : '当前选区' }}
           </button>
+          <div v-if="currentPageNoteAnchors.length" class="note-anchor-stack" aria-label="当前页笔记锚点">
+            <button
+              v-for="anchor in currentPageNoteAnchors"
+              :key="anchor.id"
+              type="button"
+              class="note-anchor-pin"
+              :title="anchor.excerpt || anchor.title"
+              @click="emit('openNote', anchor.id)">
+              <span>{{ anchor.title || '笔记' }}</span>
+              <small>Page {{ anchor.pageNumber }}</small>
+            </button>
+          </div>
           <mark
             v-for="annotation in currentPageAnnotations"
             :key="annotation.id"
@@ -114,6 +127,13 @@ interface PdfSourceHighlight {
   text?: string | null
 }
 
+interface PdfNoteAnchor {
+  id: string
+  pageNumber: number
+  title: string
+  excerpt?: string
+}
+
 interface Point {
   x: number
   y: number
@@ -151,11 +171,14 @@ const props = defineProps<{
   pageCount?: number
   targetPage?: number
   sourceHighlight?: PdfSourceHighlight | null
+  noteAnchors?: PdfNoteAnchor[]
 }>()
 
 const emit = defineEmits<{
   selectBlock: [blockId: string]
   askAgent: [prompt: string]
+  noteSelection: [payload: PdfSelectionPayload]
+  openNote: [noteId: string]
   selectionChange: [payload: PdfSelectionPayload]
   pageChange: [page: number]
 }>()
@@ -202,6 +225,7 @@ const scale = ref(1)
 const zoomMode = ref<ZoomMode>('fit-width')
 const selectedText = ref('')
 const selectedSelectionType = ref<PdfSelectionType>('text')
+const latestSelectionPayload = ref<PdfSelectionPayload | null>(null)
 const annotations = ref<PageAnnotation[]>([])
 const loadError = ref(false)
 const renderedPageCount = ref(0)
@@ -222,6 +246,10 @@ const hasActiveSelection = computed(() => selectedText.value.trim().length > 0)
 
 const currentPageAnnotations = computed(() => {
   return annotations.value.filter((item) => item.page === currentPage.value)
+})
+
+const currentPageNoteAnchors = computed(() => {
+  return (props.noteAnchors ?? []).filter((anchor) => anchor.pageNumber === currentPage.value)
 })
 
 onMounted(() => {
@@ -1007,6 +1035,7 @@ function applySelectionPayload(text: string, bbox: string | null, selectionType:
   const payload = resolveSelectionPayload(text.trim(), bbox, selectionType)
   selectedText.value = payload.text
   selectedSelectionType.value = payload.selectionType
+  latestSelectionPayload.value = payload.text ? payload : null
   if (payload.blockId) emit('selectBlock', payload.blockId)
   emit('selectionChange', payload)
 }
@@ -1031,6 +1060,12 @@ function highlightSelection() {
 function emitAskAgent(prompt: string) {
   const suffix = selectedText.value ? `：${selectedText.value}` : ''
   emit('askAgent', `${prompt}${suffix}`)
+}
+
+function emitNoteSelection() {
+  const payload = latestSelectionPayload.value ?? resolveSelectionPayload(selectedText.value.trim(), null, selectedSelectionType.value)
+  if (!payload.text.trim()) return
+  emit('noteSelection', payload)
 }
 
 function resolveSelectionPayload(
@@ -1366,6 +1401,49 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   font-size: 12px;
   font-weight: 900;
   pointer-events: auto;
+}
+
+.note-anchor-stack {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  width: min(220px, calc(100% - 24px));
+  pointer-events: auto;
+}
+
+.note-anchor-pin {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #f8c471;
+  border-radius: 8px;
+  background: rgb(255 251 235 / 96%);
+  color: #92400e;
+  text-align: left;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 10%);
+  cursor: pointer;
+}
+
+.note-anchor-pin span,
+.note-anchor-pin small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-anchor-pin span {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.note-anchor-pin small {
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .selection-highlight {

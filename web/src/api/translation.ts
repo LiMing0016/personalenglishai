@@ -28,6 +28,49 @@ export interface TranslationDocumentOutlineItemDto {
   confidence?: number | null
 }
 
+export interface TranslationDocumentUserBookmarkDto {
+  id: string
+  title: string
+  pageNumber: number
+  level: number
+  elementId?: string | null
+  bbox?: string | null
+  source?: string | null
+  parentId?: string | null
+  order?: number
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface TranslationDocumentStudyNoteDto {
+  id: string
+  documentId: string
+  bookmarkId?: string | null
+  pageNumber: number
+  blockId: string
+  elementId: string
+  bbox?: string | null
+  selectedText?: string | null
+  title: string
+  content: string
+  source: 'manual' | 'agent' | string
+  status: 'draft' | 'saved' | 'reviewing' | 'mastered' | string
+  tags: string[]
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export interface TranslationDocumentWorkspaceStateDto {
+  userBookmarks: TranslationDocumentUserBookmarkDto[]
+  studyNotes: TranslationDocumentStudyNoteDto[]
+  collapsedOutlineItemIds: string[]
+  currentPage?: number | null
+  activeBlockId?: string | null
+  activeOutlineItemId?: string | null
+  activeNoteId?: string | null
+  updatedAt?: string | null
+}
+
 export interface TranslationKnowledgeChunkDto {
   id: string
   chunkOrder: number
@@ -150,6 +193,7 @@ export interface TranslationDocumentParseResponse {
   quality: TranslationDocumentQualityDto
   languageProfile: TranslationLanguageProfileDto
   parseJob: TranslationParseJobDto
+  workspaceState?: TranslationDocumentWorkspaceStateDto | null
   warnings: string[]
 }
 
@@ -184,6 +228,31 @@ export function getTranslationDocumentFileUrl(documentId: string): string {
   return `/api/translation/documents/${documentId}/file`
 }
 
+export async function saveTranslationDocumentWorkspaceState(
+  documentId: string,
+  state: TranslationDocumentWorkspaceStateDto,
+): Promise<TranslationDocumentWorkspaceStateDto> {
+  const response = await http.put<TranslationDocumentWorkspaceStateDto>(
+    `/translation/documents/${documentId}/workspace-state`,
+    state,
+  )
+  return response.data
+}
+
+export async function downloadTranslationDocumentWithBookmarks(
+  documentId: string,
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await http.get<Blob>(
+    `/translation/documents/${documentId}/file-with-bookmarks`,
+    { responseType: 'blob' },
+  )
+  const contentDisposition = response.headers['content-disposition']
+  return {
+    blob: response.data,
+    fileName: resolveDownloadFileName(contentDisposition, `${documentId}-bookmarks.pdf`),
+  }
+}
+
 export async function answerTranslationDocumentQuestion(
   documentId: string,
   request: TranslationDocumentAgentAnswerRequest,
@@ -193,4 +262,14 @@ export async function answerTranslationDocumentQuestion(
     request,
   )
   return response.data
+}
+
+function resolveDownloadFileName(contentDisposition: string | undefined, fallback: string): string {
+  if (!contentDisposition) return fallback
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1])
+  }
+  const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] ?? fallback
 }

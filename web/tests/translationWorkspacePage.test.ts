@@ -80,12 +80,40 @@ assert.ok(
   'workspace should be able to rebuild a stable backend PDF file URL from the document id',
 )
 assert.ok(
+  workspaceSource.includes('saveTranslationDocumentWorkspaceState'),
+  'workspace should persist notes, bookmarks, collapsed outline state, and resume context to the backend',
+)
+assert.ok(
+  workspaceSource.includes('completeLearningSession') && workspaceSource.includes('flushWorkspaceStateSave'),
+  'workspace should flush the current learning state before leaving the learning session',
+)
+assert.ok(
+  workspaceSource.includes('downloadTranslationDocumentWithBookmarks'),
+  'workspace should export a PDF copy with the current learning bookmarks',
+)
+assert.ok(
   workspaceSource.includes('createTranslationWorkspaceDraftFromParsedDocument'),
   'workspace should convert backend document knowledge into the same reading model used after upload',
 )
 assert.ok(
+  workspaceSource.includes('restoreWorkspaceState'),
+  'workspace should restore workspaceState returned by persisted document knowledge',
+)
+assert.ok(
+  workspaceSource.includes('focusRouteStudyNote'),
+  'workspace should focus a previous note when the Hub opens it with a note id',
+)
+assert.ok(
+  workspaceSource.includes('route.query.noteId'),
+  'workspace should read noteId from route query when returning to a previous note',
+)
+assert.ok(
   workspaceSource.includes('resolvePersistedPdfPreviewUrl'),
   'workspace should prefer persisted backend file URLs when restoring the PDF canvas',
+)
+assert.ok(
+  workspaceSource.includes('applyLocalDraftDisplayOverrides'),
+  'workspace should preserve user-renamed imported titles when restoring persisted documents',
 )
 assert.ok(
   workspaceSource.includes('workspaceLoading'),
@@ -96,8 +124,8 @@ assert.ok(
   'workspace should track the active document block for agent context',
 )
 assert.ok(
-  workspaceSource.includes('assetStats'),
-  'workspace should render learning asset stats',
+  workspaceSource.includes('studyAssetPipeline'),
+  'workspace should render the session learning asset pipeline',
 )
 assert.ok(
   workspaceSource.includes('PdfLearningCanvas'),
@@ -230,6 +258,30 @@ assert.ok(
 assert.ok(
   workspaceSource.includes('toggleOutlineDrawer'),
   'workspace should expose a control to collapse and expand the outline drawer',
+)
+assert.ok(
+  workspaceSource.includes('collapsedOutlineItemIds'),
+  'workspace should track collapsed document outline nodes',
+)
+assert.ok(
+  workspaceSource.includes('outlineTreeItems'),
+  'workspace should derive tree metadata from flat document outline items',
+)
+assert.ok(
+  workspaceSource.includes('toggleOutlineNode'),
+  'workspace should let chapter and section outline nodes collapse independently',
+)
+assert.ok(
+  workspaceSource.includes('createUserBookmark') && workspaceSource.includes('renameActiveUserBookmark') && workspaceSource.includes('deleteActiveUserBookmark'),
+  'workspace should let users create, rename, and delete their own learning bookmarks',
+)
+assert.ok(
+  workspaceSource.includes('activeOutlineItemId') && workspaceSource.includes('bookmarkId'),
+  'workspace notes should bind back to the selected outline/bookmark entry',
+)
+assert.ok(
+  workspaceSource.includes('outline-node-toggle') && workspaceSource.includes('aria-expanded'),
+  'workspace should render accessible expand/collapse controls for outline tree nodes',
 )
 assert.ok(
   workspaceSource.includes('toggleAgentDrawer'),

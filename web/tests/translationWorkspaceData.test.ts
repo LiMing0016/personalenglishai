@@ -7,6 +7,7 @@ import {
   createTranslationWorkspaceDraftFromParsedDocument,
   listTranslationWorkspaceDrafts,
   loadTranslationWorkspaceDraft,
+  renameTranslationWorkspaceDraft,
   saveTranslationWorkspaceDraft,
   validateNewTranslationInput,
 } from '../src/pages/app/translationWorkspaceData.ts'
@@ -40,8 +41,11 @@ class MemoryStorage implements Storage {
 }
 
 class QuotaStorage extends MemoryStorage {
-  constructor(private readonly maxValueLength: number) {
+  private readonly maxValueLength: number
+
+  constructor(maxValueLength: number) {
     super()
+    this.maxValueLength = maxValueLength
   }
 
   setItem(key: string, value: string): void {
@@ -111,11 +115,15 @@ assert.deepEqual(
 const storage = new MemoryStorage()
 saveTranslationWorkspaceDraft(storage, pastedDraft)
 assert.deepEqual(loadTranslationWorkspaceDraft(storage, pastedDraft.id), pastedDraft)
+assert.equal(renameTranslationWorkspaceDraft(storage, pastedDraft.id, '重命名后的材料'), true)
+assert.equal(loadTranslationWorkspaceDraft(storage, pastedDraft.id)?.title, '重命名后的材料')
+assert.equal(renameTranslationWorkspaceDraft(storage, pastedDraft.id, '   '), false)
 assert.equal(loadTranslationWorkspaceDraft(storage, 'missing-id'), null)
-assert.deepEqual(listTranslationWorkspaceDrafts(storage), [pastedDraft])
+const renamedPastedDraft = loadTranslationWorkspaceDraft(storage, pastedDraft.id)
+assert.equal(listTranslationWorkspaceDrafts(storage)[0]?.title, renamedPastedDraft?.title)
 
-const readingDocument = buildIntensiveReadingDocument(pastedDraft)
-assert.equal(readingDocument.title, pastedDraft.title)
+const readingDocument = buildIntensiveReadingDocument(renamedPastedDraft ?? pastedDraft)
+assert.equal(readingDocument.title, '重命名后的材料')
 assert.equal(readingDocument.mode, 'immersive')
 assert.equal(readingDocument.parseStatus, 'AI 已生成精读材料')
 assert.ok(readingDocument.blocks.length >= pastedDraft.segments.length, 'draft segments should become document blocks')

@@ -29,6 +29,7 @@ public class TranslationDocumentParseResponse {
     private TranslationDocumentQualityDto quality = new TranslationDocumentQualityDto();
     private TranslationLanguageProfileDto languageProfile = new TranslationLanguageProfileDto();
     private TranslationParseJobDto parseJob = new TranslationParseJobDto();
+    private TranslationDocumentWorkspaceStateDto workspaceState = new TranslationDocumentWorkspaceStateDto();
 
     public String getDocumentId() {
         return documentId;
@@ -229,5 +230,13 @@ public class TranslationDocumentParseResponse {
 
     public void setParseJob(TranslationParseJobDto parseJob) {
         this.parseJob = parseJob == null ? new TranslationParseJobDto() : parseJob;
+    }
+
+    public TranslationDocumentWorkspaceStateDto getWorkspaceState() {
+        return workspaceState;
+    }
+
+    public void setWorkspaceState(TranslationDocumentWorkspaceStateDto workspaceState) {
+        this.workspaceState = workspaceState == null ? new TranslationDocumentWorkspaceStateDto() : workspaceState;
     }
 }
