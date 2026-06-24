@@ -17,6 +17,17 @@ export interface TranslationDocumentElementDto extends TranslationDocumentBlockD
   metadata: Record<string, unknown>
 }
 
+export interface TranslationDocumentOutlineItemDto {
+  id: string
+  title: string
+  level: number
+  pageNumber: number
+  elementId?: string | null
+  bbox?: string | null
+  source?: string | null
+  confidence?: number | null
+}
+
 export interface TranslationKnowledgeChunkDto {
   id: string
   chunkOrder: number
@@ -35,6 +46,32 @@ export interface TranslationKnowledgeChunkDto {
   parentChunkId?: string | null
   prevChunkId?: string | null
   nextChunkId?: string | null
+}
+
+export interface TranslationSourceCitationDto {
+  documentId: string
+  chunkId: string
+  pageNumber: number | null
+  elementId: string | null
+  bbox: string | null
+  quote: string
+  sectionPath: string[]
+  score: number
+}
+
+export interface TranslationDocumentAgentAnswerRequest {
+  question: string
+  selectedText?: string | null
+  pageNumber?: number | null
+  elementId?: string | null
+  bbox?: string | null
+  mode?: string | null
+}
+
+export interface TranslationDocumentAgentAnswerResponse {
+  answer: string
+  citations: TranslationSourceCitationDto[]
+  sourceChunks: TranslationKnowledgeChunkDto[]
 }
 
 export interface TranslationDocumentAssetDto {
@@ -98,11 +135,15 @@ export interface TranslationDocumentParseResponse {
   provider?: string
   parseMode?: 'standard' | 'high_quality'
   fallbackUsed?: boolean
+  fileUrl?: string | null
+  filePersisted?: boolean
+  storageProvider?: string | null
   elapsedMs?: number
   pageCount: number
   blockCount: number
   blocks: TranslationDocumentBlockDto[]
   elements: TranslationDocumentElementDto[]
+  outline?: TranslationDocumentOutlineItemDto[]
   knowledgeChunks: TranslationKnowledgeChunkDto[]
   assets: TranslationDocumentAssetDto[]
   diagnosis: TranslationParseDiagnosisDto
@@ -136,5 +177,20 @@ export async function parseTranslationPdfDocument(file: File): Promise<Translati
 
 export async function getTranslationDocumentKnowledge(documentId: string): Promise<TranslationDocumentParseResponse> {
   const response = await http.get<TranslationDocumentParseResponse>(`/translation/documents/${documentId}/knowledge`)
+  return response.data
+}
+
+export function getTranslationDocumentFileUrl(documentId: string): string {
+  return `/api/translation/documents/${documentId}/file`
+}
+
+export async function answerTranslationDocumentQuestion(
+  documentId: string,
+  request: TranslationDocumentAgentAnswerRequest,
+): Promise<TranslationDocumentAgentAnswerResponse> {
+  const response = await http.post<TranslationDocumentAgentAnswerResponse>(
+    `/translation/documents/${documentId}/agent-answer`,
+    request,
+  )
   return response.data
 }

@@ -11,6 +11,11 @@ const workspaceSource = readFileSync(
   'utf8',
 )
 
+const pdfCanvasSource = readFileSync(
+  new URL('../src/components/translation/PdfLearningCanvas.vue', import.meta.url),
+  'utf8',
+)
+
 assert.ok(
   routerSource.includes("path: 'translation/workspace/:id'"),
   'router should expose a translation workspace route',
@@ -33,16 +38,16 @@ for (const requiredCopy of [
   '学习资产',
   '精读文本',
   'PDF 学习画布',
-  'PDF 大纲',
+  '目录导航',
   '当前选区',
   '当前页 / 当前段落',
   '学习笔记',
   '返回',
   '完成学习',
-  '调整左侧大纲宽度',
+  '调整左侧目录宽度',
   '调整右侧 Agent 宽度',
-  '收起左侧 PDF 大纲',
-  '展开左侧 PDF 大纲',
+  '收起左侧目录导航',
+  '展开左侧目录导航',
   '收起右侧 Agent',
   '展开右侧 Agent',
 ]) {
@@ -71,8 +76,16 @@ assert.ok(
   'workspace should restore persisted document knowledge from the backend before falling back to local drafts',
 )
 assert.ok(
+  workspaceSource.includes('getTranslationDocumentFileUrl'),
+  'workspace should be able to rebuild a stable backend PDF file URL from the document id',
+)
+assert.ok(
   workspaceSource.includes('createTranslationWorkspaceDraftFromParsedDocument'),
   'workspace should convert backend document knowledge into the same reading model used after upload',
+)
+assert.ok(
+  workspaceSource.includes('resolvePersistedPdfPreviewUrl'),
+  'workspace should prefer persisted backend file URLs when restoring the PDF canvas',
 )
 assert.ok(
   workspaceSource.includes('workspaceLoading'),
@@ -99,6 +112,26 @@ assert.ok(
   'workspace should keep structured PDF selection context for source-aware agent questions',
 )
 assert.ok(
+  workspaceSource.includes('answerTranslationDocumentQuestion'),
+  'workspace should call the backend source-grounded Agent answer endpoint',
+)
+assert.ok(
+  workspaceSource.includes('agentAnswerLoading'),
+  'workspace should expose a loading state while waiting for source-grounded Agent answers',
+)
+assert.ok(
+  workspaceSource.includes('message.citations') && workspaceSource.includes('引用'),
+  'workspace should render source citations returned by the Agent answer endpoint',
+)
+assert.ok(
+  workspaceSource.includes('jumpToCitation'),
+  'workspace should let users click citations and jump back to the PDF source page',
+)
+assert.ok(
+  workspaceSource.includes('citation.pageNumber') && workspaceSource.includes('citation.elementId'),
+  'workspace citations should keep pageNumber and elementId visible to the user',
+)
+assert.ok(
   workspaceSource.includes('handlePdfSelectionChange'),
   'workspace should normalize PDF selection payloads before sending them to the Agent area',
 )
@@ -123,8 +156,12 @@ assert.ok(
   'workspace should keep agent analysis in a dedicated right panel',
 )
 assert.ok(
-  workspaceSource.includes('outlineGroups'),
-  'workspace should derive PDF outline groups from parsed document blocks',
+  workspaceSource.includes('outlineItems'),
+  'workspace should derive the left navigation from document outline items instead of raw parsed blocks',
+)
+assert.ok(
+  !workspaceSource.includes('`P${block.order}`'),
+  'workspace outline should not expose raw paragraph block numbers as document outline entries',
 )
 assert.ok(
   workspaceSource.includes('targetPdfPage'),
@@ -213,6 +250,14 @@ assert.ok(
 assert.ok(
   workspaceSource.includes('44px 0 minmax(560px, 1fr) 0 44px'),
   'workspace should allow both side drawers to collapse while keeping the center canvas dominant',
+)
+assert.ok(
+  pdfCanvasSource.includes('getToken'),
+  'PDF canvas should read the current auth token before loading a protected backend PDF file',
+)
+assert.ok(
+  pdfCanvasSource.includes('httpHeaders') && pdfCanvasSource.includes('Authorization'),
+  'PDF canvas should pass the bearer token to pdf.js document requests',
 )
 
 console.log('translation-workspace-page-ok')

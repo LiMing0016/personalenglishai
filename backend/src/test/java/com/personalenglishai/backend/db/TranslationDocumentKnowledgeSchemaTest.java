@@ -18,10 +18,12 @@ class TranslationDocumentKnowledgeSchemaTest {
 
         assertAll(
                 () -> assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS translation_document_parse_snapshot")),
+                () -> assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS translation_document_file")),
                 () -> assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS translation_document_element")),
                 () -> assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS translation_knowledge_chunk")),
                 () -> assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS translation_document_asset")),
                 () -> assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS translation_document_parse_snapshot")),
+                () -> assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS translation_document_file")),
                 () -> assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS translation_document_element")),
                 () -> assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS translation_knowledge_chunk")),
                 () -> assertTrue(migration.contains("CREATE TABLE IF NOT EXISTS translation_document_asset"))
@@ -34,6 +36,8 @@ class TranslationDocumentKnowledgeSchemaTest {
 
         assertAll(
                 () -> assertTrue(schema.contains("UNIQUE KEY uk_translation_parse_snapshot_document (document_id)")),
+                () -> assertTrue(schema.contains("UNIQUE KEY uk_translation_document_file_document (document_id)")),
+                () -> assertTrue(schema.contains("KEY idx_translation_document_file_sha256 (sha256)")),
                 () -> assertTrue(schema.contains("UNIQUE KEY uk_translation_element_document_element (document_id, element_id)")),
                 () -> assertTrue(schema.contains("UNIQUE KEY uk_translation_chunk_document_chunk (document_id, chunk_id)")),
                 () -> assertTrue(schema.contains("UNIQUE KEY uk_translation_asset_document_asset (document_id, asset_id)")),

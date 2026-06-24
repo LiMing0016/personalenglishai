@@ -2,22 +2,35 @@ package com.personalenglishai.backend.controller.translation;
 
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentAgentAnswerRequest;
+import com.personalenglishai.backend.dto.translation.TranslationDocumentAgentAnswerResponse;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
 import com.personalenglishai.backend.service.translation.DocumentParseMode;
+import com.personalenglishai.backend.service.translation.StoredTranslationDocumentFile;
+import com.personalenglishai.backend.service.translation.TranslationDocumentFileStorage;
 import com.personalenglishai.backend.service.translation.TranslationDocumentKnowledgeStore;
 import com.personalenglishai.backend.service.translation.TranslationDocumentImportService;
 import com.personalenglishai.backend.service.translation.TranslationDocumentParseService;
+import com.personalenglishai.backend.service.translation.TranslationDocumentSourceAnswerService;
 import com.personalenglishai.backend.service.translation.UploadedTranslationDocument;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 @RestController
 @RequestMapping("/api/translation/documents")
@@ -25,14 +38,20 @@ public class TranslationDocumentController {
     private final TranslationDocumentParseService parseService;
     private final TranslationDocumentImportService importService;
     private final TranslationDocumentKnowledgeStore knowledgeStore;
+    private final TranslationDocumentFileStorage fileStorage;
+    private final TranslationDocumentSourceAnswerService sourceAnswerService;
 
     public TranslationDocumentController(
             TranslationDocumentParseService parseService,
             TranslationDocumentImportService importService,
-            TranslationDocumentKnowledgeStore knowledgeStore) {
+            TranslationDocumentKnowledgeStore knowledgeStore,
+            TranslationDocumentFileStorage fileStorage,
+            TranslationDocumentSourceAnswerService sourceAnswerService) {
         this.parseService = parseService;
         this.importService = importService;
         this.knowledgeStore = knowledgeStore;
+        this.fileStorage = fileStorage;
+        this.sourceAnswerService = sourceAnswerService;
     }
 
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -66,5 +85,36 @@ public class TranslationDocumentController {
     public TranslationDocumentParseResponse getKnowledge(@PathVariable String documentId) {
         return knowledgeStore.findByDocumentId(documentId)
                 .orElseThrow(() -> new BizException(ErrorCode.DOC_NOT_FOUND, "翻译文档知识快照不存在"));
+    }
+
+    @PostMapping("/{documentId}/agent-answer")
+    public TranslationDocumentAgentAnswerResponse answerWithSourceChunks(
+            @PathVariable String documentId,
+            @RequestBody TranslationDocumentAgentAnswerRequest request) {
+        return sourceAnswerService.answer(documentId, request);
+    }
+
+    @GetMapping("/{documentId}/file")
+    public ResponseEntity<Resource> getOriginalFile(@PathVariable String documentId) {
+        StoredTranslationDocumentFile storedFile = fileStorage.findByDocumentId(documentId)
+                .orElseThrow(() -> new BizException(ErrorCode.DOC_NOT_FOUND, "翻译文档原文件不存在"));
+        if (!Files.exists(storedFile.getPath())) {
+            throw new BizException(ErrorCode.DOC_NOT_FOUND, "翻译文档原文件不存在");
+        }
+
+        MediaType contentType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            contentType = MediaType.parseMediaType(storedFile.getContentType());
+        } catch (RuntimeException ignored) {
+            // Keep application/octet-stream for invalid legacy content types.
+        }
+
+        return ResponseEntity.ok()
+                .contentType(contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(storedFile.getFileName(), StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
+                .body(new FileSystemResource(storedFile.getPath()));
     }
 }

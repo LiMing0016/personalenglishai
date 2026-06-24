@@ -14,9 +14,14 @@
         <span>{{ Math.round(scale * 100) }}%</span>
         <button type="button" @click="setScale(scale + 0.1)">+</button>
         <button type="button" :class="{ active: zoomMode === 'fit-width' }" @click="fitPageWidth">适宽</button>
-        <button type="button" :disabled="!selectedText" @click="copySelectionOrPageText">复制文本层</button>
-        <button type="button" :disabled="!selectedText" @click="highlightSelection">高亮选区</button>
-        <button type="button" :disabled="!selectedText" @click="emitAskAgent('解释当前选区')">问 Agent</button>
+        <button
+          type="button"
+          :disabled="!selectedText || selectedSelectionType === 'region'"
+          @click="copySelectionOrPageText">
+          复制文本层
+        </button>
+        <button type="button" :disabled="!hasActiveSelection" @click="highlightSelection">高亮选区</button>
+        <button type="button" :disabled="!hasActiveSelection" @click="emitAskAgent('解释当前选区')">问 Agent</button>
       </div>
     </header>
 
@@ -44,10 +49,16 @@
           <span
             v-for="box in selectionBoxes"
             :key="box.id"
-            class="selection-geometry-box"
+            :class="['selection-geometry-box', { 'region-selection-box': box.selectionType === 'region' }]"
             :style="box.style" />
-          <button v-if="selectedText" type="button" class="selection-pin" @click="emitAskAgent('解释当前选区')">
-            当前选区
+          <span
+            v-for="box in sourceHighlightBoxes"
+            :key="box.id"
+            class="citation-highlight-box"
+            :style="box.style"
+            :title="box.label" />
+          <button v-if="hasActiveSelection" type="button" class="selection-pin" @click="emitAskAgent('解释当前选区')">
+            {{ selectedSelectionType === 'region' ? '图表区域' : '当前选区' }}
           </button>
           <mark
             v-for="annotation in currentPageAnnotations"
@@ -72,6 +83,10 @@ import {
   type DocumentBlock,
 } from '@/pages/app/translationWorkspaceData'
 import { getToken } from '@/utils/token'
+import {
+  selectTextFlowHits,
+  type PdfTextHit,
+} from '@/utils/pdfGeometrySelection'
 
 interface PageAnnotation {
   id: string
@@ -80,6 +95,8 @@ interface PageAnnotation {
   text: string
 }
 
+type PdfSelectionType = 'text' | 'region'
+
 interface PdfSelectionPayload {
   text: string
   documentId: string
@@ -87,6 +104,14 @@ interface PdfSelectionPayload {
   blockId: string | null
   elementId: string | null
   bbox: string | null
+  selectionType: PdfSelectionType
+}
+
+interface PdfSourceHighlight {
+  pageNumber: number
+  bbox: string | null
+  label: string
+  text?: string | null
 }
 
 interface Point {
@@ -103,14 +128,18 @@ interface GeometryRect {
   height: number
 }
 
-interface TextSpanHit extends GeometryRect {
-  text: string
-  centerY: number
-}
+interface TextSpanHit extends GeometryRect, PdfTextHit {}
 
 interface GeometrySelectionBox {
   id: string
+  label?: string
+  selectionType?: PdfSelectionType
   style: Record<string, string>
+}
+
+interface CanvasInkScanResult {
+  bounds: GeometryRect
+  window: GeometryRect
 }
 
 const props = defineProps<{
@@ -121,6 +150,7 @@ const props = defineProps<{
   activeBlockId: string
   pageCount?: number
   targetPage?: number
+  sourceHighlight?: PdfSourceHighlight | null
 }>()
 
 const emit = defineEmits<{
@@ -137,6 +167,18 @@ const maxScale = 3
 const fitWidthGutter = 28
 const selectionLinePadding = 4
 const selectionMinDragDistance = 2
+const clickRegionScanWidth = 260
+const clickRegionScanHeight = 180
+const clickRegionMaxScanWidth = 620
+const clickRegionMaxScanHeight = 460
+const clickRegionExpansionStep = 80
+const clickRegionMinExpandedScanWidth = 420
+const clickRegionMinExpandedScanHeight = 300
+const clickRegionEdgeTolerance = 10
+const clickRegionPadding = 16
+const clickRegionMinWidth = 180
+const clickRegionMinHeight = 120
+const inkPixelStep = 2
 
 let resizeObserver: ResizeObserver | null = null
 let scrollPageTurnLock = false
@@ -159,11 +201,13 @@ const currentPage = ref(1)
 const scale = ref(1)
 const zoomMode = ref<ZoomMode>('fit-width')
 const selectedText = ref('')
+const selectedSelectionType = ref<PdfSelectionType>('text')
 const annotations = ref<PageAnnotation[]>([])
 const loadError = ref(false)
 const renderedPageCount = ref(0)
 const pendingPageScrollPosition = ref<'top' | 'bottom' | null>(null)
 const selectionBoxes = ref<GeometrySelectionBox[]>([])
+const sourceHighlightBoxes = ref<GeometrySelectionBox[]>([])
 const selectionDragStart = ref<Point | null>(null)
 const selectionDragEnd = ref<Point | null>(null)
 const isGeometrySelecting = ref(false)
@@ -173,6 +217,8 @@ const isGeometrySelecting = ref(false)
 const resolvedPageCount = computed(() => {
   return Math.max(1, renderedPageCount.value || props.pageCount || inferPageCountFromBlocks(props.blocks))
 })
+
+const hasActiveSelection = computed(() => selectedText.value.trim().length > 0)
 
 const currentPageAnnotations = computed(() => {
   return annotations.value.filter((item) => item.page === currentPage.value)
@@ -211,6 +257,10 @@ watch(() => props.targetPage, (page) => {
   if (!page || page === currentPage.value) return
   goToPage(page)
 })
+
+watch(() => props.sourceHighlight, () => {
+  renderSourceHighlight()
+}, { deep: true })
 
 async function loadPdf() {
   resetTextLayer()
@@ -285,6 +335,7 @@ async function renderCurrentPage() {
       return
     }
     await renderTextLayer(page, viewport, renderScale)
+    renderSourceHighlight()
     await restorePageScrollPosition()
   } finally {
     syncScaleFromRender = false
@@ -333,6 +384,104 @@ function resetTextLayer() {
   textLayerRef.value?.replaceChildren()
   textLayerRef.value?.style.removeProperty('--total-scale-factor')
   cancelGeometrySelection()
+  sourceHighlightBoxes.value = []
+}
+
+function renderSourceHighlight() {
+  const highlight = props.sourceHighlight
+  if (!highlight?.bbox || highlight.pageNumber !== currentPage.value) {
+    sourceHighlightBoxes.value = []
+    return
+  }
+
+  sourceHighlightBoxes.value = parseBboxToGeometry(highlight.bbox).map((rect, index) => ({
+    id: `citation-highlight-${highlight.pageNumber}-${index}`,
+    label: highlight.label,
+    style: {
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+    },
+  }))
+}
+
+function parseBboxToGeometry(bbox: string): GeometryRect[] {
+  const trimmed = bbox.trim()
+  if (!trimmed) return []
+
+  const parsedRects = parseJsonBboxToGeometry(trimmed)
+  if (parsedRects.length > 0) return parsedRects
+
+  const numbers = normalizeBboxNumbers(trimmed)
+  if (numbers.length >= 8) return [createRectFromPoints(numbers)]
+  if (numbers.length >= 4) return [createRectFromXywh(numbers[0], numbers[1], numbers[2], numbers[3])]
+  return []
+}
+
+function parseJsonBboxToGeometry(bbox: string): GeometryRect[] {
+  try {
+    const parsed = JSON.parse(bbox) as unknown
+    if (Array.isArray(parsed)) {
+      if (parsed.every((point) => Array.isArray(point) && point.length >= 2)) {
+        const pointNumbers = parsed.flat().map(Number).filter(Number.isFinite)
+        return pointNumbers.length >= 4 ? [createRectFromPoints(pointNumbers)] : []
+      }
+      const numbers = parsed.map(Number).filter(Number.isFinite)
+      if (numbers.length >= 4) {
+        return numbers.length >= 8
+          ? [createRectFromPoints(numbers)]
+          : [createRectFromXywh(numbers[0], numbers[1], numbers[2], numbers[3])]
+      }
+    }
+    if (parsed && typeof parsed === 'object') {
+      const candidate = parsed as Record<string, unknown>
+      const x = Number(candidate.x ?? candidate.left)
+      const y = Number(candidate.y ?? candidate.top)
+      const width = Number(candidate.width)
+      const height = Number(candidate.height)
+      if ([x, y, width, height].every(Number.isFinite)) return [createRectFromXywh(x, y, width, height)]
+    }
+  } catch {
+    return []
+  }
+  return []
+}
+
+function normalizeBboxNumbers(bbox: string) {
+  return (bbox.match(/-?\d+(?:\.\d+)?/g) ?? [])
+    .map(Number)
+    .filter(Number.isFinite)
+}
+
+function createRectFromPoints(numbers: number[]): GeometryRect {
+  const xs: number[] = []
+  const ys: number[] = []
+  for (let index = 0; index + 1 < numbers.length; index += 2) {
+    xs.push(numbers[index])
+    ys.push(numbers[index + 1])
+  }
+  return createRectFromBounds(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys))
+}
+
+function createRectFromXywh(x: number, y: number, width: number, height: number): GeometryRect {
+  return createRectFromBounds(
+    width >= 0 ? x : x + width,
+    height >= 0 ? y : y + height,
+    width >= 0 ? x + width : x,
+    height >= 0 ? y + height : y,
+  )
+}
+
+function createRectFromBounds(left: number, top: number, right: number, bottom: number): GeometryRect {
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  }
 }
 
 function calculateFitWidthScale(pageWidth: number) {
@@ -357,6 +506,7 @@ function beginGeometrySelection(event: PointerEvent) {
   selectionDragStart.value = point
   selectionDragEnd.value = point
   selectedText.value = ''
+  selectedSelectionType.value = 'text'
   selectionBoxes.value = []
   textLayerRef.value?.setPointerCapture?.(event.pointerId)
 }
@@ -395,6 +545,7 @@ function cancelGeometrySelection(event?: PointerEvent) {
   selectionDragEnd.value = null
   selectionBoxes.value = []
   selectedText.value = ''
+  selectedSelectionType.value = 'text'
 }
 
 function getTextLayerPoint(event: PointerEvent): Point | null {
@@ -413,16 +564,36 @@ function updateSelectionFromGeometry() {
   if (!selectionRect) return
 
   if (selectionRect.width < selectionMinDragDistance && selectionRect.height < selectionMinDragDistance) {
-    selectedText.value = ''
-    selectionBoxes.value = []
-    applySelectionPayload('', null)
+    const point = selectionDragEnd.value ?? selectionDragStart.value
+    if (point && createClickRegionSelection(point)) return
+    clearSelectionPayload()
     return
   }
 
-  const hits = findTextSpanHits(selectionRect)
+  const start = selectionDragStart.value
+  const end = selectionDragEnd.value
+  if (!start || !end) return
+
+  const hits = findTextSpanHits(selectionRect, start, end)
   const text = buildSelectedTextFromHits(hits)
+  if (hits.length === 0 || !text.trim()) {
+    selectionBoxes.value = [{
+      id: `region-selection-${currentPage.value}`,
+      selectionType: 'region',
+      style: {
+        left: `${selectionRect.left}px`,
+        top: `${selectionRect.top}px`,
+        width: `${selectionRect.width}px`,
+        height: `${selectionRect.height}px`,
+      },
+    }]
+    applySelectionPayload('图表/图片区选区', formatGeometryRectBbox(selectionRect), 'region')
+    return
+  }
+
   selectionBoxes.value = mergeCharacterHitsIntoBoxes(hits).map((hit, index) => ({
     id: `selection-box-${currentPage.value}-${index}`,
+    selectionType: 'text',
     style: {
       left: `${hit.left}px`,
       top: `${hit.top}px`,
@@ -430,7 +601,35 @@ function updateSelectionFromGeometry() {
       height: `${hit.height}px`,
     },
   }))
-  applySelectionPayload(text, formatSelectionBbox(hits))
+  applySelectionPayload(text, formatSelectionBbox(hits), 'text')
+}
+
+function clearSelectionPayload() {
+  selectedText.value = ''
+  selectedSelectionType.value = 'text'
+  selectionBoxes.value = []
+  applySelectionPayload('', null, 'text')
+}
+
+function createClickRegionSelection(point: Point) {
+  if (isPointOnTextSpan(point)) return false
+
+  const inkBounds = findCanvasInkBoundsNearPoint(point)
+  if (!inkBounds) return false
+
+  const rect = createClickRegionRect(inkBounds)
+  selectionBoxes.value = [{
+    id: `region-selection-${currentPage.value}-click`,
+    selectionType: 'region',
+    style: {
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+    },
+  }]
+  applySelectionPayload('图表/图片区选区', formatGeometryRectBbox(rect), 'region')
+  return true
 }
 
 function getCurrentSelectionRect(): GeometryRect | null {
@@ -452,7 +651,180 @@ function getCurrentSelectionRect(): GeometryRect | null {
   }
 }
 
-function findTextSpanHits(selectionRect: GeometryRect): TextSpanHit[] {
+function isPointOnTextSpan(point: Point) {
+  const textLayer = textLayerRef.value
+  if (!textLayer) return false
+
+  const layerRect = textLayer.getBoundingClientRect()
+  const spans = Array.from(textLayer.querySelectorAll('.textLayer span'))
+  return spans.some((span) => {
+    if (!(span instanceof HTMLElement)) return false
+    if (span.getAttribute('role') === 'img') return false
+    if (!span.textContent?.trim()) return false
+    const rect = span.getBoundingClientRect()
+    const left = rect.left - layerRect.left - 1
+    const right = rect.right - layerRect.left + 1
+    const top = rect.top - layerRect.top - 1
+    const bottom = rect.bottom - layerRect.top + 1
+    return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+  })
+}
+
+function findCanvasInkBoundsNearPoint(point: Point): GeometryRect | null {
+  const canvas = canvasRef.value
+  const textLayer = textLayerRef.value
+  const context = canvas?.getContext('2d')
+  if (!canvas || !textLayer || !context || canvas.width <= 0 || canvas.height <= 0) return null
+
+  const layerWidth = Math.max(1, textLayer.clientWidth || canvas.getBoundingClientRect().width)
+  const layerHeight = Math.max(1, textLayer.clientHeight || canvas.getBoundingClientRect().height)
+  const maxScanWidth = Math.min(clickRegionMaxScanWidth, layerWidth)
+  const maxScanHeight = Math.min(clickRegionMaxScanHeight, layerHeight)
+  let scanWidth = Math.min(clickRegionScanWidth, maxScanWidth)
+  let scanHeight = Math.min(clickRegionScanHeight, maxScanHeight)
+  let result = sampleCanvasInkBounds(point, scanWidth, scanHeight, canvas, context, layerWidth, layerHeight)
+  if (!result) return null
+
+  while (shouldExpandClickRegion(result, scanWidth, scanHeight, maxScanWidth, maxScanHeight)) {
+    const nextScanWidth = Math.min(maxScanWidth, scanWidth + clickRegionExpansionStep)
+    const nextScanHeight = Math.min(maxScanHeight, scanHeight + clickRegionExpansionStep)
+    if (nextScanWidth === scanWidth && nextScanHeight === scanHeight) break
+
+    scanWidth = nextScanWidth
+    scanHeight = nextScanHeight
+    const expanded = sampleCanvasInkBounds(point, scanWidth, scanHeight, canvas, context, layerWidth, layerHeight)
+    if (expanded) result = expanded
+  }
+
+  return result.bounds
+}
+
+function sampleCanvasInkBounds(
+  point: Point,
+  scanWidth: number,
+  scanHeight: number,
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D,
+  layerWidth: number,
+  layerHeight: number,
+): CanvasInkScanResult | null {
+  const scanWindow = createScanWindowAroundPoint(point, scanWidth, scanHeight, layerWidth, layerHeight)
+  const scaleX = canvas.width / layerWidth
+  const scaleY = canvas.height / layerHeight
+  const sampleLeft = Math.max(0, Math.floor(scanWindow.left * scaleX))
+  const sampleTop = Math.max(0, Math.floor(scanWindow.top * scaleY))
+  const sampleWidth = Math.max(1, Math.min(canvas.width - sampleLeft, Math.ceil(scanWindow.width * scaleX)))
+  const sampleHeight = Math.max(1, Math.min(canvas.height - sampleTop, Math.ceil(scanWindow.height * scaleY)))
+
+  let imageData: ImageData
+  try {
+    imageData = context.getImageData(sampleLeft, sampleTop, sampleWidth, sampleHeight)
+  } catch {
+    return null
+  }
+
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  const data = imageData.data
+  for (let y = 0; y < sampleHeight; y += inkPixelStep) {
+    for (let x = 0; x < sampleWidth; x += inkPixelStep) {
+      const offset = (y * sampleWidth + x) * 4
+      if (!isVisibleInkPixel(data[offset], data[offset + 1], data[offset + 2], data[offset + 3])) continue
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null
+  const cssScaleX = layerWidth / canvas.width
+  const cssScaleY = layerHeight / canvas.height
+  return {
+    bounds: createRectFromBounds(
+      (sampleLeft + minX) * cssScaleX,
+      (sampleTop + minY) * cssScaleY,
+      (sampleLeft + maxX + inkPixelStep) * cssScaleX,
+      (sampleTop + maxY + inkPixelStep) * cssScaleY,
+    ),
+    window: scanWindow,
+  }
+}
+
+function createScanWindowAroundPoint(
+  point: Point,
+  scanWidth: number,
+  scanHeight: number,
+  layerWidth: number,
+  layerHeight: number,
+): GeometryRect {
+  const width = Math.min(scanWidth, layerWidth)
+  const height = Math.min(scanHeight, layerHeight)
+  const left = clampCoordinate(point.x - width / 2, Math.max(0, layerWidth - width))
+  const top = clampCoordinate(point.y - height / 2, Math.max(0, layerHeight - height))
+  return createRectFromBounds(left, top, left + width, top + height)
+}
+
+function shouldExpandClickRegion(
+  result: CanvasInkScanResult,
+  scanWidth: number,
+  scanHeight: number,
+  maxScanWidth: number,
+  maxScanHeight: number,
+) {
+  const targetWidth = Math.min(clickRegionMinExpandedScanWidth, maxScanWidth)
+  const targetHeight = Math.min(clickRegionMinExpandedScanHeight, maxScanHeight)
+  if (scanWidth < targetWidth || scanHeight < targetHeight) return true
+  return isInkNearScanEdge(result.bounds, result.window)
+}
+
+function isInkNearScanEdge(bounds: GeometryRect, scanWindow: GeometryRect) {
+  return bounds.left <= scanWindow.left + clickRegionEdgeTolerance
+    || bounds.top <= scanWindow.top + clickRegionEdgeTolerance
+    || bounds.right >= scanWindow.right - clickRegionEdgeTolerance
+    || bounds.bottom >= scanWindow.bottom - clickRegionEdgeTolerance
+}
+
+function isVisibleInkPixel(red: number, green: number, blue: number, alpha: number) {
+  if (alpha < 24) return false
+  const luminance = 0.299 * red + 0.587 * green + 0.114 * blue
+  const colorRange = Math.max(red, green, blue) - Math.min(red, green, blue)
+  return luminance < 215 || (colorRange > 32 && luminance < 242)
+}
+
+function createClickRegionRect(bounds: GeometryRect): GeometryRect {
+  const padded = createRectFromBounds(
+    bounds.left - clickRegionPadding,
+    bounds.top - clickRegionPadding,
+    bounds.right + clickRegionPadding,
+    bounds.bottom + clickRegionPadding,
+  )
+  const width = Math.max(clickRegionMinWidth, padded.width)
+  const height = Math.max(clickRegionMinHeight, padded.height)
+  const centerX = padded.left + padded.width / 2
+  const centerY = padded.top + padded.height / 2
+  return clampRectToTextLayer(createRectFromBounds(
+    centerX - width / 2,
+    centerY - height / 2,
+    centerX + width / 2,
+    centerY + height / 2,
+  ))
+}
+
+function clampRectToTextLayer(rect: GeometryRect): GeometryRect {
+  const textLayer = textLayerRef.value
+  const layerWidth = Math.max(1, textLayer?.clientWidth || canvasRef.value?.width || rect.right)
+  const layerHeight = Math.max(1, textLayer?.clientHeight || canvasRef.value?.height || rect.bottom)
+  const width = Math.min(rect.width, layerWidth)
+  const height = Math.min(rect.height, layerHeight)
+  const left = clampCoordinate(rect.left, Math.max(0, layerWidth - width))
+  const top = clampCoordinate(rect.top, Math.max(0, layerHeight - height))
+  return createRectFromBounds(left, top, left + width, top + height)
+}
+
+function findTextSpanHits(selectionRect: GeometryRect, start: Point, end: Point): TextSpanHit[] {
   const textLayer = textLayerRef.value
   if (!textLayer) return []
 
@@ -475,21 +847,22 @@ function findTextSpanHits(selectionRect: GeometryRect): TextSpanHit[] {
       bottom: spanRect.bottom - layerRect.top,
       width: spanRect.width,
       height: spanRect.height,
+      centerX: spanRect.left - layerRect.left + spanRect.width / 2,
       centerY: spanRect.top - layerRect.top + spanRect.height / 2,
     }
-    if (!isSpanInsideSelection(spanHit, selectionRect)) continue
+    if (!isSpanInsideSelectionVerticalBand(spanHit, selectionRect)) continue
 
-    const characterHits = findTextCharacterHits(span, selectionRect, layerRect)
+    const characterHits = findTextCharacterHits(span, layerRect)
     hits.push(...(characterHits.length > 0 ? characterHits : [spanHit]))
   }
 
-  return hits.sort(compareVisualOrder)
+  return selectTextFlowHits(hits, start, end) as TextSpanHit[]
 }
 
-function findTextCharacterHits(span: HTMLElement, selectionRect: GeometryRect, layerRect: DOMRect): TextSpanHit[] {
+function findTextCharacterHits(span: HTMLElement, layerRect: DOMRect): TextSpanHit[] {
   const textNode = getSpanTextNode(span)
   if (!textNode || !textNode.data.trim()) {
-    return clipSpanTextByGeometry(span, selectionRect, layerRect)
+    return buildSpanFallbackHit(span, layerRect)
   }
 
   const range = document.createRange()
@@ -509,9 +882,10 @@ function findTextCharacterHits(span: HTMLElement, selectionRect: GeometryRect, l
         bottom: rect.bottom - layerRect.top,
         width: rect.width,
         height: rect.height,
+        centerX: rect.left - layerRect.left + rect.width / 2,
         centerY: rect.top - layerRect.top + rect.height / 2,
       }
-      if (isSpanInsideSelection(hit, selectionRect)) hits.push(hit)
+      hits.push(hit)
     }
   } finally {
     range.detach?.()
@@ -526,52 +900,30 @@ function getSpanTextNode(span: HTMLElement): Text | null {
   return null
 }
 
-function clipSpanTextByGeometry(span: HTMLElement, selectionRect: GeometryRect, layerRect: DOMRect): TextSpanHit[] {
+function buildSpanFallbackHit(span: HTMLElement, layerRect: DOMRect): TextSpanHit[] {
   const text = span.textContent ?? ''
   if (!text.trim()) return []
 
   const rect = span.getBoundingClientRect()
   const spanLeft = rect.left - layerRect.left
   const spanRight = rect.right - layerRect.left
-  const spanWidth = Math.max(1, spanRight - spanLeft)
-  const startRatio = clampRatio((selectionRect.left - spanLeft) / spanWidth)
-  const endRatio = clampRatio((selectionRect.right - spanLeft) / spanWidth)
-  const startIndex = Math.max(0, Math.floor(text.length * Math.min(startRatio, endRatio)))
-  const endIndex = Math.min(text.length, Math.ceil(text.length * Math.max(startRatio, endRatio)))
-  const clippedText = text.slice(startIndex, endIndex)
-  if (!clippedText.trim()) return []
-
   return [{
-    text: clippedText,
-    left: Math.max(spanLeft, selectionRect.left),
+    text,
+    left: spanLeft,
     top: rect.top - layerRect.top,
-    right: Math.min(spanRight, selectionRect.right),
+    right: spanRight,
     bottom: rect.bottom - layerRect.top,
-    width: Math.max(1, Math.min(spanRight, selectionRect.right) - Math.max(spanLeft, selectionRect.left)),
+    width: Math.max(1, spanRight - spanLeft),
     height: rect.height,
+    centerX: spanLeft + Math.max(1, spanRight - spanLeft) / 2,
     centerY: rect.top - layerRect.top + rect.height / 2,
   }]
 }
 
-function isSpanInsideSelection(hit: TextSpanHit, selectionRect: GeometryRect) {
-  const horizontalIntersects = hit.right >= selectionRect.left && hit.left <= selectionRect.right
-  if (!horizontalIntersects) return false
-
-  if (selectionRect.height <= Math.max(selectionLinePadding * 2, hit.height * 0.9)) {
-    return hit.centerY >= selectionRect.top - selectionLinePadding
-      && hit.centerY <= selectionRect.bottom + selectionLinePadding
-  }
-
-  const overlapWidth = Math.max(0, Math.min(hit.right, selectionRect.right) - Math.max(hit.left, selectionRect.left))
-  const overlapHeight = Math.max(0, Math.min(hit.bottom, selectionRect.bottom) - Math.max(hit.top, selectionRect.top))
-  const hitArea = Math.max(1, hit.width * hit.height)
-  return (overlapWidth * overlapHeight) / hitArea >= 0.18
-}
-
-function compareVisualOrder(left: TextSpanHit, right: TextSpanHit) {
-  const topDelta = left.top - right.top
-  if (Math.abs(topDelta) > Math.max(6, Math.min(left.height, right.height) * 0.6)) return topDelta
-  return left.left - right.left
+function isSpanInsideSelectionVerticalBand(hit: TextSpanHit, selectionRect: GeometryRect) {
+  const verticalPadding = Math.max(selectionLinePadding, hit.height * 0.55)
+  return hit.bottom >= selectionRect.top - verticalPadding
+    && hit.top <= selectionRect.bottom + verticalPadding
 }
 
 function buildSelectedTextFromHits(hits: TextSpanHit[]) {
@@ -645,9 +997,16 @@ function formatSelectionBbox(hits: TextSpanHit[]) {
     .join(',')
 }
 
-function applySelectionPayload(text: string, bbox: string | null) {
-  const payload = resolveSelectionPayload(text.trim(), bbox)
+function formatGeometryRectBbox(rect: GeometryRect) {
+  return [rect.left, rect.top, rect.width, rect.height]
+    .map((value) => Number(value.toFixed(2)))
+    .join(',')
+}
+
+function applySelectionPayload(text: string, bbox: string | null, selectionType: PdfSelectionType) {
+  const payload = resolveSelectionPayload(text.trim(), bbox, selectionType)
   selectedText.value = payload.text
+  selectedSelectionType.value = payload.selectionType
   if (payload.blockId) emit('selectBlock', payload.blockId)
   emit('selectionChange', payload)
 }
@@ -674,7 +1033,23 @@ function emitAskAgent(prompt: string) {
   emit('askAgent', `${prompt}${suffix}`)
 }
 
-function resolveSelectionPayload(text: string, bbox: string | null = null): PdfSelectionPayload {
+function resolveSelectionPayload(
+  text: string,
+  bbox: string | null = null,
+  selectionType: PdfSelectionType = 'text',
+): PdfSelectionPayload {
+  if (selectionType === 'region') {
+    return {
+      text,
+      documentId: props.documentId,
+      pageNumber: currentPage.value,
+      blockId: null,
+      elementId: null,
+      bbox,
+      selectionType: 'region',
+    }
+  }
+
   const context = resolveDocumentSelectionContextFromText({
     documentId: props.documentId,
     blocks: props.blocks,
@@ -689,6 +1064,7 @@ function resolveSelectionPayload(text: string, bbox: string | null = null): PdfS
     blockId: context?.blockId ?? null,
     elementId: context?.elementId ?? null,
     bbox: bbox ?? context?.bbox ?? null,
+    selectionType,
   }
 }
 
@@ -767,10 +1143,6 @@ function clampScale(nextScale: number) {
 
 function clampCoordinate(value: number, maxValue: number) {
   return Math.min(Math.max(0, value), Math.max(0, maxValue))
-}
-
-function clampRatio(value: number) {
-  return Math.min(Math.max(0, value), 1)
 }
 
 function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
@@ -962,6 +1334,23 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   z-index: 1;
   border-radius: 2px;
   background: rgb(20 184 166 / 30%);
+  pointer-events: none;
+}
+
+.region-selection-box {
+  border: 2px solid rgb(20 184 166 / 92%);
+  border-radius: 3px;
+  background: rgb(20 184 166 / 24%);
+  box-shadow: 0 0 0 2px rgb(20 184 166 / 12%);
+}
+
+.citation-highlight-box {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid #f97316;
+  border-radius: 3px;
+  background: rgb(249 115 22 / 18%);
+  box-shadow: 0 0 0 2px rgb(249 115 22 / 14%);
   pointer-events: none;
 }
 

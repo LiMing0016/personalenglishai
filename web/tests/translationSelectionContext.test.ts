@@ -4,6 +4,7 @@ import {
   buildDocumentSelectionContext,
   buildIntensiveReadingDocument,
   createTranslationWorkspaceDraftFromParsedDocument,
+  resolveDocumentSelectionContextFromText,
 } from '../src/pages/app/translationWorkspaceData'
 
 const parsedDocument = {
@@ -92,5 +93,33 @@ assert.deepEqual(context, {
   bbox: '[[10,20],[300,20],[300,80],[10,80]]',
   text: 'Top-Down Approach',
 })
+
+const resolvedSelectionContext = resolveDocumentSelectionContextFromText({
+  documentId: readingDocument.id,
+  blocks: readingDocument.blocks,
+  pageNumber: 2,
+  activeBlockId: '',
+  selectedText: 'Top-Down    Approach',
+})
+
+assert.deepEqual(resolvedSelectionContext, {
+  documentId: 'doc-001',
+  pageNumber: 2,
+  blockId: 'el-29',
+  elementId: 'el-29',
+  bbox: '[[10,20],[300,20],[300,80],[10,80]]',
+  text: 'Top-Down    Approach',
+})
+
+const fallbackSelectionContext = resolveDocumentSelectionContextFromText({
+  documentId: readingDocument.id,
+  blocks: readingDocument.blocks,
+  pageNumber: 2,
+  activeBlockId: 'el-29',
+  selectedText: 'text that came from pdf.js with broken spacing',
+})
+
+assert.equal(fallbackSelectionContext?.elementId, 'el-29')
+assert.equal(fallbackSelectionContext?.text, 'text that came from pdf.js with broken spacing')
 
 console.log('translation-selection-context-ok')

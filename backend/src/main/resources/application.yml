@@ -42,6 +42,8 @@ app:
   base-url: ${APP_BASE_URL:http://localhost:5173}
   data-cleaning:
     dictionary-upload-dir: ${DATA_CLEANING_DICTIONARY_UPLOAD_DIR:storage/data-cleaning/dictionaries}
+  translation:
+    document-storage-dir: ${APP_TRANSLATION_DOCUMENT_STORAGE_DIR:data/uploads/translation-documents}
   cookie:
     secure: ${COOKIE_SECURE:false}
   mail:
