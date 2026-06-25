@@ -9,9 +9,13 @@ for (const requiredText of [
   '/learning-notes/organize',
   'createLearningNote',
   'updateLearningNote',
+  'getLearningNote',
   'deleteLearningNote',
   'listLearningNotes',
   'organizeLearningAssetMarkdown',
+  'LearningAssetCopilotAction',
+  'action: LearningAssetCopilotAction',
+  'instruction?: string',
   'candidateMarkdown',
 ]) {
   assert.ok(apiSource.includes(requiredText), `learning notes API should include ${requiredText}`)

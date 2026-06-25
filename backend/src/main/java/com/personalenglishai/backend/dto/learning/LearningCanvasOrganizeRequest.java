@@ -7,6 +7,8 @@ public class LearningCanvasOrganizeRequest {
     private String contextText;
     private String currentMarkdown;
     private String mode;
+    private String action;
+    private String instruction;
 
     public String getType() {
         return type;
@@ -54,5 +56,21 @@ public class LearningCanvasOrganizeRequest {
 
     public void setMode(String mode) {
         this.mode = mode;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    public String getInstruction() {
+        return instruction;
+    }
+
+    public void setInstruction(String instruction) {
+        this.instruction = instruction;
     }
 }

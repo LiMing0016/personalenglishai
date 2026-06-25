@@ -102,7 +102,9 @@
       :selected-text="selectionToolbar.selectedText"
       :left="selectionToolbar.left"
       :top="selectionToolbar.top"
+      :can-append-to-active="canAppendToLearningAsset"
       @create="emitLearningAssetSelection"
+      @append="emitAppendToLearningAsset"
     />
   </section>
 </template>
@@ -115,11 +117,13 @@ import AssistantStarterCards from './AssistantStarterCards.vue'
 import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
+import { resolveLearningAssetContext, type LearningAssetType } from '@/types/learningAssets.ts'
 
 export interface AssistantLearningAssetSelection {
   selectedText: string
   contextText: string
   messageId: string
+  type?: LearningAssetType
 }
 
 const props = defineProps<{
@@ -129,6 +133,7 @@ const props = defineProps<{
   emptyTitle: string
   emptySubtitle: string
   markdownTheme: 'marktext' | 'milkdown'
+  canAppendToLearningAsset: boolean
 }>()
 
 const emit = defineEmits<{
@@ -137,6 +142,7 @@ const emit = defineEmits<{
   retryMessage: [messageId: string]
   retry: []
   createLearningAsset: [selection: AssistantLearningAssetSelection]
+  appendToLearningAsset: [selection: AssistantLearningAssetSelection]
 }>()
 
 const previewUrls = new Map<string, string>()
@@ -190,10 +196,41 @@ function syncAssistantSelection(fallbackMessage?: AssistantMessage) {
 
   const rect = range.getBoundingClientRect()
   selectionToolbar.selectedText = selectedText
-  selectionToolbar.contextText = message.content
+  selectionToolbar.contextText = resolveLearningAssetContext({
+    selectedText,
+    contextText: readSelectionContextText(range, contentElement, anchorElement),
+  })
   selectionToolbar.messageId = message.id
   selectionToolbar.left = Math.max(12, Math.min(rect.left, window.innerWidth - 360))
   selectionToolbar.top = Math.max(12, rect.top - 48)
+}
+
+function readSelectionContextText(
+  range: Range,
+  contentElement: HTMLElement,
+  anchorElement?: Element | null,
+) {
+  const commonAncestor = range.commonAncestorContainer instanceof Element
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement
+  const contextElement = findSelectionContextElement(anchorElement, contentElement)
+    ?? findSelectionContextElement(commonAncestor, contentElement)
+  return contextElement?.textContent?.trim() || ''
+}
+
+function findSelectionContextElement(
+  startElement: Element | null | undefined,
+  contentElement: HTMLElement,
+) {
+  if (!startElement || !contentElement.contains(startElement)) return null
+
+  const tableRow = startElement.closest<HTMLElement>('tr')
+  if (tableRow && contentElement.contains(tableRow)) return tableRow
+
+  const block = startElement.closest<HTMLElement>('p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th')
+  if (block && contentElement.contains(block)) return block
+
+  return null
 }
 
 function clearLearningAssetSelection() {
@@ -202,9 +239,21 @@ function clearLearningAssetSelection() {
   selectionToolbar.messageId = ''
 }
 
-function emitLearningAssetSelection() {
+function emitLearningAssetSelection(type: LearningAssetType) {
   if (!selectionToolbar.selectedText || !selectionToolbar.messageId) return
   emit('createLearningAsset', {
+    selectedText: selectionToolbar.selectedText,
+    contextText: selectionToolbar.contextText,
+    messageId: selectionToolbar.messageId,
+    type,
+  })
+  window.getSelection()?.removeAllRanges()
+  clearLearningAssetSelection()
+}
+
+function emitAppendToLearningAsset() {
+  if (!selectionToolbar.selectedText || !selectionToolbar.messageId || !props.canAppendToLearningAsset) return
+  emit('appendToLearningAsset', {
     selectedText: selectionToolbar.selectedText,
     contextText: selectionToolbar.contextText,
     messageId: selectionToolbar.messageId,

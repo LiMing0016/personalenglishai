@@ -13,13 +13,18 @@ const pageSource = readFileSync(new URL('../src/pages/app/AssistantPage.vue', im
 
 assert.ok(chatViewSource.includes('LearningAssetSelectionToolbar'))
 assert.ok(chatViewSource.includes('createLearningAsset'))
+assert.ok(chatViewSource.includes('appendToLearningAsset'))
 assert.ok(chatViewSource.includes('selectionchange'))
 assert.ok(chatViewSource.includes('selectionToolbar.messageId = message.id'))
 assert.ok(chatViewSource.includes('messageId: selectionToolbar.messageId'))
 assert.ok(toolbarSource.includes('新建单词卡'))
+assert.ok(toolbarSource.includes('新建语法笔记'))
+assert.ok(toolbarSource.includes('加入当前笔记'))
 assert.ok(toolbarSource.includes('selectedText'))
 assert.ok(pageSource.includes('@create-learning-asset'))
+assert.ok(pageSource.includes('@append-to-learning-asset'))
 assert.ok(pageSource.includes('handleCreateLearningAsset'))
+assert.ok(pageSource.includes('handleAppendToLearningAsset'))
 assert.ok(pageSource.includes('LearningAssetCanvas'))
 
 console.log('assistant-learning-asset-selection-ok')

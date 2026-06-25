@@ -2,12 +2,14 @@
 title: Learning Notes API
 status: active
 owner: backend
-last_updated: 2026-06-24
+last_updated: 2026-06-25
 review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/controller/LearningNoteController.java
   - backend/src/main/java/com/personalenglishai/backend/service/learning/LearningNoteService.java
   - backend/src/main/java/com/personalenglishai/backend/service/learning/LearningCanvasOrganizeService.java
+  - python/ai_orchestrator/services/learning_asset_copilot.py
+  - python/ai_orchestrator/prompts/agent_instructions/learning_asset_copilot.md
   - web/src/api/learningNotes.ts
 related_docs:
   - /data/learning-note-schema
@@ -25,6 +27,13 @@ related_docs:
 - 用户在学习助手回复中选中单词或短语。
 - 点击 `新建单词卡` 打开右侧学习资产画布。
 - 用户编辑 Markdown 正文，保存到 `learning_note`。
+- 右侧画布 Copilot 只处理当前笔记，返回 Markdown 候选，不参与左侧学习对话。
+
+实现边界：
+
+- Java 后端负责鉴权、笔记 CRUD、公开 `/api/learning-notes/organize` API，并通过 `PythonAssistantClient` 转发到 Python orchestrator。
+- 学习资产 Copilot 的 agent、prompt、默认模板、action 语义和模型调用统一维护在 `python/ai_orchestrator`。
+- 不要在 Java service 中新增学习资产 Copilot prompt 或直接调用大模型。
 
 ## Endpoint
 
@@ -87,18 +96,22 @@ POST /api/learning-notes/organize
   "selectedText": "nuanced",
   "contextText": "A nuanced answer considers different sides.",
   "currentMarkdown": "# nuanced\n\nmy own note",
-  "mode": "format"
+  "mode": "format",
+  "action": "polish",
+  "instruction": "把英文例句润色得更自然，保留我的中文说明"
 }
 ```
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `type` | string | 是 | 首版为 `vocabulary`。 |
+| `type` | string | 是 | 学习资产类型。前端可传 `vocabulary`、`sentence`、`grammar`、`expression`。 |
 | `title` | string | 是 | 资产标题。 |
 | `selectedText` | string | 否 | 用户从助手回复中选中的文本。 |
 | `contextText` | string | 否 | 来源助手消息全文。 |
-| `currentMarkdown` | string | 否 | 当前画布 Markdown。`format` 模式必传。 |
-| `mode` | string | 是 | `create` 使用默认单词卡模板整理；`format` 只优化格式并保留用户笔记。 |
+| `currentMarkdown` | string | 否 | 当前画布 Markdown。执行 `format`、`expand`、`polish`、`custom` 时建议传入。 |
+| `action` | string | 是 | Copilot 操作：`complete`、`organize`、`format`、`examples`、`expand`、`polish`、`custom`。 |
+| `instruction` | string | 否 | 用户输入的自定义整理要求。`custom` 或带补充要求的动作可传。 |
+| `mode` | string | 否 | 向后兼容字段。旧客户端可继续传 `create` 或 `format`；新版以前端 `action` 为准。 |
 
 ## Response
 
@@ -181,4 +194,3 @@ curl -i -X POST http://localhost:18080/api/learning-notes `
 - 未登录请求返回 `401000`。
 - 登录后可创建、查询、更新、软删除学习笔记。
 - `organize` 返回 `candidateMarkdown`，前端以候选预览形式展示。
-

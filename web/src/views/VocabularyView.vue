@@ -296,7 +296,10 @@
             <article v-for="note in savedVocabularyNotes" :key="note.noteUid" class="saved-note-item">
               <strong>{{ note.title }}</strong>
               <p>{{ previewMarkdown(note.contentMarkdown) }}</p>
-              <small>{{ formatFavoriteDate(note.updatedAt || note.createdAt || '') }}</small>
+              <footer>
+                <small>{{ formatFavoriteDate(note.updatedAt || note.createdAt || '') }}</small>
+                <button type="button" @click="openSavedVocabularyNote(note)">继续编辑</button>
+              </footer>
             </article>
           </div>
         </section>
@@ -1241,6 +1244,13 @@ async function openFavoriteDetail(word: string) {
   query.value = word
   activeView.value = 'search'
   await submitLookup()
+}
+
+function openSavedVocabularyNote(note: LearningNoteDto) {
+  void router.push({
+    name: 'LearningAssistant',
+    query: { learningNote: note.noteUid },
+  })
 }
 
 function formatFavoriteMeaning(item: DictionaryFavoriteItem) {
@@ -3040,6 +3050,31 @@ function normalizeError(err: unknown) {
 .saved-note-item small {
   color: #64748b;
   font-size: 12px;
+}
+
+.saved-note-item footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.saved-note-item footer button {
+  min-height: 30px;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #ecfdf5;
+  color: #047857;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.saved-note-item footer button:hover,
+.saved-note-item footer button:focus-visible {
+  border-color: #047857;
+  outline: none;
 }
 
 .stats-kpis {

@@ -9,23 +9,45 @@
     <span class="selection-text">{{ selectedText }}</span>
     <button
       type="button"
+      class="toolbar-button toolbar-button--primary"
       @mousedown.prevent
-      @click="$emit('create')"
+      @click="$emit('create', 'vocabulary')"
     >
       新建单词卡
+    </button>
+    <button
+      type="button"
+      class="toolbar-button"
+      @mousedown.prevent
+      @click="$emit('create', 'grammar')"
+    >
+      新建语法笔记
+    </button>
+    <button
+      type="button"
+      class="toolbar-button"
+      :disabled="!canAppendToActive"
+      @mousedown.prevent
+      @click="$emit('append')"
+    >
+      加入当前笔记
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { LearningAssetType } from '@/types/learningAssets.ts'
+
 defineProps<{
   selectedText: string
   left: number
   top: number
+  canAppendToActive: boolean
 }>()
 
 defineEmits<{
-  create: []
+  create: [type: LearningAssetType]
+  append: []
 }>()
 </script>
 
@@ -54,21 +76,40 @@ defineEmits<{
   white-space: nowrap;
 }
 
-button {
+.toolbar-button {
   min-height: 30px;
-  border: 0;
+  border: 1px solid #dbe3ea;
   border-radius: 6px;
-  background: #047857;
-  color: #ffffff;
+  background: #ffffff;
+  color: #334155;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
 }
 
-button:hover,
-button:focus-visible {
-  background: #065f46;
+.toolbar-button--primary {
+  border-color: #047857;
+  background: #047857;
+  color: #ffffff;
+}
+
+.toolbar-button:hover,
+.toolbar-button:focus-visible {
+  border-color: #047857;
+  color: #047857;
   outline: none;
+}
+
+.toolbar-button--primary:hover,
+.toolbar-button--primary:focus-visible {
+  background: #065f46;
+  color: #ffffff;
+  outline: none;
+}
+
+.toolbar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 </style>

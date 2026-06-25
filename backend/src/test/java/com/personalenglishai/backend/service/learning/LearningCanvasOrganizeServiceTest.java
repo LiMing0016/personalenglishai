@@ -1,16 +1,18 @@
 package com.personalenglishai.backend.service.learning;
 
-import com.personalenglishai.backend.ai.client.OpenAiClient;
 import com.personalenglishai.backend.dto.learning.LearningCanvasOrganizeRequest;
+import com.personalenglishai.backend.dto.learning.LearningCanvasOrganizeResponse;
+import com.personalenglishai.backend.service.assistant.PythonAssistantClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,47 +20,41 @@ import static org.mockito.Mockito.when;
 class LearningCanvasOrganizeServiceTest {
 
     @Mock
-    private OpenAiClient openAiClient;
+    private PythonAssistantClient pythonAssistantClient;
 
     @Test
-    void createModeAsksModelForVocabularyMarkdown() {
-        LearningCanvasOrganizeService service = new LearningCanvasOrganizeService(openAiClient);
+    void delegatesLearningAssetCopilotToPythonOrchestrator() {
+        LearningCanvasOrganizeService service = new LearningCanvasOrganizeService(pythonAssistantClient);
         LearningCanvasOrganizeRequest request = new LearningCanvasOrganizeRequest();
-        request.setType("vocabulary");
-        request.setTitle("nuanced");
-        request.setSelectedText("nuanced");
-        request.setContextText("A nuanced answer considers different sides.");
-        request.setMode("create");
+        request.setType("grammar");
+        request.setTitle("a window of opportunity");
+        request.setSelectedText("a window of opportunity");
+        request.setCurrentMarkdown("# a window of opportunity");
+        request.setAction("expand");
+        request.setInstruction("补充一个自然例句");
 
-        when(openAiClient.callWithProvider(eq(null), anyString(), anyString(), eq("learning-canvas-organize"), eq(0.2), eq(1200)))
-                .thenReturn("# nuanced\n\n**词性：** adjective");
+        LearningCanvasOrganizeResponse upstream = new LearningCanvasOrganizeResponse();
+        upstream.setCandidateMarkdown("# a window of opportunity\n\n**类型：** 语法笔记");
+        when(pythonAssistantClient.organizeLearningAsset(request)).thenReturn(upstream);
 
-        var response = service.organize(request);
+        LearningCanvasOrganizeResponse response = service.organize(request);
 
-        assertThat(response.getCandidateMarkdown()).startsWith("# nuanced");
-        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
-        verify(openAiClient).callWithProvider(eq(null), anyString(), userPrompt.capture(), eq("learning-canvas-organize"), eq(0.2), eq(1200));
-        assertThat(userPrompt.getValue()).contains("nuanced");
-        assertThat(userPrompt.getValue()).contains("默认单词卡模板");
+        assertThat(response.getCandidateMarkdown()).contains("语法笔记");
+        ArgumentCaptor<LearningCanvasOrganizeRequest> requestCaptor = ArgumentCaptor.forClass(LearningCanvasOrganizeRequest.class);
+        verify(pythonAssistantClient).organizeLearningAsset(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getAction()).isEqualTo("expand");
+        assertThat(requestCaptor.getValue().getInstruction()).isEqualTo("补充一个自然例句");
     }
 
     @Test
-    void formatModePreservesUserMarkdownInstruction() {
-        LearningCanvasOrganizeService service = new LearningCanvasOrganizeService(openAiClient);
-        LearningCanvasOrganizeRequest request = new LearningCanvasOrganizeRequest();
-        request.setType("vocabulary");
-        request.setTitle("nuanced");
-        request.setCurrentMarkdown("# nuanced\nmy own note");
-        request.setMode("format");
+    void serviceDoesNotOwnAgentPromptOrOpenAiCall() throws Exception {
+        String source = Files.readString(Path.of("src/main/java/com/personalenglishai/backend/service/learning/LearningCanvasOrganizeService.java"));
 
-        when(openAiClient.callWithProvider(eq(null), anyString(), anyString(), eq("learning-canvas-organize"), eq(0.2), eq(1200)))
-                .thenReturn("# nuanced\n\n## 我的笔记\nmy own note");
-
-        service.organize(request);
-
-        ArgumentCaptor<String> userPrompt = ArgumentCaptor.forClass(String.class);
-        verify(openAiClient).callWithProvider(eq(null), anyString(), userPrompt.capture(), eq("learning-canvas-organize"), eq(0.2), eq(1200));
-        assertThat(userPrompt.getValue()).contains("尽量保留用户原意");
-        assertThat(userPrompt.getValue()).contains("my own note");
+        assertThat(source).contains("PythonAssistantClient");
+        assertThat(source).doesNotContain("OpenAiClient");
+        assertThat(source).doesNotContain("callWithProvider");
+        assertThat(source).doesNotContain("你是学习资产画布");
+        assertThat(source).doesNotContain("默认单词卡模板");
+        assertThat(source).doesNotContain("默认语法笔记模板");
     }
 }

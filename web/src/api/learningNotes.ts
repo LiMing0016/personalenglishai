@@ -1,5 +1,6 @@
 import { http } from './http'
-import type { LearningAssetType } from '../types/learningAssets.ts'
+import type { LearningAssetCopilotAction, LearningAssetType } from '../types/learningAssets.ts'
+export type { LearningAssetCopilotAction }
 
 interface ApiEnvelope<T> {
   code?: string
@@ -37,7 +38,9 @@ export interface LearningCanvasOrganizePayload {
   selectedText?: string
   contextText?: string
   currentMarkdown?: string
-  mode: 'create' | 'format'
+  mode?: 'create' | 'format'
+  action: LearningAssetCopilotAction
+  instruction?: string
 }
 
 export interface LearningCanvasOrganizeResult {
@@ -63,6 +66,13 @@ export async function updateLearningNote(
   const res = await http.put<ApiEnvelope<LearningNoteDto>>(
     `/learning-notes/${encodeURIComponent(noteUid)}`,
     payload,
+  )
+  return unwrap(res.data)
+}
+
+export async function getLearningNote(noteUid: string): Promise<LearningNoteDto> {
+  const res = await http.get<ApiEnvelope<LearningNoteDto>>(
+    `/learning-notes/${encodeURIComponent(noteUid)}`,
   )
   return unwrap(res.data)
 }
