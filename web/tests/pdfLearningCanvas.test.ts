@@ -210,6 +210,13 @@ assert.ok(
     && !canvasSource.includes('<strong>{{ title }}</strong>'),
   'PDF toolbar should not repeat the canvas name or document title already shown by the workspace chrome',
 )
+assert.ok(
+  canvasSource.includes('.pdf-canvas-toolbar')
+    && canvasSource.includes('background: #161a20')
+    && canvasSource.includes('.pdf-canvas-controls button')
+    && canvasSource.includes('background: #252b33'),
+  'PDF canvas toolbar should match the dark learning IDE shell instead of rendering as a white strip',
+)
 for (const removedToolbarAction of [
   '>上一页</button>',
   '>下一页</button>',

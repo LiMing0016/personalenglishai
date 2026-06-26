@@ -464,6 +464,13 @@ assert.ok(
   'workspace should use a dark IDE shell while keeping the active reader surface light',
 )
 assert.ok(
+  workspaceSource.includes('--reader-bg: #181d23')
+    && workspaceSource.includes('background: var(--ide-bg);')
+    && workspaceSource.includes('.workspace-editor-toolbar')
+    && workspaceSource.includes('background: var(--ide-panel-2);'),
+  'workspace should keep the learning IDE chrome dark instead of falling back to white tool panels',
+)
+assert.ok(
   pdfCanvasSource.includes('getToken'),
   'PDF canvas should read the current auth token before loading a protected backend PDF file',
 )
