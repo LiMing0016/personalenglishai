@@ -1,28 +1,11 @@
 <template>
   <div class="pdf-learning-canvas" :class="{ 'geometry-selecting': isGeometrySelecting }">
-    <header class="pdf-canvas-toolbar" aria-label="PDF 学习画布工具栏">
-      <div>
-        <p>PDF 学习画布</p>
-        <strong>{{ title }}</strong>
-      </div>
-
-      <div class="pdf-canvas-controls" aria-label="PDF 页面控制">
-        <button type="button" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">上一页</button>
-        <span>第 {{ currentPage }} / {{ resolvedPageCount }} 页</span>
-        <button type="button" :disabled="currentPage >= resolvedPageCount" @click="goToPage(currentPage + 1)">下一页</button>
+    <header class="pdf-canvas-toolbar" aria-label="PDF 缩放工具栏">
+      <div class="pdf-canvas-controls" aria-label="PDF 缩放控制">
         <button type="button" @click="setScale(scale - 0.1)">-</button>
         <span>{{ Math.round(scale * 100) }}%</span>
         <button type="button" @click="setScale(scale + 0.1)">+</button>
         <button type="button" :class="{ active: zoomMode === 'fit-width' }" @click="fitPageWidth">适宽</button>
-        <button
-          type="button"
-          :disabled="!selectedText || selectedSelectionType === 'region'"
-          @click="copySelectionOrPageText">
-          复制文本层
-        </button>
-        <button type="button" :disabled="!hasActiveSelection" @click="highlightSelection">高亮选区</button>
-        <button type="button" :disabled="!hasActiveSelection" @click="emitAskAgent('解释当前选区')">问 Agent</button>
-        <button type="button" :disabled="!hasActiveSelection" @click="emitNoteSelection">记笔记</button>
       </div>
     </header>
 
@@ -58,27 +41,41 @@
             class="citation-highlight-box"
             :style="box.style"
             :title="box.label" />
-          <button v-if="hasActiveSelection" type="button" class="selection-pin" @click="emitAskAgent('解释当前选区')">
-            {{ selectedSelectionType === 'region' ? '图表区域' : '当前选区' }}
-          </button>
+          <span
+            v-for="box in noteAnchorHighlightBoxes"
+            :key="box.id"
+            class="note-anchor-highlight-box"
+            :class="{ 'note-anchor-highlight-box--active': box.active }"
+            :style="box.style"
+            :title="box.label" />
+          <div
+            v-if="hasActiveSelection"
+            class="selection-action-popover"
+            :style="selectionActionStyle"
+            role="toolbar"
+            aria-label="当前选区操作">
+            <span class="selection-action-popover__label">
+              {{ selectedSelectionType === 'region' ? '图表区域' : '当前选区' }}
+            </span>
+            <button type="button" @click="emitNoteSelection">记笔记</button>
+            <button type="button" @click="emitAskAgent('解释当前选区')">问 Agent</button>
+          </div>
           <div v-if="currentPageNoteAnchors.length" class="note-anchor-stack" aria-label="当前页笔记锚点">
             <button
-              v-for="anchor in currentPageNoteAnchors"
+              v-for="(anchor, index) in currentPageNoteAnchors"
               :key="anchor.id"
               type="button"
               class="note-anchor-pin"
+              :class="{ 'note-anchor-pin--active': anchor.active }"
+              :style="resolveNoteAnchorPinStyle(anchor, index)"
+              aria-label="打开锚点笔记"
               :title="anchor.excerpt || anchor.title"
               @click="emit('openNote', anchor.id)">
+              <strong>{{ index + 1 }}</strong>
               <span>{{ anchor.title || '笔记' }}</span>
-              <small>Page {{ anchor.pageNumber }}</small>
+              <small>{{ anchor.status === 'draft' ? '待整理' : '笔记' }} · Page {{ anchor.pageNumber }}</small>
             </button>
           </div>
-          <mark
-            v-for="annotation in currentPageAnnotations"
-            :key="annotation.id"
-            class="selection-highlight">
-            {{ annotation.label }}
-          </mark>
         </div>
       </div>
     </section>
@@ -100,13 +97,6 @@ import {
   selectTextFlowHits,
   type PdfTextHit,
 } from '@/utils/pdfGeometrySelection'
-
-interface PageAnnotation {
-  id: string
-  page: number
-  label: string
-  text: string
-}
 
 type PdfSelectionType = 'text' | 'region'
 
@@ -132,6 +122,9 @@ interface PdfNoteAnchor {
   pageNumber: number
   title: string
   excerpt?: string
+  bbox?: string | null
+  status?: string
+  active?: boolean
 }
 
 interface Point {
@@ -154,6 +147,7 @@ interface GeometrySelectionBox {
   id: string
   label?: string
   selectionType?: PdfSelectionType
+  active?: boolean
   style: Record<string, string>
 }
 
@@ -172,6 +166,7 @@ const props = defineProps<{
   targetPage?: number
   sourceHighlight?: PdfSourceHighlight | null
   noteAnchors?: PdfNoteAnchor[]
+  activeNoteId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -202,6 +197,9 @@ const clickRegionPadding = 16
 const clickRegionMinWidth = 180
 const clickRegionMinHeight = 120
 const inkPixelStep = 2
+const selectionActionPopoverWidth = 252
+const selectionActionPopoverOffset = 44
+const selectionActionPagePadding = 12
 
 let resizeObserver: ResizeObserver | null = null
 let scrollPageTurnLock = false
@@ -226,7 +224,6 @@ const zoomMode = ref<ZoomMode>('fit-width')
 const selectedText = ref('')
 const selectedSelectionType = ref<PdfSelectionType>('text')
 const latestSelectionPayload = ref<PdfSelectionPayload | null>(null)
-const annotations = ref<PageAnnotation[]>([])
 const loadError = ref(false)
 const renderedPageCount = ref(0)
 const pendingPageScrollPosition = ref<'top' | 'bottom' | null>(null)
@@ -244,12 +241,53 @@ const resolvedPageCount = computed(() => {
 
 const hasActiveSelection = computed(() => selectedText.value.trim().length > 0)
 
-const currentPageAnnotations = computed(() => {
-  return annotations.value.filter((item) => item.page === currentPage.value)
+const selectionActionStyle = computed<Record<string, string>>(() => {
+  const rect = resolveSelectionActionRect()
+  if (!rect) {
+    return {
+      left: `${selectionActionPagePadding}px`,
+      top: `${selectionActionPagePadding}px`,
+    }
+  }
+
+  const layerWidth = textLayerRef.value?.clientWidth
+    || canvasRef.value?.clientWidth
+    || rect.right + selectionActionPopoverWidth
+  const maxLeft = Math.max(selectionActionPagePadding, layerWidth - selectionActionPopoverWidth - selectionActionPagePadding)
+  const left = clampNumber(rect.left, selectionActionPagePadding, maxLeft)
+  const top = Math.max(selectionActionPagePadding, rect.top - selectionActionPopoverOffset)
+
+  return {
+    left: `${formatCssPixel(left)}px`,
+    top: `${formatCssPixel(top)}px`,
+  }
 })
 
 const currentPageNoteAnchors = computed(() => {
-  return (props.noteAnchors ?? []).filter((anchor) => anchor.pageNumber === currentPage.value)
+  return (props.noteAnchors ?? [])
+    .filter((anchor) => anchor.pageNumber === currentPage.value)
+    .map((anchor) => ({
+      ...anchor,
+      active: anchor.active || anchor.id === props.activeNoteId,
+    }))
+    .sort((left, right) => resolveNoteAnchorTop(left) - resolveNoteAnchorTop(right))
+})
+
+const noteAnchorHighlightBoxes = computed<GeometrySelectionBox[]>(() => {
+  return currentPageNoteAnchors.value.flatMap((anchor) => {
+    if (!anchor.bbox) return []
+    return parseBboxToGeometry(anchor.bbox).map((rect, index) => ({
+      id: `note-anchor-highlight-${anchor.id}-${index}`,
+      label: anchor.title,
+      active: anchor.active,
+      style: {
+        left: `${rect.left}px`,
+        top: `${rect.top}px`,
+        width: `${rect.width}px`,
+        height: `${rect.height}px`,
+      },
+    }))
+  })
 })
 
 onMounted(() => {
@@ -282,9 +320,8 @@ watch(scale, () => {
 })
 
 watch(() => props.targetPage, (page) => {
-  if (!page || page === currentPage.value) return
-  goToPage(page)
-})
+  applyTargetPage(page)
+}, { immediate: true })
 
 watch(() => props.sourceHighlight, () => {
   renderSourceHighlight()
@@ -310,7 +347,8 @@ async function loadPdf() {
     })
     pdfDocument.value = await loadingTask.promise
     renderedPageCount.value = pdfDocument.value.numPages || 0
-    currentPage.value = Math.min(currentPage.value, resolvedPageCount.value)
+    applyTargetPage(props.targetPage)
+    currentPage.value = normalizeCanvasPage(currentPage.value)
     await nextTick()
     await renderCurrentPage()
   } catch {
@@ -434,6 +472,20 @@ function renderSourceHighlight() {
   }))
 }
 
+function resolveNoteAnchorTop(anchor: PdfNoteAnchor) {
+  if (!anchor.bbox) return Number.MAX_SAFE_INTEGER
+  return parseBboxToGeometry(anchor.bbox)[0]?.top ?? Number.MAX_SAFE_INTEGER
+}
+
+function resolveNoteAnchorPinStyle(anchor: PdfNoteAnchor, index: number): Record<string, string> {
+  const rect = anchor.bbox ? parseBboxToGeometry(anchor.bbox)[0] : null
+  const fallbackTop = 54 + index * 46
+  return {
+    top: `${Math.max(18, rect ? rect.top + rect.height / 2 : fallbackTop)}px`,
+    transform: rect ? 'translateY(-50%)' : 'none',
+  }
+}
+
 function parseBboxToGeometry(bbox: string): GeometryRect[] {
   const trimmed = bbox.trim()
   if (!trimmed) return []
@@ -510,6 +562,43 @@ function createRectFromBounds(left: number, top: number, right: number, bottom: 
     width: Math.max(1, right - left),
     height: Math.max(1, bottom - top),
   }
+}
+
+function resolveSelectionActionRect(): GeometryRect | null {
+  const rects = selectionBoxes.value
+    .map((box) => parseSelectionBoxStyle(box.style))
+    .filter((rect): rect is GeometryRect => Boolean(rect))
+
+  if (rects.length === 0) return null
+
+  return createRectFromBounds(
+    Math.min(...rects.map((rect) => rect.left)),
+    Math.min(...rects.map((rect) => rect.top)),
+    Math.max(...rects.map((rect) => rect.right)),
+    Math.max(...rects.map((rect) => rect.bottom)),
+  )
+}
+
+function parseSelectionBoxStyle(style: Record<string, string>): GeometryRect | null {
+  const left = parseCssPixelValue(style.left)
+  const top = parseCssPixelValue(style.top)
+  const width = parseCssPixelValue(style.width)
+  const height = parseCssPixelValue(style.height)
+  if (![left, top, width, height].every(Number.isFinite)) return null
+  return createRectFromXywh(left, top, width, height)
+}
+
+function parseCssPixelValue(value: string | undefined) {
+  const numericValue = Number.parseFloat(value ?? '')
+  return Number.isFinite(numericValue) ? numericValue : 0
+}
+
+function formatCssPixel(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function clampNumber(value: number, minValue: number, maxValue: number) {
+  return Math.min(Math.max(value, minValue), maxValue)
 }
 
 function calculateFitWidthScale(pageWidth: number) {
@@ -1040,31 +1129,14 @@ function applySelectionPayload(text: string, bbox: string | null, selectionType:
   emit('selectionChange', payload)
 }
 
-async function copySelectionOrPageText() {
-  const text = selectedText.value || props.blocks.filter((block) => (block.pageNumber || 1) === currentPage.value).map((block) => block.text).join('\n\n')
-  if (!text || typeof navigator === 'undefined' || !navigator.clipboard) return
-  await navigator.clipboard.writeText(text)
-}
-
-function highlightSelection() {
-  const text = selectedText.value.trim()
-  if (!text) return
-  annotations.value.unshift({
-    id: `annotation-${Date.now()}`,
-    page: currentPage.value,
-    label: '高亮选区',
-    text,
-  })
-}
-
 function emitAskAgent(prompt: string) {
   const suffix = selectedText.value ? `：${selectedText.value}` : ''
   emit('askAgent', `${prompt}${suffix}`)
 }
 
 function emitNoteSelection() {
-  const payload = latestSelectionPayload.value ?? resolveSelectionPayload(selectedText.value.trim(), null, selectedSelectionType.value)
-  if (!payload.text.trim()) return
+  const payload = latestSelectionPayload.value
+  if (!payload) return
   emit('noteSelection', payload)
 }
 
@@ -1103,8 +1175,19 @@ function resolveSelectionPayload(
   }
 }
 
+function normalizeCanvasPage(page: number) {
+  return Math.min(Math.max(1, page), resolvedPageCount.value)
+}
+
+function applyTargetPage(page: number | undefined) {
+  if (!page) return
+  const nextPage = normalizeCanvasPage(page)
+  if (nextPage === currentPage.value) return
+  currentPage.value = nextPage
+}
+
 function goToPage(page: number) {
-  currentPage.value = Math.min(Math.max(1, page), resolvedPageCount.value)
+  currentPage.value = normalizeCanvasPage(page)
   emit('pageChange', currentPage.value)
 }
 
@@ -1201,28 +1284,10 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 14px;
+  justify-content: flex-end;
+  padding: 6px 10px;
   border-bottom: 1px solid #d9e2ec;
   background: #ffffff;
-}
-
-.pdf-canvas-toolbar p {
-  margin: 0;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.pdf-canvas-toolbar strong {
-  display: block;
-  max-width: 420px;
-  overflow: hidden;
-  color: #111827;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .pdf-canvas-controls {
@@ -1234,7 +1299,7 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 
 .pdf-canvas-controls button,
 .pdf-canvas-controls button {
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 9px;
   border: 1px solid #d9e2ec;
   border-radius: 6px;
@@ -1389,43 +1454,116 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   pointer-events: none;
 }
 
-.selection-pin {
+.note-anchor-highlight-box {
+  position: absolute;
+  z-index: 2;
+  border-radius: 3px;
+  background: rgb(250 204 21 / 24%);
+  box-shadow: inset 3px 0 0 rgb(20 184 166 / 75%);
+  pointer-events: none;
+}
+
+.note-anchor-highlight-box--active {
+  background: rgb(20 184 166 / 22%);
+  box-shadow:
+    inset 3px 0 0 #0f766e,
+    0 0 0 1px rgb(15 118 110 / 28%);
+}
+
+.selection-action-popover {
   position: absolute;
   top: 12px;
-  right: 12px;
-  min-height: 30px;
+  left: 12px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(320px, calc(100% - 24px));
+  min-height: 32px;
+  padding: 4px;
   border: 1px solid #14b8a6;
-  border-radius: 999px;
-  background: #ecfdf5;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 96%);
   color: #0f766e;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 14%);
   font-size: 12px;
   font-weight: 900;
   pointer-events: auto;
 }
 
+.selection-action-popover__label {
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: #0f766e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-action-popover button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #ccfbf1;
+  border-radius: 7px;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.selection-action-popover button:hover,
+.selection-action-popover button:focus-visible {
+  border-color: #14b8a6;
+  background: #d9fbef;
+  transform: none;
+}
+
 .note-anchor-stack {
   position: absolute;
-  top: 50px;
-  right: 12px;
+  inset: 0;
   z-index: 4;
-  display: grid;
-  gap: 8px;
-  width: min(220px, calc(100% - 24px));
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .note-anchor-pin {
+  position: absolute;
+  right: 10px;
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 7px;
   gap: 2px;
+  width: min(158px, calc(100% - 20px));
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid #f8c471;
+  padding: 6px 8px;
+  border: 1px solid #f3d58a;
   border-radius: 8px;
   background: rgb(255 251 235 / 96%);
   color: #92400e;
   text-align: left;
   box-shadow: 0 8px 18px rgb(15 23 42 / 10%);
   cursor: pointer;
+}
+
+.note-anchor-pin--active {
+  border-color: #14b8a6;
+  background: rgb(236 253 245 / 98%);
+  color: #0f766e;
+  box-shadow: 0 0 0 2px rgb(20 184 166 / 18%), 0 8px 18px rgb(15 23 42 / 12%);
+}
+
+.note-anchor-pin strong {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgb(250 204 21 / 36%);
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .note-anchor-pin span,

@@ -1,16 +1,29 @@
 <template>
   <div class="intensive-workspace-page">
-    <header class="workspace-toolbar">
-      <button type="button" class="back-button" @click="goBackToHub">返回</button>
-
-      <div class="document-heading">
-        <h1>{{ readingDocument?.title || 'AI 精读工作台' }}</h1>
-        <span v-if="readingDocument">
-          {{ readingDocument.sourceLabel || sourceTypeLabels[readingDocument.sourceType] }} · {{ readingDocument.parseStatus }} · {{ readingDocument.progress }}% · {{ modeLabels[activeMode] }}
-        </span>
+    <header class="workspace-ide-titlebar">
+      <div class="workspace-brand">
+        <span class="workspace-brand__mark" aria-hidden="true">E</span>
+        <div>
+          <strong>Personal English AI</strong>
+          <small>学习工作台</small>
+        </div>
       </div>
 
-      <div class="toolbar-actions">
+      <label class="workspace-command-center">
+        <span class="sr-only">搜索或输入命令</span>
+        <input type="search" placeholder="搜索 PDF、笔记、知识点，或输入命令..." />
+      </label>
+
+      <div class="workspace-titlebar-actions">
+        <button
+          type="button"
+          class="back-button"
+          aria-label="返回翻译列表"
+          title="返回翻译列表"
+          @click="goBackToHub">
+          <span class="back-button-icon" aria-hidden="true">←</span>
+        </button>
+        <span class="workspace-titlebar-document">{{ readingDocument?.title || 'AI 精读工作台' }}</span>
         <button type="button" class="primary-action" @click="completeLearningSession">完成学习</button>
       </div>
     </header>
@@ -27,25 +40,30 @@
         '--outline-column-width': `${outlineColumnWidth}px`,
         '--agent-column-width': `${agentColumnWidth}px`,
       }">
+      <nav class="workspace-activity-bar" aria-label="学习工作台入口">
+        <button
+          v-for="panel in sidePanelOptions"
+          :key="panel.id"
+          type="button"
+          class="activity-button"
+          :class="{ active: activeSidePanel === panel.id && !isOutlineCollapsed }"
+          :aria-label="panel.label"
+          :title="panel.label"
+          @click="selectSidePanel(panel.id)">
+          <span class="activity-button__icon" aria-hidden="true">{{ panel.icon }}</span>
+          <small v-if="panel.count > 0">{{ panel.count }}</small>
+        </button>
+      </nav>
+
       <aside
-        class="workspace-outline-panel"
+        class="workspace-outline-panel workspace-side-drawer workspace-explorer"
         :class="{ 'workspace-panel--collapsed': isOutlineCollapsed }"
         aria-labelledby="outline-title">
-        <button
-          v-if="isOutlineCollapsed"
-          type="button"
-          class="workspace-drawer-rail workspace-drawer-rail--outline"
-          aria-label="展开左侧目录导航"
-          title="展开左侧目录导航"
-          @click="toggleOutlineDrawer">
-          目录
-        </button>
-
         <div class="outline-header">
           <div class="outline-heading-main">
-            <p>学习导航</p>
-            <h2 id="outline-title">目录导航</h2>
-            <span>{{ outlineSummary }}</span>
+            <p>学习资源</p>
+            <h2 id="outline-title">EXPLORER</h2>
+            <span>{{ sidePanelSummary }}</span>
           </div>
           <button
             type="button"
@@ -57,6 +75,37 @@
           </button>
         </div>
 
+        <section class="workspace-opened-resources" aria-label="已打开学习资源">
+          <p>已打开</p>
+          <button
+            v-for="tab in workspaceTabs"
+            :key="`drawer-${tab.id}`"
+            type="button"
+            :class="{ active: tab.id === activeWorkspaceTabId }"
+            @click="activateWorkspaceTab(tab.id)">
+            <span>{{ tab.subtitle }}</span>
+            <strong>{{ tab.title }}</strong>
+          </button>
+        </section>
+
+        <section class="workspace-resource-actions" aria-label="导入与新建">
+          <button type="button" @click="openImportPdfEntry">导入 PDF</button>
+          <button type="button" @click="openStandaloneNoteTab">新建笔记</button>
+          <button type="button" @click="openTopicTab">新建专题</button>
+        </section>
+
+        <div class="side-drawer-switcher" aria-label="左侧工作区切换">
+          <button
+            v-for="panel in sidePanelOptions"
+            :key="panel.id"
+            type="button"
+            :class="{ active: activeSidePanel === panel.id }"
+            @click="selectSidePanel(panel.id)">
+            {{ panel.label }}
+          </button>
+        </div>
+
+        <template v-if="activeSidePanel === 'outline'">
         <section class="outline-controls" aria-label="目录筛选">
           <label class="outline-search">
             <span>搜索目录</span>
@@ -165,6 +214,114 @@
             <span>换个关键词，或切回全部范围。</span>
           </section>
         </nav>
+        </template>
+
+        <section v-else-if="activeSidePanel === 'bookmarks'" class="side-drawer-panel side-bookmark-list" aria-label="我的书签">
+          <div class="side-section-heading">
+            <strong>我的书签</strong>
+            <button type="button" @click="createUserBookmark">添加书签</button>
+          </div>
+          <article
+            v-for="bookmark in userBookmarks"
+            :key="bookmark.id"
+            class="side-list-card"
+            :class="{ active: bookmark.id === activeOutlineItemId }"
+            @click="jumpToUserBookmark(bookmark)">
+            <strong>{{ bookmark.title }}</strong>
+            <span>Page {{ bookmark.pageNumber }} · {{ bookmark.source === 'user_bookmark' ? '我的定位' : 'PDF 书签' }}</span>
+          </article>
+          <button
+            v-if="userBookmarks.length === 0"
+            type="button"
+            class="side-empty-action"
+            @click="createUserBookmark">
+            给当前页添加书签
+          </button>
+        </section>
+
+        <section v-else-if="activeSidePanel === 'notes'" class="side-drawer-panel side-note-list" aria-label="全文笔记">
+          <div class="side-section-heading">
+            <strong>全文笔记</strong>
+            <button type="button" @click="startNoteFromActiveBlock">新建笔记</button>
+          </div>
+          <article
+            v-for="note in studyNotes.slice(0, 24)"
+            :key="note.id"
+            class="side-list-card"
+            :class="{ active: note.id === activeNoteId }"
+            @click="openStudyNote(note.id)">
+            <strong>{{ note.title }}</strong>
+            <span>Page {{ note.pageNumber }} · {{ noteStatusLabels[note.status] }}</span>
+          </article>
+          <button
+            v-if="studyNotes.length === 0"
+            type="button"
+            class="side-empty-action"
+            @click="startNoteFromActiveBlock">
+            记录当前理解
+          </button>
+        </section>
+
+        <section v-else-if="activeSidePanel === 'assets'" class="side-drawer-panel side-asset-board" aria-label="学习资产">
+          <div class="side-section-heading">
+            <strong>学习资产</strong>
+            <button type="button" @click="askAgent('整理当前段落为笔记草稿')">Agent 整理</button>
+          </div>
+          <section
+            v-for="column in studyAssetPipeline"
+            :key="column.id"
+            class="side-asset-group"
+            :class="`side-asset-group--${column.tone}`">
+            <header>
+              <span>{{ column.label }}</span>
+              <small>{{ column.notes.length }}</small>
+            </header>
+            <p>{{ column.description }}</p>
+            <article
+              v-for="note in column.notes.slice(0, 4)"
+              :key="note.id"
+              class="side-asset-card"
+              :class="{ active: note.id === activeNoteId }"
+              @click="openStudyNote(note.id)">
+              <strong>{{ note.title }}</strong>
+              <span>Page {{ note.pageNumber }} · {{ note.source === 'agent' ? 'Agent' : '我' }}</span>
+            </article>
+            <button
+              v-if="column.notes.length === 0"
+              type="button"
+              class="side-empty-action"
+              @click="column.id === 'draft' ? askAgent('整理当前段落为笔记草稿') : startNoteFromActiveBlock()">
+              {{ column.id === 'draft' ? '让 Agent 整理' : '新增笔记' }}
+            </button>
+          </section>
+        </section>
+
+        <section v-else-if="activeSidePanel === 'search'" class="side-drawer-panel side-search-panel" aria-label="搜索当前文档">
+          <label class="outline-search">
+            <span>搜索当前文档</span>
+            <input
+              v-model="outlineSearchQuery"
+              type="search"
+              placeholder="章节、页码、笔记..."
+              aria-label="搜索当前文档"
+            />
+          </label>
+          <article
+            v-for="item in filteredOutlineItems.slice(0, 18)"
+            :key="item.id"
+            class="side-list-card"
+            @click="selectOutlineItem(item)">
+            <strong>{{ item.title }}</strong>
+            <span>Page {{ item.pageNumber }}</span>
+          </article>
+          <button
+            v-if="filteredOutlineItems.length === 0"
+            type="button"
+            class="side-empty-action"
+            @click="outlineSearchQuery = ''">
+            清空搜索
+          </button>
+        </section>
       </aside>
 
       <button
@@ -176,68 +333,108 @@
         @pointerdown="startWorkspaceResize('outline', $event)"
       />
 
-      <section class="workspace-canvas-panel" aria-labelledby="reader-title">
-        <div class="canvas-panel-header">
-          <h2 id="reader-title">阅读区</h2>
-          <div class="document-view-tabs" aria-label="原文展示模式">
-            <button
-              type="button"
-              :class="{ active: documentView === 'pdf-canvas' }"
-              @click="documentView = 'pdf-canvas'">
-              PDF 学习画布
-            </button>
-            <button
-              type="button"
-              :class="{ active: documentView === 'text' }"
-              @click="documentView = 'text'">
-              精读文本
-            </button>
-          </div>
-        </div>
+      <section class="workspace-canvas-panel" aria-label="阅读区">
+        <header class="workspace-tabs" aria-label="已打开学习资源">
+          <button
+            v-for="tab in workspaceTabs"
+            :key="tab.id"
+            type="button"
+            class="workspace-tab"
+            :class="[`workspace-tab--${tab.kind}`, { active: tab.id === activeWorkspaceTabId, dirty: tab.dirty }]"
+            @click="activateWorkspaceTab(tab.id)">
+            <span>{{ tab.subtitle }}</span>
+            <strong>{{ tab.title }}</strong>
+            <small v-if="tab.dirty">●</small>
+            <small
+              v-else
+              class="workspace-tab__close"
+              role="button"
+              tabindex="-1"
+              aria-label="关闭标签页"
+              @click.stop="closeWorkspaceTab(tab.id)">
+              ×
+            </small>
+          </button>
+          <button
+            type="button"
+            class="workspace-tab workspace-tab--new"
+            aria-label="新建学习资源"
+            @click="openStandaloneNoteTab">
+            +
+          </button>
+        </header>
 
-        <div v-if="documentView === 'text'" class="ide-reader-surface" role="list" aria-label="原文段落列表">
-          <article
-            v-for="block in readingDocument.blocks"
-            :key="block.id"
-            role="listitem"
-            class="ide-document-block"
-            :class="{ active: block.id === activeBlockId }"
-            @click="selectOutlineBlock(block.id, block.pageNumber || 1)">
-            <aside class="ide-gutter" aria-label="段落定位">
-              <span>P{{ block.order }}</span>
-              <small v-if="block.pageNumber">Page {{ block.pageNumber }}</small>
-            </aside>
+        <div class="workspace-editor-area" :class="`workspace-editor-area--${activeWorkspaceTabKind}`">
+          <section v-if="activeWorkspaceTabKind !== 'pdf'" class="note-document-editor">
+            <p>{{ activeWorkspaceTab?.subtitle }}</p>
+            <h2>{{ activeWorkspaceTab?.title }}</h2>
+            <textarea placeholder="这里是完整笔记编辑区，后续阶段接入真实笔记内容。" />
+          </section>
 
-            <div class="ide-source-cell">
-              <div class="ide-block-meta">
-                <span>{{ block.type === 'heading' ? 'Heading' : 'Paragraph' }}</span>
-                <button type="button" @click.stop="askAgent('解释当前段落')">Ask</button>
-                <button type="button" @click.stop="askAgent('翻译当前段落')">Translate</button>
-                <button type="button" @click.stop="startNoteFromActiveBlock">Note</button>
+          <template v-else>
+            <div class="workspace-editor-toolbar">
+              <div v-if="readingDocument" class="document-view-tabs document-view-tabs--compact" aria-label="原文展示模式">
+                <button
+                  type="button"
+                  :class="{ active: documentView === 'pdf-canvas' }"
+                  @click="documentView = 'pdf-canvas'">
+                  PDF 学习画布
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: documentView === 'text' }"
+                  @click="documentView = 'text'">
+                  精读文本
+                </button>
               </div>
-              <p class="source-text source-text--ide">{{ block.text }}</p>
             </div>
-          </article>
-        </div>
 
-        <PdfLearningCanvas
-          v-else
-          :document-id="readingDocument.id"
-          :title="readingDocument.title"
-          :src="readingDocument.pdfPreviewUrl"
-          :blocks="readingDocument.blocks"
-          :active-block-id="activeBlockId"
-          :page-count="readingDocument.pageCount"
-          :target-page="targetPdfPage"
-          :source-highlight="pdfSourceHighlight"
-          :note-anchors="noteAnchors"
-          @select-block="selectBlock"
-          @ask-agent="askAgent"
-          @note-selection="startNoteFromPdfSelection"
-          @open-note="openStudyNote"
-          @selection-change="handlePdfSelectionChange"
-          @page-change="handlePdfPageChange"
-        />
+            <div v-if="documentView === 'text'" class="ide-reader-surface" role="list" aria-label="原文段落列表">
+              <article
+                v-for="block in readingDocument.blocks"
+                :key="block.id"
+                role="listitem"
+                class="ide-document-block"
+                :class="{ active: block.id === activeBlockId }"
+                @click="selectOutlineBlock(block.id, block.pageNumber || 1)">
+                <aside class="ide-gutter" aria-label="段落定位">
+                  <span>P{{ block.order }}</span>
+                  <small v-if="block.pageNumber">Page {{ block.pageNumber }}</small>
+                </aside>
+
+                <div class="ide-source-cell">
+                  <div class="ide-block-meta">
+                    <span>{{ block.type === 'heading' ? 'Heading' : 'Paragraph' }}</span>
+                    <button type="button" @click.stop="askAgent('解释当前段落')">Ask</button>
+                    <button type="button" @click.stop="askAgent('翻译当前段落')">Translate</button>
+                    <button type="button" @click.stop="startNoteFromActiveBlock">Note</button>
+                  </div>
+                  <p class="source-text source-text--ide">{{ block.text }}</p>
+                </div>
+              </article>
+            </div>
+
+            <PdfLearningCanvas
+              v-else
+              :document-id="readingDocument.id"
+              :title="readingDocument.title"
+              :src="readingDocument.pdfPreviewUrl"
+              :blocks="readingDocument.blocks"
+              :active-block-id="activeBlockId"
+              :page-count="readingDocument.pageCount"
+              :target-page="targetPdfPage"
+              :source-highlight="pdfSourceHighlight"
+              :note-anchors="noteAnchors"
+              :active-note-id="activeNoteId"
+              @select-block="selectBlock"
+              @ask-agent="askAgent"
+              @note-selection="startNoteFromPdfSelection"
+              @open-note="openStudyNote"
+              @selection-change="handlePdfSelectionChange"
+              @page-change="handlePdfPageChange"
+            />
+          </template>
+        </div>
       </section>
 
       <button
@@ -265,7 +462,7 @@
 
         <div class="agent-header agent-header--ide">
           <div>
-            <h2 id="agent-title">Agent</h2>
+            <h2 id="agent-title">{{ agentPanelMode === 'note-workbench' ? '笔记工作台' : 'Agent' }}</h2>
           </div>
           <span>P{{ activeBlock.order }} · {{ modeLabels[activeMode] }}</span>
           <button
@@ -278,50 +475,104 @@
           </button>
         </div>
 
-        <section class="agent-context">
-          <p class="answer-label">上下文</p>
-          <strong>{{ selectedPdfText ? '当前选区' : '当前页 / 当前段落' }}</strong>
-          <small v-if="selectedPdfContext">
-            Page {{ selectedPdfContext.pageNumber }} · {{ selectedPdfContext.elementId }}
-            <template v-if="selectedPdfSelectionType === 'region'"> · region</template>
-          </small>
-          <blockquote>{{ agentContextText }}</blockquote>
-        </section>
+        <section v-if="agentPanelMode === 'note-workbench'" class="note-workbench-panel" aria-label="笔记工作台">
+          <header class="note-workbench-header">
+            <div>
+              <p class="answer-label">锚点笔记</p>
+              <strong>P{{ selectedPdfContext?.pageNumber || currentPdfPage }} · 选区</strong>
+            </div>
+            <button type="button" @click="agentPanelMode = 'agent'">返回 Agent</button>
+          </header>
 
-        <section class="agent-answer agent-answer--ide">
-          <p class="answer-label">推荐译文</p>
-          <p>{{ activeInsight.translation }}</p>
-        </section>
+          <nav class="note-workbench-tabs" aria-label="笔记工作台模式">
+            <button type="button" class="active">写笔记</button>
+            <button
+              type="button"
+              :disabled="noteAgentLoading"
+              @click="askAgentToAppendNote('结合当前选区，补充一段适合写入学习笔记的解释。')">
+              问 AI
+            </button>
+            <button
+              type="button"
+              :disabled="noteAgentLoading"
+              @click="askAgentToAppendNote('把当前选区整理成 3 条复习要点。')">
+              整理
+            </button>
+          </nav>
 
-        <section class="agent-toolbar" aria-label="Agent 快捷操作">
-          <button type="button" @click="askAgent('翻译并解释当前段落')">解释段落</button>
-          <button type="button" @click="askAgent('拆解当前段落长难句')">长难句</button>
-          <button type="button" @click="askAgent('提取当前段落短语和生词')">提取表达</button>
-          <button type="button" @click="startNoteFromActiveBlock">记笔记</button>
-        </section>
+          <form
+            v-if="noteComposer.mode !== 'idle'"
+            class="study-note-composer note-workbench-composer"
+            @submit.prevent="saveStudyNote">
+            <div class="study-note-source">
+              <span>{{ noteComposer.source === 'agent' ? 'Agent 草稿' : '手动笔记' }}</span>
+              <small>{{ noteComposerContextLabel }}</small>
+            </div>
+            <blockquote v-if="noteComposer.context?.text" class="study-note-selected-text">
+              {{ noteComposer.context.text }}
+            </blockquote>
+            <input
+              v-model="noteComposer.title"
+              type="text"
+              placeholder="笔记标题"
+              aria-label="笔记标题"
+            />
+            <textarea
+              ref="noteContentInputRef"
+              v-model="noteComposer.content"
+              rows="8"
+              placeholder="围绕这个选区写下理解、疑问或总结。"
+              aria-label="笔记内容"
+            />
+            <div class="note-agent-compose" aria-label="Agent 辅助补充笔记">
+              <textarea
+                v-model="noteAgentPrompt"
+                rows="2"
+                placeholder="边问边补：例如这里为什么能推出时间复杂度？"
+                aria-label="问 Agent 并生成候选补充"
+              />
+              <div class="note-agent-compose__actions">
+                <span>{{ noteAgentLoading ? 'Agent 正在补充...' : '回答会先进入候选区' }}</span>
+                <button
+                  type="button"
+                  :disabled="noteAgentLoading || !noteAgentPrompt.trim()"
+                  @click="askAgentToAppendNote(noteAgentPrompt)">
+                  问 AI 生成候选
+                </button>
+              </div>
+            </div>
+            <section class="ai-candidate-card" aria-label="AI 候选补充">
+              <p class="answer-label">AI 候选补充</p>
+              <blockquote>{{ aiCandidateContent || 'Agent 的补充会先出现在这里，确认后再追加到笔记。' }}</blockquote>
+              <button type="button" :disabled="!aiCandidateContent" @click="appendAiCandidateToNote">
+                追加到笔记
+              </button>
+            </section>
+            <div class="study-note-composer__actions">
+              <button type="button" @click="cancelStudyNoteComposer">取消</button>
+              <button type="submit" class="primary-action">
+                {{ noteComposer.status === 'draft' ? '保存草稿' : '保存笔记' }}
+              </button>
+            </div>
+          </form>
 
-        <section class="agent-card agent-card--ide">
-          <p class="answer-label">学习资产候选</p>
-          <div class="agent-chip-list">
-            <span v-for="phrase in activeInsight.phrases" :key="phrase.text">
-              {{ phrase.text }}
-            </span>
-            <span v-for="word in activeInsight.vocabulary" :key="word.text">
-              {{ word.text }}
-            </span>
-            <span v-for="grammar in activeInsight.grammarPoints" :key="grammar.text">
-              {{ grammar.text }}
-            </span>
+          <div v-else class="study-note-empty">
+            <span>当前没有打开锚点笔记</span>
+            <small>从 PDF 选区点击记笔记后，这里会进入沉浸式笔记工作台。</small>
           </div>
         </section>
 
-        <section class="study-note-panel" aria-label="本段笔记">
+        <template v-else>
+        <section
+          class="study-note-panel"
+          :class="{ 'study-note-panel--composer-active': noteComposer.mode !== 'idle' }"
+          aria-label="本段笔记">
           <header class="study-note-panel__header">
             <div>
-              <p class="answer-label">本段笔记</p>
-              <strong>{{ activeBlockNotes.length }} 条</strong>
+              <p class="answer-label">{{ noteComposer.mode !== 'idle' ? '锚点笔记' : '本段笔记' }}</p>
+              <strong>{{ noteComposer.mode !== 'idle' ? '正在编辑当前选区' : activeBlockNotes.length + ' 条' }}</strong>
             </div>
-            <button type="button" @click="startNoteFromActiveBlock">新建</button>
+            <button v-if="noteComposer.mode === 'idle'" type="button" @click="startNoteFromActiveBlock">新建</button>
           </header>
 
           <form
@@ -332,6 +583,9 @@
               <span>{{ noteComposer.source === 'agent' ? 'Agent 草稿' : '手动笔记' }}</span>
               <small>{{ noteComposerContextLabel }}</small>
             </div>
+            <blockquote v-if="noteComposer.context?.text" class="study-note-selected-text">
+              {{ noteComposer.context.text }}
+            </blockquote>
             <input
               v-model="noteComposer.title"
               type="text"
@@ -339,11 +593,43 @@
               aria-label="笔记标题"
             />
             <textarea
+              ref="noteContentInputRef"
               v-model="noteComposer.content"
-              rows="5"
-              placeholder="写下你的理解，或编辑 Agent 整理后的内容。"
+              rows="7"
+              placeholder="围绕这个选区写下理解、疑问或总结。"
               aria-label="笔记内容"
             />
+            <div class="note-agent-compose" aria-label="Agent 辅助补充笔记">
+              <div class="note-agent-compose__quick">
+                <button
+                  type="button"
+                  :disabled="noteAgentLoading"
+                  @click="askAgentToAppendNote('结合当前选区，补充一段适合写入学习笔记的解释。')">
+                  Agent 补充笔记
+                </button>
+                <button
+                  type="button"
+                  :disabled="noteAgentLoading"
+                  @click="askAgentToAppendNote('把当前选区整理成 3 条复习要点。')">
+                  整理要点
+                </button>
+              </div>
+              <textarea
+                v-model="noteAgentPrompt"
+                rows="2"
+                placeholder="边问边补：例如这里为什么能推出时间复杂度？"
+                aria-label="问 Agent 并追加到当前笔记"
+              />
+              <div class="note-agent-compose__actions">
+                <span>{{ noteAgentLoading ? 'Agent 正在补充...' : '回答会先进入候选区' }}</span>
+                <button
+                  type="button"
+                  :disabled="noteAgentLoading || !noteAgentPrompt.trim()"
+                  @click="askAgentToAppendNote(noteAgentPrompt)">
+                  问 AI 生成候选
+                </button>
+              </div>
+            </div>
             <div class="study-note-composer__actions">
               <button type="button" @click="cancelStudyNoteComposer">取消</button>
               <button type="submit" class="primary-action">
@@ -386,6 +672,43 @@
           </div>
         </section>
 
+        <section class="agent-context">
+          <p class="answer-label">上下文</p>
+          <strong>{{ selectedPdfText ? '当前选区' : '当前页 / 当前段落' }}</strong>
+          <small v-if="selectedPdfContext">
+            Page {{ selectedPdfContext.pageNumber }} · {{ selectedPdfContext.elementId }}
+            <template v-if="selectedPdfSelectionType === 'region'"> · region</template>
+          </small>
+          <blockquote>{{ agentContextText }}</blockquote>
+        </section>
+
+        <section class="agent-answer agent-answer--ide">
+          <p class="answer-label">推荐译文</p>
+          <p>{{ activeInsight.translation }}</p>
+        </section>
+
+        <section class="agent-toolbar" aria-label="Agent 快捷操作">
+          <button type="button" @click="askAgent('翻译并解释当前段落')">解释段落</button>
+          <button type="button" @click="askAgent('拆解当前段落长难句')">长难句</button>
+          <button type="button" @click="askAgent('提取当前段落短语和生词')">提取表达</button>
+          <button type="button" @click="startNoteFromActiveBlock">记笔记</button>
+        </section>
+
+        <section class="agent-card agent-card--ide">
+          <p class="answer-label">学习资产候选</p>
+          <div class="agent-chip-list">
+            <span v-for="phrase in activeInsight.phrases" :key="phrase.text">
+              {{ phrase.text }}
+            </span>
+            <span v-for="word in activeInsight.vocabulary" :key="word.text">
+              {{ word.text }}
+            </span>
+            <span v-for="grammar in activeInsight.grammarPoints" :key="grammar.text">
+              {{ grammar.text }}
+            </span>
+          </div>
+        </section>
+
         <section class="agent-conversation agent-conversation--ide">
           <article v-for="message in agentMessages" :key="message.id" :class="`message message--${message.role}`">
             <strong>{{ message.role === 'assistant' ? 'Agent' : '我' }}</strong>
@@ -396,6 +719,13 @@
               class="message-save-note"
               @click="startNoteFromAgentMessage(message)">
               保存为笔记
+            </button>
+            <button
+              v-if="message.role === 'assistant' && message.id !== 'agent-welcome' && noteComposer.mode !== 'idle'"
+              type="button"
+              class="message-append-note"
+              @click="appendAgentAnswerToNoteComposer(message.content)">
+              追加到当前笔记
             </button>
             <div v-if="message.citations?.length" class="message-citations" aria-label="引用来源">
               <button
@@ -423,6 +753,7 @@
             </button>
           </div>
         </form>
+        </template>
       </aside>
     </main>
 
@@ -433,50 +764,19 @@
       <button type="button" @click="goBackToHub">返回</button>
     </section>
 
-    <footer v-if="readingDocument" class="asset-pipeline" aria-label="学习资产管道">
-      <header class="asset-pipeline__heading">
-        <div>
-          <strong>学习资产管道</strong>
-          <span>{{ totalStudyNoteCount }} 条笔记 · {{ userBookmarks.length }} 个书签 · {{ workspaceStateSaving ? '同步中' : '已加入当前文档' }}</span>
-        </div>
-        <button type="button" @click="showPlaceholderAction('全部资产抽屉')">查看全部资产</button>
-      </header>
-
-      <section
-        v-for="column in studyAssetPipeline"
-        :key="column.id"
-        class="asset-pipeline-column"
-        :class="`asset-pipeline-column--${column.tone}`">
-        <div class="asset-pipeline-column__title">
-          <span>{{ column.label }}</span>
-          <small>{{ column.notes.length }}</small>
-        </div>
-        <p>{{ column.description }}</p>
-        <div class="asset-pipeline-cards">
-          <article
-            v-for="note in column.notes.slice(0, 3)"
-            :key="note.id"
-            class="asset-pipeline-card"
-            :class="{ active: note.id === activeNoteId }"
-            @click="openStudyNote(note.id)">
-            <strong>{{ note.title }}</strong>
-            <span>{{ note.source === 'agent' ? 'Agent' : '我' }} · Page {{ note.pageNumber }}</span>
-          </article>
-          <button
-            v-if="column.notes.length === 0"
-            type="button"
-            class="asset-pipeline-empty"
-            @click="column.id === 'draft' ? askAgent('整理当前段落为笔记草稿') : startNoteFromActiveBlock()">
-            {{ column.id === 'draft' ? '让 Agent 整理' : '新增笔记' }}
-          </button>
-        </div>
-      </section>
+    <footer v-if="readingDocument" class="workspace-status-bar workspace-status-bar--ide" aria-label="学习工作台状态">
+      <span>{{ totalStudyNoteCount }} 条笔记</span>
+      <span>{{ userBookmarks.length }} 个书签</span>
+      <span>{{ workspaceStateSaving ? '同步中' : '已同步' }}</span>
+      <span>P{{ currentPdfPage }}</span>
+      <span>{{ modeLabels[activeMode] }}</span>
+      <button type="button" @click="selectSidePanel('assets')">整理队列</button>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -492,12 +792,12 @@ import {
 } from '@/api/translation'
 import PdfLearningCanvas from '@/components/translation/PdfLearningCanvas.vue'
 import { showToast } from '@/utils/toast'
-import type { TranslationSourceType } from './translationHubData'
 import {
   buildDocumentSelectionContext,
   buildIntensiveReadingDocument,
   createTranslationWorkspaceDraftFromParsedDocument,
   loadTranslationWorkspaceDraft,
+  type DocumentBlock,
   type DocumentOutlineItem,
   type DocumentSelectionContext,
   type IntensiveReadingDocument,
@@ -510,6 +810,9 @@ type WorkspaceResizeTarget = 'outline' | 'agent'
 type StudyNoteStatus = 'draft' | 'saved' | 'reviewing' | 'mastered'
 type StudyNoteSource = 'manual' | 'agent'
 type OutlineFilterScope = 'all' | 'current' | 'notes'
+type WorkspaceSidePanel = 'outline' | 'bookmarks' | 'notes' | 'assets' | 'search'
+type WorkspaceTabKind = 'pdf' | 'anchor-note' | 'standalone-note' | 'topic'
+type AgentPanelMode = 'agent' | 'note-workbench' | 'note-assistant' | 'topic-organizer'
 
 interface LocalAgentMessage {
   id: string
@@ -562,6 +865,24 @@ interface OutlineFilterScopeOption {
   count: number
 }
 
+interface WorkspaceSidePanelOption {
+  id: WorkspaceSidePanel
+  label: string
+  icon: string
+  count: number
+}
+
+interface WorkspaceTab {
+  id: string
+  kind: WorkspaceTabKind
+  title: string
+  subtitle?: string
+  documentId?: string
+  noteId?: string
+  topicId?: string
+  dirty?: boolean
+}
+
 interface DisplayOutlineItem extends DocumentOutlineItem {
   displayLevel: number
   hasChildren?: boolean
@@ -606,6 +927,9 @@ interface PdfNoteAnchor {
   pageNumber: number
   title: string
   excerpt?: string
+  bbox?: string | null
+  status?: string
+  active?: boolean
 }
 
 const route = useRoute()
@@ -628,6 +952,7 @@ const agentColumnWidth = ref(430)
 const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
 const isOutlineCollapsed = ref(false)
 const isAgentCollapsed = ref(false)
+const activeSidePanel = ref<WorkspaceSidePanel>('outline')
 const collapsedOutlineItemIds = ref<Set<string>>(new Set())
 const activeOutlineItemId = ref<string | null>(null)
 const outlineSearchQuery = ref('')
@@ -638,6 +963,13 @@ const userBookmarks = ref<UserBookmark[]>([])
 const studyNotes = ref<StudyNote[]>([])
 const activeNoteId = ref<string | null>(null)
 const noteComposer = ref<StudyNoteComposerState>(createEmptyNoteComposer())
+const noteContentInputRef = ref<HTMLTextAreaElement | null>(null)
+const noteAgentPrompt = ref('')
+const noteAgentLoading = ref(false)
+const aiCandidateContent = ref('')
+const workspaceTabs = ref<WorkspaceTab[]>([])
+const activeWorkspaceTabId = ref<string | null>(null)
+const agentPanelMode = ref<AgentPanelMode>('agent')
 const workspaceStateSaving = ref(false)
 const agentMessages = ref<LocalAgentMessage[]>([
   {
@@ -652,13 +984,6 @@ const modeLabels: Record<IntensiveAgentMode, string> = {
   foreign: '外刊精读',
   exam: '考试精读',
   technical: '技术文档',
-}
-
-const sourceTypeLabels: Record<TranslationSourceType, string> = {
-  pdf: 'PDF',
-  web: 'WEB',
-  text: 'TXT',
-  library: 'LIB',
 }
 
 const noteStatusLabels: Record<StudyNoteStatus, string> = {
@@ -867,11 +1192,7 @@ const filteredOutlinePageItems = computed<number[]>(() => {
 })
 
 const activeBlockNotes = computed(() => {
-  const block = activeBlock.value
-  if (!block) return []
-  return studyNotes.value.filter((note) => note.blockId === block.id
-    || note.elementId === block.elementId
-    || (!!activeOutlineItemId.value && note.bookmarkId === activeOutlineItemId.value))
+  return studyNotes.value.filter(isStudyNoteInActiveContext)
 })
 
 const activeUserBookmark = computed(() => {
@@ -886,6 +1207,9 @@ const noteAnchors = computed<PdfNoteAnchor[]>(() => {
     pageNumber: note.pageNumber,
     title: note.title,
     excerpt: note.selectedText || note.content,
+    bbox: note.bbox,
+    status: note.status,
+    active: note.id === activeNoteId.value,
   }))
 })
 
@@ -915,18 +1239,58 @@ const studyAssetPipeline = computed<StudyAssetPipelineColumn[]>(() => [
 
 const totalStudyNoteCount = computed(() => studyNotes.value.length)
 
+const sidePanelOptions = computed<WorkspaceSidePanelOption[]>(() => [
+  { id: 'outline', label: '目录', icon: '目', count: outlineTreeItems.value.length || outlinePageItems.value.length },
+  { id: 'bookmarks', label: '书签', icon: '签', count: userBookmarks.value.length },
+  { id: 'notes', label: '笔记', icon: '记', count: studyNotes.value.length },
+  { id: 'assets', label: '资产', icon: '资', count: totalStudyNoteCount.value },
+  { id: 'search', label: '搜索', icon: '搜', count: filteredOutlineItems.value.length || filteredOutlinePageItems.value.length },
+])
+
+const sidePanelSummary = computed(() => {
+  if (activeSidePanel.value === 'outline') return outlineSummary.value
+  if (activeSidePanel.value === 'bookmarks') return `${userBookmarks.value.length} 个书签 · Page ${currentPdfPage.value}`
+  if (activeSidePanel.value === 'notes') return `${studyNotes.value.length} 条笔记 · ${activeBlockNotes.value.length} 条在当前上下文`
+  if (activeSidePanel.value === 'assets') return `${totalStudyNoteCount.value} 条笔记 · ${workspaceStateSaving.value ? '同步中' : '已同步'}`
+  return `${filteredOutlineItems.value.length || filteredOutlinePageItems.value.length} 个匹配结果`
+})
+
 const noteComposerContextLabel = computed(() => {
   const context = noteComposer.value.context
   if (!context) return '未选择来源'
   return `Page ${context.pageNumber} · ${context.elementId || context.blockId}`
 })
 
+const activeWorkspaceTab = computed(() => {
+  return workspaceTabs.value.find((tab) => tab.id === activeWorkspaceTabId.value) ?? workspaceTabs.value[0] ?? null
+})
+
+const activeWorkspaceTabKind = computed<WorkspaceTabKind>(() => activeWorkspaceTab.value?.kind ?? 'pdf')
+
 watch(readingDocument, (document) => {
+  if (!document) {
+    workspaceTabs.value = []
+    activeWorkspaceTabId.value = null
+    return
+  }
+
+  const pdfTabId = `pdf-${document.id}`
+  const existingTabs = workspaceTabs.value.filter((tab) => tab.id !== pdfTabId)
+  const pdfTab: WorkspaceTab = {
+    id: pdfTabId,
+    kind: 'pdf',
+    title: document.title,
+    subtitle: 'PDF',
+    documentId: document.id,
+  }
+  workspaceTabs.value = [pdfTab, ...existingTabs]
+  if (!activeWorkspaceTabId.value) activeWorkspaceTabId.value = pdfTabId
+
   if (document?.sourceType === 'pdf') {
     documentView.value = 'pdf-canvas'
   }
-  targetPdfPage.value = activeBlock.value?.pageNumber || 1
-  currentPdfPage.value = targetPdfPage.value
+  if (workspaceStateRestoring) return
+  syncDocumentDefaultPage()
 }, { immediate: true })
 
 watch(
@@ -956,6 +1320,55 @@ async function completeLearningSession() {
   void router.push('/app/translation')
 }
 
+function activateWorkspaceTab(tabId: string) {
+  const tab = workspaceTabs.value.find((item) => item.id === tabId)
+  if (!tab) return
+  activeWorkspaceTabId.value = tab.id
+  if (tab.kind === 'pdf') {
+    agentPanelMode.value = 'agent'
+    documentView.value = 'pdf-canvas'
+  } else if (tab.kind === 'anchor-note' || tab.kind === 'standalone-note') {
+    agentPanelMode.value = 'note-assistant'
+  } else {
+    agentPanelMode.value = 'topic-organizer'
+  }
+}
+
+function closeWorkspaceTab(tabId: string) {
+  const nextTabs = workspaceTabs.value.filter((tab) => tab.id !== tabId)
+  workspaceTabs.value = nextTabs
+  if (activeWorkspaceTabId.value !== tabId) return
+  activeWorkspaceTabId.value = nextTabs[0]?.id ?? null
+  if (!activeWorkspaceTabId.value) agentPanelMode.value = 'agent'
+}
+
+function openStandaloneNoteTab() {
+  const tabId = `standalone-note-${Date.now()}`
+  workspaceTabs.value.push({
+    id: tabId,
+    kind: 'standalone-note',
+    title: 'Untitled Note',
+    subtitle: '独立笔记',
+    dirty: true,
+  })
+  activateWorkspaceTab(tabId)
+}
+
+function openTopicTab() {
+  const tabId = `topic-${Date.now()}`
+  workspaceTabs.value.push({
+    id: tabId,
+    kind: 'topic',
+    title: '排序算法',
+    subtitle: '专题',
+  })
+  activateWorkspaceTab(tabId)
+}
+
+function openImportPdfEntry() {
+  showToast('PDF 导入入口将在下一阶段接入当前上传流程', 'info')
+}
+
 async function flushWorkspaceStateSave() {
   if (workspaceStateSaveTimer) {
     clearTimeout(workspaceStateSaveTimer)
@@ -973,6 +1386,8 @@ async function restoreWorkspaceDocument(id: string) {
   studyNotes.value = []
   userBookmarks.value = []
   activeNoteId.value = null
+  targetPdfPage.value = 1
+  currentPdfPage.value = 1
   collapsedOutlineItemIds.value = new Set()
   noteComposer.value = createEmptyNoteComposer()
   if (!id) {
@@ -1033,6 +1448,20 @@ function restoreTranslationMode() {
   return activeMode.value === 'exam' ? 'exam' : 'immersive'
 }
 
+function syncDocumentDefaultPage() {
+  targetPdfPage.value = activeBlock.value?.pageNumber || 1
+  currentPdfPage.value = targetPdfPage.value
+}
+
+function syncActiveBlockToPdfPage(page: number) {
+  const document = readingDocument.value
+  if (!document) return
+  const pageBlock = document.blocks.find((block) => (block.pageNumber || 1) === page)
+  if (pageBlock) {
+    activeBlockId.value = pageBlock.id
+  }
+}
+
 function applyLocalDraftDisplayOverrides(
   draft: TranslationWorkspaceDraft,
   localDraft: TranslationWorkspaceDraft | null,
@@ -1076,6 +1505,12 @@ function restoreWorkspaceState(state: TranslationDocumentWorkspaceStateDto | nul
   }
 
   const restoredPage = normalizePageNumber(state.currentPage ?? currentPdfPage.value)
+  if (document) {
+    const restoredBlock = document.blocks.find((block) => block.id === activeBlockId.value)
+    if (!restoredBlock || (restoredBlock.pageNumber || 1) !== restoredPage) {
+      syncActiveBlockToPdfPage(restoredPage)
+    }
+  }
   currentPdfPage.value = restoredPage
   targetPdfPage.value = restoredPage
 }
@@ -1244,6 +1679,28 @@ function selectOutlinePage(page: number) {
   scheduleWorkspaceStateSave()
 }
 
+function selectSidePanel(panel: WorkspaceSidePanel) {
+  activeSidePanel.value = panel
+  if (isOutlineCollapsed.value) {
+    isOutlineCollapsed.value = false
+  }
+}
+
+function jumpToUserBookmark(bookmark: UserBookmark) {
+  activeOutlineItemId.value = bookmark.id
+  targetPdfPage.value = bookmark.pageNumber
+  currentPdfPage.value = bookmark.pageNumber
+  documentView.value = 'pdf-canvas'
+  if (bookmark.elementId) {
+    const block = readingDocument.value?.blocks.find((item) => item.id === bookmark.elementId || item.elementId === bookmark.elementId)
+    if (block) activeBlockId.value = block.id
+  } else {
+    syncActiveBlockToPdfPage(bookmark.pageNumber)
+  }
+  clearPdfSelection()
+  scheduleWorkspaceStateSave()
+}
+
 function selectOutlineItem(item: DocumentOutlineItem) {
   const page = item.pageNumber || 1
   const document = readingDocument.value
@@ -1275,6 +1732,7 @@ function selectOutlineBlock(blockId: string, page: number) {
 
 function handlePdfPageChange(page: number) {
   currentPdfPage.value = normalizePageNumber(page)
+  syncActiveBlockToPdfPage(page)
   scheduleWorkspaceStateSave()
 }
 
@@ -1300,6 +1758,21 @@ function getOutlineItemNoteCount(item: DocumentOutlineItem) {
 
 function getPageNoteCount(page: number) {
   return noteCountByPage.value.get(page) ?? 0
+}
+
+function isStudyNoteInActiveContext(note: StudyNote) {
+  if (note.id === activeNoteId.value) return true
+
+  const context = selectedPdfContext.value
+  if (context && note.pageNumber === context.pageNumber) {
+    return note.blockId === context.blockId
+      || note.elementId === context.elementId
+      || (!!context.bbox && note.bbox === context.bbox)
+  }
+
+  const block = activeBlock.value
+  return (!!block && (note.blockId === block.id || note.elementId === block.elementId))
+    || (!!activeOutlineItemId.value && note.bookmarkId === activeOutlineItemId.value)
 }
 
 function isOutlineNodeCollapsed(item: DisplayOutlineItem) {
@@ -1578,10 +2051,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function showPlaceholderAction(label: string) {
-  showToast(`${label} 即将接入`, 'info')
-}
-
 function askAgent(question: string) {
   agentPrompt.value = question
   void submitAgentQuestion()
@@ -1604,14 +2073,7 @@ async function submitAgentQuestion() {
   })
   agentAnswerLoading.value = true
   try {
-    const answer = await answerTranslationDocumentQuestion(document.id, {
-      question: selectedQuestion,
-      selectedText: sourceContext?.text ?? currentBlock.text,
-      pageNumber: sourceContext?.pageNumber ?? currentBlock.pageNumber,
-      elementId: sourceContext?.elementId ?? currentBlock.elementId ?? currentBlock.id,
-      bbox: sourceContext?.bbox ?? currentBlock.bbox ?? null,
-      mode: activeMode.value,
-    })
+    const answer = await requestAgentAnswerForContext(selectedQuestion, sourceContext, currentBlock)
     agentMessages.value.push({
       id: `assistant-${Date.now()}`,
       role: 'assistant',
@@ -1631,6 +2093,84 @@ async function submitAgentQuestion() {
   } finally {
     agentAnswerLoading.value = false
   }
+}
+
+async function askAgentToAppendNote(question: string) {
+  const selectedQuestion = question.trim()
+  const composer = noteComposer.value
+  const sourceContext = composer.context ?? resolveAgentSourceContext()
+  const currentBlock = activeBlock.value
+  if (composer.mode === 'idle') {
+    showToast('请先打开一个笔记', 'info')
+    return
+  }
+  if (!selectedQuestion || !sourceContext || !currentBlock || noteAgentLoading.value) return
+
+  noteAgentLoading.value = true
+  agentMessages.value.push({
+    id: `user-note-${Date.now()}`,
+    role: 'user',
+    content: selectedQuestion,
+    sourceContext,
+  })
+  try {
+    const answer = await requestAgentAnswerForContext(selectedQuestion, sourceContext, currentBlock)
+    aiCandidateContent.value = answer.answer.trim()
+    agentMessages.value.push({
+      id: `assistant-note-${Date.now()}`,
+      role: 'assistant',
+      content: answer.answer,
+      sourceContext,
+      citations: answer.citations,
+    })
+    noteAgentPrompt.value = ''
+    showToast('Agent 已生成候选补充', 'success')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Agent 回答失败'
+    agentMessages.value.push({
+      id: `assistant-note-error-${Date.now()}`,
+      role: 'assistant',
+      content: `暂时无法补充笔记：${message}`,
+      sourceContext,
+    })
+    showToast('Agent 补充失败，请稍后重试', 'error')
+  } finally {
+    noteAgentLoading.value = false
+  }
+}
+
+function appendAiCandidateToNote() {
+  appendAgentAnswerToNoteComposer(aiCandidateContent.value)
+  aiCandidateContent.value = ''
+}
+
+async function requestAgentAnswerForContext(
+  question: string,
+  sourceContext: DocumentSelectionContext | null,
+  fallbackBlock: DocumentBlock,
+) {
+  const document = readingDocument.value
+  if (!document) throw new Error('缺少当前文档')
+  return answerTranslationDocumentQuestion(document.id, {
+    question,
+    selectedText: sourceContext?.text ?? fallbackBlock.text,
+    pageNumber: sourceContext?.pageNumber ?? fallbackBlock.pageNumber,
+    elementId: sourceContext?.elementId ?? fallbackBlock.elementId ?? fallbackBlock.id,
+    bbox: sourceContext?.bbox ?? fallbackBlock.bbox ?? null,
+    mode: activeMode.value,
+  })
+}
+
+function appendAgentAnswerToNoteComposer(content: string) {
+  const normalizedContent = content.trim()
+  if (!normalizedContent) return
+  if (noteComposer.value.mode === 'idle') {
+    showToast('请先打开一个笔记', 'info')
+    return
+  }
+  const currentContent = noteComposer.value.content.trimEnd()
+  noteComposer.value.content = `${currentContent}${currentContent ? '\n\n' : ''}Agent 补充：\n${normalizedContent}`
+  focusNoteComposer()
 }
 
 function resolveAgentSourceContext(): DocumentSelectionContext | null {
@@ -1696,6 +2236,8 @@ function createEmptyNoteComposer(): StudyNoteComposerState {
 }
 
 function startNoteFromPdfSelection(payload: PdfSelectionPayload) {
+  agentPanelMode.value = 'note-workbench'
+  isAgentCollapsed.value = false
   const context = resolveNoteContextFromPdfSelection(payload)
   openNoteComposer({
     context,
@@ -1744,7 +2286,15 @@ function openNoteComposer(input: {
   status: StudyNoteStatus
 }) {
   activeNoteId.value = null
+  activeSidePanel.value = 'notes'
+  isAgentCollapsed.value = false
+  agentPanelMode.value = 'note-workbench'
+  if (isOutlineCollapsed.value) {
+    isOutlineCollapsed.value = false
+  }
   const bookmarkId = resolveActiveBookmarkId(input.context)
+  noteAgentPrompt.value = ''
+  aiCandidateContent.value = ''
   noteComposer.value = {
     mode: 'create',
     noteId: null,
@@ -1756,10 +2306,15 @@ function openNoteComposer(input: {
     context: input.context,
   }
   documentView.value = 'pdf-canvas'
+  focusNoteComposer()
 }
 
 function editStudyNote(note: StudyNote) {
   activeNoteId.value = note.id
+  noteAgentPrompt.value = ''
+  aiCandidateContent.value = ''
+  agentPanelMode.value = 'note-workbench'
+  isAgentCollapsed.value = false
   noteComposer.value = {
     mode: 'edit',
     noteId: note.id,
@@ -1777,6 +2332,13 @@ function editStudyNote(note: StudyNote) {
       text: note.selectedText,
     },
   }
+  focusNoteComposer()
+}
+
+function focusNoteComposer() {
+  void nextTick(() => {
+    noteContentInputRef.value?.focus()
+  })
 }
 
 function resolveActiveBookmarkId(context: DocumentSelectionContext): string | null {
@@ -1847,12 +2409,18 @@ function saveStudyNote() {
     activeNoteId.value = note.id
   }
   noteComposer.value = createEmptyNoteComposer()
+  noteAgentPrompt.value = ''
+  aiCandidateContent.value = ''
+  agentPanelMode.value = 'agent'
   showToast(composer.status === 'draft' ? '已生成待整理笔记' : '已保存为学习笔记', 'success')
   scheduleWorkspaceStateSave()
 }
 
 function cancelStudyNoteComposer() {
   noteComposer.value = createEmptyNoteComposer()
+  noteAgentPrompt.value = ''
+  aiCandidateContent.value = ''
+  agentPanelMode.value = 'agent'
 }
 
 function updateStudyNoteStatus(noteId: string, status: StudyNoteStatus) {
@@ -1946,28 +2514,118 @@ function inferNoteTags(title: string, text: string) {
 
 <style scoped>
 .intensive-workspace-page {
+  --ide-bg: #1f2329;
+  --ide-panel: #252a31;
+  --ide-panel-2: #2d333b;
+  --ide-border: #3b4652;
+  --ide-text: #d7dde5;
+  --ide-muted: #9aa6b5;
+  --ide-accent: #2dd4bf;
+  --reader-bg: #f5f8fb;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 0;
   height: 100vh;
   min-height: 0;
-  padding: 10px 12px 8px;
+  padding: 0;
   overflow: hidden;
-  background: #f5f7fa;
+  background: var(--ide-bg);
   color: #102033;
 }
 
 .workspace-toolbar,
+.workspace-ide-titlebar,
 .workspace-shell,
-.asset-pipeline {
+.workspace-status-bar {
   width: 100%;
   margin: 0;
 }
 
+.workspace-ide-titlebar {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(280px, 520px) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 52px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-bg);
+  color: var(--ide-text);
+}
+
+.workspace-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-brand__mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: 9px;
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--ide-accent);
+  font-weight: 900;
+}
+
+.workspace-brand strong,
+.workspace-titlebar-document {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-brand strong {
+  display: block;
+  color: var(--ide-text);
+  font-size: 14px;
+}
+
+.workspace-brand small {
+  display: block;
+  color: var(--ide-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workspace-command-center input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--ide-border);
+  border-radius: 999px;
+  background: #171b20;
+  color: var(--ide-text);
+  padding: 0 16px;
+}
+
+.workspace-command-center input::placeholder {
+  color: var(--ide-muted);
+}
+
+.workspace-titlebar-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspace-titlebar-document {
+  max-width: 360px;
+  color: var(--ide-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .workspace-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
 }
 
@@ -1979,13 +2637,16 @@ textarea {
 
 .back-button,
 .toolbar-actions button,
+.activity-button,
 .reader-status span,
 .inline-actions button,
 .agent-card-actions button,
 .command-actions button,
-.asset-pipeline button,
+.side-drawer-panel button,
+.workspace-status-bar button,
 .study-note-panel button,
 .message-save-note,
+.message-append-note,
 .missing-state button {
   border: 1px solid #d9e2ec;
   border-radius: 8px;
@@ -2001,6 +2662,19 @@ textarea {
   min-height: 38px;
   padding: 0 13px;
   cursor: pointer;
+}
+
+.back-button {
+  display: grid;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  place-items: center;
+}
+
+.back-button-icon {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .primary-action {
@@ -2033,15 +2707,8 @@ textarea {
   white-space: nowrap;
 }
 
-.document-heading span {
-  display: block;
-  max-width: 820px;
-  overflow: hidden;
-  color: #526071;
-  font-size: 13px;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.document-heading {
+  min-width: 0;
 }
 
 .toolbar-actions {
@@ -2061,7 +2728,8 @@ textarea {
 
 .workspace-shell--ide {
   grid-template-columns:
-    minmax(220px, var(--outline-column-width, 280px))
+    48px
+    minmax(220px, var(--outline-column-width, 300px))
     8px
     minmax(560px, 1fr)
     8px
@@ -2074,7 +2742,8 @@ textarea {
 
 .workspace-shell--outline-collapsed {
   grid-template-columns:
-    44px
+    48px
+    0
     0
     minmax(560px, 1fr)
     8px
@@ -2083,7 +2752,8 @@ textarea {
 
 .workspace-shell--agent-collapsed {
   grid-template-columns:
-    minmax(220px, var(--outline-column-width, 280px))
+    48px
+    minmax(220px, var(--outline-column-width, 300px))
     8px
     minmax(560px, 1fr)
     0
@@ -2091,53 +2761,87 @@ textarea {
 }
 
 .workspace-shell--outline-collapsed.workspace-shell--agent-collapsed {
-  grid-template-columns: 44px 0 minmax(560px, 1fr) 0 44px;
+  grid-template-columns: 48px 0 0 minmax(560px, 1fr) 0 44px;
 }
 
+.workspace-activity-bar,
 .workspace-outline-panel,
 .workspace-canvas-panel,
 .workspace-agent-panel {
   min-height: 0;
   height: 100%;
   min-width: 0;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
+  border: 1px solid var(--ide-border);
+  border-radius: 0;
   background: #ffffff;
   overflow: hidden;
 }
 
-.workspace-outline-panel {
+.workspace-activity-bar {
   grid-column: 1;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 6px;
+  border-right: 0;
+  background: #1b1f24;
 }
 
-.workspace-resizer--outline {
+.workspace-activity-bar .activity-button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ide-muted);
+}
+
+.workspace-activity-bar .activity-button.active,
+.workspace-activity-bar .activity-button:hover,
+.workspace-activity-bar .activity-button:focus-visible {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--ide-accent);
+}
+
+.workspace-outline-panel {
   grid-column: 2;
 }
 
-.workspace-canvas-panel {
+.workspace-explorer {
+  background: var(--ide-panel);
+  color: var(--ide-text);
+}
+
+.workspace-resizer--outline {
   grid-column: 3;
 }
 
-.workspace-resizer--agent {
+.workspace-canvas-panel {
   grid-column: 4;
 }
 
-.workspace-agent-panel {
+.workspace-resizer--agent {
   grid-column: 5;
+}
+
+.workspace-agent-panel {
+  grid-column: 6;
 }
 
 .workspace-outline-panel {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+  border-left: 0;
 }
 
 .workspace-canvas-panel {
   border-radius: 0;
+  background: var(--reader-bg);
 }
 
 .workspace-agent-panel {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+  background: var(--ide-panel);
+  color: var(--ide-text);
 }
 
 .workspace-resizer {
@@ -2181,6 +2885,57 @@ textarea {
   display: none !important;
 }
 
+.workspace-outline-panel.workspace-panel--collapsed {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.activity-button {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  place-items: center;
+  border-color: transparent;
+  border-radius: 8px;
+  color: #526071;
+  cursor: pointer;
+}
+
+.activity-button.active,
+.activity-button:hover,
+.activity-button:focus-visible {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.activity-button__icon {
+  font-size: 14px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.activity-button small {
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  min-width: 16px;
+  padding: 1px 4px;
+  border: 1px solid #ffffff;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
 .workspace-drawer-rail {
   display: grid;
   width: 100%;
@@ -2202,6 +2957,34 @@ textarea {
   background: #ecfdf5;
   color: #0f766e;
   transform: none;
+}
+
+.workspace-drawer-rail--outline {
+  position: absolute;
+  top: 12px;
+  left: 8px;
+  z-index: 13;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border: 1px solid #d9e2ec;
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 14%);
+  color: #0f766e;
+  font-size: 16px;
+  writing-mode: horizontal-tb;
+}
+
+.workspace-drawer-rail--outline:hover,
+.workspace-drawer-rail--outline:focus-visible {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.workspace-drawer-rail__icon {
+  line-height: 1;
 }
 
 .panel-drawer-toggle {
@@ -2226,7 +3009,7 @@ textarea {
 .workspace-outline-panel {
   position: relative;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   background: #fbfcfe;
 }
 
@@ -2240,17 +3023,7 @@ textarea {
   background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
 }
 
-.canvas-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.outline-header h2,
-.canvas-panel-header h2 {
+.outline-header h2 {
   margin: 0;
   color: #172033;
   font-size: 15px;
@@ -2282,6 +3055,268 @@ textarea {
   color: #748094;
   font-size: 12px;
   font-weight: 650;
+}
+
+.workspace-explorer {
+  background: var(--ide-panel);
+}
+
+.workspace-explorer .outline-header {
+  border-color: var(--ide-border);
+  background: var(--ide-panel);
+}
+
+.workspace-explorer .outline-heading-main p,
+.workspace-explorer .outline-heading-main span {
+  color: var(--ide-muted);
+}
+
+.workspace-explorer .outline-header h2 {
+  color: var(--ide-text);
+  letter-spacing: 0.08em;
+}
+
+.workspace-opened-resources,
+.workspace-resource-actions {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-panel);
+}
+
+.workspace-opened-resources p {
+  margin: 0;
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.workspace-opened-resources button,
+.workspace-resource-actions button {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--ide-panel-2);
+  color: var(--ide-text);
+  cursor: pointer;
+}
+
+.workspace-opened-resources button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.workspace-opened-resources button.active,
+.workspace-opened-resources button:hover,
+.workspace-opened-resources button:focus-visible,
+.workspace-resource-actions button:hover,
+.workspace-resource-actions button:focus-visible {
+  border-color: rgba(45, 212, 191, 0.4);
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--ide-accent);
+  outline: none;
+}
+
+.workspace-opened-resources span {
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-opened-resources strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-resource-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workspace-resource-actions button {
+  min-height: 34px;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.side-drawer-switcher {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e7edf3;
+  background: #ffffff;
+}
+
+.side-drawer-switcher button {
+  min-height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #526071;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.side-drawer-switcher button.active,
+.side-drawer-switcher button:hover,
+.side-drawer-switcher button:focus-visible {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.side-drawer-panel {
+  grid-row: 3 / 5;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+.side-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.side-section-heading strong {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.side-section-heading button,
+.side-empty-action {
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.side-list-card,
+.side-asset-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #dbe5ee;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.side-list-card:hover,
+.side-list-card.active,
+.side-asset-card:hover,
+.side-asset-card.active {
+  border-color: #5eead4;
+  background: #f0fdfa;
+  box-shadow: inset 3px 0 0 #14b8a6;
+}
+
+.side-list-card strong,
+.side-list-card span,
+.side-asset-card strong,
+.side-asset-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-list-card strong,
+.side-asset-card strong {
+  color: #172033;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.side-list-card span,
+.side-asset-card span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.side-empty-action {
+  border-style: dashed !important;
+  background: #ffffffcc !important;
+  color: #0f766e !important;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.side-asset-board {
+  gap: 10px;
+}
+
+.side-asset-group {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.side-asset-group--warm {
+  border-color: #fde68a;
+  background: #fffaf0;
+}
+
+.side-asset-group--green {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.side-asset-group--blue {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.side-asset-group header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-asset-group header span {
+  color: #111827;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.side-asset-group header small {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 950;
+  text-align: center;
+}
+
+.side-asset-group p {
+  margin: 0;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .outline-controls {
@@ -2391,6 +3426,7 @@ textarea {
 }
 
 .outline-list {
+  grid-row: 4;
   min-height: 0;
   overflow: auto;
   padding: 9px 8px 14px;
@@ -2762,6 +3798,131 @@ textarea {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.workspace-tabs {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: end;
+  gap: 2px;
+  padding: 10px 12px 0;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-panel);
+  overflow-x: auto;
+}
+
+.workspace-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  min-width: 150px;
+  max-width: 280px;
+  height: 44px;
+  padding: 7px 12px 8px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--ide-panel-2);
+  color: var(--ide-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-tab span,
+.workspace-tab strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tab span {
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-tab strong {
+  color: inherit;
+  font-size: 13px;
+}
+
+.workspace-tab small {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  align-self: center;
+  color: var(--ide-muted);
+}
+
+.workspace-tab.active {
+  background: var(--reader-bg);
+  color: #102033;
+}
+
+.workspace-tab.active span {
+  color: #667085;
+}
+
+.workspace-tab--new {
+  display: grid;
+  min-width: 42px;
+  width: 42px;
+  place-items: center;
+  color: var(--ide-muted);
+  text-align: center;
+  font-size: 20px;
+}
+
+.workspace-editor-area {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--reader-bg);
+}
+
+.workspace-editor-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #dfe8f1;
+  background: #ffffff;
+}
+
+.note-document-editor {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 24px;
+  background: #ffffff;
+}
+
+.note-document-editor p,
+.note-document-editor h2 {
+  margin: 0;
+}
+
+.note-document-editor p {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.note-document-editor h2 {
+  color: #102033;
+  font-size: 24px;
+}
+
+.note-document-editor textarea {
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  padding: 16px;
+  color: #102033;
+}
+
 .workspace-canvas-panel :deep(.pdf-learning-canvas) {
   min-height: 0;
   height: 100%;
@@ -2850,6 +4011,14 @@ textarea {
   background: #ffffff;
 }
 
+.document-view-tabs--compact {
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .document-view-tabs button {
   min-height: 32px;
   padding: 0 12px;
@@ -2860,6 +4029,13 @@ textarea {
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
+}
+
+.document-view-tabs--compact button {
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
 .document-view-tabs button.active {
@@ -3199,6 +4375,8 @@ textarea {
   min-height: 0;
   max-height: none;
   padding: 0;
+  background: var(--ide-panel);
+  color: var(--ide-text);
   overflow: hidden;
 }
 
@@ -3212,6 +4390,96 @@ textarea {
 
 .agent-header--ide {
   padding: 16px 18px;
+  border-color: var(--ide-border);
+  background: var(--ide-panel);
+}
+
+.agent-header--ide h2 {
+  color: var(--ide-text);
+}
+
+.agent-header--ide span {
+  color: var(--ide-muted);
+}
+
+.note-workbench-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
+.note-workbench-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.note-workbench-header p,
+.note-workbench-header strong {
+  margin: 0;
+}
+
+.note-workbench-header strong {
+  color: var(--ide-text);
+  font-size: 18px;
+}
+
+.note-workbench-header button,
+.note-workbench-tabs button,
+.ai-candidate-card button {
+  min-height: 34px;
+  border: 1px solid var(--ide-border);
+  border-radius: 8px;
+  background: var(--ide-panel-2);
+  color: var(--ide-text);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.note-workbench-header button:hover,
+.note-workbench-tabs button:hover,
+.note-workbench-tabs button.active,
+.ai-candidate-card button:hover:not(:disabled) {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--ide-accent);
+}
+
+.note-workbench-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.note-workbench-composer {
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.ai-candidate-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #806421;
+  border-radius: 10px;
+  background: #3d3520;
+}
+
+.ai-candidate-card blockquote {
+  margin: 0;
+  color: #f5e7bd;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ai-candidate-card button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .agent-context {
@@ -3252,6 +4520,12 @@ textarea {
   padding: 13px 18px;
   border-bottom: 1px solid #edf1f6;
   background: #ffffff;
+}
+
+.study-note-panel--composer-active {
+  border-bottom-color: #99f6e4;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+  box-shadow: inset 3px 0 0 #14b8a6;
 }
 
 .study-note-panel__header {
@@ -3308,6 +4582,21 @@ textarea {
   white-space: nowrap;
 }
 
+.study-note-selected-text {
+  max-height: 92px;
+  margin: 0;
+  overflow: auto;
+  padding: 9px 10px;
+  border: 1px solid #ccfbf1;
+  border-left: 3px solid #14b8a6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
 .study-note-composer input,
 .study-note-composer textarea {
   width: 100%;
@@ -3328,6 +4617,64 @@ textarea {
 .study-note-composer textarea {
   min-height: 104px;
   resize: vertical;
+}
+
+.study-note-panel--composer-active .study-note-composer textarea {
+  min-height: 168px;
+  background: #ffffff;
+}
+
+.note-agent-compose {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.note-agent-compose__quick,
+.note-agent-compose__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-agent-compose__quick {
+  flex-wrap: wrap;
+}
+
+.note-agent-compose button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: #bfdbfe;
+  background: #ffffff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.note-agent-compose button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.note-agent-compose textarea {
+  min-height: 58px;
+  border-color: #bfdbfe;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.note-agent-compose__actions {
+  justify-content: space-between;
+}
+
+.note-agent-compose__actions span {
+  min-width: 0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .study-note-composer__actions {
@@ -3622,13 +4969,21 @@ textarea {
   background: #ccfbf1;
 }
 
-.message-save-note {
+.message-save-note,
+.message-append-note {
   justify-self: start;
   min-height: 28px;
+  margin-top: 8px;
   padding: 5px 9px;
   color: #0f766e;
   font-size: 12px;
   cursor: pointer;
+}
+
+.message-append-note {
+  margin-left: 6px;
+  border-color: #99f6e4;
+  background: #f0fdfa;
 }
 
 .agent-command {
@@ -3636,164 +4991,46 @@ textarea {
   gap: 8px;
 }
 
-.asset-pipeline {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.75fr) repeat(3, minmax(220px, 1fr));
-  gap: 12px;
-  min-height: 116px;
-  padding: 10px;
-  border: 1px solid #dbe5ee;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
-}
-
-.asset-pipeline__heading {
-  display: grid;
-  align-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  padding: 10px 12px;
-  border-right: 1px solid #edf1f6;
-}
-
-.asset-pipeline__heading div {
-  display: grid;
-  gap: 4px;
-}
-
-.asset-pipeline__heading strong {
-  color: #111827;
-  font-size: 15px;
-  line-height: 1.3;
-}
-
-.asset-pipeline__heading span {
-  color: #667085;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.asset-pipeline__heading button {
-  justify-self: start;
-  min-height: 30px;
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.asset-pipeline-column {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 6px;
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.asset-pipeline-column--warm {
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-
-.asset-pipeline-column--green {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
-.asset-pipeline-column--blue {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-}
-
-.asset-pipeline-column__title {
+.workspace-status-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: #0f766e;
+  color: #ffffff;
+  box-shadow: none;
 }
 
-.asset-pipeline-column__title span {
-  color: #111827;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.asset-pipeline-column__title small {
-  min-width: 24px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #0f766e;
+.workspace-status-bar span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: #ffffff;
   font-size: 12px;
-  font-weight: 900;
-  text-align: center;
-}
-
-.asset-pipeline-column p {
-  margin: 0;
-  color: #667085;
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.asset-pipeline-cards {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.asset-pipeline-card,
-.asset-pipeline-empty {
-  flex: 0 0 170px;
-  min-width: 0;
-  min-height: 54px;
-  cursor: pointer;
-}
-
-.asset-pipeline-card {
-  display: grid;
-  align-content: center;
-  gap: 3px;
-  padding: 8px 9px;
-  border: 1px solid #dbe5ee;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.asset-pipeline-card.active {
-  border-color: #14b8a6;
-  box-shadow: inset 3px 0 0 #14b8a6;
-}
-
-.asset-pipeline-card strong,
-.asset-pipeline-card span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 850;
   white-space: nowrap;
 }
 
-.asset-pipeline-card strong {
-  color: #111827;
-  font-size: 12px;
+.workspace-status-bar span + span::before {
+  width: 4px;
+  height: 4px;
+  margin-right: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  content: '';
 }
 
-.asset-pipeline-card span {
-  color: #667085;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.asset-pipeline-empty {
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 60%);
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 900;
+.workspace-status-bar button {
+  min-height: 26px;
+  margin-left: auto;
+  padding: 0 10px;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  cursor: pointer;
 }
 
 .missing-state {
@@ -3831,6 +5068,124 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1440px) {
+  .workspace-shell--ide {
+    grid-template-columns:
+      44px
+      minmax(190px, 240px)
+      6px
+      minmax(360px, 1fr)
+      6px
+      minmax(300px, 340px);
+  }
+
+  .workspace-shell--outline-collapsed {
+    grid-template-columns:
+      44px
+      0
+      0
+      minmax(360px, 1fr)
+      6px
+      minmax(300px, 340px);
+  }
+
+  .workspace-shell--agent-collapsed {
+    grid-template-columns:
+      44px
+      minmax(190px, 240px)
+      6px
+      minmax(360px, 1fr)
+      0
+      40px;
+  }
+
+  .workspace-shell--outline-collapsed.workspace-shell--agent-collapsed {
+    grid-template-columns: 44px 0 0 minmax(360px, 1fr) 0 40px;
+  }
+
+  .workspace-activity-bar {
+    padding: 7px 5px;
+  }
+
+  .activity-button {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .workspace-tab {
+    min-width: 120px;
+  }
+
+  .workspace-titlebar-document {
+    max-width: 240px;
+  }
+
+  .workspace-resizer {
+    min-width: 6px;
+  }
+
+  .workspace-resizer::after {
+    inset: 0 -4px;
+  }
+
+  .side-drawer-switcher {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 7px 8px;
+  }
+
+  .side-drawer-switcher button {
+    padding: 0 4px;
+    font-size: 11px;
+  }
+
+  .outline-controls {
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .outline-filter-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .outline-quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .outline-list {
+    padding: 8px;
+  }
+
+  .outline-block-button {
+    gap: 4px;
+    padding: 7px 7px;
+  }
+
+  .outline-item-meta {
+    justify-content: flex-start;
+  }
+
+  .agent-header--ide {
+    padding: 10px 12px;
+  }
+
+  .agent-panel--ide {
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  }
+}
+
 @media (max-width: 1180px) {
   .workspace-toolbar,
   .workspace-shell {
@@ -3863,15 +5218,6 @@ textarea:focus-visible {
     max-height: none;
   }
 
-  .asset-pipeline {
-    grid-template-columns: 1fr;
-    overflow: auto;
-  }
-
-  .asset-pipeline__heading {
-    border-right: 0;
-    border-bottom: 1px solid #edf1f6;
-  }
 }
 
 @media (max-width: 760px) {
@@ -3879,7 +5225,6 @@ textarea:focus-visible {
     padding: 16px 14px 112px;
   }
 
-  .asset-pipeline,
   .reader-heading,
   .document-summary,
   .agent-header,
@@ -3893,17 +5238,8 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .asset-pipeline {
+  .workspace-status-bar {
     overflow-x: auto;
-  }
-
-  .asset-pipeline-cards {
-    flex-direction: column;
-  }
-
-  .asset-pipeline-card,
-  .asset-pipeline-empty {
-    flex-basis: auto;
   }
 }
 </style>

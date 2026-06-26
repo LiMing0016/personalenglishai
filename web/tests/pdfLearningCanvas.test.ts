@@ -52,6 +52,8 @@ for (const requiredCanvasFeature of [
   'textLayerBuilder',
   'textLayerAbortController',
   'selectionBoxes',
+  'noteAnchorHighlightBoxes',
+  'note-anchor-highlight-box',
   'sourceHighlight?: PdfSourceHighlight | null',
   'sourceHighlightBoxes',
   'watch(() => props.sourceHighlight',
@@ -75,8 +77,6 @@ for (const requiredCanvasFeature of [
   "querySelectorAll('.textLayer span')",
   'window.getSelection()?.removeAllRanges()',
   '--total-scale-factor',
-  '高亮选区',
-  '复制文本层',
   'fit-width',
   'ResizeObserver',
   'calculateFitWidthScale',
@@ -170,6 +170,54 @@ assert.ok(
   canvasSource.includes('selectionChange: [payload: PdfSelectionPayload]'),
   'PDF learning canvas should emit structured selection metadata for source-aware agent questions',
 )
+assert.ok(
+  canvasSource.includes('noteSelection: [payload: PdfSelectionPayload]')
+    && canvasSource.includes('class="selection-action-popover"')
+    && canvasSource.includes('@click="emitNoteSelection"')
+    && canvasSource.includes("emitAskAgent('解释当前选区')"),
+  'PDF learning canvas should offer a visible selection popover for creating anchored notes or asking the agent',
+)
+assert.ok(
+  canvasSource.includes('function emitNoteSelection')
+    && canvasSource.includes("emit('noteSelection', payload)"),
+  'PDF learning canvas should convert the current PDF selection into an anchored note payload',
+)
+assert.ok(
+  canvasSource.includes(':style="selectionActionStyle"')
+    && canvasSource.includes('selectionActionStyle')
+    && canvasSource.includes('resolveSelectionActionRect'),
+  'PDF selection note popover should follow the selected PDF region instead of being fixed at the far edge of a zoomed page',
+)
+assert.ok(
+  canvasSource.includes('bbox?: string | null') && canvasSource.includes('active?: boolean'),
+  'PDF note anchors should carry source bbox and active state for anchored note rendering',
+)
+assert.ok(
+  canvasSource.includes('resolveNoteAnchorPinStyle') && canvasSource.includes('parseBboxToGeometry(anchor.bbox)'),
+  'PDF note anchors should position the margin pin from the saved PDF selection bbox',
+)
+assert.ok(
+  canvasSource.includes('note-anchor-pin--active') && canvasSource.includes('aria-label="打开锚点笔记"'),
+  'PDF note anchors should expose a clear active state and accessible open-note action',
+)
+assert.ok(
+  canvasSource.includes('function applyTargetPage')
+    && /watch\(\(\) => props\.targetPage,[\s\S]*applyTargetPage\(page[\s\S]*\{ immediate: true \}\)/.test(canvasSource),
+  'PDF learning canvas should apply the initial restored target page when it mounts',
+)
+assert.ok(
+  !canvasSource.includes('<p>PDF 学习画布</p>')
+    && !canvasSource.includes('<strong>{{ title }}</strong>'),
+  'PDF toolbar should not repeat the canvas name or document title already shown by the workspace chrome',
+)
+for (const removedToolbarAction of [
+  '>上一页</button>',
+  '>下一页</button>',
+  '@click="copySelectionOrPageText"',
+  '@click="highlightSelection"',
+]) {
+  assert.ok(!canvasSource.includes(removedToolbarAction), `PDF toolbar should remove ${removedToolbarAction}`)
+}
 
 for (const requiredWorkspaceFeature of [
   'PdfLearningCanvas',
