@@ -1273,7 +1273,7 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  background: #181d23;
+  background: #f5f8fb;
 }
 
 .pdf-learning-canvas.geometry-selecting {
@@ -1286,8 +1286,8 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   align-items: center;
   justify-content: flex-end;
   padding: 6px 10px;
-  border-bottom: 1px solid #343d49;
-  background: #161a20;
+  border-bottom: 1px solid #d9e2ec;
+  background: #ffffff;
 }
 
 .pdf-canvas-controls {
@@ -1301,10 +1301,10 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 .pdf-canvas-controls button {
   min-height: 28px;
   padding: 0 9px;
-  border: 1px solid #343d49;
+  border: 1px solid #d9e2ec;
   border-radius: 6px;
-  background: #252b33;
-  color: #d7dde5;
+  background: #ffffff;
+  color: #344054;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
@@ -1316,13 +1316,13 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 }
 
 .pdf-canvas-controls button.active {
-  border-color: rgba(45, 212, 191, 0.55);
-  background: rgba(45, 212, 191, 0.16);
-  color: #2dd4bf;
+  border-color: #0f8f89;
+  background: #ecfdf5;
+  color: #0f766e;
 }
 
 .pdf-canvas-controls span {
-  color: #9aa6b5;
+  color: #475467;
   font-size: 12px;
   font-weight: 800;
 }
@@ -1334,7 +1334,7 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   min-height: 0;
   overflow: auto;
   padding: 14px;
-  background: #232a31;
+  background: #3f4548;
 }
 
 .pdf-page-shell {
@@ -1503,10 +1503,10 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 .selection-action-popover button {
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid #343d49;
+  border: 1px solid #ccfbf1;
   border-radius: 7px;
-  background: #252b33;
-  color: #2dd4bf;
+  background: #ecfdf5;
+  color: #0f766e;
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
@@ -1514,8 +1514,8 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
 
 .selection-action-popover button:hover,
 .selection-action-popover button:focus-visible {
-  border-color: rgba(45, 212, 191, 0.55);
-  background: rgba(45, 212, 191, 0.16);
+  border-color: #14b8a6;
+  background: #d9fbef;
   transform: none;
 }
 

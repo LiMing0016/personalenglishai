@@ -461,14 +461,16 @@ assert.ok(
   workspaceSource.includes('--ide-bg')
     && workspaceSource.includes('--reader-bg')
     && workspaceSource.includes('.workspace-tab.active'),
-  'workspace should use a dark IDE shell while keeping the active reader surface light',
+  'workspace should keep the learning IDE shell variables centralized',
 )
 assert.ok(
-  workspaceSource.includes('--reader-bg: #181d23')
+  workspaceSource.includes('--ide-bg: #f3f6fa')
+    && workspaceSource.includes('--ide-panel: #ffffff')
+    && workspaceSource.includes('--reader-bg: #f5f8fb')
     && workspaceSource.includes('background: var(--ide-bg);')
     && workspaceSource.includes('.workspace-editor-toolbar')
-    && workspaceSource.includes('background: var(--ide-panel-2);'),
-  'workspace should keep the learning IDE chrome dark instead of falling back to white tool panels',
+    && workspaceSource.includes('background: var(--ide-panel);'),
+  'workspace should render as a light learning IDE instead of a dark shell',
 )
 assert.ok(
   pdfCanvasSource.includes('getToken'),

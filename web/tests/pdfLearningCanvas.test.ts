@@ -14,6 +14,15 @@ const workspaceSource = readFileSync(
   'utf8',
 )
 
+function extractCssBlock(source: string, selector: string) {
+  const start = source.indexOf(selector)
+  assert.notEqual(start, -1, `Expected CSS selector ${selector} to exist`)
+  const bodyStart = source.indexOf('{', start)
+  const bodyEnd = source.indexOf('\n}', bodyStart)
+  assert.ok(bodyStart > start && bodyEnd > bodyStart, `Expected CSS block for ${selector}`)
+  return source.slice(bodyStart, bodyEnd)
+}
+
 assert.ok(
   packageJson.dependencies?.['pdfjs-dist'],
   'PDF learning canvas should depend on pdfjs-dist instead of browser-native PDF embedding only',
@@ -211,11 +220,9 @@ assert.ok(
   'PDF toolbar should not repeat the canvas name or document title already shown by the workspace chrome',
 )
 assert.ok(
-  canvasSource.includes('.pdf-canvas-toolbar')
-    && canvasSource.includes('background: #161a20')
-    && canvasSource.includes('.pdf-canvas-controls button')
-    && canvasSource.includes('background: #252b33'),
-  'PDF canvas toolbar should match the dark learning IDE shell instead of rendering as a white strip',
+  extractCssBlock(canvasSource, '.pdf-canvas-toolbar').includes('background: #ffffff;')
+    && extractCssBlock(canvasSource, '.pdf-canvas-controls button').includes('background: #ffffff;'),
+  'PDF canvas toolbar should match the light learning IDE shell instead of rendering as a dark strip',
 )
 for (const removedToolbarAction of [
   '>上一页</button>',

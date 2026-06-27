@@ -2514,15 +2514,15 @@ function inferNoteTags(title: string, text: string) {
 
 <style scoped>
 .intensive-workspace-page {
-  --ide-bg: #161a20;
-  --ide-panel: #1f242b;
-  --ide-panel-2: #252b33;
-  --ide-panel-3: #303743;
-  --ide-border: #343d49;
-  --ide-text: #d7dde5;
-  --ide-muted: #9aa6b5;
-  --ide-accent: #2dd4bf;
-  --reader-bg: #181d23;
+  --ide-bg: #f3f6fa;
+  --ide-panel: #ffffff;
+  --ide-panel-2: #f8fafc;
+  --ide-panel-3: #eef7f6;
+  --ide-border: #d9e2ec;
+  --ide-text: #102033;
+  --ide-muted: #667085;
+  --ide-accent: #0f8f89;
+  --reader-bg: #f5f8fb;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 0;
@@ -3652,7 +3652,7 @@ textarea {
 }
 
 .outline-block-button.is-user-bookmark {
-  color: #d9e2ee;
+  color: #334155;
 }
 
 .outline-block-button.is-user-bookmark::before {
@@ -3671,7 +3671,7 @@ textarea {
 
 .outline-page-button:hover,
 .outline-block-button:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: #f8fafc;
   color: var(--ide-text);
 }
 
@@ -3684,7 +3684,7 @@ textarea {
 
 .outline-block-button.is-current-page:not(.active) {
   background: rgba(56, 189, 248, 0.08);
-  color: #93c5fd;
+  color: #0369a1;
 }
 
 .outline-block-button.has-notes::before {
@@ -3887,7 +3887,7 @@ textarea {
   min-height: 44px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--ide-border);
-  background: var(--ide-bg);
+  background: var(--ide-panel);
 }
 
 .note-document-editor {
@@ -4062,7 +4062,7 @@ textarea {
   overflow: auto;
   padding: 14px 0 24px;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.035) 31px, transparent 31px) 0 0 / 100% 32px,
+    linear-gradient(rgba(15, 23, 42, 0.035) 31px, transparent 31px) 0 0 / 100% 32px,
     var(--reader-bg);
 }
 
@@ -4075,7 +4075,7 @@ textarea {
 }
 
 .ide-document-block:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: #f8fafc;
 }
 
 .ide-document-block.active {
@@ -5130,7 +5130,7 @@ textarea {
   height: 4px;
   margin-right: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(15, 23, 42, 0.24);
   content: '';
 }
 
@@ -5138,9 +5138,9 @@ textarea {
   min-height: 26px;
   margin-left: auto;
   padding: 0 10px;
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  border-color: rgba(15, 143, 137, 0.28);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f766e;
   cursor: pointer;
 }
 
