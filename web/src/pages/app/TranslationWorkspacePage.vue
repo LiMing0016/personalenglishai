@@ -2599,7 +2599,7 @@ function inferNoteTags(title: string, text: string) {
   min-height: 34px;
   border: 1px solid var(--ide-border);
   border-radius: 999px;
-  background: #171b20;
+  background: #ffffff;
   color: var(--ide-text);
   padding: 0 16px;
 }
@@ -2785,7 +2785,7 @@ textarea {
   gap: 6px;
   padding: 8px 6px;
   border-right: 0;
-  background: #1b1f24;
+  background: #ffffff;
 }
 
 .workspace-activity-bar .activity-button {
@@ -3346,7 +3346,7 @@ textarea {
   border: 1px solid var(--ide-border);
   border-radius: 8px;
   padding: 0 11px;
-  background: #11161d;
+  background: #ffffff;
   color: var(--ide-text);
   font-size: 13px;
   font-weight: 700;
@@ -3922,7 +3922,7 @@ textarea {
   border: 1px solid var(--ide-border);
   border-radius: 10px;
   padding: 16px;
-  background: #11161d;
+  background: #ffffff;
   color: var(--ide-text);
 }
 
@@ -4019,7 +4019,7 @@ textarea {
   padding: 3px;
   border: 1px solid var(--ide-border);
   border-radius: 8px;
-  background: #11161d;
+  background: #ffffff;
 }
 
 .document-view-tabs button {
@@ -4468,14 +4468,14 @@ textarea {
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid #806421;
+  border: 1px solid #fed7aa;
   border-radius: 10px;
-  background: #3d3520;
+  background: #fff7ed;
 }
 
 .ai-candidate-card blockquote {
   margin: 0;
-  color: #f5e7bd;
+  color: #7c2d12;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -4593,7 +4593,7 @@ textarea {
   border: 1px solid #ccfbf1;
   border-left: 3px solid #14b8a6;
   border-radius: 8px;
-  background: #11161d;
+  background: #ffffff;
   color: var(--ide-muted);
   font-size: 12px;
   font-weight: 800;
@@ -4606,7 +4606,7 @@ textarea {
   border: 1px solid var(--ide-border);
   border-radius: 6px;
   padding: 10px;
-  background: #11161d;
+  background: #ffffff;
   color: var(--ide-text);
   font: inherit;
   line-height: 1.55;
@@ -4624,7 +4624,7 @@ textarea {
 
 .study-note-panel--composer-active .study-note-composer textarea {
   min-height: 168px;
-  background: #11161d;
+  background: #ffffff;
 }
 
 .note-agent-compose {
@@ -4665,7 +4665,7 @@ textarea {
 .note-agent-compose textarea {
   min-height: 58px;
   border-color: var(--ide-border);
-  background: #11161d;
+  background: #ffffff;
   font-size: 12px;
 }
 
@@ -4847,7 +4847,7 @@ textarea {
 
 .agent-command--ide textarea {
   min-height: 96px;
-  background: #11161d;
+  background: #ffffff;
 }
 
 .agent-header {
@@ -5049,7 +5049,7 @@ textarea {
 .inline-note textarea,
 .agent-command textarea {
   border-color: var(--ide-border);
-  background: #11161d;
+  background: #ffffff;
   color: var(--ide-text);
 }
 

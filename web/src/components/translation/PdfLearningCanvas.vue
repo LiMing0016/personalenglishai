@@ -1334,7 +1334,7 @@ function inferPageCountFromBlocks(blocks: DocumentBlock[]) {
   min-height: 0;
   overflow: auto;
   padding: 14px;
-  background: #3f4548;
+  background: #f3f6fa;
 }
 
 .pdf-page-shell {

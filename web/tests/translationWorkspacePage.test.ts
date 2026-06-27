@@ -16,6 +16,15 @@ const pdfCanvasSource = readFileSync(
   'utf8',
 )
 
+function extractCssBlock(source: string, selector: string) {
+  const start = source.indexOf(selector)
+  assert.notEqual(start, -1, `Expected CSS selector ${selector} to exist`)
+  const bodyStart = source.indexOf('{', start)
+  const bodyEnd = source.indexOf('\n}', bodyStart)
+  assert.ok(bodyStart > start && bodyEnd > bodyStart, `Expected CSS block for ${selector}`)
+  return source.slice(bodyStart, bodyEnd)
+}
+
 assert.ok(
   routerSource.includes("path: 'translation/workspace/:id'"),
   'router should expose a translation workspace route',
@@ -471,6 +480,16 @@ assert.ok(
     && workspaceSource.includes('.workspace-editor-toolbar')
     && workspaceSource.includes('background: var(--ide-panel);'),
   'workspace should render as a light learning IDE instead of a dark shell',
+)
+assert.ok(
+  !/background:\s*#(?:11161d|171b20|1b1f24|3f4548|3d3520);/.test(workspaceSource),
+  'workspace light theme should not leave hard-coded dark background blocks in the IDE chrome',
+)
+assert.ok(
+  extractCssBlock(workspaceSource, '.workspace-command-center input').includes('background: #ffffff;')
+    && extractCssBlock(workspaceSource, '.workspace-activity-bar {').includes('background: #ffffff;')
+    && extractCssBlock(workspaceSource, '.outline-search input').includes('background: #ffffff;'),
+  'command search, activity bar, and outline search should render as light IDE surfaces',
 )
 assert.ok(
   pdfCanvasSource.includes('getToken'),

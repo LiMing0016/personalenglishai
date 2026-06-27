@@ -224,6 +224,10 @@ assert.ok(
     && extractCssBlock(canvasSource, '.pdf-canvas-controls button').includes('background: #ffffff;'),
   'PDF canvas toolbar should match the light learning IDE shell instead of rendering as a dark strip',
 )
+assert.ok(
+  extractCssBlock(canvasSource, '.pdf-page-stage').includes('background: #f3f6fa;'),
+  'PDF canvas page stage should use a light workspace background instead of a dark viewer gutter',
+)
 for (const removedToolbarAction of [
   '>上一页</button>',
   '>下一页</button>',
