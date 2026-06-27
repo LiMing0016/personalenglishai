@@ -55,7 +55,6 @@ assert.ok(
 )
 
 for (const requiredCopy of [
-  'AI 精读工作台',
   '沉浸精读',
   '外刊精读',
   '考试精读',
@@ -80,6 +79,17 @@ for (const requiredCopy of [
   '展开右侧 Agent',
 ]) {
   assert.ok(workspaceSource.includes(requiredCopy), `workspace page should render ${requiredCopy}`)
+}
+
+for (const removedVisibleChrome of [
+  'class="workspace-titlebar-document"',
+  '<small>学习工作台</small>',
+  '<p>学习资源</p>',
+  '<h2 id="outline-title">EXPLORER</h2>',
+  'class="workspace-opened-resources"',
+  'aria-label="已打开学习资源"',
+]) {
+  assert.ok(!workspaceSource.includes(removedVisibleChrome), `workspace page should remove ${removedVisibleChrome}`)
 }
 
 for (const removedCopy of [
@@ -442,11 +452,10 @@ assert.ok(
   'workspace should model PDF, note, and topic resources as IDE tabs',
 )
 assert.ok(
-  workspaceSource.includes('workspace-opened-resources')
-    && workspaceSource.includes('workspace-resource-actions')
+  workspaceSource.includes('workspace-resource-actions')
     && workspaceSource.includes('导入 PDF')
     && workspaceSource.includes('新建专题'),
-  'workspace Explorer should expose opened resources and import/new note/topic actions',
+  'workspace Explorer should expose import/new note/topic actions without duplicating opened resources',
 )
 assert.ok(
   workspaceSource.includes('agentPanelMode')

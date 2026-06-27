@@ -5,7 +5,6 @@
         <span class="workspace-brand__mark" aria-hidden="true">E</span>
         <div>
           <strong>Personal English AI</strong>
-          <small>学习工作台</small>
         </div>
       </div>
 
@@ -23,7 +22,6 @@
           @click="goBackToHub">
           <span class="back-button-icon" aria-hidden="true">←</span>
         </button>
-        <span class="workspace-titlebar-document">{{ readingDocument?.title || 'AI 精读工作台' }}</span>
         <button type="button" class="primary-action" @click="completeLearningSession">完成学习</button>
       </div>
     </header>
@@ -58,11 +56,9 @@
       <aside
         class="workspace-outline-panel workspace-side-drawer workspace-explorer"
         :class="{ 'workspace-panel--collapsed': isOutlineCollapsed }"
-        aria-labelledby="outline-title">
+        aria-label="目录与学习资产">
         <div class="outline-header">
           <div class="outline-heading-main">
-            <p>学习资源</p>
-            <h2 id="outline-title">EXPLORER</h2>
             <span>{{ sidePanelSummary }}</span>
           </div>
           <button
@@ -74,19 +70,6 @@
             收起
           </button>
         </div>
-
-        <section class="workspace-opened-resources" aria-label="已打开学习资源">
-          <p>已打开</p>
-          <button
-            v-for="tab in workspaceTabs"
-            :key="`drawer-${tab.id}`"
-            type="button"
-            :class="{ active: tab.id === activeWorkspaceTabId }"
-            @click="activateWorkspaceTab(tab.id)">
-            <span>{{ tab.subtitle }}</span>
-            <strong>{{ tab.title }}</strong>
-          </button>
-        </section>
 
         <section class="workspace-resource-actions" aria-label="导入与新建">
           <button type="button" @click="openImportPdfEntry">导入 PDF</button>
@@ -334,7 +317,7 @@
       />
 
       <section class="workspace-canvas-panel" aria-label="阅读区">
-        <header class="workspace-tabs" aria-label="已打开学习资源">
+        <header class="workspace-tabs" aria-label="工作区标签页">
           <button
             v-for="tab in workspaceTabs"
             :key="tab.id"
@@ -2574,8 +2557,7 @@ function inferNoteTags(title: string, text: string) {
   font-weight: 900;
 }
 
-.workspace-brand strong,
-.workspace-titlebar-document {
+.workspace-brand strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2585,13 +2567,6 @@ function inferNoteTags(title: string, text: string) {
   display: block;
   color: var(--ide-text);
   font-size: 14px;
-}
-
-.workspace-brand small {
-  display: block;
-  color: var(--ide-muted);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .workspace-command-center input {
@@ -2614,13 +2589,6 @@ function inferNoteTags(title: string, text: string) {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.workspace-titlebar-document {
-  max-width: 360px;
-  color: var(--ide-muted);
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .workspace-toolbar {
@@ -3077,7 +3045,6 @@ textarea {
   letter-spacing: 0.08em;
 }
 
-.workspace-opened-resources,
 .workspace-resource-actions {
   display: grid;
   gap: 8px;
@@ -3086,15 +3053,6 @@ textarea {
   background: var(--ide-panel);
 }
 
-.workspace-opened-resources p {
-  margin: 0;
-  color: var(--ide-muted);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.workspace-opened-resources button,
 .workspace-resource-actions button {
   min-width: 0;
   border: 1px solid transparent;
@@ -3104,36 +3062,12 @@ textarea {
   cursor: pointer;
 }
 
-.workspace-opened-resources button {
-  display: grid;
-  gap: 2px;
-  padding: 8px 10px;
-  text-align: left;
-}
-
-.workspace-opened-resources button.active,
-.workspace-opened-resources button:hover,
-.workspace-opened-resources button:focus-visible,
 .workspace-resource-actions button:hover,
 .workspace-resource-actions button:focus-visible {
   border-color: rgba(45, 212, 191, 0.4);
   background: rgba(45, 212, 191, 0.12);
   color: var(--ide-accent);
   outline: none;
-}
-
-.workspace-opened-resources span {
-  color: var(--ide-muted);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.workspace-opened-resources strong {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .workspace-resource-actions {
@@ -5238,10 +5172,6 @@ textarea:focus-visible {
 
   .workspace-tab {
     min-width: 120px;
-  }
-
-  .workspace-titlebar-document {
-    max-width: 240px;
   }
 
   .workspace-resizer {
