@@ -4,6 +4,8 @@ import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse;
+import com.personalenglishai.backend.dto.learning.LearningCanvasOrganizeRequest;
+import com.personalenglishai.backend.dto.learning.LearningCanvasOrganizeResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -134,6 +136,23 @@ public class PythonAssistantClient {
                 .timeout(timeout)
                 .onErrorMap(WebClientResponseException.class, e ->
                         new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE, resolveUpstreamMessage(e)));
+    }
+
+    public LearningCanvasOrganizeResponse organizeLearningAsset(LearningCanvasOrganizeRequest request) {
+        try {
+            return webClient.post()
+                    .uri("/learning-assets/organize")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(LearningCanvasOrganizeResponse.class)
+                    .timeout(timeout)
+                    .block();
+        } catch (WebClientResponseException e) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE, resolveUpstreamMessage(e));
+        } catch (Exception e) {
+            throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
+        }
     }
 
     public record PythonAssistantFile(String filename, String contentType, byte[] content) {

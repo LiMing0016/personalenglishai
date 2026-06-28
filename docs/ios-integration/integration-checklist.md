@@ -8,6 +8,7 @@ related_code:
   - backend/src/main/java/com/personalenglishai/backend/controller/AssistantController.java
   - backend/src/main/java/com/personalenglishai/backend/controller/auth/v1/AuthControllerV1.java
 related_docs:
+  - docs/ios-integration/assistant-ios-collaboration-v1.md
   - docs/ios-integration/ai-assistant-api-contract.md
   - docs/ios-integration/auth-api-contract.md
   - docs/ios-integration/local-dev-and-docker.md
@@ -61,6 +62,19 @@ related_docs:
 | 流式失败 | `run.failed` 能展示错误并允许重试 | 待验收 |
 | 空输入保护 | 空 message 且无文件时返回 `400001`，iPad 不发送无效请求 | 待验收 |
 | token 额度 | `429010` 展示额度耗尽，不进入重复请求 | 待验收 |
+
+## AI 对话助手产品化
+
+| 项目 | 验收标准 | 状态 |
+| --- | --- | --- |
+| 独立助手范围 | iPad 端本阶段只接 `/app/assistant` 对应能力，不接写作页 Copilot、翻译页或其他业务页 Agent | 待验收 |
+| 任务入口 | iPad 端至少提供解释、翻译、润色、总结、作文评分、例句、题目分析等学习任务入口 | 待验收 |
+| intent 映射 | 任务入口发送 `AssistantRequest` 时按契约设置 `intent/mode/scope`，不全部使用 `free_chat` | 待验收 |
+| 学习上下文 | 请求携带 `studyContext.studyStage`、`targetExam`、`locale`、`responseLanguage` | 待验收 |
+| 客户端来源 | 请求携带 `clientMeta.sourcePage=assistant` 和 iOS userAgent | 待验收 |
+| 范围外收口 | 非英语学习请求不输出通用百科答案，助手应引导回英语学习任务 | 待验收 |
+| SSE 消息合并 | iPad 端按 `runId/messageId` 合并 delta、completed 和 failed 事件 | 待验收 |
+| 调试信息 | 失败或问题反馈时 iPad 端能提供 `traceId/runId` 给后端排查 | 待验收 |
 
 ## 附件
 

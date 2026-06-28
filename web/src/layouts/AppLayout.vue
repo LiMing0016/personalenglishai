@@ -4,6 +4,7 @@
     :class="{
       immersive,
       'app-layout--writing': isWritingRoute,
+      'app-layout--assistant': isAssistantRoute,
       'app-layout--rail-collapsed': railCollapsed,
       'app-layout--rail-expanded': !railCollapsed,
     }"
@@ -22,6 +23,7 @@
     </button>
 
     <AppRail
+      v-if="!isAssistantRoute"
       :collapsed="railCollapsed"
       @open-assistant-drawer="openAssistantDrawer"
       @toggle-rail="toggleRail"
@@ -63,6 +65,7 @@ const immersive = computed(() =>
   immersiveOverride.value !== null ? immersiveOverride.value : Boolean(route.meta.immersive)
 )
 const isWritingRoute = computed(() => route.path.startsWith('/app/writing'))
+const isAssistantRoute = computed(() => route.path.startsWith('/app/assistant'))
 const selectionToolbarStyle = computed(() => ({
   left: `${selectionToolbar.left}px`,
   top: `${selectionToolbar.top}px`,
@@ -181,13 +184,6 @@ function askAssistantWithSelection() {
   background: #f7f5ef;
   scrollbar-gutter: stable;
 }
-.app-layout--writing :deep(.app-rail) {
-  background: #f7f5ef;
-}
-.app-layout--writing :deep(.rail-brand) {
-  background: #fbfaf7;
-}
-
 /* immersive: main takes full viewport */
 .app-layout.immersive .app-main {
   height: 100vh;

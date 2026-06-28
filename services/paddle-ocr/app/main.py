@@ -30,11 +30,20 @@ def create_app(
     def health() -> HealthResponse:
         engine = app.state.text_engine
         formula = app.state.formula_engine
+        document_engine = app.state.document_engine
+        text_loaded = bool(getattr(engine, "sdk_loaded", False))
+        document_loaded = bool(getattr(document_engine, "sdk_loaded", False))
+        document_message = getattr(document_engine, "unavailable_reason", None)
+        document_pending = not document_loaded and document_message == DocumentPipelineEngine.not_loaded_message
         return HealthResponse(
-            status="UP" if engine.sdk_loaded else "DEGRADED",
+            status="UP" if text_loaded and (document_loaded or document_pending) else "DEGRADED",
             provider=getattr(engine, "provider", "PaddleOCR"),
-            sdkLoaded=bool(getattr(engine, "sdk_loaded", False)),
+            sdkLoaded=text_loaded,
             version=getattr(engine, "version", None),
+            documentEngineLoaded=document_loaded,
+            documentEngineProvider=getattr(document_engine, "provider", None),
+            documentEngineVersion=getattr(document_engine, "version", None),
+            documentEngineMessage=document_message,
             formulaEnabled=bool(getattr(formula, "enabled", False)),
             message=getattr(engine, "unavailable_reason", None),
         )
@@ -148,42 +157,34 @@ def _recognize_page(
 
     if document_pipeline_requested:
         document_engine = app.state.document_engine
-        if getattr(document_engine, "sdk_loaded", False):
-            try:
-                result = document_engine.recognize_image(
-                    _page_value(page, "path"),
-                    language=language,
-                    enable_layout=enable_layout,
-                    enable_table=enable_table,
-                    enable_formula=enable_formula,
-                    enable_orientation=enable_orientation,
-                    enable_unwarping=enable_unwarping,
-                )
-                document_elements = _coerce_document_elements(result)
-                warnings.extend(_coerce_document_warnings(result))
-                if enable_layout:
-                    layout_status = "SUCCEEDED" if document_elements else "EMPTY"
-                if enable_table:
-                    table_status = "SUCCEEDED" if _has_element_type(document_elements, "table") else "EMPTY"
-                if enable_formula:
-                    formula_status = "SUCCEEDED" if _has_element_type(document_elements, "formula") else "EMPTY"
-            except Exception as exc:
-                if enable_layout:
-                    layout_status = "FALLBACK_TEXT"
-                    warnings.append(f"LAYOUT_ENGINE_FAILED:{exc}")
-                if enable_table:
-                    table_status = "UNAVAILABLE"
-                    warnings.append(f"TABLE_ENGINE_FAILED:{exc}")
-                if enable_formula:
-                    formula_status = "UNAVAILABLE"
-                    warnings.append(f"FORMULA_ENGINE_FAILED:{exc}")
-        else:
+        try:
+            result = document_engine.recognize_image(
+                _page_value(page, "path"),
+                language=language,
+                enable_layout=enable_layout,
+                enable_table=enable_table,
+                enable_formula=enable_formula,
+                enable_orientation=enable_orientation,
+                enable_unwarping=enable_unwarping,
+            )
+            document_elements = _coerce_document_elements(result)
+            warnings.extend(_coerce_document_warnings(result))
+            if enable_layout:
+                layout_status = "SUCCEEDED" if document_elements else "EMPTY"
+            if enable_table:
+                table_status = "SUCCEEDED" if _has_element_type(document_elements, "table") else "EMPTY"
+            if enable_formula:
+                formula_status = "SUCCEEDED" if _has_element_type(document_elements, "formula") else "EMPTY"
+        except Exception as exc:
             if enable_layout:
                 layout_status = "FALLBACK_TEXT"
-                warnings.append("LAYOUT_ENGINE_UNAVAILABLE")
+                warnings.append(f"LAYOUT_ENGINE_FAILED:{exc}")
             if enable_table:
                 table_status = "UNAVAILABLE"
-                warnings.append("TABLE_ENGINE_UNAVAILABLE")
+                warnings.append(f"TABLE_ENGINE_FAILED:{exc}")
+            if enable_formula:
+                formula_status = "UNAVAILABLE"
+                warnings.append(f"FORMULA_ENGINE_FAILED:{exc}")
     if enable_text_ocr:
         try:
             if not getattr(app.state.text_engine, "sdk_loaded", False):

@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs'
 
 const appLayoutSource = readFileSync(new URL('../src/layouts/AppLayout.vue', import.meta.url), 'utf8')
 const appRailSource = readFileSync(new URL('../src/components/AppRail.vue', import.meta.url), 'utf8')
-const appRailSkillIconSource = readFileSync(new URL('../src/components/AppRailSkillIcon.vue', import.meta.url), 'utf8')
-const assistantPageSource = readFileSync(new URL('../src/pages/app/AssistantPage.vue', import.meta.url), 'utf8')
 
 assert.ok(appLayoutSource.includes('AppRail'), 'app layout should render the shared left rail')
+assert.ok(
+  appLayoutSource.includes('v-if="!isAssistantRoute"'),
+  'app layout should hide the shared rail when the assistant page owns its learning sidebar',
+)
 assert.ok(appLayoutSource.includes('assistantDrawerOpen'), 'app layout should own shared assistant drawer visibility')
 assert.ok(appLayoutSource.includes("provide('assistantDrawerOpen'"), 'app layout should provide drawer state to pages')
 assert.ok(
@@ -56,6 +58,7 @@ assert.ok(
 assert.ok(!appLayoutSource.includes('class="app-nav"'), 'top app nav should be replaced by the left rail')
 
 assert.ok(appRailSource.includes('src="/brand/peai-logo.png"'), 'shared rail should use the project logo asset')
+assert.ok(appRailSource.includes('rail-brand-toggle-icon'), 'shared rail logo should swap to the sidebar icon on hover')
 assert.ok(appRailSource.includes('collapsed: boolean'), 'shared rail should accept the global collapsed state')
 assert.ok(appRailSource.includes("emit('toggleRail')"), 'shared rail logo should toggle the global rail')
 assert.ok(!appRailSource.includes("emit('toggleAssistantDrawer')"), 'shared rail logo should not toggle the assistant drawer')
@@ -66,8 +69,12 @@ assert.ok(appRailSource.includes('v-if="!collapsed"'), 'collapsed shared rail sh
 assert.ok(appRailSource.includes('app-rail--collapsed'), 'shared rail should expose a collapsed style class')
 assert.ok(appRailSource.includes('position: fixed'), 'collapsed shared rail should float the logo instead of reserving full width')
 assert.ok(
-  appRailSource.includes('border: 1px solid var(--app-sidebar-border'),
-  'shared rail logo button should use the same bordered control style as the sidebar shell',
+  appRailSource.includes('background: inherit'),
+  'shared rail should inherit the current page surface instead of forcing its own color',
+)
+assert.ok(
+  appRailSource.includes('border-right: 1px solid var(--app-sidebar-border, #d9e2ec)'),
+  'shared rail should use the shared sidebar divider token',
 )
 assert.ok(appRailSource.includes("label: '阅读'"), 'shared rail vocabulary route should be labeled as reading')
 for (const removedShortcut of ["shortLabel: '写'", "shortLabel: '助'", "shortLabel: '词'", "shortLabel: '听'", "shortLabel: '说'"]) {
@@ -76,9 +83,8 @@ for (const removedShortcut of ["shortLabel: '写'", "shortLabel: '助'", "shortL
 for (const iconName of ['assistant', 'writing', 'reading', 'listening', 'speaking']) {
   assert.ok(appRailSource.includes(`skillIcon: '${iconName}'`), `shared rail should include ${iconName} logo icon`)
 }
-assert.ok(appRailSkillIconSource.includes('/nav-icons/'), 'skill rail icons should load uploaded image assets')
-assert.ok(appRailSkillIconSource.includes('<img'), 'skill rail icons should render as image assets')
-assert.ok(!appRailSkillIconSource.includes('<svg'), 'skill rail icons should not redraw uploaded assets as SVG')
+assert.ok(appRailSource.includes('rail-line-icon'), 'shared rail should render lightweight line icons')
+assert.ok(!appRailSource.includes('AppRailSkillIcon'), 'shared rail should not use colorful uploaded nav icon cards')
 for (const linkTarget of ['/app/writing', '/app/assistant', '/app/vocabulary', '/app/listening', '/app/speaking']) {
   assert.ok(appRailSource.includes(linkTarget), `shared rail should link to ${linkTarget}`)
 }
@@ -91,13 +97,4 @@ assert.ok(
   appRailSource.includes("emit('openAssistantDrawer')"),
   'shared rail assistant actions should still open the assistant drawer',
 )
-assert.ok(
-  assistantPageSource.includes(':global(.app-layout--rail-collapsed) .assistant-page'),
-  'assistant page should remove fixed composer rail offset when the global rail is collapsed',
-)
-assert.ok(
-  assistantPageSource.includes('--app-rail-width: 0px'),
-  'assistant page collapsed rail override should let assistant content use the freed horizontal space',
-)
-
 console.log('app-rail-chrome-ok')

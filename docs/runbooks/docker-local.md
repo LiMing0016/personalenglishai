@@ -136,13 +136,14 @@ docker compose -f docker-compose.local.yml up -d --build
 | 方式 | 优点 | 代价 |
 | --- | --- | --- |
 | `start-local.bat` | 更适合本机 IDE 调试，端口检查更细 | 需要本机装好 Java、Node、Python、MySQL、Redis |
+| `start-local.sh` | macOS/Linux 一键启动 Docker 本地环境，默认 rebuild | 依赖 Docker Desktop，IDE 单步调试不如本机方便 |
 | `docker-compose.local.yml` | 新电脑更容易跑起来，依赖版本统一 | 首次拉镜像和装依赖较慢，IDE 单步调试不如本机方便 |
 
 建议：
 
 ```text
-新电脑 / 演示 / 验证环境：优先 Docker。
-日常深度开发 / 调试：优先 start-local.bat。
+macOS/Linux 新电脑 / 演示 / 验证环境：优先 start-local.sh。
+Windows 日常深度开发 / 调试：优先 start-local.bat。
 生产部署：使用 docker-compose.yml + docker-compose.nginx.yml。
 ```
 

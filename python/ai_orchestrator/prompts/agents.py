@@ -9,6 +9,7 @@ _PROMPT_FILES = {
     "attachment": "agent_instructions/attachment.md",
     "evaluation": "agent_instructions/evaluation.md",
     "learning_planner": "agent_instructions/learning_planner.md",
+    "learning_asset_copilot": "agent_instructions/learning_asset_copilot.md",
     "polish": "agent_instructions/polish.md",
     "prompt_design": "agent_instructions/prompt_design.md",
     "prompt_sheet_canvas": "agent_instructions/prompt_sheet_canvas.md",

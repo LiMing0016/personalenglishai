@@ -16,9 +16,11 @@ for (const requiredText of [
   '查询、学习、一步到位',
   '选择适合你的学习模式',
   '我的收藏 / 生词本',
+  'AI 单词卡',
+  '继续编辑',
   '学习趋势（近 7 天）',
   '单词详情',
-  '词根词缀联想记忆',
+  '词根联想',
   '今日学习计划',
   '连续学习日历',
   'innovative',
@@ -38,6 +40,7 @@ for (const requiredClass of [
   'word-preview-card',
   'search-detail-section',
   'dictionary-detail-card',
+  'saved-note-list',
 ]) {
   assert.ok(pageSource.includes(requiredClass), `vocabulary learning page should include ${requiredClass}`)
 }
@@ -51,5 +54,13 @@ assert.ok(
   pageSource.includes('lookupDictionary'),
   'learning page should keep dictionary lookup integration for the top search',
 )
+
+for (const requiredText of [
+  'openSavedVocabularyNote',
+  "name: 'LearningAssistant'",
+  'learningNote',
+]) {
+  assert.ok(pageSource.includes(requiredText), `vocabulary learning page should support ${requiredText}`)
+}
 
 console.log('vocabulary-learning-page-ok')

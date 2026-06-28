@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import os
 from typing import Any
 
 from app.schemas import TextBlock
@@ -60,14 +61,41 @@ def normalize_language(language: str | None) -> str:
 def build_paddle_ocr_kwargs(paddleocr_class: Any, language: str) -> dict[str, Any]:
     signature = inspect.signature(paddleocr_class)
     parameters = signature.parameters
+    kwargs: dict[str, Any]
     if "use_doc_orientation_classify" in parameters:
-        return {
+        kwargs = {
             "lang": language,
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": True,
         }
-    return {"lang": language, "use_angle_cls": True}
+    else:
+        kwargs = {"lang": language, "use_angle_cls": True}
+    apply_common_paddle_kwargs(kwargs, parameters)
+    return kwargs
+
+
+def apply_common_paddle_kwargs(kwargs: dict[str, Any], parameters: dict[str, Any]) -> None:
+    cpu_threads = resolve_paddle_cpu_threads()
+    if cpu_threads is not None and _supports_parameter(parameters, "cpu_threads"):
+        kwargs["cpu_threads"] = cpu_threads
+
+
+def resolve_paddle_cpu_threads() -> int | None:
+    raw_value = os.getenv("PADDLE_OCR_CPU_THREADS") or os.getenv("PADDLE_PDX_CPU_NUM_THREADS")
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        cpu_threads = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("PADDLE_OCR_CPU_THREADS must be a positive integer") from exc
+    if cpu_threads < 1:
+        raise ValueError("PADDLE_OCR_CPU_THREADS must be a positive integer")
+    return cpu_threads
+
+
+def _supports_parameter(parameters: dict[str, Any], name: str) -> bool:
+    return name in parameters or any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
 
 
 def predict_ocr(
@@ -81,7 +109,7 @@ def predict_ocr(
         kwargs = {
             "use_textline_orientation": bool(enable_orientation),
         }
-        if enable_unwarping:
+        if enable_unwarping and _has_doc_preprocessor(ocr):
             kwargs["use_doc_unwarping"] = True
         try:
             return predict(image_path, **kwargs)
@@ -96,6 +124,13 @@ def predict_ocr(
         return legacy_ocr(image_path, cls=True)
     except TypeError:
         return legacy_ocr(image_path)
+
+
+def _has_doc_preprocessor(ocr: Any) -> bool:
+    pipeline = getattr(ocr, "paddlex_pipeline", None)
+    if pipeline is None:
+        return False
+    return getattr(pipeline, "doc_preprocessor_pipeline", None) is not None
 
 
 def normalize_paddle_ocr_result(raw_result: Any) -> list[TextBlock]:

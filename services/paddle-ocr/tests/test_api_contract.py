@@ -52,6 +52,7 @@ class FakeRenderer:
 class FakeDocumentEngine:
     sdk_loaded = True
     provider = "PaddleOCR-PPStructureV3"
+    version = "test-structure"
     unavailable_reason = None
 
     def __init__(self):
@@ -95,18 +96,58 @@ class FakeDocumentEngine:
         }
 
 
+class FakeLazyDocumentEngine(FakeDocumentEngine):
+    sdk_loaded = False
+    unavailable_reason = "PPStructureV3 has not been loaded yet"
+
+    def recognize_image(self, image_path, **kwargs):
+        self.sdk_loaded = True
+        self.unavailable_reason = None
+        return super().recognize_image(image_path, **kwargs)
+
+
+class UnavailableDocumentEngine:
+    sdk_loaded = False
+    provider = "PaddleOCR-PPStructureV3"
+    version = None
+    unavailable_reason = "missing PPStructureV3 dependency"
+
+    def recognize_image(self, image_path, **kwargs):
+        raise RuntimeError(self.unavailable_reason)
+
+
 class ApiContractTest(unittest.TestCase):
     def setUp(self):
         self.renderer = FakeRenderer()
         self.client = TestClient(create_app(text_engine=FakeEngine(), renderer=self.renderer))
 
     def test_health_reports_provider_and_sdk_status(self):
-        response = self.client.get("/health")
+        client = TestClient(create_app(
+            text_engine=FakeEngine(),
+            renderer=self.renderer,
+            document_engine=FakeDocumentEngine(),
+        ))
+
+        response = client.get("/health")
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["provider"], "PaddleOCR")
         self.assertTrue(body["sdkLoaded"])
+        self.assertTrue(body["documentEngineLoaded"])
+        self.assertEqual(body["documentEngineProvider"], "PaddleOCR-PPStructureV3")
+        self.assertEqual(body["documentEngineVersion"], "test-structure")
+        self.assertIsNone(body["documentEngineMessage"])
+
+    def test_health_allows_lazy_document_engine_before_first_high_quality_request(self):
+        response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "UP")
+        self.assertTrue(body["sdkLoaded"])
+        self.assertFalse(body["documentEngineLoaded"])
+        self.assertEqual(body["documentEngineMessage"], "PPStructureV3 has not been loaded yet")
 
     def test_pdf_ocr_returns_stable_response_shape(self):
         pdf_base64 = base64.b64encode(b"%PDF-1.4 fake").decode("ascii")
@@ -127,9 +168,14 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(body["pages"][0]["elements"][0]["rawType"], "text")
 
     def test_pdf_ocr_accepts_high_quality_options_and_reports_degraded_capabilities(self):
+        client = TestClient(create_app(
+            text_engine=FakeEngine(),
+            renderer=self.renderer,
+            document_engine=UnavailableDocumentEngine(),
+        ))
         pdf_base64 = base64.b64encode(b"%PDF-1.4 fake").decode("ascii")
 
-        response = self.client.post(
+        response = client.post(
             "/ocr/pdf",
             json={
                 "documentBase64": pdf_base64,
@@ -150,8 +196,31 @@ class ApiContractTest(unittest.TestCase):
         self.assertEqual(self.renderer.last_render_args["max_pages"], 3)
         self.assertEqual(self.renderer.last_render_args["dpi"], 300)
         self.assertEqual(body["metadata"]["parseMode"], "high_quality")
-        self.assertIn("LAYOUT_ENGINE_UNAVAILABLE", body["pages"][0]["warnings"])
-        self.assertIn("TABLE_ENGINE_UNAVAILABLE", body["pages"][0]["warnings"])
+        self.assertTrue(any(item.startswith("LAYOUT_ENGINE_FAILED:") for item in body["pages"][0]["warnings"]))
+        self.assertTrue(any(item.startswith("TABLE_ENGINE_FAILED:") for item in body["pages"][0]["warnings"]))
+
+    def test_pdf_high_quality_triggers_lazy_document_pipeline(self):
+        document_engine = FakeLazyDocumentEngine()
+        client = TestClient(create_app(text_engine=FakeEngine(), renderer=self.renderer, document_engine=document_engine))
+        pdf_base64 = base64.b64encode(b"%PDF-1.4 fake").decode("ascii")
+
+        response = client.post(
+            "/ocr/pdf",
+            json={
+                "documentBase64": pdf_base64,
+                "parseMode": "high_quality",
+                "enableTextOcr": False,
+                "enableLayout": True,
+                "enableTable": True,
+                "enableFormula": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(document_engine.sdk_loaded)
+        body = response.json()
+        self.assertEqual(body["pages"][0]["layoutStatus"], "SUCCEEDED")
+        self.assertEqual(body["pages"][0]["elements"][0]["source"], "paddle_ppstructure")
 
     def test_pdf_high_quality_uses_document_pipeline_elements_when_available(self):
         document_engine = FakeDocumentEngine()

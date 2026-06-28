@@ -4,7 +4,7 @@
 
 ## 能力
 
-- `GET /health`：健康检查，返回 PaddleOCR SDK 是否加载成功。
+- `GET /health`：健康检查，返回 PaddleOCR 文本引擎和 PPStructureV3 文档结构引擎是否加载成功。
 - `POST /ocr/pdf`：接收 PDF base64，按页渲染后 OCR。
 - `POST /ocr/image`：接收 PNG/JPG/JPEG base64，输出单页 OCR 结果。
 - 输出页码、整页文本、文本块、结构化 `elements`、bbox、confidence、qualityScore、warnings。
@@ -34,7 +34,9 @@ curl http://127.0.0.1:8090/health
 ```
 
 第一次启动会下载 PaddleOCR 模型，耗时和网络、磁盘有关。CPU 模式可用，但大 PDF 会比较慢；GPU 部署后续可以单独做镜像。
-当前镜像固定使用 `paddleocr==3.7.0` 与 `paddlepaddle==3.2.2`，这是已通过本地 CPU 容器烟测的组合，避免自动安装到不兼容的最新 PaddlePaddle 版本。
+当前镜像固定使用 `paddleocr==3.7.0`、`paddlex[ocr]==3.7.1` 与 `paddlepaddle==3.2.2`，这是用于文本 OCR 与 `PPStructureV3` 文档结构解析的兼容组合，避免自动安装到不兼容的最新 PaddlePaddle 版本。
+Docker Compose 会持久化 `/root/.paddleocr` 和 `/root/.paddlex` 模型缓存，避免每次重建服务重复下载模型。
+默认 Docker Compose 使用第一档 CPU 性能配置：`PADDLE_OCR_CPU_THREADS=4`，同时把 `PADDLE_PDX_CPU_NUM_THREADS` 传给 PaddleX 底层推理。不要通过 `OMP_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、`MKL_NUM_THREADS` 拉高线程数；当前 PaddlePaddle/OpenBLAS 组合在 high_quality 懒加载 PPStructureV3 时可能发生 native segmentation fault。需要压测第二档时，优先在 `.env` 中把 `PADDLE_OCR_CPU_THREADS` 调到 `8` 后用固定 PDF 做基准测试。
 
 ## Mac / M 系列 high_quality 启动
 
@@ -56,7 +58,7 @@ APP_OCR_PADDLE_BASE_URL=http://<mac-or-gpu-ip>:8090
 APP_OCR_PADDLE_PARSE_MODE=high_quality
 APP_OCR_PADDLE_ENABLE_LAYOUT=true
 APP_OCR_PADDLE_ENABLE_TABLE=true
-APP_OCR_PADDLE_ENABLE_FORMULA=true
+APP_OCR_PADDLE_ENABLE_FORMULA=false
 APP_OCR_PADDLE_ENABLE_ORIENTATION=true
 APP_OCR_PADDLE_ENABLE_UNWARPING=true
 ```
@@ -68,7 +70,8 @@ curl http://<mac-or-gpu-ip>:8090/health
 python scripts/smoke_ocr.py --base-url http://<mac-or-gpu-ip>:8090 --pdf sample.pdf
 ```
 
-如果 `/health` 是 `DEGRADED` 或 high_quality 返回 `LAYOUT_ENGINE_UNAVAILABLE`，说明当前环境没有成功加载 `PPStructureV3` 或相关模型；服务仍会回退文本 OCR。
+服务启动后会懒加载 PPStructureV3，因此首次 high_quality 请求前 `/health` 可能返回 `documentEngineLoaded=false`。如果首次 high_quality 后仍未加载，或请求返回 `LAYOUT_ENGINE_FAILED`，说明当前环境没有成功加载 `PPStructureV3` 或相关模型；服务仍会回退文本 OCR。
+如果需要公式识别，可再打开 `APP_OCR_PADDLE_ENABLE_FORMULA=true` 与 `PADDLE_OCR_ENABLE_FORMULA=true`，但首次下载模型和 CPU 推理会更慢。
 
 ## 后端连接方式
 
@@ -93,6 +96,12 @@ Docker Compose 网络内运行后端时：
 ```bash
 APP_OCR_PROVIDER=paddle
 APP_OCR_PADDLE_BASE_URL=http://paddle-ocr:8090
+APP_OCR_PADDLE_PARSE_MODE=high_quality
+APP_OCR_PADDLE_ENABLE_LAYOUT=true
+APP_OCR_PADDLE_ENABLE_TABLE=true
+APP_OCR_PADDLE_ENABLE_FORMULA=false
+APP_OCR_PADDLE_ENABLE_ORIENTATION=true
+APP_OCR_PADDLE_ENABLE_UNWARPING=true
 ```
 
 部署在另一台电脑时：

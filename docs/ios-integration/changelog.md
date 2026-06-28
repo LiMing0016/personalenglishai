@@ -7,11 +7,24 @@ review_cycle: on-change
 related_code: []
 related_docs:
   - docs/ios-integration/README.md
+  - docs/ios-integration/assistant-ios-collaboration-v1.md
   - docs/ios-integration/ai-assistant-api-contract.md
   - docs/ios-integration/auth-api-contract.md
 ---
 
 # iPadOS 联调变更记录
+
+## 2026-06-23
+
+### 新增
+
+- 新增 `docs/ios-integration/assistant-ios-collaboration-v1.md`，只针对 `/app/assistant` 独立 AI 对话助手定义 iOS / Java / Python 协同开发边界。
+- 新增 AI 对话助手产品化验收项，覆盖任务入口、intent 映射、学习上下文、SSE 合并、范围外收口和调试信息。
+
+### 兼容性说明
+
+- 本次只新增文档和文档导航，不修改后端接口实现。
+- 该契约不包含写作页 Copilot、翻译页或其他业务页 Agent 能力，后续如接入应另开契约或实现任务。
 
 ## 2026-06-18
 

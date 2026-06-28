@@ -1,9 +1,10 @@
+import type { AssistantBlock } from '../../types/assistantBlocks.ts'
 import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
 
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
 export type AssistantAttachmentKind = 'image' | 'file'
-export type AssistantMode = 'default' | 'exam'
+export type AssistantMode = 'default' | 'exam' | 'learning'
 
 export interface AssistantAttachmentMetadata {
   id: string
@@ -22,6 +23,7 @@ export interface AssistantMessage {
   role: AssistantMessageRole
   content: string
   status: AssistantMessageStatus
+  parts?: AssistantBlock[]
   attachments?: AssistantAttachment[]
   attachmentMetadata?: AssistantAttachmentMetadata[]
 }
@@ -53,6 +55,11 @@ export interface AssistantReplyRequest {
   scope?: InputScope
   selection?: AssistantSelection
   attachments: AssistantAttachment[]
+}
+
+export interface AssistantReplyResult {
+  reply: string
+  parts?: AssistantBlock[]
 }
 
 export async function buildMockAssistantReply(request: AssistantReplyRequest): Promise<string> {

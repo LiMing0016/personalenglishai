@@ -31,14 +31,33 @@
               <span class="message-attachment-name">{{ attachment.name }}</span>
             </div>
           </div>
-          <div
-            v-if="message.role === 'assistant'"
-            class="message-content message-content--markdown"
-            :class="`message-content--markdown-${markdownTheme}`"
-            v-html="renderAssistantMarkdown(message.content)"
-            @click="onRenderedMarkdownClick"
-          ></div>
-          <p v-else class="message-content message-content--plain">{{ message.content }}</p>
+          <template v-if="message.role === 'assistant'">
+            <div
+              :data-learning-message-id="message.id"
+              :data-learning-message-role="message.role"
+              class="message-content message-content--markdown"
+              :class="`message-content--markdown-${markdownTheme}`"
+              v-html="renderAssistantMarkdown(message.content)"
+              @click="onRenderedMarkdownClick"
+              @mouseup="handleLearningAssetSelection(message)"
+              @keyup="handleLearningAssetSelection(message)"
+            ></div>
+            <AssistantBlockRenderer
+              v-if="message.parts?.length"
+              :blocks="message.parts"
+              @action="$emit('chooseStarter', $event)"
+            />
+          </template>
+          <p
+            v-else
+            :data-learning-message-id="message.id"
+            :data-learning-message-role="message.role"
+            class="message-content message-content--plain"
+            @mouseup="handleLearningAssetSelection(message)"
+            @keyup="handleLearningAssetSelection(message)"
+          >
+            {{ message.content }}
+          </p>
           <div
             v-if="message.role === 'assistant' && message.status === 'done'"
             class="message-actions"
@@ -89,23 +108,42 @@
         </button>
       </div>
     </div>
+    <LearningAssetSelectionToolbar
+      :selected-text="selectionToolbar.selectedText"
+      :left="selectionToolbar.left"
+      :top="selectionToolbar.top"
+      :can-append-to-active="canAppendToLearningAsset"
+      @create="emitLearningAssetSelection"
+      @append="emitAppendToLearningAsset"
+    />
   </section>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, reactive } from 'vue'
 
+import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
 import AssistantStarterCards from './AssistantStarterCards.vue'
+import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
+import { resolveLearningAssetContext, type LearningAssetType } from '@/types/learningAssets.ts'
 
-defineProps<{
+export interface AssistantLearningAssetSelection {
+  selectedText: string
+  contextText: string
+  messageId: string
+  type?: LearningAssetType
+}
+
+const props = defineProps<{
   messages: AssistantMessage[]
   errorMessage: string
   canRetry: boolean
   emptyTitle: string
   emptySubtitle: string
   markdownTheme: 'marktext' | 'milkdown'
+  canAppendToLearningAsset: boolean
 }>()
 
 const emit = defineEmits<{
@@ -113,9 +151,21 @@ const emit = defineEmits<{
   copyMessage: [content: string]
   retryMessage: [messageId: string]
   retry: []
+  createLearningAsset: [selection: AssistantLearningAssetSelection]
+  appendToLearningAsset: [selection: AssistantLearningAssetSelection]
 }>()
 
 const previewUrls = new Map<string, string>()
+const selectionToolbarWidth = 300
+const selectionToolbarHeight = 44
+const selectionToolbarGutter = 12
+const selectionToolbar = reactive({
+  selectedText: '',
+  contextText: '',
+  messageId: '',
+  left: 0,
+  top: 0,
+})
 
 function previewUrlById(id: string, file: File) {
   if (!previewUrls.has(id)) {
@@ -128,7 +178,120 @@ function onRenderedMarkdownClick(event: MouseEvent) {
   void copyMarkdownCodeFromClick(event)
 }
 
+function handleLearningAssetSelection(message: AssistantMessage) {
+  window.setTimeout(() => syncAssistantSelection(message), 0)
+}
+
+function handleDocumentSelectionChange() {
+  window.setTimeout(() => syncAssistantSelection(), 0)
+}
+
+function syncAssistantSelection(fallbackMessage?: AssistantMessage) {
+  const selection = window.getSelection()
+  const selectedText = selection?.toString().trim() ?? ''
+  if (!selection || selection.isCollapsed || !selectedText) {
+    clearLearningAssetSelection()
+    return
+  }
+
+  const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+  const anchorElement = selection.anchorNode instanceof Element
+    ? selection.anchorNode
+    : selection.anchorNode?.parentElement
+  const contentElement = anchorElement?.closest<HTMLElement>('[data-learning-message-id]')
+  const messageId = contentElement?.dataset.learningMessageId ?? fallbackMessage?.id
+  const message = props.messages.find((item) => item.id === messageId) ?? fallbackMessage
+
+  if (!range || !contentElement || !message) {
+    clearLearningAssetSelection()
+    return
+  }
+
+  const rect = range.getBoundingClientRect()
+  selectionToolbar.selectedText = selectedText
+  selectionToolbar.contextText = resolveLearningAssetContext({
+    selectedText,
+    contextText: readSelectionContextText(range, contentElement, anchorElement),
+  })
+  selectionToolbar.messageId = message.id
+  selectionToolbar.left = Math.max(
+    selectionToolbarGutter,
+    Math.min(rect.left, window.innerWidth - selectionToolbarWidth),
+  )
+  selectionToolbar.top = resolveSelectionToolbarTop(rect)
+}
+
+function resolveSelectionToolbarTop(rect: DOMRect) {
+  const below = rect.bottom + 8
+  if (below + selectionToolbarHeight <= window.innerHeight - selectionToolbarGutter) {
+    return below
+  }
+  return Math.max(selectionToolbarGutter, rect.top - selectionToolbarHeight - 8)
+}
+
+function readSelectionContextText(
+  range: Range,
+  contentElement: HTMLElement,
+  anchorElement?: Element | null,
+) {
+  const commonAncestor = range.commonAncestorContainer instanceof Element
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement
+  const contextElement = findSelectionContextElement(anchorElement, contentElement)
+    ?? findSelectionContextElement(commonAncestor, contentElement)
+  return contextElement?.textContent?.trim() || ''
+}
+
+function findSelectionContextElement(
+  startElement: Element | null | undefined,
+  contentElement: HTMLElement,
+) {
+  if (!startElement || !contentElement.contains(startElement)) return null
+
+  const tableRow = startElement.closest<HTMLElement>('tr')
+  if (tableRow && contentElement.contains(tableRow)) return tableRow
+
+  const block = startElement.closest<HTMLElement>('p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th')
+  if (block && contentElement.contains(block)) return block
+
+  return null
+}
+
+function clearLearningAssetSelection() {
+  selectionToolbar.selectedText = ''
+  selectionToolbar.contextText = ''
+  selectionToolbar.messageId = ''
+}
+
+function emitLearningAssetSelection(type: LearningAssetType) {
+  if (!selectionToolbar.selectedText || !selectionToolbar.messageId) return
+  emit('createLearningAsset', {
+    selectedText: selectionToolbar.selectedText,
+    contextText: selectionToolbar.contextText,
+    messageId: selectionToolbar.messageId,
+    type,
+  })
+  window.getSelection()?.removeAllRanges()
+  clearLearningAssetSelection()
+}
+
+function emitAppendToLearningAsset() {
+  if (!selectionToolbar.selectedText || !selectionToolbar.messageId || !props.canAppendToLearningAsset) return
+  emit('appendToLearningAsset', {
+    selectedText: selectionToolbar.selectedText,
+    contextText: selectionToolbar.contextText,
+    messageId: selectionToolbar.messageId,
+  })
+  window.getSelection()?.removeAllRanges()
+  clearLearningAssetSelection()
+}
+
+onMounted(() => {
+  document.addEventListener('selectionchange', handleDocumentSelectionChange)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('selectionchange', handleDocumentSelectionChange)
   for (const url of previewUrls.values()) {
     URL.revokeObjectURL(url)
   }
@@ -351,9 +514,10 @@ onBeforeUnmount(() => {
 .message-content--markdown :deep(.markdown-code-block) {
   margin: 14px 0 18px;
   overflow: hidden;
+  border: 1px solid #dbe3ea;
   border-radius: 12px;
-  background: #1f2937;
-  color: #e5e7eb;
+  background: #ffffff;
+  color: #0f172a;
 }
 
 .message-content--markdown :deep(.markdown-code-header) {
@@ -361,20 +525,20 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #2b3442;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
   padding: 8px 12px;
-  color: #cbd5e1;
+  color: #64748b;
   font-size: 12px;
   font-weight: 700;
 }
 
 .message-content--markdown :deep(.markdown-code-copy) {
   height: 26px;
-  border: 1px solid rgba(226, 232, 240, 0.28);
+  border: 1px solid #dbe3ea;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e5e7eb;
+  background: #ffffff;
+  color: #334155;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 750;
@@ -383,8 +547,9 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(.markdown-code-copy:hover),
 .message-content--markdown :deep(.markdown-code-copy--copied) {
-  border-color: rgba(226, 232, 240, 0.52);
-  background: rgba(255, 255, 255, 0.16);
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .message-content--markdown :deep(.markdown-code-block pre) {

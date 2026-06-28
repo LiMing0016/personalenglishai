@@ -23,3 +23,12 @@ const unsafe = renderAssistantMarkdown('<script>alert(1)</script>\n\n**safe**')
 assert.ok(!unsafe.includes('<script>'))
 assert.ok(unsafe.includes('&lt;script&gt;alert(1)&lt;/script&gt;'))
 assert.ok(unsafe.includes('<strong>safe</strong>'))
+
+const image = renderAssistantMarkdown('![例句截图](data:image/png;base64,abc)')
+assert.ok(image.includes('<img'))
+assert.ok(image.includes('src="data:image/png;base64,abc"'))
+assert.ok(image.includes('alt="例句截图"'))
+
+const unsafeImage = renderAssistantMarkdown('![bad](javascript:alert(1))')
+assert.ok(!unsafeImage.includes('<img'))
+assert.ok(!unsafeImage.includes('javascript:alert'))
