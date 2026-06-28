@@ -1,3 +1,5 @@
+import type { AssistantBlock } from './assistantBlocks.ts'
+
 export type LearningMode = 'daily_explain' | 'exam_boost'
 
 export type AssistantIntent =
@@ -218,6 +220,7 @@ export interface AssistantMessageResponse {
   messageId: string
   role: 'assistant'
   content: string
+  parts?: AssistantBlock[]
   run: AssistantRunMetadata
   usage?: AssistantUsage
   openai?: AssistantOpenAiState
@@ -276,6 +279,7 @@ export type AssistantStreamEvent =
       runId: string
       messageId: string
       content: string
+      parts?: AssistantBlock[]
     }
   | {
       type: 'run.completed'

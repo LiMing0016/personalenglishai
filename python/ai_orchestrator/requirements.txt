@@ -1,7 +1,7 @@
 fastapi==0.115.12
 langfuse==3.14.6
-openai-agents==0.17.2
-openinference-instrumentation-openai-agents==1.4.2
+openai-agents==0.17.6
+openinference-instrumentation-openai-agents==1.6.1
 python-multipart==0.0.20
 beautifulsoup4>=4.12.0
 readmdict>=0.1.1

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 try:
     from .assistant_service import AssistantAgentService, AssistantConfigError
@@ -19,8 +20,12 @@ try:
     from .schemas.prompt_sheet import GenerateExamPromptResponse
     from .schemas.prompt_sheet import PromptSheetChatRequest
     from .schemas.prompt_sheet import PromptSheetChatResponse
+    from .schemas.learning_assets import LearningAssetOrganizeRequest
+    from .schemas.learning_assets import LearningAssetOrganizeResponse
     from .services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from .services.prompt_sheet_workflow import PromptSheetWorkflowService
+    from .services.learning_asset_copilot import LearningAssetCopilotConfigError
+    from .services.learning_asset_copilot import LearningAssetCopilotService
     from .services.assistant_request_validator import AssistantRequestValidationError
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
@@ -34,8 +39,12 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.prompt_sheet import GenerateExamPromptResponse
     from schemas.prompt_sheet import PromptSheetChatRequest
     from schemas.prompt_sheet import PromptSheetChatResponse
+    from schemas.learning_assets import LearningAssetOrganizeRequest
+    from schemas.learning_assets import LearningAssetOrganizeResponse
     from services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from services.prompt_sheet_workflow import PromptSheetWorkflowService
+    from services.learning_asset_copilot import LearningAssetCopilotConfigError
+    from services.learning_asset_copilot import LearningAssetCopilotService
     from services.assistant_request_validator import AssistantRequestValidationError
 
 
@@ -55,6 +64,7 @@ app.add_middleware(
 )
 service = AssistantAgentService.from_env()
 prompt_sheet_service = PromptSheetWorkflowService.from_env()
+learning_asset_copilot_service = LearningAssetCopilotService.from_env()
 
 
 @app.get("/health")
@@ -63,6 +73,7 @@ def health() -> dict[str, object]:
         "ok": True,
         "configured": service.is_configured(),
         "promptSheetConfigured": prompt_sheet_service.is_configured(),
+        "learningAssetCopilotConfigured": learning_asset_copilot_service.is_configured(),
         "model": service.model,
         "langfuseTracing": observability_status.configured,
     }
@@ -199,3 +210,18 @@ async def prompt_sheet_generate(request: GenerateExamPromptRequest) -> GenerateE
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - runtime safety
         raise HTTPException(status_code=500, detail=f"prompt sheet generation failed: {exc}") from exc
+
+
+@app.post("/learning-assets/organize", response_model=LearningAssetOrganizeResponse)
+async def learning_asset_organize(payload: Annotated[dict[str, Any], Body()]) -> LearningAssetOrganizeResponse:
+    try:
+        request = LearningAssetOrganizeRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
+
+    try:
+        return await learning_asset_copilot_service.organize(request)
+    except LearningAssetCopilotConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - runtime safety
+        raise HTTPException(status_code=500, detail=f"learning asset copilot failed: {exc}") from exc

@@ -2,6 +2,7 @@ import { http } from './http'
 import { streamAssistantEvents } from './assistantStream.ts'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
+import type { AssistantBlock } from '../types/assistantBlocks.ts'
 import type {
   AssistantIntent,
   AssistantRequest as AssistantAgentRequest,
@@ -43,6 +44,7 @@ export interface AssistantMessageDto {
   id: string
   role: 'user' | 'assistant'
   content: string
+  parts?: AssistantBlock[]
   status: 'done' | 'failed'
   createdAt?: string | null
 }
@@ -81,7 +83,7 @@ export interface AssistantChatPayload {
   input: string
   conversationId: string
   studyStage?: string
-  assistantMode?: 'default' | 'exam'
+  assistantMode?: 'default' | 'exam' | 'learning'
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection
@@ -91,12 +93,13 @@ export interface AssistantChatPayload {
 
 export interface AssistantChatResult {
   reply: string
+  parts?: AssistantBlock[]
   conversation?: AssistantConversationDto
 }
 
 export interface AssistantChatStreamHandlers {
   onDelta?: (delta: string) => void
-  onCompleted?: (content: string) => void
+  onCompleted?: (content: string, parts?: AssistantBlock[]) => void
 }
 
 export interface AssistantChatStreamOptions {
@@ -207,6 +210,17 @@ function latestAssistantReply(conversation: AssistantConversationDto) {
   return ''
 }
 
+function latestAssistantParts(conversation: AssistantConversationDto) {
+  const messages = conversation.messages ?? []
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role === 'assistant' && message.parts?.length) {
+      return message.parts
+    }
+  }
+  return undefined
+}
+
 export const assistantApi = {
   async listProjects(): Promise<AssistantProjectDto[]> {
     const res = await http.get<ApiEnvelope<AssistantProjectDto[]>>('/assistant/projects')
@@ -303,7 +317,7 @@ export async function assistantChat(payload: AssistantChatPayload): Promise<Assi
   if (!reply.trim()) {
     throw new Error('学习助手没有返回内容')
   }
-  return { reply, conversation }
+  return { reply, parts: latestAssistantParts(conversation), conversation }
 }
 
 export async function assistantChatStream(
@@ -319,6 +333,7 @@ export async function assistantChatStream(
   let seenEvent = false
   let failedMessage = ''
   let completedContent = ''
+  let completedParts: AssistantBlock[] | undefined
   let accumulatedContent = ''
 
   try {
@@ -334,7 +349,8 @@ export async function assistantChatStream(
         }
         if (event.type === 'message.completed' && 'content' in event && typeof event.content === 'string') {
           completedContent = event.content
-          handlers.onCompleted?.(event.content)
+          completedParts = Array.isArray(event.parts) ? event.parts as AssistantBlock[] : undefined
+          handlers.onCompleted?.(event.content, completedParts)
           return
         }
         if (event.type === 'run.failed' && 'error' in event) {
@@ -362,7 +378,7 @@ export async function assistantChatStream(
   if (!reply.trim()) {
     throw new Error('学习助手没有返回内容')
   }
-  return { reply }
+  return { reply, parts: completedParts }
 }
 
 function isAbortError(error: unknown) {

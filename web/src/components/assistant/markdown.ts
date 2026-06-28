@@ -5,11 +5,59 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
-function renderInline(text: string): string {
+function escapeAttribute(text: string): string {
+  return escapeHtml(text)
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function renderInlineText(text: string): string {
   return escapeHtml(text)
     .replace(/`([^`]+?)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
     .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
+}
+
+function readMarkdownImageSource(sourceText: string): string {
+  const trimmed = sourceText.trim()
+  const titleStart = trimmed.search(/\s+["']/)
+  return titleStart >= 0 ? trimmed.slice(0, titleStart).trim() : trimmed
+}
+
+function isSafeImageSource(source: string): boolean {
+  const trimmed = source.trim()
+  if (/^https?:\/\//i.test(trimmed)) return true
+  if (/^blob:/i.test(trimmed)) return true
+  if (/^\/(?!\/)/.test(trimmed)) return true
+  return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
+}
+
+function renderMarkdownImage(alt: string, source: string): string {
+  if (!isSafeImageSource(source)) return renderInlineText(alt || '图片')
+  return [
+    '<img',
+    ' class="markdown-image"',
+    ` src="${escapeAttribute(source)}"`,
+    ` alt="${escapeAttribute(alt)}"`,
+    ' loading="lazy"',
+    '>',
+  ].join('')
+}
+
+function renderInline(text: string): string {
+  const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g
+  let html = ''
+  let cursor = 0
+
+  for (const match of text.matchAll(imagePattern)) {
+    const start = match.index ?? 0
+    html += renderInlineText(text.slice(cursor, start))
+    html += renderMarkdownImage(match[1] ?? '', readMarkdownImageSource(match[2] ?? ''))
+    cursor = start + match[0].length
+  }
+
+  html += renderInlineText(text.slice(cursor))
+  return html
 }
 
 function renderParagraph(lines: string[]): string {

@@ -10,9 +10,35 @@
 
 - `setup-local.ps1`
 - `start-local.bat`
+- `start-local.sh`
 - `start-nginx.bat`
 - `stop.nginx.bat`
 - `admin-acceptance-login.mjs`
+
+### `dev/start-local.sh`
+
+用途：
+
+- macOS/Linux 本地开发时，用 Docker Compose 启动完整项目。
+- 读取 `local-ports.env.example` 和可选的 `local-ports.env`。
+- 默认执行 `docker compose -f docker-compose.local.yml up -d --build`，保证 Python orchestrator 等镜像内代码更新后能被重新构建。
+
+最简单用法：
+
+```bash
+./start-local.sh
+```
+
+常用命令：
+
+```bash
+./start-local.sh check
+./start-local.sh restart backend
+./start-local.sh restart assistant
+./start-local.sh logs backend
+./start-local.sh status
+./start-local.sh down
+```
 
 ### `dev/admin-acceptance-login.mjs`
 

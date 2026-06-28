@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.learning.LearningNoteMapper">
+
+    <resultMap id="LearningNoteResultMap" type="com.personalenglishai.backend.entity.learning.LearningNote">
+        <id column="id" property="id"/>
+        <result column="note_uid" property="noteUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="type" property="type"/>
+        <result column="title" property="title"/>
+        <result column="content_markdown" property="contentMarkdown"/>
+        <result column="structured_payload" property="structuredPayload"/>
+        <result column="source_conversation_uid" property="sourceConversationUid"/>
+        <result column="source_message_uid" property="sourceMessageUid"/>
+        <result column="source_text" property="sourceText"/>
+        <result column="status" property="status"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="deleted_at" property="deletedAt"/>
+    </resultMap>
+
+    <sql id="LearningNoteColumns">
+        id,
+        note_uid,
+        user_id,
+        type,
+        title,
+        content_markdown,
+        structured_payload,
+        source_conversation_uid,
+        source_message_uid,
+        source_text,
+        status,
+        created_at,
+        updated_at,
+        deleted_at
+    </sql>
+
+    <insert id="insert" parameterType="com.personalenglishai.backend.entity.learning.LearningNote"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO learning_note (
+            note_uid,
+            user_id,
+            type,
+            title,
+            content_markdown,
+            structured_payload,
+            source_conversation_uid,
+            source_message_uid,
+            source_text,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{noteUid},
+            #{userId},
+            #{type},
+            #{title},
+            #{contentMarkdown},
+            #{structuredPayload},
+            #{sourceConversationUid},
+            #{sourceMessageUid},
+            #{sourceText},
+            #{status},
+            NOW(),
+            NOW()
+        )
+    </insert>
+
+    <update id="updateForUser" parameterType="com.personalenglishai.backend.entity.learning.LearningNote">
+        UPDATE learning_note
+        SET type = #{type},
+            title = #{title},
+            content_markdown = #{contentMarkdown},
+            structured_payload = #{structuredPayload},
+            source_conversation_uid = #{sourceConversationUid},
+            source_message_uid = #{sourceMessageUid},
+            source_text = #{sourceText},
+            status = #{status},
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND note_uid = #{noteUid}
+          AND deleted_at IS NULL
+    </update>
+
+    <select id="selectByUidForUser" resultMap="LearningNoteResultMap">
+        SELECT <include refid="LearningNoteColumns"/>
+        FROM learning_note
+        WHERE user_id = #{userId}
+          AND note_uid = #{noteUid}
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <select id="selectByUserAndType" resultMap="LearningNoteResultMap">
+        SELECT <include refid="LearningNoteColumns"/>
+        FROM learning_note
+        WHERE user_id = #{userId}
+          AND type = #{type}
+          AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countByUserAndType" resultType="long">
+        SELECT COUNT(1)
+        FROM learning_note
+        WHERE user_id = #{userId}
+          AND type = #{type}
+          AND deleted_at IS NULL
+    </select>
+
+    <update id="softDelete">
+        UPDATE learning_note
+        SET deleted_at = NOW(),
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND note_uid = #{noteUid}
+          AND deleted_at IS NULL
+    </update>
+</mapper>

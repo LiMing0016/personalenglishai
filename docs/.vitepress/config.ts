@@ -124,6 +124,7 @@ export default defineConfig({
             { text: 'Admin 订阅与额度', link: '/api/admin-subscription' },
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
+            { text: 'Learning Notes', link: '/api/learning-notes' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
           ]
         }
@@ -133,6 +134,7 @@ export default defineConfig({
           text: 'iPadOS 联调',
           items: [
             { text: '联调总览', link: '/ios-integration/README' },
+            { text: 'AI 对话助手 iOS 协同', link: '/ios-integration/assistant-ios-collaboration-v1' },
             { text: 'AI 助手 API 契约', link: '/ios-integration/ai-assistant-api-contract' },
             { text: '认证 API 契约', link: '/ios-integration/auth-api-contract' },
             { text: '本地开发与 Docker', link: '/ios-integration/local-dev-and-docker' },
@@ -147,7 +149,8 @@ export default defineConfig({
           text: '数据',
           items: [
             { text: '数据总览', link: '/data/' },
-            { text: '评分持久化', link: '/data/scoring-persistence-schema' }
+            { text: '评分持久化', link: '/data/scoring-persistence-schema' },
+            { text: 'Learning Note', link: '/data/learning-note-schema' }
           ]
         }
       ],

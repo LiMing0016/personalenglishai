@@ -131,6 +131,9 @@ async function main() {
     state.setAssistantMode('exam')
     assert.equal(state.assistantMode.value, 'exam')
 
+    state.setAssistantMode('learning')
+    assert.equal(state.assistantMode.value, 'learning')
+
     state.setAssistantMode('default')
     assert.equal(state.assistantMode.value, 'default')
   }

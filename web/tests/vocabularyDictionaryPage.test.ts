@@ -18,7 +18,7 @@ assert.ok(apiSource.includes('DictionaryLookupResponse'), 'dictionary API should
 assert.ok(pageSource.includes('lookupDictionary'), 'vocabulary page should call the dictionary API wrapper')
 assert.ok(pageSource.includes('en-gb'), 'vocabulary page should support British English lookup')
 assert.ok(pageSource.includes('en-us'), 'vocabulary page should support American English lookup')
-assert.ok(pageSource.includes("activeView = ref<VocabularyViewKey>('search')"), 'vocabulary page should open on search')
+assert.ok(pageSource.includes("parseVocabularyView(route.query.tab) ?? 'search'"), 'vocabulary page should default to search')
 assert.ok(pageSource.includes("key: 'search'"), 'vocabulary page should define a search view')
 assert.ok(pageSource.includes("key: 'modes'"), 'vocabulary page should define a study modes view')
 assert.ok(pageSource.includes("key: 'collection'"), 'vocabulary page should define a collection view')
@@ -32,7 +32,7 @@ assert.ok(pageSource.includes('dictionary-detail-card'), 'vocabulary page should
 assert.ok(pageSource.includes('result.entries'), 'dictionary detail should render definitions from lookup entries')
 assert.ok(pageSource.includes('props.result?.phonetics'), 'dictionary detail should render phonetics from lookup results')
 assert.ok(pageSource.includes('lookupResultWord'), 'dictionary detail should prefer the searched dictionary word')
-assert.ok(pageSource.includes('加入复习'), 'vocabulary page should expose learning review actions')
+assert.ok(pageSource.includes('加入今日复习'), 'vocabulary page should expose learning review actions')
 assert.ok(pageSource.includes('标记已掌握'), 'vocabulary page should expose mastery actions')
 assert.ok(!pageSource.includes('apiStatusItems'), 'vocabulary page should remove the API status checklist from student UI')
 

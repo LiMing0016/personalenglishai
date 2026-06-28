@@ -3,10 +3,12 @@ import { computed, ref } from 'vue'
 import {
   assistantApi,
   assistantChatStream,
+  type AssistantChatResult,
   type AssistantChatStreamHandlers,
   type AssistantConversationDto,
   type AssistantProjectDto,
 } from '../../api/assistant.ts'
+import { normalizeAssistantBlocks } from '../../types/assistantBlocks.ts'
 import { stageCache } from '../../stores/stageCache.ts'
 import { showToast } from '../../utils/toast.ts'
 import {
@@ -27,13 +29,16 @@ import {
   type AssistantAttachment,
   type AssistantAttachmentMetadata,
   type AssistantMode,
+  type AssistantReplyResult,
   type AssistantReplyRequest,
   type AssistantConversation,
   type AssistantMessage,
 } from './assistantMock.ts'
 
+type AssistantReplyValue = string | AssistantReplyResult | AssistantChatResult
+
 interface CreateAssistantStateOptions {
-  buildReply?: (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => Promise<string>
+  buildReply?: (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => Promise<AssistantReplyValue>
   storage?: Storage
   storageKey?: string
   remote?: boolean
@@ -47,6 +52,7 @@ interface PersistedAssistantMessage {
   role: AssistantMessage['role']
   content: string
   status: AssistantMessage['status']
+  parts?: unknown
   attachments?: AssistantAttachmentMetadata[]
 }
 
@@ -92,12 +98,15 @@ function createMessage(
   role: AssistantMessage['role'],
   content: string,
   status: AssistantMessage['status'],
+  parts?: unknown,
 ): AssistantMessage {
+  const normalizedParts = normalizeAssistantBlocks(parts)
   return {
     id: createId('msg'),
     role,
     content,
     status,
+    parts: normalizedParts.length ? normalizedParts : undefined,
   }
 }
 
@@ -138,6 +147,7 @@ function toPersistedConversation(conversation: AssistantConversation): Persisted
         role: message.role,
         content: message.content,
         status: 'done',
+        parts: message.parts?.length ? message.parts : undefined,
         attachments: persistedAttachmentMetadata(message),
       })),
   }
@@ -184,6 +194,7 @@ function restoreConversation(value: unknown): AssistantConversation | null {
             role: candidate.role,
             content: candidate.content,
             status: 'done',
+            parts: normalizeAssistantBlocks(candidate.parts),
             attachmentMetadata: Array.isArray(candidate.attachments)
               ? candidate.attachments.filter(isPersistedAttachmentMetadata)
               : undefined,
@@ -224,6 +235,7 @@ function fromRemoteConversation(dto: AssistantConversationDto): AssistantConvers
       role: message.role,
       content: message.content,
       status: message.status === 'failed' ? 'done' : 'done',
+      parts: normalizeAssistantBlocks(message.parts),
     })),
   }
 }
@@ -521,17 +533,19 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
 
     try {
       let streamedReply = ''
-      const updateLoadingMessage = (content: string) => {
+      const updateLoadingMessage = (content: string, parts?: unknown) => {
         const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
         if (loadingIndex >= 0) {
+          const normalizedParts = normalizeAssistantBlocks(parts)
           conversation.messages.splice(loadingIndex, 1, {
             ...conversation.messages[loadingIndex]!,
             content,
+            parts: normalizedParts.length ? normalizedParts : conversation.messages[loadingIndex]!.parts,
           })
         }
       }
 
-      const reply = await buildReply({
+      const replyResult = await buildReply({
         input: trimmed || `请查看我上传的 ${attachments.length} 个附件`,
         conversationId: conversation.id,
         studyStage: currentStudyStage(),
@@ -547,14 +561,16 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           streamedReply += delta
           updateLoadingMessage(streamedReply)
         },
-        onCompleted: (content) => {
+        onCompleted: (content, parts) => {
           streamedReply = content
-          updateLoadingMessage(content)
+          updateLoadingMessage(content, parts)
         },
       })
+      const reply = typeof replyResult === 'string' ? replyResult : replyResult.reply
+      const replyParts = typeof replyResult === 'string' ? [] : normalizeAssistantBlocks(replyResult.parts)
       const loadingIndex = conversation.messages.findIndex((message) => message.id === loadingMessage.id)
       if (loadingIndex >= 0) {
-        conversation.messages.splice(loadingIndex, 1, createMessage('assistant', reply, 'done'))
+        conversation.messages.splice(loadingIndex, 1, createMessage('assistant', reply, 'done', replyParts))
       }
       if (remote && remoteConversationIds.has(conversation.id)) {
         try {

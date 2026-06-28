@@ -46,6 +46,8 @@ tmp[0-9a-zA-Z_]*/
 
 # Claude Code local settings
 .claude/settings.local.json
+.superpowers/
+.worktrees/
 
 # Env (never commit secrets)
 .env
@@ -55,4 +57,3 @@ local-ports.env
 
 # Beta deploy env
 deploy/beta/.env.beta
-

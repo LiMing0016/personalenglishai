@@ -65,6 +65,14 @@ app:
       endpoint: ${APP_OCR_PADDLE_ENDPOINT:/ocr/pdf}
       language: ${APP_OCR_PADDLE_LANGUAGE:ch,eng}
       timeout-ms: ${APP_OCR_PADDLE_TIMEOUT_MS:60000}
+      parse-mode: ${APP_OCR_PADDLE_PARSE_MODE:standard}
+      max-pages: ${APP_OCR_PADDLE_MAX_PAGES:500}
+      dpi: ${APP_OCR_PADDLE_DPI:220}
+      enable-layout: ${APP_OCR_PADDLE_ENABLE_LAYOUT:false}
+      enable-table: ${APP_OCR_PADDLE_ENABLE_TABLE:false}
+      enable-formula: ${APP_OCR_PADDLE_ENABLE_FORMULA:false}
+      enable-orientation: ${APP_OCR_PADDLE_ENABLE_ORIENTATION:true}
+      enable-unwarping: ${APP_OCR_PADDLE_ENABLE_UNWARPING:false}
 
 server:
   port: ${SERVER_PORT:18080}
@@ -207,4 +215,3 @@ qwen:
     debug: ${QWEN_PROMPT_DEBUG:false}
     log-raw-enabled: ${QWEN_PROMPT_LOG_RAW_ENABLED:false}
     log-raw-max-chars: ${QWEN_PROMPT_LOG_RAW_MAX_CHARS:12000}
-

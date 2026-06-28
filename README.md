@@ -59,7 +59,8 @@ npm run build
 ├── docker-compose.yml           # 后端、Redis、Python 服务编排
 ├── docker-compose.nginx.yml     # Nginx 反向代理编排
 ├── setup-local.ps1              # Windows 本地环境初始化
-└── start-local.bat              # Windows 本地启动脚本
+├── start-local.bat              # Windows 本地启动脚本
+└── start-local.sh               # macOS/Linux Docker 本地启动脚本
 ```
 
 ## 关键路由
@@ -112,8 +113,27 @@ npm run build
 
 如果只是想在新电脑快速跑起完整项目，优先使用 Docker：
 
-```powershell
-docker compose -f docker-compose.local.yml up --build
+```bash
+./start-local.sh
+```
+
+`start-local.sh` 是 macOS/Linux 的 Docker Compose 封装，默认执行带 rebuild 的启动，适合验证 Python orchestrator 这类镜像内代码变更。
+
+常用命令：
+
+```bash
+./start-local.sh check
+./start-local.sh restart backend
+./start-local.sh restart assistant
+./start-local.sh logs backend
+./start-local.sh status
+./start-local.sh down
+```
+
+也可以直接使用原始 Docker Compose：
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
 默认地址：

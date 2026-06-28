@@ -90,12 +90,53 @@ Authorization: Bearer <access_token>
       "id": "msg-uuid",
       "role": "user",
       "content": "请解释这段话",
+      "parts": [],
       "status": "done",
       "createdAt": "2026-06-18T10:00:10"
     }
   ]
 }
 ```
+
+### AssistantMessage.parts
+
+`content` 是默认 Markdown 文本，必须始终可展示；`parts` 是可选的结构化学习组件。旧客户端可以忽略 `parts`，新 Web/iPad 客户端按 `type` 渲染原生组件。用户没有明确要求卡片、树、规划或句子分析图时，后端可以只返回 `content`。
+
+v1 支持以下学习 block：
+
+| type | 场景 | iPad 处理 |
+| --- | --- | --- |
+| `vocab_card` | 用户明确要求“做成单词卡” | 渲染单词、释义、例句、搭配、记忆提示 |
+| `grammar_tree` | 用户要求语法树/知识树 | 渲染树形语法节点 |
+| `study_plan` | 用户要求学习规划 | 渲染按天/阶段排列的任务表 |
+| `sentence_analysis` | 用户要求句子分析图 | 渲染主干、成分、语法点和升级表达 |
+
+通用结构：
+
+```json
+{
+  "id": "block_1",
+  "type": "vocab_card",
+  "version": 1,
+  "title": "单词卡 · significant",
+  "fallbackMarkdown": "significant：重要的，显著的。",
+  "data": {},
+  "actions": [
+    {
+      "id": "explain_usage",
+      "label": "讲讲用法",
+      "prompt": "请详细讲解 significant 的使用场景"
+    }
+  ]
+}
+```
+
+约束：
+
+- `id`、`type`、`version`、`data` 必填；`version` 当前固定为 `1`。
+- `fallbackMarkdown` 用于客户端暂不支持某个 block 时兜底展示。
+- `actions` 是快捷追问，点击后按普通用户输入发送 `prompt`。
+- Web 当前会过滤未知 `type`、非 v1、缺少最低必需字段的 block，并继续展示 `content`。
 
 ### AssistantRequest
 
@@ -403,7 +444,7 @@ data: {"type":"message.created","runId":"run_x","messageId":"msg_x","role":"assi
 
 data: {"type":"message.delta","runId":"run_x","messageId":"msg_x","delta":"Hello"}
 
-data: {"type":"message.completed","runId":"run_x","messageId":"msg_x","content":"Hello world"}
+data: {"type":"message.completed","runId":"run_x","messageId":"msg_x","content":"Hello world","parts":[]}
 
 data: {"type":"run.completed","runId":"run_x","run":{"runId":"run_x","traceId":"trace_x","agentName":"Router Agent","model":"test-model"}}
 ```
