@@ -4,11 +4,12 @@
     :style="assistantPageStyle"
     :class="{
       'assistant-page--drawer-open': assistantDrawerOpen,
-      'assistant-page--learning-canvas-open': Boolean(learningAssetDraft),
+      'assistant-page--learning-canvas-open': learningCanvasOpen,
     }"
   >
     <AssistantSidebar
-      v-if="assistantDrawerOpen"
+      :collapsed="!assistantDrawerOpen"
+      :requestOpenSidebar="openAssistantDrawer"
       :search-value="searchText"
       :groups="conversationGroups"
       :archived-groups="archivedConversationGroups"
@@ -81,31 +82,31 @@
           :loading="isSending"
           :attachments="composerAttachments"
           :assistant-mode="assistantMode"
+          :placeholder="learningCanvasOpen ? '' : undefined"
           @update:model-value="composerText = $event"
           @add-files="handleFileSelect"
           @remove-attachment="removeAttachment"
-          @set-assistant-mode="setAssistantMode"
+          @set-assistant-mode="handleSetAssistantMode"
           @send="sendMessage"
         />
       </div>
     </div>
 
     <LearningAssetCanvas
-      v-if="learningAssetDraft"
+      v-if="learningCanvasOpen"
       :draft="learningAssetDraft"
       :drafts="learningAssetDrafts"
       :active-draft-id="activeLearningAssetDraftId"
       :candidate-markdown="learningAssetCandidateMarkdown"
       :is-organizing="isLearningAssetOrganizing"
-      :is-saving="isLearningAssetSaving"
       :save-status="learningAssetSaveStatus"
       :save-status-by-draft-id="learningAssetSaveStatusByDraftId"
       :error-message="learningAssetError"
       :width-px="learningAssetCanvasWidth"
       @close="closeLearningAssetCanvas"
       @organize="handleOrganizeLearningAsset"
-      @save="handleSaveLearningAsset"
       @select-draft="setActiveLearningAssetDraft"
+      @rename-draft="renameLearningAssetDraft"
       @create-empty-draft="createEmptyLearningAssetDraft"
       @apply-candidate="applyLearningAssetCandidate"
       @cancel-candidate="learningAssetCandidateMarkdown = ''"
@@ -149,6 +150,7 @@ import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
 import {
   createLearningNote,
+  EmptyApiDataError,
   getLearningNote,
   organizeLearningAssetMarkdown,
   updateLearningNote,
@@ -157,6 +159,7 @@ import type { LearningNoteDto, LearningNotePayload } from '@/api/learningNotes'
 import { showToast } from '@/utils/toast'
 import type { AssistantLearningAssetSelection } from '@/components/assistant/AssistantChatView.vue'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
+import type { AssistantMode } from './assistantMock.ts'
 import {
   PENDING_ASSISTANT_PROMPT_KEY,
   PENDING_ASSISTANT_SELECTION_KEY,
@@ -223,11 +226,27 @@ const LEARNING_NOTE_QUERY_KEY = 'learningNote'
 const LEARNING_ASSET_AUTO_SAVE_DELAY_MS = 1200
 const MIN_LEARNING_ASSET_CANVAS_WIDTH = 360
 const MAX_LEARNING_ASSET_CANVAS_WIDTH = 720
+const learningAssetEmptyTitles = {
+  vocabulary: '未命名单词',
+  grammar: '未命名语法笔记',
+  sentence: '未命名句子笔记',
+  expression: '未命名笔记',
+} satisfies Record<LearningAssetType, string>
+const learningAssetToastLabels = {
+  vocabulary: '单词卡',
+  grammar: '语法笔记',
+  sentence: '句子笔记',
+  expression: '空白笔记',
+} satisfies Record<LearningAssetType, string>
 const route = useRoute()
 const router = useRouter()
-const fallbackAssistantDrawerOpen = ref(false)
 const injectedAssistantDrawerOpen = inject<Ref<boolean> | null>('assistantDrawerOpen', null)
-const assistantDrawerOpen = injectedAssistantDrawerOpen ?? fallbackAssistantDrawerOpen
+const assistantDrawerOpen = ref(injectedAssistantDrawerOpen?.value ?? false)
+if (injectedAssistantDrawerOpen) {
+  watch(injectedAssistantDrawerOpen, (value) => {
+    assistantDrawerOpen.value = value
+  })
+}
 const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
@@ -243,6 +262,7 @@ const learningAssetDraft = computed(() =>
     ?? learningAssetDrafts.value[0]
     ?? null,
 )
+const learningCanvasOpen = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
 const learningAssetCandidateMarkdownByDraftId = ref<Record<string, string>>({})
 const learningAssetCandidateMarkdown = computed({
   get() {
@@ -291,6 +311,13 @@ function setMarkdownTheme(theme: AssistantMarkdownTheme) {
   writeAssistantMarkdownTheme(theme)
 }
 
+function handleSetAssistantMode(mode: AssistantMode) {
+  setAssistantMode(mode)
+  if (mode === 'learning') {
+    learningAssetError.value = ''
+  }
+}
+
 function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
   composerText.value = prompt
   if (selection) {
@@ -300,6 +327,16 @@ function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistan
 
 function closeAssistantDrawer() {
   assistantDrawerOpen.value = false
+  if (injectedAssistantDrawerOpen) {
+    injectedAssistantDrawerOpen.value = false
+  }
+}
+
+function openAssistantDrawer() {
+  assistantDrawerOpen.value = true
+  if (injectedAssistantDrawerOpen) {
+    injectedAssistantDrawerOpen.value = true
+  }
 }
 
 function restoreLearningAssetDraft(conversationId: string) {
@@ -310,11 +347,16 @@ function restoreLearningAssetDraft(conversationId: string) {
   learningAssetCandidateMarkdownByDraftId.value = {}
   learningAssetError.value = ''
   learningAssetSaveStatusByDraftId.value = buildLearningAssetSaveStatusMap(learningAssetDrafts.value)
+  const activeDraft = learningAssetDrafts.value.find((draft) => draft.draftId === activeLearningAssetDraftId.value)
+    ?? learningAssetDrafts.value[0]
+  if (activeDraft && !activeDraft.noteUid) {
+    queueAutoSaveLearningAsset(activeDraft)
+  }
 }
 
 function persistLearningAssetDraft(
   nextDraft: LearningAssetDraft,
-  options: { queueAutoSave?: boolean } = {},
+  options: { queueAutoSave?: boolean; preserveActiveDraft?: boolean } = {},
 ) {
   const draftIndex = learningAssetDrafts.value.findIndex((draft) => draft.draftId === nextDraft.draftId)
   const nextDrafts = [...learningAssetDrafts.value]
@@ -324,7 +366,9 @@ function persistLearningAssetDraft(
     nextDrafts.push(nextDraft)
   }
   learningAssetDrafts.value = nextDrafts
-  activeLearningAssetDraftId.value = nextDraft.draftId
+  if (!options.preserveActiveDraft) {
+    activeLearningAssetDraftId.value = nextDraft.draftId
+  }
   persistLearningAssetWorkspace()
   if (options.queueAutoSave) {
     queueAutoSaveLearningAsset(nextDraft)
@@ -371,14 +415,11 @@ function clearLearningAssetAutoSaveTimer() {
 
 function queueAutoSaveLearningAsset(draft = learningAssetDraft.value) {
   clearLearningAssetAutoSaveTimer()
-  if (!draft?.noteUid) {
-    if (draft) setLearningAssetSaveStatus(draft.draftId, 'unsaved')
-    return
-  }
+  if (!draft) return
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
   learningAssetAutoSaveTimer = setTimeout(() => {
     learningAssetAutoSaveTimer = null
-    void saveLearningAssetDraft({ showSuccessToast: false })
+    void saveLearningAssetDraft({ showSuccessToast: false, draftId: draft.draftId })
   }, LEARNING_ASSET_AUTO_SAVE_DELAY_MS)
 }
 
@@ -412,14 +453,14 @@ function handleCreateLearningAsset(selection: AssistantLearningAssetSelection) {
     selectedText: selection.selectedText,
     contextText: selection.contextText,
   })
-  persistLearningAssetDraft(draft)
+  persistLearningAssetDraft(draft, { queueAutoSave: true })
   learningAssetCandidateMarkdownByDraftId.value = {
     ...learningAssetCandidateMarkdownByDraftId.value,
     [draft.draftId]: '',
   }
   learningAssetError.value = ''
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
-  showToast(`已打开${draft.type === 'grammar' ? '语法笔记' : '单词卡'}画布`, 'success')
+  showToast(`已打开${learningAssetToastLabels[draft.type]}画布`, 'success')
 }
 
 function handleAppendToLearningAsset(selection: AssistantLearningAssetSelection) {
@@ -431,7 +472,7 @@ function handleAppendToLearningAsset(selection: AssistantLearningAssetSelection)
 
 function createEmptyLearningAssetDraft(type: LearningAssetType) {
   clearLearningAssetRouteQuery()
-  const title = type === 'grammar' ? '未命名语法笔记' : '未命名单词'
+  const title = learningAssetEmptyTitles[type]
   const draft = createLearningAssetDraft({
     conversationId: activeConversationId.value,
     type,
@@ -439,8 +480,9 @@ function createEmptyLearningAssetDraft(type: LearningAssetType) {
     selectedText: title,
     contextText: '',
   })
-  persistLearningAssetDraft(draft)
+  persistLearningAssetDraft(draft, { queueAutoSave: true })
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
+  showToast(`已新建${learningAssetToastLabels[type]}`, 'success')
 }
 
 function setActiveLearningAssetDraft(draftId: string) {
@@ -449,9 +491,26 @@ function setActiveLearningAssetDraft(draftId: string) {
   persistLearningAssetWorkspace()
 }
 
+function renameLearningAssetDraft(draftId: string, title: string) {
+  const draft = learningAssetDrafts.value.find((item) => item.draftId === draftId)
+  const normalizedTitle = title.trim()
+  if (!draft || !normalizedTitle) return
+  persistLearningAssetDraft({
+    ...draft,
+    title: normalizedTitle,
+    updatedAt: Date.now(),
+  }, {
+    queueAutoSave: true,
+    preserveActiveDraft: draft.draftId !== activeLearningAssetDraftId.value,
+  })
+}
+
 function closeLearningAssetCanvas() {
   clearLearningAssetAutoSaveTimer()
   clearLearningAssetRouteQuery()
+  if (assistantMode.value === 'learning') {
+    setAssistantMode('default')
+  }
   learningAssetDrafts.value = []
   activeLearningAssetDraftId.value = ''
   learningAssetCandidateMarkdownByDraftId.value = {}
@@ -548,16 +607,18 @@ function buildLearningNotePayload(draft: LearningAssetDraft): LearningNotePayloa
   }
 }
 
-async function handleSaveLearningAsset() {
-  await saveLearningAssetDraft({ showSuccessToast: true })
+function readLearningAssetDraftById(draftId?: string) {
+  return draftId
+    ? learningAssetDrafts.value.find((draft) => draft.draftId === draftId) ?? null
+    : learningAssetDraft.value
 }
 
-async function saveLearningAssetDraft({ showSuccessToast }: { showSuccessToast: boolean }) {
-  if (!learningAssetDraft.value || isLearningAssetSaving.value) return
-  const draft = learningAssetDraft.value
+async function saveLearningAssetDraft({ showSuccessToast, draftId }: { showSuccessToast: boolean; draftId?: string }) {
+  const draft = readLearningAssetDraftById(draftId)
+  if (!draft || isLearningAssetSaving.value) return
   const payload = buildLearningNotePayload(draft)
   if (!payload) {
-    learningAssetError.value = '单词和正文不能为空'
+    learningAssetError.value = '标题和正文不能为空'
     setLearningAssetSaveStatus(draft.draftId, 'failed')
     return
   }
@@ -567,9 +628,7 @@ async function saveLearningAssetDraft({ showSuccessToast }: { showSuccessToast: 
   setLearningAssetSaveStatus(draft.draftId, 'saving')
   learningAssetError.value = ''
   try {
-    const saved = draft.noteUid
-      ? await updateLearningNote(draft.noteUid, payload)
-      : await createLearningNote(payload)
+    const saved = await saveLearningAssetPayload(draft, payload)
     const savedDraft = {
       ...draft,
       noteUid: saved.noteUid,
@@ -578,7 +637,9 @@ async function saveLearningAssetDraft({ showSuccessToast }: { showSuccessToast: 
       structuredPayload: saved.structuredPayload,
       updatedAt: Date.now(),
     }
-    persistLearningAssetDraft(savedDraft)
+    persistLearningAssetDraft(savedDraft, {
+      preserveActiveDraft: Boolean(draftId && draftId !== activeLearningAssetDraftId.value),
+    })
     setLearningAssetSaveStatus(savedDraft.draftId, 'saved')
     if (showSuccessToast) {
       showToast('学习资产已保存', 'success')
@@ -588,6 +649,30 @@ async function saveLearningAssetDraft({ showSuccessToast }: { showSuccessToast: 
     setLearningAssetSaveStatus(draft.draftId, 'failed')
   } finally {
     isLearningAssetSaving.value = false
+  }
+}
+
+async function saveLearningAssetPayload(
+  draft: LearningAssetDraft,
+  payload: LearningNotePayload,
+): Promise<LearningNoteDto> {
+  if (!draft.noteUid) {
+    return createLearningNote(payload)
+  }
+
+  try {
+    return await updateLearningNote(draft.noteUid, payload)
+  } catch (error) {
+    if (!(error instanceof EmptyApiDataError)) {
+      throw error
+    }
+
+    return {
+      ...payload,
+      noteUid: draft.noteUid,
+      status: 'active',
+      updatedAt: new Date().toISOString(),
+    }
   }
 }
 
@@ -912,9 +997,10 @@ const folderConversationGroups = computed(() =>
 
 <style scoped>
 .assistant-page {
-  --app-rail-width: 64px;
-  --assistant-sidebar-width: 280px;
-  --assistant-sidebar-current-width: 0px;
+  --app-rail-width: 0px;
+  --assistant-sidebar-width: 320px;
+  --assistant-sidebar-collapsed-width: 72px;
+  --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
   --learning-canvas-width: 420px;
   --learning-canvas-current-width: 0px;
   display: flex;
@@ -923,10 +1009,6 @@ const folderConversationGroups = computed(() =>
   min-height: 100vh;
   overflow: hidden;
   background: #f8fafc;
-}
-
-:global(.app-layout--rail-collapsed) .assistant-page {
-  --app-rail-width: 0px;
 }
 
 .assistant-page--drawer-open {
@@ -1043,7 +1125,7 @@ const folderConversationGroups = computed(() =>
 
   .composer-dock {
     left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
-    right: 0;
+    right: var(--learning-canvas-current-width);
     padding: 14px 12px max(4px, env(safe-area-inset-bottom));
   }
 }

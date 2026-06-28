@@ -17,6 +17,10 @@ for (const requiredText of [
   'action: LearningAssetCopilotAction',
   'instruction?: string',
   'candidateMarkdown',
+  'EmptyApiDataError',
+  'isApiEnvelope',
+  "body.code && body.code !== '0'",
+  'body.data === undefined || body.data === null',
 ]) {
   assert.ok(apiSource.includes(requiredText), `learning notes API should include ${requiredText}`)
 }

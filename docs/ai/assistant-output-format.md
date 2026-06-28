@@ -763,19 +763,16 @@ Streaming 负责让等待过程更自然。
 
 学习资产画布使用 Markdown 作为用户可编辑正文。AI 只能生成或整理 Markdown 候选内容，前端必须让用户确认后再应用。
 
-### 12.1 首版资产类型
+画布正文默认可直接编辑。用户新建资产、重命名标签或修改正文后，前端自动保存到 `learning_note`；顶部不再要求用户手动点击保存。
 
-首版仅开放：
+### 12.1 资产类型
+
+学习资产画布当前开放：
 
 ```text
 vocabulary
-```
-
-后续可以扩展：
-
-```text
-sentence
 grammar
+sentence
 expression
 ```
 

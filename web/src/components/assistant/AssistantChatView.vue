@@ -33,13 +33,14 @@
           </div>
           <template v-if="message.role === 'assistant'">
             <div
-              :data-assistant-message-id="message.id"
+              :data-learning-message-id="message.id"
+              :data-learning-message-role="message.role"
               class="message-content message-content--markdown"
               :class="`message-content--markdown-${markdownTheme}`"
               v-html="renderAssistantMarkdown(message.content)"
               @click="onRenderedMarkdownClick"
-              @mouseup="handleAssistantSelection(message)"
-              @keyup="handleAssistantSelection(message)"
+              @mouseup="handleLearningAssetSelection(message)"
+              @keyup="handleLearningAssetSelection(message)"
             ></div>
             <AssistantBlockRenderer
               v-if="message.parts?.length"
@@ -47,7 +48,16 @@
               @action="$emit('chooseStarter', $event)"
             />
           </template>
-          <p v-else class="message-content message-content--plain">{{ message.content }}</p>
+          <p
+            v-else
+            :data-learning-message-id="message.id"
+            :data-learning-message-role="message.role"
+            class="message-content message-content--plain"
+            @mouseup="handleLearningAssetSelection(message)"
+            @keyup="handleLearningAssetSelection(message)"
+          >
+            {{ message.content }}
+          </p>
           <div
             v-if="message.role === 'assistant' && message.status === 'done'"
             class="message-actions"
@@ -146,6 +156,9 @@ const emit = defineEmits<{
 }>()
 
 const previewUrls = new Map<string, string>()
+const selectionToolbarWidth = 300
+const selectionToolbarHeight = 44
+const selectionToolbarGutter = 12
 const selectionToolbar = reactive({
   selectedText: '',
   contextText: '',
@@ -165,7 +178,7 @@ function onRenderedMarkdownClick(event: MouseEvent) {
   void copyMarkdownCodeFromClick(event)
 }
 
-function handleAssistantSelection(message: AssistantMessage) {
+function handleLearningAssetSelection(message: AssistantMessage) {
   window.setTimeout(() => syncAssistantSelection(message), 0)
 }
 
@@ -185,11 +198,11 @@ function syncAssistantSelection(fallbackMessage?: AssistantMessage) {
   const anchorElement = selection.anchorNode instanceof Element
     ? selection.anchorNode
     : selection.anchorNode?.parentElement
-  const contentElement = anchorElement?.closest<HTMLElement>('[data-assistant-message-id]')
-  const messageId = contentElement?.dataset.assistantMessageId ?? fallbackMessage?.id
+  const contentElement = anchorElement?.closest<HTMLElement>('[data-learning-message-id]')
+  const messageId = contentElement?.dataset.learningMessageId ?? fallbackMessage?.id
   const message = props.messages.find((item) => item.id === messageId) ?? fallbackMessage
 
-  if (!range || !contentElement || !message || message.role !== 'assistant') {
+  if (!range || !contentElement || !message) {
     clearLearningAssetSelection()
     return
   }
@@ -201,8 +214,19 @@ function syncAssistantSelection(fallbackMessage?: AssistantMessage) {
     contextText: readSelectionContextText(range, contentElement, anchorElement),
   })
   selectionToolbar.messageId = message.id
-  selectionToolbar.left = Math.max(12, Math.min(rect.left, window.innerWidth - 360))
-  selectionToolbar.top = Math.max(12, rect.top - 48)
+  selectionToolbar.left = Math.max(
+    selectionToolbarGutter,
+    Math.min(rect.left, window.innerWidth - selectionToolbarWidth),
+  )
+  selectionToolbar.top = resolveSelectionToolbarTop(rect)
+}
+
+function resolveSelectionToolbarTop(rect: DOMRect) {
+  const below = rect.bottom + 8
+  if (below + selectionToolbarHeight <= window.innerHeight - selectionToolbarGutter) {
+    return below
+  }
+  return Math.max(selectionToolbarGutter, rect.top - selectionToolbarHeight - 8)
 }
 
 function readSelectionContextText(
@@ -490,9 +514,10 @@ onBeforeUnmount(() => {
 .message-content--markdown :deep(.markdown-code-block) {
   margin: 14px 0 18px;
   overflow: hidden;
+  border: 1px solid #dbe3ea;
   border-radius: 12px;
-  background: #1f2937;
-  color: #e5e7eb;
+  background: #ffffff;
+  color: #0f172a;
 }
 
 .message-content--markdown :deep(.markdown-code-header) {
@@ -500,20 +525,20 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #2b3442;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
   padding: 8px 12px;
-  color: #cbd5e1;
+  color: #64748b;
   font-size: 12px;
   font-weight: 700;
 }
 
 .message-content--markdown :deep(.markdown-code-copy) {
   height: 26px;
-  border: 1px solid rgba(226, 232, 240, 0.28);
+  border: 1px solid #dbe3ea;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e5e7eb;
+  background: #ffffff;
+  color: #334155;
   padding: 0 10px;
   font-size: 12px;
   font-weight: 750;
@@ -522,8 +547,9 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(.markdown-code-copy:hover),
 .message-content--markdown :deep(.markdown-code-copy--copied) {
-  border-color: rgba(226, 232, 240, 0.52);
-  background: rgba(255, 255, 255, 0.16);
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .message-content--markdown :deep(.markdown-code-block pre) {

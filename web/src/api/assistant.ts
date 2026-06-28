@@ -83,7 +83,7 @@ export interface AssistantChatPayload {
   input: string
   conversationId: string
   studyStage?: string
-  assistantMode?: 'default' | 'exam'
+  assistantMode?: 'default' | 'exam' | 'learning'
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection

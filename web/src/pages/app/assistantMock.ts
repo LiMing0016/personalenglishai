@@ -4,7 +4,7 @@ import type { AssistantIntent, AssistantSelection, InputScope } from '../../type
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
 export type AssistantAttachmentKind = 'image' | 'file'
-export type AssistantMode = 'default' | 'exam'
+export type AssistantMode = 'default' | 'exam' | 'learning'
 
 export interface AssistantAttachmentMetadata {
   id: string

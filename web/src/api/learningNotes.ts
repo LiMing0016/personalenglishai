@@ -5,7 +5,14 @@ export type { LearningAssetCopilotAction }
 interface ApiEnvelope<T> {
   code?: string
   message?: string
-  data?: T
+  data?: T | null
+}
+
+export class EmptyApiDataError extends Error {
+  constructor(message = '接口没有返回数据') {
+    super(message)
+    this.name = 'EmptyApiDataError'
+  }
 }
 
 export interface LearningNotePayload {
@@ -47,9 +54,25 @@ export interface LearningCanvasOrganizeResult {
   candidateMarkdown: string
 }
 
-function unwrap<T>(body: ApiEnvelope<T>): T {
-  if (body.data === undefined) {
-    throw new Error(body.message || '接口没有返回数据')
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object'
+}
+
+function isApiEnvelope<T>(body: unknown): body is ApiEnvelope<T> {
+  return isRecord(body) && ('code' in body || 'message' in body || 'data' in body)
+}
+
+function unwrap<T>(body: ApiEnvelope<T> | T): T {
+  if (!isApiEnvelope<T>(body)) {
+    return body as T
+  }
+
+  if (body.code && body.code !== '0') {
+    throw new Error(body.message || '请求失败')
+  }
+
+  if (body.data === undefined || body.data === null) {
+    throw new EmptyApiDataError(body.message || '接口没有返回数据')
   }
   return body.data
 }

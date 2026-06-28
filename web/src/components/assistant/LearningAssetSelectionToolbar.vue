@@ -6,22 +6,22 @@
     role="toolbar"
     aria-label="学习资产操作"
   >
-    <span class="selection-text">{{ selectedText }}</span>
     <button
       type="button"
       class="toolbar-button toolbar-button--primary"
       @mousedown.prevent
       @click="$emit('create', 'vocabulary')"
     >
-      新建单词卡
+      + 单词卡
     </button>
+    <span class="toolbar-divider" aria-hidden="true"></span>
     <button
       type="button"
       class="toolbar-button"
       @mousedown.prevent
       @click="$emit('create', 'grammar')"
     >
-      新建语法笔记
+      + 语法
     </button>
     <button
       type="button"
@@ -30,7 +30,7 @@
       @mousedown.prevent
       @click="$emit('append')"
     >
-      加入当前笔记
+      加入当前
     </button>
   </div>
 </template>
@@ -57,54 +57,51 @@ defineEmits<{
   z-index: 70;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(360px, calc(100vw - 24px));
-  padding: 6px;
-  border: 1px solid #dbe3ea;
-  border-radius: 8px;
+  gap: 4px;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
   background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12), 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
-.selection-text {
-  max-width: 150px;
-  overflow: hidden;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: #e2e8f0;
 }
 
 .toolbar-button {
   min-height: 30px;
-  border: 1px solid #dbe3ea;
-  border-radius: 6px;
+  border: 0;
+  border-radius: 7px;
   background: #ffffff;
   color: #334155;
-  padding: 0 10px;
+  padding: 0 9px;
   font-size: 12px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .toolbar-button--primary {
-  border-color: #047857;
-  background: #047857;
-  color: #ffffff;
+  background: #e8fff2;
+  color: #047857;
 }
 
 .toolbar-button:hover,
 .toolbar-button:focus-visible {
-  border-color: #047857;
+  background: #f1f5f9;
   color: #047857;
   outline: none;
 }
 
 .toolbar-button--primary:hover,
 .toolbar-button--primary:focus-visible {
-  background: #065f46;
-  color: #ffffff;
+  background: #d6fbe6;
+  color: #065f46;
   outline: none;
 }
 

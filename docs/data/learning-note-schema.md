@@ -16,13 +16,13 @@ related_docs:
 
 ## 当前结论
 
-`learning_note` 是学习资产画布的通用持久化表。首版只保存 `vocabulary` 单词卡，但表结构预留了句子整理、语法树和表达积累等类型。
+`learning_note` 是学习资产画布的通用持久化表。当前前端可保存 `vocabulary`、`grammar`、`sentence` 和 `expression` 四类资产，后续新增学习资产类型仍复用同一张表。
 
 Markdown 正文是主数据。`structured_payload` 只作为未来增强字段，不作为首版展示和编辑的唯一来源。
 
 ## 背景
 
-学习助手输出内容中，用户可以选中单词并创建单词卡。用户在右侧学习资产画布中编辑 Markdown，保存后进入全局词汇学习页。
+学习助手输出内容中，用户可以选中单词、短语或句子并创建学习资产。用户在右侧学习资产画布中编辑 Markdown，前端自动保存后进入对应学习资产列表。
 
 后续如果出现语法树、句子整理、表达整理等画布，应复用同一表和同一套 API，通过 `type` 区分。
 
@@ -41,8 +41,8 @@ Markdown 正文是主数据。`structured_payload` 只作为未来增强字段�
 | `id` | bigint | 是 | 自增 | 主键。 |
 | `note_uid` | varchar(64) | 是 | 无 | 对外稳定 ID。 |
 | `user_id` | bigint | 是 | 无 | 笔记所属用户。 |
-| `type` | varchar(32) | 是 | 无 | 学习资产类型，首版为 `vocabulary`。 |
-| `title` | varchar(255) | 是 | 无 | 标题，单词卡中是单词或短语。 |
+| `type` | varchar(32) | 是 | 无 | 学习资产类型，当前前端使用 `vocabulary`、`grammar`、`sentence`、`expression`。 |
+| `title` | varchar(255) | 是 | 无 | 标题，单词卡中是单词或短语，其他类型为笔记标题。 |
 | `content_markdown` | mediumtext | 是 | 无 | 用户可编辑 Markdown 正文。 |
 | `structured_payload` | json | 否 | `NULL` | 预留结构化内容。 |
 | `source_conversation_uid` | varchar(64) | 否 | `NULL` | 来源助手会话 ID。 |
@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS learning_note (
 
 ## 数据生命周期
 
-- 创建时机：用户在学习资产画布点击保存。
-- 更新时机：用户保存已有 `noteUid` 的画布内容。
+- 创建时机：用户新建学习资产后，前端按自动保存节奏调用创建接口。
+- 更新时机：用户重命名或编辑已有 `noteUid` 的画布内容后，前端按自动保存节奏调用更新接口。
 - 删除策略：调用删除接口后写入 `deleted_at`，列表默认过滤已删除记录。
 - 保留时间：当前不做自动清理。
 
@@ -119,4 +119,3 @@ ORDER BY updated_at DESC;
 - 表结构字段与迁移文件一致。
 - 用户列表查询命中 `idx_learning_note_user_type`。
 - 删除记录不会出现在默认列表中。
-

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 
 import {
+  createDefaultExpressionMarkdown,
+  createDefaultSentenceMarkdown,
   createDefaultVocabularyMarkdown,
   createLearningAssetDraft,
   isLearningAssetType,
@@ -95,5 +97,35 @@ assert.ok(grammarDraft.contentMarkdown.includes('# a window of opportunity'))
 assert.ok(grammarDraft.contentMarkdown.includes('**类型：** 语法笔记'))
 assert.ok(grammarDraft.contentMarkdown.includes('## 结构拆解'))
 assert.ok(grammarDraft.contentMarkdown.includes('**原句：** This is a window of opportunity to improve your speaking.'))
+
+const sentenceMarkdown = createDefaultSentenceMarkdown({
+  title: 'Without anyone knowing the truth, he left quietly.',
+  selectedText: 'Without anyone knowing the truth, he left quietly.',
+})
+
+for (const requiredText of [
+  '# Without anyone knowing the truth, he left quietly.',
+  '**中文含义：**',
+  '**核心结构：**',
+  '**可替换表达：**',
+  '**适用场景：**',
+  '## 句子拆解',
+  '## 我的笔记',
+]) {
+  assert.ok(sentenceMarkdown.includes(requiredText), `default sentence markdown should include ${requiredText}`)
+}
+
+const expressionMarkdown = createDefaultExpressionMarkdown({
+  title: 'open a window of opportunity',
+  selectedText: 'open a window of opportunity',
+})
+
+for (const requiredText of [
+  '# open a window of opportunity',
+  '## 我的笔记',
+]) {
+  assert.ok(expressionMarkdown.includes(requiredText), `default expression markdown should include ${requiredText}`)
+}
+assert.ok(!expressionMarkdown.includes('**中文含义：**'), 'blank note markdown should not prefill expression fields')
 
 console.log('learning-assets-ok')

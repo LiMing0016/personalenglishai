@@ -117,11 +117,47 @@ export function createDefaultGrammarMarkdown(seed: LearningAssetMarkdownSeed = {
   ].join('\n')
 }
 
+export function createDefaultSentenceMarkdown(seed: LearningAssetMarkdownSeed = {}) {
+  const title = normalizeTitle(seed.title || seed.selectedText)
+
+  return [
+    `# ${title}`,
+    '',
+    '**中文含义：**',
+    '',
+    '**核心结构：**',
+    '',
+    '**可替换表达：**',
+    '',
+    '**适用场景：**',
+    '',
+    '## 句子拆解',
+    '',
+    '- ',
+    '',
+    '## 我的笔记',
+    '',
+  ].join('\n')
+}
+
+export function createDefaultExpressionMarkdown(seed: LearningAssetMarkdownSeed = {}) {
+  const title = normalizeTitle(seed.title || seed.selectedText)
+
+  return [
+    `# ${title}`,
+    '',
+    '## 我的笔记',
+    '',
+  ].join('\n')
+}
+
 export function createDefaultLearningAssetMarkdown(
   type: LearningAssetType,
   seed: LearningAssetMarkdownSeed = {},
 ) {
   if (type === 'grammar') return createDefaultGrammarMarkdown(seed)
+  if (type === 'sentence') return createDefaultSentenceMarkdown(seed)
+  if (type === 'expression') return createDefaultExpressionMarkdown(seed)
   return createDefaultVocabularyMarkdown(seed)
 }
 

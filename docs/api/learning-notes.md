@@ -20,13 +20,13 @@ related_docs:
 
 ## 当前结论
 
-`Learning Notes API` 用于保存学习助手画布生成的学习资产。底层类型是通用学习笔记，首版前端只开放 `vocabulary` 单词卡。
+`Learning Notes API` 用于保存学习助手画布生成的学习资产。底层类型是通用学习笔记，当前前端画布可创建 `vocabulary`、`grammar`、`sentence` 和 `expression` 四类资产。
 
 前端入口：
 
-- 用户在学习助手回复中选中单词或短语。
-- 点击 `新建单词卡` 打开右侧学习资产画布。
-- 用户编辑 Markdown 正文，保存到 `learning_note`。
+- 用户在学习助手回复中选中单词、短语或句子。
+- 点击 `新建单词卡`、`新建语法笔记` 或进入右侧画布后通过 `+` 新建不同类型笔记。
+- 用户新建、重命名或编辑 Markdown 正文后，前端自动保存到 `learning_note`。
 - 右侧画布 Copilot 只处理当前笔记，返回 Markdown 候选，不参与左侧学习对话。
 
 实现边界：
@@ -71,7 +71,7 @@ POST /api/learning-notes/organize
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `type` | string | 是 | 学习资产类型。首版前端使用 `vocabulary`，后端预留 `sentence`、`grammar`、`expression`。 |
+| `type` | string | 是 | 学习资产类型。前端可传 `vocabulary`、`sentence`、`grammar`、`expression`。 |
 | `title` | string | 是 | 资产标题。单词卡中即单词或短语。 |
 | `contentMarkdown` | string | 是 | 用户可编辑的 Markdown 正文。 |
 | `structuredPayload` | string/null | 否 | 预留结构化数据，首版可为空。 |
