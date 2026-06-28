@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#172033" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f3f7fb; }
+      .panel { fill: #ffffff; stroke: #d9e4ef; stroke-width: 1.4; }
+      .soft { fill: #f8fbfd; stroke: #dce7f1; stroke-width: 1.2; }
+      .soft2 { fill: #eef5f9; stroke: #dce7f1; stroke-width: 1.2; }
+      .teal { fill: #0f9b8e; }
+      .teal-soft { fill: #e0faf4; stroke: #8be1d4; stroke-width: 1.4; }
+      .blue-soft { fill: #edf5ff; stroke: #d2e4ff; stroke-width: 1.2; }
+      .yellow-soft { fill: #fff8e6; stroke: #f3dda2; stroke-width: 1.2; }
+      .text { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #132033; }
+      .muted { fill: #66758a; }
+      .small { font-size: 18px; }
+      .tiny { font-size: 15px; }
+      .body { font-size: 22px; }
+      .title { font-size: 34px; font-weight: 800; }
+      .h2 { font-size: 26px; font-weight: 800; }
+      .h3 { font-size: 21px; font-weight: 800; }
+      .bold { font-weight: 800; }
+      .mono { font-family: Consolas, "Microsoft YaHei", monospace; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1120"/>
+
+  <text x="58" y="64" class="text title">学习 IDE 工作台：多 PDF + 锚点笔记 + 独立笔记 + Agent</text>
+  <text x="58" y="99" class="text muted body">右侧默认是 Agent；进入锚点笔记时切换为“笔记工作台”，笔记本身可以在中间主区以标签打开。</text>
+
+  <rect x="44" y="132" width="1712" height="828" rx="22" class="panel" filter="url(#shadow)"/>
+
+  <!-- Top toolbar -->
+  <rect x="44" y="132" width="1712" height="72" rx="22" fill="#ffffff"/>
+  <rect x="44" y="182" width="1712" height="1" fill="#dfe9f2"/>
+  <rect x="70" y="151" width="42" height="42" rx="12" class="teal-soft"/>
+  <text x="85" y="179" class="text h3" fill="#0f9b8e">E</text>
+  <text x="132" y="176" class="text h2">数据结构 C++ 版 第三版_邓俊辉</text>
+  <rect x="1450" y="150" width="118" height="38" rx="12" class="teal-soft"/>
+  <text x="1474" y="175" class="text tiny bold" fill="#08786e">PDF 学习画布</text>
+  <rect x="1580" y="150" width="94" height="38" rx="12" class="soft"/>
+  <text x="1600" y="175" class="text tiny bold muted">精读文本</text>
+  <rect x="1686" y="146" width="50" height="44" rx="12" class="teal"/>
+  <text x="1701" y="175" fill="#ffffff" font-family="Microsoft YaHei, Arial" font-size="16" font-weight="800">完成</text>
+
+  <!-- Left global rail -->
+  <rect x="44" y="204" width="72" height="756" fill="#fbfdff"/>
+  <line x1="116" y1="204" x2="116" y2="960" stroke="#dfe9f2"/>
+  <rect x="62" y="232" width="38" height="38" rx="11" class="teal-soft"/>
+  <text x="75" y="258" class="text h3" fill="#0f9b8e">目</text>
+  <text x="78" y="323" class="text h3 muted">签</text>
+  <text x="78" y="388" class="text h3 muted">记</text>
+  <text x="78" y="453" class="text h3 muted">资</text>
+  <text x="78" y="518" class="text h3 muted">搜</text>
+  <text x="75" y="900" class="text h2 muted">＋</text>
+
+  <!-- Left drawer -->
+  <rect x="116" y="204" width="330" height="756" fill="#ffffff"/>
+  <line x1="446" y1="204" x2="446" y2="960" stroke="#d8e3ee"/>
+  <text x="146" y="246" class="text tiny bold" fill="#0f9b8e">学习工作台</text>
+  <text x="146" y="282" class="text h2">资源</text>
+  <text x="146" y="313" class="text muted small">2 个 PDF · 7 条笔记 · 3 个资产</text>
+  <rect x="146" y="340" width="270" height="42" rx="12" class="soft"/>
+  <text x="164" y="367" class="text muted small">搜索 PDF、笔记、知识点...</text>
+
+  <rect x="146" y="408" width="76" height="38" rx="12" class="teal-soft"/>
+  <text x="167" y="433" class="text tiny bold" fill="#08786e">文档</text>
+  <text x="244" y="433" class="text tiny bold muted">笔记</text>
+  <text x="315" y="433" class="text tiny bold muted">资产</text>
+  <text x="374" y="433" class="text tiny bold muted">搜索</text>
+
+  <text x="146" y="486" class="text h3">已打开</text>
+  <rect x="146" y="508" width="270" height="54" rx="12" class="teal-soft"/>
+  <text x="164" y="542" class="text small bold" fill="#08786e">PDF · 数据结构 C++ 第三版</text>
+  <rect x="146" y="574" width="270" height="54" rx="12" class="blue-soft"/>
+  <text x="164" y="608" class="text small bold">笔记 · 起泡排序复杂度</text>
+  <rect x="146" y="640" width="270" height="54" rx="12" class="yellow-soft"/>
+  <text x="164" y="674" class="text small bold">专题 · 排序算法</text>
+
+  <text x="146" y="740" class="text h3">导入与新建</text>
+  <rect x="146" y="762" width="128" height="44" rx="12" class="soft"/>
+  <text x="168" y="791" class="text tiny bold">导入 PDF</text>
+  <rect x="288" y="762" width="128" height="44" rx="12" class="soft"/>
+  <text x="310" y="791" class="text tiny bold">新建笔记</text>
+  <rect x="146" y="818" width="270" height="44" rx="12" class="soft"/>
+  <text x="190" y="847" class="text tiny bold">从当前选区创建锚点笔记</text>
+
+  <!-- Main workspace -->
+  <rect x="446" y="204" width="874" height="756" fill="#f7fafc"/>
+  <line x1="1320" y1="204" x2="1320" y2="960" stroke="#d8e3ee"/>
+
+  <!-- Tabs -->
+  <rect x="468" y="224" width="292" height="48" rx="14" class="teal-soft"/>
+  <text x="492" y="255" class="text small bold" fill="#08786e">PDF 数据结构 C++ 版</text>
+  <text x="732" y="254" class="text small muted">×</text>
+  <rect x="770" y="224" width="236" height="48" rx="14" class="soft"/>
+  <text x="794" y="255" class="text small bold">笔记 起泡排序</text>
+  <text x="978" y="254" class="text small muted">×</text>
+  <rect x="1016" y="224" width="218" height="48" rx="14" class="soft"/>
+  <text x="1040" y="255" class="text small bold">专题 排序算法</text>
+  <text x="1208" y="254" class="text small muted">×</text>
+  <rect x="1246" y="228" width="44" height="40" rx="12" class="soft"/>
+  <text x="1260" y="255" class="text h3 muted">＋</text>
+
+  <!-- PDF canvas -->
+  <rect x="468" y="292" width="830" height="646" rx="16" fill="#303b42"/>
+  <rect x="512" y="326" width="742" height="578" rx="4" fill="#e6fbf1"/>
+  <text x="623" y="392" class="text h2" fill="#0f9b8e">1.1.3 起泡排序</text>
+  <rect x="622" y="432" width="466" height="18" rx="5" fill="#b7eee2"/>
+  <rect x="622" y="464" width="536" height="18" rx="5" fill="#b7eee2"/>
+  <rect x="622" y="496" width="612" height="18" rx="5" fill="#b7eee2"/>
+  <rect x="622" y="528" width="392" height="18" rx="5" fill="#b7eee2"/>
+  <rect x="622" y="578" width="500" height="10" rx="5" fill="#c7dbd4"/>
+  <rect x="622" y="606" width="550" height="10" rx="5" fill="#c7dbd4"/>
+  <rect x="622" y="634" width="482" height="10" rx="5" fill="#c7dbd4"/>
+
+  <rect x="642" y="520" width="308" height="52" rx="15" fill="#ffffff" stroke="#16b8a9" stroke-width="2"/>
+  <text x="664" y="553" class="text tiny bold" fill="#08786e">当前选区</text>
+  <rect x="762" y="531" width="78" height="28" rx="9" class="teal-soft"/>
+  <text x="780" y="550" class="text tiny bold" fill="#08786e">记笔记</text>
+  <rect x="850" y="531" width="82" height="28" rx="9" class="teal-soft"/>
+  <text x="866" y="550" class="text tiny bold" fill="#08786e">问 Agent</text>
+
+  <!-- Right Agent / note workbench -->
+  <rect x="1320" y="204" width="436" height="756" fill="#ffffff"/>
+  <text x="1350" y="255" class="text title">笔记工作台</text>
+  <rect x="1585" y="228" width="118" height="34" rx="17" class="blue-soft"/>
+  <text x="1606" y="250" class="text tiny bold" fill="#1463d9">P25 · 选区</text>
+  <text x="1718" y="250" class="text tiny bold muted">返回 Agent</text>
+
+  <rect x="1350" y="286" width="376" height="44" rx="14" class="soft2"/>
+  <rect x="1356" y="292" width="116" height="32" rx="11" class="teal-soft"/>
+  <text x="1386" y="314" class="text tiny bold" fill="#08786e">写笔记</text>
+  <text x="1503" y="314" class="text tiny bold muted">问 AI</text>
+  <text x="1618" y="314" class="text tiny bold muted">整理</text>
+
+  <text x="1350" y="374" class="text tiny bold muted">锚点原文</text>
+  <rect x="1350" y="392" width="376" height="76" rx="14" class="soft"/>
+  <text x="1370" y="424" class="text tiny">排序问题在算法设计与分析中扮演着重要角色...</text>
+  <text x="1370" y="448" class="text tiny muted">Page 25 · 1.1.3 起泡排序</text>
+
+  <text x="1350" y="512" class="text tiny bold muted">当前笔记</text>
+  <rect x="1350" y="530" width="376" height="178" rx="14" fill="#f2fffb" stroke="#18b8a8" stroke-width="2"/>
+  <text x="1370" y="564" class="text small bold">起泡排序为什么先讨论整数排序？</text>
+  <text x="1370" y="596" class="text tiny muted">我的理解：这里先把排序对象限定为整数，是为了</text>
+  <text x="1370" y="620" class="text tiny muted">先说明“顺序关系”和“局部交换”的基本问题...</text>
+  <text x="1370" y="660" class="text tiny" fill="#08786e">Agent 补充内容会先进入候选区，确认后追加。</text>
+
+  <text x="1350" y="748" class="text tiny bold muted">Agent 辅助</text>
+  <rect x="1350" y="766" width="116" height="38" rx="12" class="teal-soft"/>
+  <text x="1372" y="791" class="text tiny bold" fill="#08786e">补充解释</text>
+  <rect x="1480" y="766" width="116" height="38" rx="12" class="teal-soft"/>
+  <text x="1502" y="791" class="text tiny bold" fill="#08786e">整理要点</text>
+  <rect x="1610" y="766" width="116" height="38" rx="12" class="teal-soft"/>
+  <text x="1632" y="791" class="text tiny bold" fill="#08786e">生成复习卡</text>
+
+  <rect x="1350" y="824" width="376" height="72" rx="14" class="yellow-soft"/>
+  <text x="1370" y="855" class="text tiny bold">可追加内容</text>
+  <text x="1370" y="880" class="text tiny muted">可补充：这一段是在建立排序问题的定义边界...</text>
+
+  <rect x="1350" y="914" width="172" height="42" rx="13" class="soft"/>
+  <text x="1390" y="942" class="text tiny bold">追加到笔记</text>
+  <rect x="1540" y="914" width="186" height="42" rx="13" class="teal"/>
+  <text x="1601" y="942" fill="#ffffff" font-family="Microsoft YaHei, Arial" font-size="16" font-weight="800">保存笔记</text>
+
+  <!-- Lower explanation cards -->
+  <rect x="44" y="988" width="520" height="88" rx="18" class="panel"/>
+  <text x="72" y="1026" class="text h3">默认状态</text>
+  <text x="72" y="1058" class="text small muted">右侧是普通 Agent，服务当前 PDF / 笔记 / 专题。</text>
+
+  <rect x="600" y="988" width="542" height="88" rx="18" class="panel"/>
+  <text x="628" y="1026" class="text h3">锚点笔记状态</text>
+  <text x="628" y="1058" class="text small muted">右侧切成笔记工作台，Agent 只做补充、整理和追问。</text>
+
+  <rect x="1178" y="988" width="578" height="88" rx="18" class="panel"/>
+  <text x="1206" y="1026" class="text h3">完整编辑状态</text>
+  <text x="1206" y="1058" class="text small muted">笔记可打开为顶部标签，在中间主区像文件一样编辑。</text>
+</svg>

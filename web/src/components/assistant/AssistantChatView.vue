@@ -1,5 +1,9 @@
 <template>
-  <section class="assistant-chat-view">
+  <section
+    ref="scrollContainerRef"
+    class="assistant-chat-view"
+    @scroll.passive="handleScroll"
+  >
     <div v-if="messages.length === 0" class="empty-state">
       <p class="eyebrow">学习助手</p>
       <h1 class="empty-title">{{ emptyTitle }}</h1>
@@ -381,10 +385,6 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   border-radius: 16px;
   background: #f1f5f9;
-}
-
-.message-bubble--loading {
-  border-style: dashed;
 }
 
 .message-content {
