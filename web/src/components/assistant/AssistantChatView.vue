@@ -1,5 +1,9 @@
 <template>
-  <section class="assistant-chat-view">
+  <section
+    ref="scrollContainerRef"
+    class="assistant-chat-view"
+    @scroll.passive="handleScroll"
+  >
     <div v-if="messages.length === 0" class="empty-state">
       <p class="eyebrow">学习助手</p>
       <h1 class="empty-title">{{ emptyTitle }}</h1>
@@ -93,13 +97,13 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import AssistantStarterCards from './AssistantStarterCards.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
 
-defineProps<{
+const props = defineProps<{
   messages: AssistantMessage[]
   errorMessage: string
   canRetry: boolean
@@ -116,6 +120,12 @@ const emit = defineEmits<{
 }>()
 
 const previewUrls = new Map<string, string>()
+const scrollContainerRef = ref<HTMLElement | null>(null)
+const shouldAutoFollowMessages = ref(true)
+const AUTO_FOLLOW_DISTANCE_PX = 120
+
+let scrollFrame: number | null = null
+let previousMessageCount = props.messages.length
 
 function previewUrlById(id: string, file: File) {
   if (!previewUrls.has(id)) {
@@ -128,7 +138,62 @@ function onRenderedMarkdownClick(event: MouseEvent) {
   void copyMarkdownCodeFromClick(event)
 }
 
+function distanceFromConversationBottom(container: HTMLElement) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight
+}
+
+function isNearConversationBottom(container: HTMLElement) {
+  return distanceFromConversationBottom(container) <= AUTO_FOLLOW_DISTANCE_PX
+}
+
+function handleScroll() {
+  const container = scrollContainerRef.value
+  if (!container) return
+  shouldAutoFollowMessages.value = isNearConversationBottom(container)
+}
+
+function scrollToConversationBottom() {
+  if (scrollFrame !== null) {
+    cancelAnimationFrame(scrollFrame)
+  }
+
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = null
+    const container = scrollContainerRef.value
+    if (!container) return
+    container.scrollTop = container.scrollHeight
+    shouldAutoFollowMessages.value = true
+  })
+}
+
+watch(
+  () => props.messages.map((message) => `${message.id}:${message.status}:${message.content.length}`).join('|'),
+  () => {
+    const messageCount = props.messages.length
+    const hasNewMessage = messageCount > previousMessageCount
+    previousMessageCount = messageCount
+
+    if (hasNewMessage) {
+      shouldAutoFollowMessages.value = true
+    }
+
+    if (!shouldAutoFollowMessages.value) return
+    void nextTick(() => {
+      scrollToConversationBottom()
+    })
+  },
+  { flush: 'post' },
+)
+
+onMounted(() => {
+  scrollToConversationBottom()
+})
+
 onBeforeUnmount(() => {
+  if (scrollFrame !== null) {
+    cancelAnimationFrame(scrollFrame)
+    scrollFrame = null
+  }
   for (const url of previewUrls.values()) {
     URL.revokeObjectURL(url)
   }
@@ -218,10 +283,6 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   border-radius: 16px;
   background: #f1f5f9;
-}
-
-.message-bubble--loading {
-  border-style: dashed;
 }
 
 .message-content {

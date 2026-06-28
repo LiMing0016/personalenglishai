@@ -74,7 +74,7 @@
         <section class="workspace-resource-actions" aria-label="导入与新建">
           <button type="button" @click="openImportPdfEntry">导入 PDF</button>
           <button type="button" @click="openStandaloneNoteTab">新建笔记</button>
-          <button type="button" @click="openTopicTab">新建专题</button>
+          <button type="button" @click="openTopicTab()">新建专题</button>
         </section>
 
         <div class="side-drawer-switcher" aria-label="左侧工作区切换">
@@ -89,114 +89,182 @@
         </div>
 
         <template v-if="activeSidePanel === 'outline'">
-        <section class="outline-controls" aria-label="目录筛选">
-          <label class="outline-search">
-            <span>搜索目录</span>
-            <input
-              v-model="outlineSearchQuery"
-              type="search"
-              placeholder="章节、页码、笔记..."
-              aria-label="搜索目录"
-            />
-          </label>
-
-          <div class="outline-filter-tabs" aria-label="目录范围">
-            <button
-              v-for="scope in outlineFilterScopes"
-              :key="scope.id"
-              type="button"
-              :class="{ active: outlineFilterScope === scope.id }"
-              @click="outlineFilterScope = scope.id">
-              {{ scope.label }}
-              <small>{{ scope.count }}</small>
-            </button>
-          </div>
-
-          <div class="outline-quick-actions" aria-label="书签操作">
-            <button type="button" @click="createUserBookmark">添加书签</button>
-            <button type="button" @click="exportWorkspaceBookmarks">导出 PDF</button>
-            <button v-if="activeUserBookmark" type="button" @click="renameActiveUserBookmark">重命名</button>
-            <button v-if="activeUserBookmark" type="button" class="danger" @click="deleteActiveUserBookmark">删除</button>
-          </div>
-        </section>
-
-        <nav class="outline-list" aria-label="PDF 页码与目录">
-          <section v-if="displayOutlineItems.length > 0 && filteredOutlineItems.length > 0" class="outline-page-group">
-            <div
-              v-for="item in filteredOutlineItems"
-              :key="item.id"
-              class="outline-tree-row"
-              :class="[
-                `outline-tree-row--level-${item.displayLevel}`,
-                {
-                  active: !item.syntheticRoot && isOutlineItemActive(item),
-                  'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
-                  'has-notes': getOutlineItemNoteCount(item) > 0,
-                  'is-document-root': item.syntheticRoot,
-                  'is-user-bookmark': item.source === 'user_bookmark',
-                  'is-user-bookmark-root': item.source === 'user_bookmark_root',
-                  'is-collapsed': item.hasChildren && isOutlineNodeCollapsed(item),
-                },
-              ]">
-              <button
-                type="button"
-                class="outline-node-toggle"
-                :class="{ 'is-placeholder': !item.hasChildren }"
-                :aria-label="isOutlineNodeCollapsed(item) ? `展开 ${item.title}` : `收起 ${item.title}`"
-                :aria-expanded="item.hasChildren ? !isOutlineNodeCollapsed(item) : undefined"
-                :disabled="!item.hasChildren"
-                @click.stop="toggleOutlineNode(item)">
-                <span>›</span>
-              </button>
-
-              <button
-                type="button"
-                class="outline-block-button"
-                :class="[
-                  `outline-block-button--level-${item.displayLevel}`,
-                  {
-                    active: !item.syntheticRoot && isOutlineItemActive(item),
-                    'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
-                    'has-notes': getOutlineItemNoteCount(item) > 0,
-                    'is-document-root': item.syntheticRoot,
-                    'is-user-bookmark': item.source === 'user_bookmark',
-                    'is-user-bookmark-root': item.source === 'user_bookmark_root',
-                  },
-                ]"
-                @click="selectOutlineItem(item)">
-                <span class="outline-item-title">{{ item.title }}</span>
-                <span class="outline-item-meta">
-                  <small v-if="item.source === 'user_bookmark_root'">自定义</small>
-                  <small v-else-if="item.syntheticRoot">全文目录</small>
-                  <small v-else-if="item.source === 'user_bookmark'">Page {{ item.pageNumber }} · 我的</small>
-                  <small v-else>Page {{ item.pageNumber }}</small>
-                  <mark v-if="!item.syntheticRoot && item.pageNumber === currentPdfPage">当前</mark>
-                  <mark v-if="getOutlineItemNoteCount(item) > 0" class="note-count">
-                    {{ getOutlineItemNoteCount(item) }} 记
-                  </mark>
-                </span>
-              </button>
+        <section class="project-tree-shell" aria-label="项目资源树">
+          <header class="project-tree-toolbar">
+            <div>
+              <span>学习项目</span>
+              <strong>{{ readingDocument.title }}</strong>
             </div>
-          </section>
+            <small>{{ projectTreeSummary }}</small>
+          </header>
 
-          <section v-else-if="outlineItems.length === 0 && userBookmarks.length === 0 && filteredOutlinePageItems.length > 0" class="outline-page-group">
-            <button
-              v-for="page in filteredOutlinePageItems"
-              :key="page"
-              type="button"
-              class="outline-page-button"
-              :class="{ active: page === currentPdfPage, 'has-notes': getPageNoteCount(page) > 0 }"
-              @click="selectOutlinePage(page)">
-              <span>Page {{ page }}</span>
-              <small v-if="getPageNoteCount(page) > 0">{{ getPageNoteCount(page) }} 条笔记</small>
-            </button>
-          </section>
+          <section class="project-tree">
+            <article
+              v-for="folder in projectTreeFolders"
+              :key="folder.id"
+              class="project-tree-folder"
+              :class="{ 'is-collapsed': isProjectTreeFolderCollapsed(folder.id) }">
+              <button
+                type="button"
+                class="project-tree-folder__header"
+                :aria-expanded="!isProjectTreeFolderCollapsed(folder.id)"
+                @click="toggleProjectTreeFolder(folder.id)">
+                <span class="project-tree-folder__chevron" aria-hidden="true">›</span>
+                <span>{{ folder.label }}</span>
+                <small>{{ folder.badge }}</small>
+              </button>
 
-          <section v-else class="outline-empty-state">
-            <strong>没有匹配的目录</strong>
-            <span>换个关键词，或切回全部范围。</span>
+              <div v-if="!isProjectTreeFolderCollapsed(folder.id)" class="project-tree-folder__body">
+                <button
+                  v-for="resource in folder.resources"
+                  :key="resource.id"
+                  type="button"
+                  class="project-tree-resource"
+                  :class="`project-tree-resource--${resource.kind}`"
+                  @click="openProjectTreeResource(resource)">
+                  <span class="project-tree-resource__icon" aria-hidden="true">{{ getProjectTreeResourceIcon(resource.kind) }}</span>
+                  <span class="project-tree-resource__main">
+                    <strong>{{ resource.title }}</strong>
+                    <small v-if="resource.subtitle">{{ resource.subtitle }}</small>
+                  </span>
+                  <mark v-if="resource.count">{{ resource.count }}</mark>
+                </button>
+                <button
+                  v-if="folder.resources.length === 0"
+                  type="button"
+                  class="project-tree-empty"
+                  @click="handleProjectTreeFolderEmptyAction(folder)">
+                  {{ folder.emptyText }}
+                </button>
+              </div>
+            </article>
+
+            <article
+              class="project-tree-folder project-tree-outline"
+              :class="{ 'is-collapsed': isProjectTreeFolderCollapsed('pdf-outline') }">
+              <button
+                type="button"
+                class="project-tree-folder__header"
+                :aria-expanded="!isProjectTreeFolderCollapsed('pdf-outline')"
+                @click="toggleProjectTreeFolder('pdf-outline')">
+                <span class="project-tree-folder__chevron" aria-hidden="true">›</span>
+                <span>PDF 目录</span>
+                <small>{{ outlineTreeItems.length || outlinePageItems.length }}</small>
+              </button>
+
+              <div v-if="!isProjectTreeFolderCollapsed('pdf-outline')" class="project-tree-folder__body">
+                <section class="outline-controls" aria-label="目录筛选">
+                  <label class="outline-search">
+                    <span>搜索目录</span>
+                    <input
+                      v-model="outlineSearchQuery"
+                      type="search"
+                      placeholder="章节、页码、笔记..."
+                      aria-label="搜索目录"
+                    />
+                  </label>
+
+                  <div class="outline-filter-tabs" aria-label="目录范围">
+                    <button
+                      v-for="scope in outlineFilterScopes"
+                      :key="scope.id"
+                      type="button"
+                      :class="{ active: outlineFilterScope === scope.id }"
+                      @click="outlineFilterScope = scope.id">
+                      {{ scope.label }}
+                      <small>{{ scope.count }}</small>
+                    </button>
+                  </div>
+
+                  <div class="outline-quick-actions" aria-label="书签操作">
+                    <button type="button" @click="createUserBookmark">添加书签</button>
+                    <button type="button" @click="exportWorkspaceBookmarks">导出 PDF</button>
+                    <button v-if="activeUserBookmark" type="button" @click="renameActiveUserBookmark">重命名</button>
+                    <button v-if="activeUserBookmark" type="button" class="danger" @click="deleteActiveUserBookmark">删除</button>
+                  </div>
+                </section>
+
+                <nav class="outline-list" aria-label="PDF 页码与目录">
+                  <section v-if="displayOutlineItems.length > 0 && filteredOutlineItems.length > 0" class="outline-page-group">
+                    <div
+                      v-for="item in filteredOutlineItems"
+                      :key="item.id"
+                      class="outline-tree-row"
+                      :class="[
+                        `outline-tree-row--level-${item.displayLevel}`,
+                        {
+                          active: !item.syntheticRoot && isOutlineItemActive(item),
+                          'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
+                          'has-notes': getOutlineItemNoteCount(item) > 0,
+                          'is-document-root': item.syntheticRoot,
+                          'is-user-bookmark': item.source === 'user_bookmark',
+                          'is-user-bookmark-root': item.source === 'user_bookmark_root',
+                          'is-collapsed': item.hasChildren && isOutlineNodeCollapsed(item),
+                        },
+                      ]">
+                      <button
+                        type="button"
+                        class="outline-node-toggle"
+                        :class="{ 'is-placeholder': !item.hasChildren }"
+                        :aria-label="isOutlineNodeCollapsed(item) ? `展开 ${item.title}` : `收起 ${item.title}`"
+                        :aria-expanded="item.hasChildren ? !isOutlineNodeCollapsed(item) : undefined"
+                        :disabled="!item.hasChildren"
+                        @click.stop="toggleOutlineNode(item)">
+                        <span>›</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="outline-block-button"
+                        :class="[
+                          `outline-block-button--level-${item.displayLevel}`,
+                          {
+                            active: !item.syntheticRoot && isOutlineItemActive(item),
+                            'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
+                            'has-notes': getOutlineItemNoteCount(item) > 0,
+                            'is-document-root': item.syntheticRoot,
+                            'is-user-bookmark': item.source === 'user_bookmark',
+                            'is-user-bookmark-root': item.source === 'user_bookmark_root',
+                          },
+                        ]"
+                        @click="selectOutlineItem(item)">
+                        <span class="outline-item-title">{{ item.title }}</span>
+                        <span class="outline-item-meta">
+                          <small v-if="item.source === 'user_bookmark_root'">自定义</small>
+                          <small v-else-if="item.syntheticRoot">全文目录</small>
+                          <small v-else-if="item.source === 'user_bookmark'">Page {{ item.pageNumber }} · 我的</small>
+                          <small v-else>Page {{ item.pageNumber }}</small>
+                          <mark v-if="!item.syntheticRoot && item.pageNumber === currentPdfPage">当前</mark>
+                          <mark v-if="getOutlineItemNoteCount(item) > 0" class="note-count">
+                            {{ getOutlineItemNoteCount(item) }} 记
+                          </mark>
+                        </span>
+                      </button>
+                    </div>
+                  </section>
+
+                  <section v-else-if="outlineItems.length === 0 && userBookmarks.length === 0 && filteredOutlinePageItems.length > 0" class="outline-page-group">
+                    <button
+                      v-for="page in filteredOutlinePageItems"
+                      :key="page"
+                      type="button"
+                      class="outline-page-button"
+                      :class="{ active: page === currentPdfPage, 'has-notes': getPageNoteCount(page) > 0 }"
+                      @click="selectOutlinePage(page)">
+                      <span>Page {{ page }}</span>
+                      <small v-if="getPageNoteCount(page) > 0">{{ getPageNoteCount(page) }} 条笔记</small>
+                    </button>
+                  </section>
+
+                  <section v-else class="outline-empty-state">
+                    <strong>没有匹配的目录</strong>
+                    <span>换个关键词，或切回全部范围。</span>
+                  </section>
+                </nav>
+              </div>
+            </article>
           </section>
-        </nav>
+        </section>
         </template>
 
         <section v-else-if="activeSidePanel === 'bookmarks'" class="side-drawer-panel side-bookmark-list" aria-label="我的书签">
@@ -866,6 +934,45 @@ interface WorkspaceTab {
   dirty?: boolean
 }
 
+type ProjectTreeFolderId =
+  | 'sources'
+  | 'notes'
+  | 'anchor-notes'
+  | 'assets'
+  | 'review'
+  | 'question-bank'
+  | 'mistakes'
+  | 'prompts'
+  | 'pdf-outline'
+
+type ProjectTreeResourceKind =
+  | 'pdf'
+  | 'note'
+  | 'anchor-note'
+  | 'asset'
+  | 'review'
+  | 'question-bank'
+  | 'mistake'
+  | 'prompt'
+
+interface ProjectTreeResource {
+  id: string
+  kind: ProjectTreeResourceKind
+  title: string
+  subtitle?: string
+  noteId?: string
+  tabId?: string
+  count?: number
+}
+
+interface ProjectTreeFolder {
+  id: ProjectTreeFolderId
+  label: string
+  badge: string
+  resources: ProjectTreeResource[]
+  emptyText: string
+}
+
 interface DisplayOutlineItem extends DocumentOutlineItem {
   displayLevel: number
   hasChildren?: boolean
@@ -936,6 +1043,7 @@ const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
 const isOutlineCollapsed = ref(false)
 const isAgentCollapsed = ref(false)
 const activeSidePanel = ref<WorkspaceSidePanel>('outline')
+const collapsedProjectTreeFolderIds = ref<Set<ProjectTreeFolderId>>(new Set())
 const collapsedOutlineItemIds = ref<Set<string>>(new Set())
 const activeOutlineItemId = ref<string | null>(null)
 const outlineSearchQuery = ref('')
@@ -1222,6 +1330,86 @@ const studyAssetPipeline = computed<StudyAssetPipelineColumn[]>(() => [
 
 const totalStudyNoteCount = computed(() => studyNotes.value.length)
 
+const projectTreeSummary = computed(() => {
+  const outlineTotal = outlineTreeItems.value.length || outlinePageItems.value.length
+  return `${outlineTotal} 个定位 · ${studyNotes.value.length} 条笔记`
+})
+
+const projectTreeFolders = computed<ProjectTreeFolder[]>(() => {
+  const document = readingDocument.value
+  const anchorNotes = studyNotes.value.filter((note) => note.selectedText || note.bbox || note.bookmarkId)
+  const standaloneNotes = studyNotes.value.filter((note) => !note.selectedText && !note.bbox && !note.bookmarkId)
+  const reviewingNotes = studyNotes.value.filter((note) => note.status === 'reviewing')
+  const assetResources = buildProjectTreeAssetResources()
+
+  return [
+    {
+      id: 'sources',
+      label: '资料',
+      badge: document ? '1' : '0',
+      resources: document
+        ? [{
+            id: `project-pdf-${document.id}`,
+            kind: 'pdf',
+            title: document.title,
+            subtitle: `PDF · ${document.pageCount} 页`,
+            tabId: `pdf-${document.id}`,
+          }]
+        : [],
+      emptyText: '导入 PDF 建立学习项目',
+    },
+    {
+      id: 'notes',
+      label: '笔记',
+      badge: String(standaloneNotes.length),
+      resources: standaloneNotes.map((note) => buildProjectTreeNoteResource(note, 'note')),
+      emptyText: '新建章节笔记',
+    },
+    {
+      id: 'anchor-notes',
+      label: '锚点笔记',
+      badge: String(anchorNotes.length),
+      resources: anchorNotes.map((note) => buildProjectTreeNoteResource(note, 'anchor-note')),
+      emptyText: '从 PDF 选区创建锚点笔记',
+    },
+    {
+      id: 'assets',
+      label: '学习资产',
+      badge: String(assetResources.length),
+      resources: assetResources,
+      emptyText: '让 Agent 整理当前段落',
+    },
+    {
+      id: 'review',
+      label: '复习队列',
+      badge: String(reviewingNotes.length),
+      resources: reviewingNotes.map((note) => buildProjectTreeNoteResource(note, 'review')),
+      emptyText: '把笔记加入复习队列',
+    },
+    {
+      id: 'question-bank',
+      label: '题库',
+      badge: '0',
+      resources: [],
+      emptyText: '新建专题后生成题目',
+    },
+    {
+      id: 'mistakes',
+      label: '错题本',
+      badge: '0',
+      resources: [],
+      emptyText: '还没有错题记录',
+    },
+    {
+      id: 'prompts',
+      label: '提示词',
+      badge: '0',
+      resources: [],
+      emptyText: '保存常用 Agent 提示词',
+    },
+  ]
+})
+
 const sidePanelOptions = computed<WorkspaceSidePanelOption[]>(() => [
   { id: 'outline', label: '目录', icon: '目', count: outlineTreeItems.value.length || outlinePageItems.value.length },
   { id: 'bookmarks', label: '书签', icon: '签', count: userBookmarks.value.length },
@@ -1337,12 +1525,12 @@ function openStandaloneNoteTab() {
   activateWorkspaceTab(tabId)
 }
 
-function openTopicTab() {
+function openTopicTab(title = '排序算法') {
   const tabId = `topic-${Date.now()}`
   workspaceTabs.value.push({
     id: tabId,
     kind: 'topic',
-    title: '排序算法',
+    title,
     subtitle: '专题',
   })
   activateWorkspaceTab(tabId)
@@ -1350,6 +1538,141 @@ function openTopicTab() {
 
 function openImportPdfEntry() {
   showToast('PDF 导入入口将在下一阶段接入当前上传流程', 'info')
+}
+
+function buildProjectTreeNoteResource(note: StudyNote, kind: Extract<ProjectTreeResourceKind, 'note' | 'anchor-note' | 'review'>): ProjectTreeResource {
+  return {
+    id: `project-${kind}-${note.id}`,
+    kind,
+    title: note.title,
+    subtitle: `Page ${note.pageNumber} · ${noteStatusLabels[note.status]}`,
+    noteId: note.id,
+    count: note.tags.length || undefined,
+  }
+}
+
+function buildProjectTreeAssetResources(): ProjectTreeResource[] {
+  const assets = new Map<string, ProjectTreeResource>()
+
+  for (const note of studyNotes.value) {
+    for (const tag of note.tags) {
+      const key = tag.trim()
+      if (!key) continue
+      const existing = assets.get(key)
+      assets.set(key, {
+        id: `project-asset-${normalizeProjectTreeId(key)}`,
+        kind: 'asset',
+        title: key,
+        subtitle: existing ? '多条笔记关联' : `来自 ${note.title}`,
+        count: (existing?.count ?? 0) + 1,
+      })
+    }
+  }
+
+  if (assets.size === 0 && activeInsight.value) {
+    for (const candidate of [
+      ...activeInsight.value.phrases,
+      ...activeInsight.value.vocabulary,
+      ...activeInsight.value.grammarPoints,
+    ].slice(0, 6)) {
+      const title = candidate.text.trim()
+      if (!title) continue
+      assets.set(title, {
+        id: `project-asset-candidate-${normalizeProjectTreeId(title)}`,
+        kind: 'asset',
+        title,
+        subtitle: '当前段落候选',
+      })
+    }
+  }
+
+  return Array.from(assets.values()).slice(0, 12)
+}
+
+function openProjectTreeResource(resource: ProjectTreeResource) {
+  if (resource.kind === 'pdf') {
+    const pdfTabId = resource.tabId ?? (readingDocument.value ? `pdf-${readingDocument.value.id}` : null)
+    if (pdfTabId) activateWorkspaceTab(pdfTabId)
+    documentView.value = 'pdf-canvas'
+    agentPanelMode.value = 'agent'
+    return
+  }
+
+  if ((resource.kind === 'anchor-note' || resource.kind === 'note' || resource.kind === 'review') && resource.noteId) {
+    openStudyNote(resource.noteId)
+    return
+  }
+
+  if (resource.kind === 'asset') {
+    openTopicTab(resource.title)
+    return
+  }
+
+  if (resource.kind === 'question-bank') {
+    openTopicTab('题库')
+    return
+  }
+
+  if (resource.kind === 'mistake') {
+    openTopicTab('错题本')
+    return
+  }
+
+  if (resource.kind === 'prompt') {
+    openTopicTab('提示词')
+  }
+}
+
+function handleProjectTreeFolderEmptyAction(folder: ProjectTreeFolder) {
+  if (folder.id === 'sources') {
+    openImportPdfEntry()
+    return
+  }
+  if (folder.id === 'notes') {
+    openStandaloneNoteTab()
+    return
+  }
+  if (folder.id === 'anchor-notes') {
+    startNoteFromActiveBlock()
+    return
+  }
+  if (folder.id === 'assets') {
+    askAgent('整理当前段落为笔记草稿')
+    return
+  }
+  openTopicTab(folder.label)
+}
+
+function isProjectTreeFolderCollapsed(folderId: ProjectTreeFolderId) {
+  return collapsedProjectTreeFolderIds.value.has(folderId)
+}
+
+function toggleProjectTreeFolder(folderId: ProjectTreeFolderId) {
+  const nextCollapsedIds = new Set(collapsedProjectTreeFolderIds.value)
+  if (nextCollapsedIds.has(folderId)) {
+    nextCollapsedIds.delete(folderId)
+  } else {
+    nextCollapsedIds.add(folderId)
+  }
+  collapsedProjectTreeFolderIds.value = nextCollapsedIds
+}
+
+function getProjectTreeResourceIcon(kind: ProjectTreeResourceKind) {
+  const icons: Record<ProjectTreeResourceKind, string> = {
+    pdf: 'PDF',
+    note: 'MD',
+    'anchor-note': '锚',
+    asset: '资',
+    review: '复',
+    'question-bank': '题',
+    mistake: '错',
+    prompt: '提',
+  }
+  return icons[kind]
+}
+
+function normalizeProjectTreeId(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\u4e00-\u9fa5-]/g, '')
 }
 
 async function flushWorkspaceStateSave() {
@@ -3109,6 +3432,256 @@ textarea {
   border-color: rgba(45, 212, 191, 0.42);
   background: rgba(45, 212, 191, 0.14);
   color: var(--ide-accent);
+}
+
+.project-tree-shell {
+  grid-row: 4;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--ide-panel);
+}
+
+.project-tree-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ide-border);
+  background: var(--ide-panel-2);
+}
+
+.project-tree-toolbar div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.project-tree-toolbar span,
+.project-tree-toolbar small {
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-tree-toolbar strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ide-text);
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-tree-toolbar small {
+  flex: 0 0 auto;
+  color: #0f766e;
+}
+
+.project-tree {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-height: 0;
+  padding: 10px 8px 16px;
+  overflow: auto;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
+.project-tree::-webkit-scrollbar {
+  width: 8px;
+}
+
+.project-tree::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #cbd5e1;
+  background-clip: content-box;
+}
+
+.project-tree-folder {
+  display: grid;
+  gap: 4px;
+}
+
+.project-tree-folder__header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--ide-text);
+  font-size: 13px;
+  font-weight: 950;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-tree-folder__header:hover,
+.project-tree-folder__header:focus-visible {
+  background: #eefaf7;
+  color: #0f766e;
+  outline: none;
+}
+
+.project-tree-folder__header span:not(.project-tree-folder__chevron) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-tree-folder__header small {
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.project-tree-folder__chevron {
+  display: inline-grid;
+  place-items: center;
+  color: #8b98aa;
+  font-size: 18px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 0.16s ease;
+}
+
+.project-tree-folder.is-collapsed .project-tree-folder__chevron {
+  transform: rotate(0deg);
+}
+
+.project-tree-folder__body {
+  display: grid;
+  gap: 3px;
+  padding-left: 22px;
+}
+
+.project-tree-resource {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 7px;
+  background: transparent;
+  color: var(--ide-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-tree-resource:hover,
+.project-tree-resource:focus-visible {
+  border-color: rgba(20, 184, 166, 0.28);
+  background: #eefaf7;
+  outline: none;
+}
+
+.project-tree-resource__icon {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #d8e2ee;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.project-tree-resource__main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.project-tree-resource strong,
+.project-tree-resource small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-tree-resource strong {
+  color: inherit;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.project-tree-resource small {
+  color: var(--ide-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.project-tree-resource mark {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.14);
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 950;
+  text-align: center;
+}
+
+.project-tree-empty {
+  min-height: 34px;
+  border: 1px dashed #cdd9e6;
+  border-radius: 8px;
+  background: var(--ide-panel-2);
+  color: var(--ide-muted);
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.project-tree-empty:hover,
+.project-tree-empty:focus-visible {
+  border-color: rgba(20, 184, 166, 0.42);
+  background: #eefaf7;
+  color: #0f766e;
+  outline: none;
+}
+
+.project-tree-outline {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ide-border);
+}
+
+.project-tree-outline .project-tree-folder__body {
+  gap: 7px;
+  padding-left: 0;
+}
+
+.project-tree-outline .outline-controls {
+  border: 1px solid var(--ide-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--ide-panel-2);
+}
+
+.project-tree-outline .outline-list {
+  grid-row: auto;
+  overflow: visible;
+  padding: 2px 0 6px;
 }
 
 .side-drawer-panel {
@@ -5192,6 +5765,32 @@ textarea:focus-visible {
     font-size: 11px;
   }
 
+  .project-tree-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .project-tree {
+    padding: 8px 6px 12px;
+  }
+
+  .project-tree-folder__body {
+    padding-left: 14px;
+  }
+
+  .project-tree-resource {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .project-tree-resource mark {
+    display: none;
+  }
+
+  .project-tree-outline .project-tree-folder__body {
+    padding-left: 0;
+  }
+
   .outline-controls {
     padding: 8px;
     gap: 7px;
@@ -5228,6 +5827,25 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1180px) {
+  .workspace-command-center {
+    max-width: min(520px, 52vw);
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .agent-panel {
+    min-width: 0;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .intensive-workspace-page {
+    padding: 16px 14px 112px;
+  }
+
   .workspace-toolbar,
   .workspace-shell {
     grid-template-columns: 1fr;
@@ -5250,20 +5868,9 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .toolbar-actions {
-    justify-content: flex-start;
-  }
-
   .agent-panel {
     position: static;
     max-height: none;
-  }
-
-}
-
-@media (max-width: 760px) {
-  .intensive-workspace-page {
-    padding: 16px 14px 112px;
   }
 
   .reader-heading,

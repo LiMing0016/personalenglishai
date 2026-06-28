@@ -81,6 +81,24 @@ for (const requiredCopy of [
   assert.ok(workspaceSource.includes(requiredCopy), `workspace page should render ${requiredCopy}`)
 }
 
+for (const requiredProjectTreeCopy of [
+  '学习项目',
+  '项目资源树',
+  '资料',
+  'PDF 目录',
+  '锚点笔记',
+  '复习队列',
+  '题库',
+  '错题本',
+  '提示词',
+  'project-tree',
+  'project-tree-folder',
+  'project-tree-outline',
+  'openProjectTreeResource',
+]) {
+  assert.ok(workspaceSource.includes(requiredProjectTreeCopy), `workspace project tree should render ${requiredProjectTreeCopy}`)
+}
+
 for (const removedVisibleChrome of [
   'class="workspace-titlebar-document"',
   '<small>学习工作台</small>',
