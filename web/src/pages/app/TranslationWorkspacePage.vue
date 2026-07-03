@@ -1,30 +1,20 @@
 <template>
   <div class="intensive-workspace-page">
-    <header class="workspace-ide-titlebar">
-      <div class="workspace-brand">
-        <span class="workspace-brand__mark" aria-hidden="true">E</span>
-        <div>
-          <strong>Personal English AI</strong>
-        </div>
-      </div>
+    <LearningIdeTopBar
+      brand="StudyingX"
+      :sync-status="workspaceStateSaving ? '同步中' : '已同步'"
+      @add-module="moduleLibraryOpen = true"
+      @command-search="handleLearningCommandSearch"
+      @back="goBackToHub"
+      @complete="completeLearningSession"
+    />
 
-      <label class="workspace-command-center">
-        <span class="sr-only">搜索或输入命令</span>
-        <input type="search" placeholder="搜索 PDF、笔记、知识点，或输入命令..." />
-      </label>
-
-      <div class="workspace-titlebar-actions">
-        <button
-          type="button"
-          class="back-button"
-          aria-label="返回翻译列表"
-          title="返回翻译列表"
-          @click="goBackToHub">
-          <span class="back-button-icon" aria-hidden="true">←</span>
-        </button>
-        <button type="button" class="primary-action" @click="completeLearningSession">完成学习</button>
-      </div>
-    </header>
+    <LearningModuleLibrary
+      :open="moduleLibraryOpen"
+      :groups="learningModuleGroups"
+      @add-module="handleAddLearningModule"
+      @close="moduleLibraryOpen = false"
+    />
 
     <main
       v-if="readingDocument && activeBlock && activeInsight"
@@ -38,343 +28,37 @@
         '--outline-column-width': `${outlineColumnWidth}px`,
         '--agent-column-width': `${agentColumnWidth}px`,
       }">
-      <nav class="workspace-activity-bar" aria-label="学习工作台入口">
-        <button
-          v-for="panel in sidePanelOptions"
-          :key="panel.id"
-          type="button"
-          class="activity-button"
-          :class="{ active: activeSidePanel === panel.id && !isOutlineCollapsed }"
-          :aria-label="panel.label"
-          :title="panel.label"
-          @click="selectSidePanel(panel.id)">
-          <span class="activity-button__icon" aria-hidden="true">{{ panel.icon }}</span>
-          <small v-if="panel.count > 0">{{ panel.count }}</small>
-        </button>
-      </nav>
-
-      <aside
-        class="workspace-outline-panel workspace-side-drawer workspace-explorer"
-        :class="{ 'workspace-panel--collapsed': isOutlineCollapsed }"
-        aria-label="目录与学习资产">
-        <div class="outline-header">
-          <div class="outline-heading-main">
-            <span>{{ sidePanelSummary }}</span>
-          </div>
+      <template v-if="isOutlineCollapsed">
+        <aside
+          class="workspace-outline-panel workspace-side-drawer workspace-explorer workspace-panel--collapsed"
+          aria-label="目录与学习资产">
           <button
             type="button"
-            class="panel-drawer-toggle"
-            aria-label="收起左侧目录导航"
-            title="收起左侧目录导航"
+            class="workspace-drawer-rail"
+            aria-label="展开左侧学习资源"
+            title="展开左侧学习资源"
             @click="toggleOutlineDrawer">
-            收起
+            资源
           </button>
-        </div>
-
-        <section class="workspace-resource-actions" aria-label="导入与新建">
-          <button type="button" @click="openImportPdfEntry">导入 PDF</button>
-          <button type="button" @click="openStandaloneNoteTab">新建笔记</button>
-          <button type="button" @click="openTopicTab()">新建专题</button>
-        </section>
-
-        <div class="side-drawer-switcher" aria-label="左侧工作区切换">
-          <button
-            v-for="panel in sidePanelOptions"
-            :key="panel.id"
-            type="button"
-            :class="{ active: activeSidePanel === panel.id }"
-            @click="selectSidePanel(panel.id)">
-            {{ panel.label }}
-          </button>
-        </div>
-
-        <template v-if="activeSidePanel === 'outline'">
-        <section class="project-tree-shell" aria-label="项目资源树">
-          <header class="project-tree-toolbar">
-            <div>
-              <span>学习项目</span>
-              <strong>{{ readingDocument.title }}</strong>
-            </div>
-            <small>{{ projectTreeSummary }}</small>
-          </header>
-
-          <section class="project-tree">
-            <article
-              v-for="folder in projectTreeFolders"
-              :key="folder.id"
-              class="project-tree-folder"
-              :class="{ 'is-collapsed': isProjectTreeFolderCollapsed(folder.id) }">
-              <button
-                type="button"
-                class="project-tree-folder__header"
-                :aria-expanded="!isProjectTreeFolderCollapsed(folder.id)"
-                @click="toggleProjectTreeFolder(folder.id)">
-                <span class="project-tree-folder__chevron" aria-hidden="true">›</span>
-                <span>{{ folder.label }}</span>
-                <small>{{ folder.badge }}</small>
-              </button>
-
-              <div v-if="!isProjectTreeFolderCollapsed(folder.id)" class="project-tree-folder__body">
-                <button
-                  v-for="resource in folder.resources"
-                  :key="resource.id"
-                  type="button"
-                  class="project-tree-resource"
-                  :class="`project-tree-resource--${resource.kind}`"
-                  @click="openProjectTreeResource(resource)">
-                  <span class="project-tree-resource__icon" aria-hidden="true">{{ getProjectTreeResourceIcon(resource.kind) }}</span>
-                  <span class="project-tree-resource__main">
-                    <strong>{{ resource.title }}</strong>
-                    <small v-if="resource.subtitle">{{ resource.subtitle }}</small>
-                  </span>
-                  <mark v-if="resource.count">{{ resource.count }}</mark>
-                </button>
-                <button
-                  v-if="folder.resources.length === 0"
-                  type="button"
-                  class="project-tree-empty"
-                  @click="handleProjectTreeFolderEmptyAction(folder)">
-                  {{ folder.emptyText }}
-                </button>
-              </div>
-            </article>
-
-            <article
-              class="project-tree-folder project-tree-outline"
-              :class="{ 'is-collapsed': isProjectTreeFolderCollapsed('pdf-outline') }">
-              <button
-                type="button"
-                class="project-tree-folder__header"
-                :aria-expanded="!isProjectTreeFolderCollapsed('pdf-outline')"
-                @click="toggleProjectTreeFolder('pdf-outline')">
-                <span class="project-tree-folder__chevron" aria-hidden="true">›</span>
-                <span>PDF 目录</span>
-                <small>{{ outlineTreeItems.length || outlinePageItems.length }}</small>
-              </button>
-
-              <div v-if="!isProjectTreeFolderCollapsed('pdf-outline')" class="project-tree-folder__body">
-                <section class="outline-controls" aria-label="目录筛选">
-                  <label class="outline-search">
-                    <span>搜索目录</span>
-                    <input
-                      v-model="outlineSearchQuery"
-                      type="search"
-                      placeholder="章节、页码、笔记..."
-                      aria-label="搜索目录"
-                    />
-                  </label>
-
-                  <div class="outline-filter-tabs" aria-label="目录范围">
-                    <button
-                      v-for="scope in outlineFilterScopes"
-                      :key="scope.id"
-                      type="button"
-                      :class="{ active: outlineFilterScope === scope.id }"
-                      @click="outlineFilterScope = scope.id">
-                      {{ scope.label }}
-                      <small>{{ scope.count }}</small>
-                    </button>
-                  </div>
-
-                  <div class="outline-quick-actions" aria-label="书签操作">
-                    <button type="button" @click="createUserBookmark">添加书签</button>
-                    <button type="button" @click="exportWorkspaceBookmarks">导出 PDF</button>
-                    <button v-if="activeUserBookmark" type="button" @click="renameActiveUserBookmark">重命名</button>
-                    <button v-if="activeUserBookmark" type="button" class="danger" @click="deleteActiveUserBookmark">删除</button>
-                  </div>
-                </section>
-
-                <nav class="outline-list" aria-label="PDF 页码与目录">
-                  <section v-if="displayOutlineItems.length > 0 && filteredOutlineItems.length > 0" class="outline-page-group">
-                    <div
-                      v-for="item in filteredOutlineItems"
-                      :key="item.id"
-                      class="outline-tree-row"
-                      :class="[
-                        `outline-tree-row--level-${item.displayLevel}`,
-                        {
-                          active: !item.syntheticRoot && isOutlineItemActive(item),
-                          'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
-                          'has-notes': getOutlineItemNoteCount(item) > 0,
-                          'is-document-root': item.syntheticRoot,
-                          'is-user-bookmark': item.source === 'user_bookmark',
-                          'is-user-bookmark-root': item.source === 'user_bookmark_root',
-                          'is-collapsed': item.hasChildren && isOutlineNodeCollapsed(item),
-                        },
-                      ]">
-                      <button
-                        type="button"
-                        class="outline-node-toggle"
-                        :class="{ 'is-placeholder': !item.hasChildren }"
-                        :aria-label="isOutlineNodeCollapsed(item) ? `展开 ${item.title}` : `收起 ${item.title}`"
-                        :aria-expanded="item.hasChildren ? !isOutlineNodeCollapsed(item) : undefined"
-                        :disabled="!item.hasChildren"
-                        @click.stop="toggleOutlineNode(item)">
-                        <span>›</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        class="outline-block-button"
-                        :class="[
-                          `outline-block-button--level-${item.displayLevel}`,
-                          {
-                            active: !item.syntheticRoot && isOutlineItemActive(item),
-                            'is-current-page': !item.syntheticRoot && item.pageNumber === currentPdfPage,
-                            'has-notes': getOutlineItemNoteCount(item) > 0,
-                            'is-document-root': item.syntheticRoot,
-                            'is-user-bookmark': item.source === 'user_bookmark',
-                            'is-user-bookmark-root': item.source === 'user_bookmark_root',
-                          },
-                        ]"
-                        @click="selectOutlineItem(item)">
-                        <span class="outline-item-title">{{ item.title }}</span>
-                        <span class="outline-item-meta">
-                          <small v-if="item.source === 'user_bookmark_root'">自定义</small>
-                          <small v-else-if="item.syntheticRoot">全文目录</small>
-                          <small v-else-if="item.source === 'user_bookmark'">Page {{ item.pageNumber }} · 我的</small>
-                          <small v-else>Page {{ item.pageNumber }}</small>
-                          <mark v-if="!item.syntheticRoot && item.pageNumber === currentPdfPage">当前</mark>
-                          <mark v-if="getOutlineItemNoteCount(item) > 0" class="note-count">
-                            {{ getOutlineItemNoteCount(item) }} 记
-                          </mark>
-                        </span>
-                      </button>
-                    </div>
-                  </section>
-
-                  <section v-else-if="outlineItems.length === 0 && userBookmarks.length === 0 && filteredOutlinePageItems.length > 0" class="outline-page-group">
-                    <button
-                      v-for="page in filteredOutlinePageItems"
-                      :key="page"
-                      type="button"
-                      class="outline-page-button"
-                      :class="{ active: page === currentPdfPage, 'has-notes': getPageNoteCount(page) > 0 }"
-                      @click="selectOutlinePage(page)">
-                      <span>Page {{ page }}</span>
-                      <small v-if="getPageNoteCount(page) > 0">{{ getPageNoteCount(page) }} 条笔记</small>
-                    </button>
-                  </section>
-
-                  <section v-else class="outline-empty-state">
-                    <strong>没有匹配的目录</strong>
-                    <span>换个关键词，或切回全部范围。</span>
-                  </section>
-                </nav>
-              </div>
-            </article>
-          </section>
-        </section>
-        </template>
-
-        <section v-else-if="activeSidePanel === 'bookmarks'" class="side-drawer-panel side-bookmark-list" aria-label="我的书签">
-          <div class="side-section-heading">
-            <strong>我的书签</strong>
-            <button type="button" @click="createUserBookmark">添加书签</button>
-          </div>
-          <article
-            v-for="bookmark in userBookmarks"
-            :key="bookmark.id"
-            class="side-list-card"
-            :class="{ active: bookmark.id === activeOutlineItemId }"
-            @click="jumpToUserBookmark(bookmark)">
-            <strong>{{ bookmark.title }}</strong>
-            <span>Page {{ bookmark.pageNumber }} · {{ bookmark.source === 'user_bookmark' ? '我的定位' : 'PDF 书签' }}</span>
-          </article>
-          <button
-            v-if="userBookmarks.length === 0"
-            type="button"
-            class="side-empty-action"
-            @click="createUserBookmark">
-            给当前页添加书签
-          </button>
-        </section>
-
-        <section v-else-if="activeSidePanel === 'notes'" class="side-drawer-panel side-note-list" aria-label="全文笔记">
-          <div class="side-section-heading">
-            <strong>全文笔记</strong>
-            <button type="button" @click="startNoteFromActiveBlock">新建笔记</button>
-          </div>
-          <article
-            v-for="note in studyNotes.slice(0, 24)"
-            :key="note.id"
-            class="side-list-card"
-            :class="{ active: note.id === activeNoteId }"
-            @click="openStudyNote(note.id)">
-            <strong>{{ note.title }}</strong>
-            <span>Page {{ note.pageNumber }} · {{ noteStatusLabels[note.status] }}</span>
-          </article>
-          <button
-            v-if="studyNotes.length === 0"
-            type="button"
-            class="side-empty-action"
-            @click="startNoteFromActiveBlock">
-            记录当前理解
-          </button>
-        </section>
-
-        <section v-else-if="activeSidePanel === 'assets'" class="side-drawer-panel side-asset-board" aria-label="学习资产">
-          <div class="side-section-heading">
-            <strong>学习资产</strong>
-            <button type="button" @click="askAgent('整理当前段落为笔记草稿')">Agent 整理</button>
-          </div>
-          <section
-            v-for="column in studyAssetPipeline"
-            :key="column.id"
-            class="side-asset-group"
-            :class="`side-asset-group--${column.tone}`">
-            <header>
-              <span>{{ column.label }}</span>
-              <small>{{ column.notes.length }}</small>
-            </header>
-            <p>{{ column.description }}</p>
-            <article
-              v-for="note in column.notes.slice(0, 4)"
-              :key="note.id"
-              class="side-asset-card"
-              :class="{ active: note.id === activeNoteId }"
-              @click="openStudyNote(note.id)">
-              <strong>{{ note.title }}</strong>
-              <span>Page {{ note.pageNumber }} · {{ note.source === 'agent' ? 'Agent' : '我' }}</span>
-            </article>
-            <button
-              v-if="column.notes.length === 0"
-              type="button"
-              class="side-empty-action"
-              @click="column.id === 'draft' ? askAgent('整理当前段落为笔记草稿') : startNoteFromActiveBlock()">
-              {{ column.id === 'draft' ? '让 Agent 整理' : '新增笔记' }}
-            </button>
-          </section>
-        </section>
-
-        <section v-else-if="activeSidePanel === 'search'" class="side-drawer-panel side-search-panel" aria-label="搜索当前文档">
-          <label class="outline-search">
-            <span>搜索当前文档</span>
-            <input
-              v-model="outlineSearchQuery"
-              type="search"
-              placeholder="章节、页码、笔记..."
-              aria-label="搜索当前文档"
-            />
-          </label>
-          <article
-            v-for="item in filteredOutlineItems.slice(0, 18)"
-            :key="item.id"
-            class="side-list-card"
-            @click="selectOutlineItem(item)">
-            <strong>{{ item.title }}</strong>
-            <span>Page {{ item.pageNumber }}</span>
-          </article>
-          <button
-            v-if="filteredOutlineItems.length === 0"
-            type="button"
-            class="side-empty-action"
-            @click="outlineSearchQuery = ''">
-            清空搜索
-          </button>
-        </section>
-      </aside>
-
+        </aside>
+      </template>
+      <LearningResourcePanel
+        v-else
+        class="workspace-outline-panel workspace-side-drawer workspace-explorer"
+        :side-panels="learningSidePanelOptions"
+        :active-side-panel="activeSidePanel"
+        :active-explorer-view="activeResourceExplorerView"
+        :project-folders="learningProjectTreeFolders"
+        :file-folders="learningCurrentFileTreeFolders"
+        :current-file-title="currentFileTitle"
+        :current-file-subtitle="currentFileSubtitle"
+        :collapsed-folder-ids="collapsedProjectTreeFolderIdList"
+        @select-explorer-view="selectResourceExplorerView"
+        @select-panel="selectLearningSidePanel"
+        @toggle-folder="toggleLearningProjectTreeFolder"
+        @open-resource="openLearningProjectTreeResource"
+        @empty-action="handleLearningProjectTreeFolderEmptyAction"
+      />
       <button
         v-if="!isOutlineCollapsed"
         type="button"
@@ -385,35 +69,13 @@
       />
 
       <section class="workspace-canvas-panel" aria-label="阅读区">
-        <header class="workspace-tabs" aria-label="工作区标签页">
-          <button
-            v-for="tab in workspaceTabs"
-            :key="tab.id"
-            type="button"
-            class="workspace-tab"
-            :class="[`workspace-tab--${tab.kind}`, { active: tab.id === activeWorkspaceTabId, dirty: tab.dirty }]"
-            @click="activateWorkspaceTab(tab.id)">
-            <span>{{ tab.subtitle }}</span>
-            <strong>{{ tab.title }}</strong>
-            <small v-if="tab.dirty">●</small>
-            <small
-              v-else
-              class="workspace-tab__close"
-              role="button"
-              tabindex="-1"
-              aria-label="关闭标签页"
-              @click.stop="closeWorkspaceTab(tab.id)">
-              ×
-            </small>
-          </button>
-          <button
-            type="button"
-            class="workspace-tab workspace-tab--new"
-            aria-label="新建学习资源"
-            @click="openStandaloneNoteTab">
-            +
-          </button>
-        </header>
+        <WorkspaceTabs
+          :tabs="learningWorkspaceTabs"
+          :active-tab-id="activeWorkspaceTabId"
+          @activate="activateWorkspaceTab"
+          @close="closeWorkspaceTab"
+          @create="openStandaloneNoteTab"
+        />
 
         <div class="workspace-editor-area" :class="`workspace-editor-area--${activeWorkspaceTabKind}`">
           <section v-if="activeWorkspaceTabKind !== 'pdf'" class="note-document-editor">
@@ -423,69 +85,95 @@
           </section>
 
           <template v-else>
-            <div class="workspace-editor-toolbar">
-              <div v-if="readingDocument" class="document-view-tabs document-view-tabs--compact" aria-label="原文展示模式">
-                <button
-                  type="button"
-                  :class="{ active: documentView === 'pdf-canvas' }"
-                  @click="documentView = 'pdf-canvas'">
-                  PDF 学习画布
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: documentView === 'text' }"
-                  @click="documentView = 'text'">
-                  精读文本
-                </button>
-              </div>
-            </div>
-
-            <div v-if="documentView === 'text'" class="ide-reader-surface" role="list" aria-label="原文段落列表">
-              <article
-                v-for="block in readingDocument.blocks"
-                :key="block.id"
-                role="listitem"
-                class="ide-document-block"
-                :class="{ active: block.id === activeBlockId }"
-                @click="selectOutlineBlock(block.id, block.pageNumber || 1)">
-                <aside class="ide-gutter" aria-label="段落定位">
-                  <span>P{{ block.order }}</span>
-                  <small v-if="block.pageNumber">Page {{ block.pageNumber }}</small>
-                </aside>
-
-                <div class="ide-source-cell">
-                  <div class="ide-block-meta">
-                    <span>{{ block.type === 'heading' ? 'Heading' : 'Paragraph' }}</span>
-                    <button type="button" @click.stop="askAgent('解释当前段落')">Ask</button>
-                    <button type="button" @click.stop="askAgent('翻译当前段落')">Translate</button>
-                    <button type="button" @click.stop="startNoteFromActiveBlock">Note</button>
+            <div class="learning-editor-grid">
+              <section class="learning-editor-primary" aria-label="PDF 与精读文本">
+                <div class="workspace-editor-toolbar">
+                  <div v-if="readingDocument" class="document-view-tabs document-view-tabs--compact" aria-label="原文展示模式">
+                    <button
+                      type="button"
+                      :class="{ active: documentView === 'pdf-canvas' }"
+                      @click="documentView = 'pdf-canvas'">
+                      PDF 学习画布
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ active: documentView === 'text' }"
+                      @click="documentView = 'text'">
+                      精读文本
+                    </button>
                   </div>
-                  <p class="source-text source-text--ide">{{ block.text }}</p>
                 </div>
-              </article>
-            </div>
 
-            <PdfLearningCanvas
-              v-else
-              :document-id="readingDocument.id"
-              :title="readingDocument.title"
-              :src="readingDocument.pdfPreviewUrl"
-              :blocks="readingDocument.blocks"
-              :active-block-id="activeBlockId"
-              :page-count="readingDocument.pageCount"
-              :target-page="targetPdfPage"
-              :source-highlight="pdfSourceHighlight"
-              :note-anchors="noteAnchors"
-              :active-note-id="activeNoteId"
-              @select-block="selectBlock"
-              @ask-agent="askAgent"
-              @note-selection="startNoteFromPdfSelection"
-              @open-note="openStudyNote"
-              @selection-change="handlePdfSelectionChange"
-              @page-change="handlePdfPageChange"
-            />
+                <div v-if="documentView === 'text'" class="ide-reader-surface" role="list" aria-label="原文段落列表">
+                  <article
+                    v-for="block in readingDocument.blocks"
+                    :key="block.id"
+                    role="listitem"
+                    class="ide-document-block"
+                    :class="{ active: block.id === activeBlockId }"
+                    @click="selectOutlineBlock(block.id, block.pageNumber || 1)">
+                    <aside class="ide-gutter" aria-label="段落定位">
+                      <span>P{{ block.order }}</span>
+                      <small v-if="block.pageNumber">Page {{ block.pageNumber }}</small>
+                    </aside>
+
+                    <div class="ide-source-cell">
+                      <div class="ide-block-meta">
+                        <span>{{ block.type === 'heading' ? 'Heading' : 'Paragraph' }}</span>
+                        <button type="button" @click.stop="askAgent('解释当前段落')">Ask</button>
+                        <button type="button" @click.stop="askAgent('翻译当前段落')">Translate</button>
+                        <button type="button" @click.stop="startNoteFromActiveBlock">Note</button>
+                      </div>
+                      <p class="source-text source-text--ide">{{ block.text }}</p>
+                    </div>
+                  </article>
+                </div>
+
+                <PdfLearningCanvas
+                  v-else
+                  :document-id="readingDocument.id"
+                  :title="readingDocument.title"
+                  :src="readingDocument.pdfPreviewUrl"
+                  :blocks="readingDocument.blocks"
+                  :active-block-id="activeBlockId"
+                  :page-count="readingDocument.pageCount"
+                  :target-page="targetPdfPage"
+                  :source-highlight="pdfSourceHighlight"
+                  :note-anchors="noteAnchors"
+                  :active-note-id="activeNoteId"
+                  @select-block="selectBlock"
+                  @ask-agent="askAgent"
+                  @note-selection="startNoteFromPdfSelection"
+                  @open-note="openStudyNote"
+                  @selection-change="handlePdfSelectionChange"
+                  @page-change="handlePdfPageChange"
+                />
+              </section>
+
+              <aside class="learning-knowledge-column" aria-label="知识卡与图谱">
+                <KnowledgeCardView
+                  :card="activeLearningKnowledgeCard"
+                  @open-block-ref="openLearningBlockReference"
+                />
+                <BacklinksPanel
+                  :backlinks="activeLearningBacklinks"
+                  @open-source="openLearningBacklinkSource"
+                />
+                <LocalGraphPanel
+                  :graph="learningKnowledgeGraph"
+                  :active-node-id="activeLearningKnowledgeCard.id"
+                  @select-node="openLearningGraphNode"
+                />
+              </aside>
+            </div>
           </template>
         </div>
+
+        <LearningOutputDock
+          :outputs="learningOutputItems"
+          :active-output-id="activeLearningOutputId"
+          @select-output="activeLearningOutputId = $event"
+        />
       </section>
 
       <button
@@ -497,315 +185,47 @@
         @pointerdown="startWorkspaceResize('agent', $event)"
       />
 
-      <aside
-        class="agent-panel agent-panel--ide workspace-agent-panel"
-        :class="{ 'workspace-panel--collapsed': isAgentCollapsed }"
-        aria-labelledby="agent-title">
-        <button
-          v-if="isAgentCollapsed"
-          type="button"
-          class="workspace-drawer-rail workspace-drawer-rail--agent"
-          aria-label="展开右侧 Agent"
-          title="展开右侧 Agent"
-          @click="toggleAgentDrawer">
-          Agent
-        </button>
-
-        <div class="agent-header agent-header--ide">
-          <div>
-            <h2 id="agent-title">{{ agentPanelMode === 'note-workbench' ? '笔记工作台' : 'Agent' }}</h2>
-          </div>
-          <span>P{{ activeBlock.order }} · {{ modeLabels[activeMode] }}</span>
+      <template v-if="isAgentCollapsed">
+        <aside
+          class="workspace-agent-panel workspace-panel--collapsed"
+          aria-label="AI 上下文助手">
           <button
             type="button"
-            class="panel-drawer-toggle"
-            aria-label="收起右侧 Agent"
-            title="收起右侧 Agent"
+            class="workspace-drawer-rail workspace-drawer-rail--agent"
+            aria-label="展开右侧 Agent"
+            title="展开右侧 Agent"
             @click="toggleAgentDrawer">
-            收起
+            AI
           </button>
-        </div>
-
-        <section v-if="agentPanelMode === 'note-workbench'" class="note-workbench-panel" aria-label="笔记工作台">
-          <header class="note-workbench-header">
-            <div>
-              <p class="answer-label">锚点笔记</p>
-              <strong>P{{ selectedPdfContext?.pageNumber || currentPdfPage }} · 选区</strong>
-            </div>
-            <button type="button" @click="agentPanelMode = 'agent'">返回 Agent</button>
-          </header>
-
-          <nav class="note-workbench-tabs" aria-label="笔记工作台模式">
-            <button type="button" class="active">写笔记</button>
-            <button
-              type="button"
-              :disabled="noteAgentLoading"
-              @click="askAgentToAppendNote('结合当前选区，补充一段适合写入学习笔记的解释。')">
-              问 AI
-            </button>
-            <button
-              type="button"
-              :disabled="noteAgentLoading"
-              @click="askAgentToAppendNote('把当前选区整理成 3 条复习要点。')">
-              整理
-            </button>
-          </nav>
-
-          <form
-            v-if="noteComposer.mode !== 'idle'"
-            class="study-note-composer note-workbench-composer"
-            @submit.prevent="saveStudyNote">
-            <div class="study-note-source">
-              <span>{{ noteComposer.source === 'agent' ? 'Agent 草稿' : '手动笔记' }}</span>
-              <small>{{ noteComposerContextLabel }}</small>
-            </div>
-            <blockquote v-if="noteComposer.context?.text" class="study-note-selected-text">
-              {{ noteComposer.context.text }}
-            </blockquote>
-            <input
-              v-model="noteComposer.title"
-              type="text"
-              placeholder="笔记标题"
-              aria-label="笔记标题"
-            />
-            <textarea
-              ref="noteContentInputRef"
-              v-model="noteComposer.content"
-              rows="8"
-              placeholder="围绕这个选区写下理解、疑问或总结。"
-              aria-label="笔记内容"
-            />
-            <div class="note-agent-compose" aria-label="Agent 辅助补充笔记">
-              <textarea
-                v-model="noteAgentPrompt"
-                rows="2"
-                placeholder="边问边补：例如这里为什么能推出时间复杂度？"
-                aria-label="问 Agent 并生成候选补充"
-              />
-              <div class="note-agent-compose__actions">
-                <span>{{ noteAgentLoading ? 'Agent 正在补充...' : '回答会先进入候选区' }}</span>
-                <button
-                  type="button"
-                  :disabled="noteAgentLoading || !noteAgentPrompt.trim()"
-                  @click="askAgentToAppendNote(noteAgentPrompt)">
-                  问 AI 生成候选
-                </button>
-              </div>
-            </div>
-            <section class="ai-candidate-card" aria-label="AI 候选补充">
-              <p class="answer-label">AI 候选补充</p>
-              <blockquote>{{ aiCandidateContent || 'Agent 的补充会先出现在这里，确认后再追加到笔记。' }}</blockquote>
-              <button type="button" :disabled="!aiCandidateContent" @click="appendAiCandidateToNote">
-                追加到笔记
-              </button>
-            </section>
-            <div class="study-note-composer__actions">
-              <button type="button" @click="cancelStudyNoteComposer">取消</button>
-              <button type="submit" class="primary-action">
-                {{ noteComposer.status === 'draft' ? '保存草稿' : '保存笔记' }}
-              </button>
-            </div>
-          </form>
-
-          <div v-else class="study-note-empty">
-            <span>当前没有打开锚点笔记</span>
-            <small>从 PDF 选区点击记笔记后，这里会进入沉浸式笔记工作台。</small>
-          </div>
-        </section>
-
-        <template v-else>
-        <section
-          class="study-note-panel"
-          :class="{ 'study-note-panel--composer-active': noteComposer.mode !== 'idle' }"
-          aria-label="本段笔记">
-          <header class="study-note-panel__header">
-            <div>
-              <p class="answer-label">{{ noteComposer.mode !== 'idle' ? '锚点笔记' : '本段笔记' }}</p>
-              <strong>{{ noteComposer.mode !== 'idle' ? '正在编辑当前选区' : activeBlockNotes.length + ' 条' }}</strong>
-            </div>
-            <button v-if="noteComposer.mode === 'idle'" type="button" @click="startNoteFromActiveBlock">新建</button>
-          </header>
-
-          <form
-            v-if="noteComposer.mode !== 'idle'"
-            class="study-note-composer"
-            @submit.prevent="saveStudyNote">
-            <div class="study-note-source">
-              <span>{{ noteComposer.source === 'agent' ? 'Agent 草稿' : '手动笔记' }}</span>
-              <small>{{ noteComposerContextLabel }}</small>
-            </div>
-            <blockquote v-if="noteComposer.context?.text" class="study-note-selected-text">
-              {{ noteComposer.context.text }}
-            </blockquote>
-            <input
-              v-model="noteComposer.title"
-              type="text"
-              placeholder="笔记标题"
-              aria-label="笔记标题"
-            />
-            <textarea
-              ref="noteContentInputRef"
-              v-model="noteComposer.content"
-              rows="7"
-              placeholder="围绕这个选区写下理解、疑问或总结。"
-              aria-label="笔记内容"
-            />
-            <div class="note-agent-compose" aria-label="Agent 辅助补充笔记">
-              <div class="note-agent-compose__quick">
-                <button
-                  type="button"
-                  :disabled="noteAgentLoading"
-                  @click="askAgentToAppendNote('结合当前选区，补充一段适合写入学习笔记的解释。')">
-                  Agent 补充笔记
-                </button>
-                <button
-                  type="button"
-                  :disabled="noteAgentLoading"
-                  @click="askAgentToAppendNote('把当前选区整理成 3 条复习要点。')">
-                  整理要点
-                </button>
-              </div>
-              <textarea
-                v-model="noteAgentPrompt"
-                rows="2"
-                placeholder="边问边补：例如这里为什么能推出时间复杂度？"
-                aria-label="问 Agent 并追加到当前笔记"
-              />
-              <div class="note-agent-compose__actions">
-                <span>{{ noteAgentLoading ? 'Agent 正在补充...' : '回答会先进入候选区' }}</span>
-                <button
-                  type="button"
-                  :disabled="noteAgentLoading || !noteAgentPrompt.trim()"
-                  @click="askAgentToAppendNote(noteAgentPrompt)">
-                  问 AI 生成候选
-                </button>
-              </div>
-            </div>
-            <div class="study-note-composer__actions">
-              <button type="button" @click="cancelStudyNoteComposer">取消</button>
-              <button type="submit" class="primary-action">
-                {{ noteComposer.status === 'draft' ? '保存草稿' : '保存笔记' }}
-              </button>
-            </div>
-          </form>
-
-          <div v-else-if="activeBlockNotes.length === 0" class="study-note-empty">
-            <span>当前段落还没有笔记</span>
-            <small>选中文本或点击新建，把理解沉淀到学习资产管道。</small>
-          </div>
-
-          <div v-else class="study-note-list">
-            <article
-              v-for="note in activeBlockNotes"
-              :key="note.id"
-              class="study-note-card"
-              :class="[`study-note-card--${note.status}`, { active: note.id === activeNoteId }]">
-              <div class="study-note-card__meta">
-                <span>{{ note.source === 'agent' ? 'Agent' : '我' }}</span>
-                <small>Page {{ note.pageNumber }}</small>
-                <small v-if="note.bookmarkId">{{ resolveNoteBookmarkLabel(note) }}</small>
-                <mark>{{ noteStatusLabels[note.status] }}</mark>
-              </div>
-              <h3>{{ note.title }}</h3>
-              <p>{{ note.content }}</p>
-              <blockquote v-if="note.selectedText">{{ note.selectedText }}</blockquote>
-              <div v-if="note.tags.length" class="study-note-tags">
-                <span v-for="tag in note.tags" :key="tag">{{ tag }}</span>
-              </div>
-              <div class="study-note-card__actions">
-                <button type="button" @click="jumpToStudyNote(note)">定位</button>
-                <button type="button" @click="editStudyNote(note)">编辑</button>
-                <button v-if="note.status === 'draft'" type="button" @click="updateStudyNoteStatus(note.id, 'saved')">确认沉淀</button>
-                <button v-if="note.status !== 'reviewing'" type="button" @click="updateStudyNoteStatus(note.id, 'reviewing')">加入复习</button>
-                <button v-else type="button" @click="updateStudyNoteStatus(note.id, 'mastered')">标记掌握</button>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="agent-context">
-          <p class="answer-label">上下文</p>
-          <strong>{{ selectedPdfText ? '当前选区' : '当前页 / 当前段落' }}</strong>
-          <small v-if="selectedPdfContext">
-            Page {{ selectedPdfContext.pageNumber }} · {{ selectedPdfContext.elementId }}
-            <template v-if="selectedPdfSelectionType === 'region'"> · region</template>
-          </small>
-          <blockquote>{{ agentContextText }}</blockquote>
-        </section>
-
-        <section class="agent-answer agent-answer--ide">
-          <p class="answer-label">推荐译文</p>
-          <p>{{ activeInsight.translation }}</p>
-        </section>
-
-        <section class="agent-toolbar" aria-label="Agent 快捷操作">
-          <button type="button" @click="askAgent('翻译并解释当前段落')">解释段落</button>
-          <button type="button" @click="askAgent('拆解当前段落长难句')">长难句</button>
-          <button type="button" @click="askAgent('提取当前段落短语和生词')">提取表达</button>
-          <button type="button" @click="startNoteFromActiveBlock">记笔记</button>
-        </section>
-
-        <section class="agent-card agent-card--ide">
-          <p class="answer-label">学习资产候选</p>
-          <div class="agent-chip-list">
-            <span v-for="phrase in activeInsight.phrases" :key="phrase.text">
-              {{ phrase.text }}
-            </span>
-            <span v-for="word in activeInsight.vocabulary" :key="word.text">
-              {{ word.text }}
-            </span>
-            <span v-for="grammar in activeInsight.grammarPoints" :key="grammar.text">
-              {{ grammar.text }}
-            </span>
-          </div>
-        </section>
-
-        <section class="agent-conversation agent-conversation--ide">
-          <article v-for="message in agentMessages" :key="message.id" :class="`message message--${message.role}`">
-            <strong>{{ message.role === 'assistant' ? 'Agent' : '我' }}</strong>
-            <p>{{ message.content }}</p>
-            <button
-              v-if="message.role === 'assistant' && message.id !== 'agent-welcome'"
-              type="button"
-              class="message-save-note"
-              @click="startNoteFromAgentMessage(message)">
-              保存为笔记
-            </button>
-            <button
-              v-if="message.role === 'assistant' && message.id !== 'agent-welcome' && noteComposer.mode !== 'idle'"
-              type="button"
-              class="message-append-note"
-              @click="appendAgentAnswerToNoteComposer(message.content)">
-              追加到当前笔记
-            </button>
-            <div v-if="message.citations?.length" class="message-citations" aria-label="引用来源">
-              <button
-                v-for="citation in message.citations"
-                :key="`${citation.chunkId}-${citation.elementId || citation.pageNumber}`"
-                type="button"
-                @click="jumpToCitation(citation)">
-                引用 Page {{ citation.pageNumber || '?' }} · {{ citation.elementId || citation.chunkId }}
-              </button>
-            </div>
-          </article>
-        </section>
-
-        <form class="agent-command agent-command--ide" @submit.prevent="submitAgentQuestion">
-          <textarea
-            v-model="agentPrompt"
-            rows="4"
-            placeholder="围绕当前段落提问，或让 Agent 整理成笔记..."
-          />
-          <div class="command-actions">
-            <button type="button" @click="startNoteFromActiveBlock">新建笔记</button>
-            <button type="button" @click="askAgent('整理当前段落为笔记草稿')">Agent 整理</button>
-            <button type="submit" class="primary-action" :disabled="agentAnswerLoading">
-              {{ agentAnswerLoading ? '检索中...' : '发送' }}
-            </button>
-          </div>
-        </form>
-        </template>
-      </aside>
+        </aside>
+      </template>
+      <ContextAssistantPanel
+        v-else
+        v-model:prompt="agentPrompt"
+        v-model:note-title="noteComposer.title"
+        v-model:note-content="noteComposer.content"
+        v-model:note-agent-prompt="noteAgentPrompt"
+        class="workspace-agent-panel"
+        :active-mode-label="modeLabels[activeMode]"
+        :context-title="selectedPdfText ? '当前选区' : '当前页 / 当前段落'"
+        :context-text="agentContextText"
+        :messages="learningAssistantMessages"
+        :loading="agentAnswerLoading"
+        :note-composer-active="noteComposer.mode !== 'idle'"
+        :note-selected-text="noteComposer.context?.text || ''"
+        :note-context-label="noteComposerContextLabel"
+        :note-agent-loading="noteAgentLoading"
+        :ai-candidate-content="aiCandidateContent"
+        @collapse="toggleAgentDrawer"
+        @quick-action="handleLearningAssistantQuickAction"
+        @open-citation="jumpToCitation"
+        @save-note="saveStudyNote"
+        @cancel-note="cancelStudyNoteComposer"
+        @ask-note-agent="askAgentToAppendNote"
+        @append-ai-candidate="appendAiCandidateToNote"
+        @append-agent-answer="appendAgentAnswerToNoteComposer"
+        @submit="submitAgentQuestion"
+      />
     </main>
 
     <section v-else class="missing-state">
@@ -841,8 +261,30 @@ import {
   type TranslationDocumentWorkspaceStateDto,
   type TranslationSourceCitationDto,
 } from '@/api/translation'
+import BacklinksPanel from '@/components/learning-ide/BacklinksPanel.vue'
+import ContextAssistantPanel from '@/components/learning-ide/ContextAssistantPanel.vue'
+import KnowledgeCardView from '@/components/learning-ide/KnowledgeCardView.vue'
+import LearningIdeTopBar from '@/components/learning-ide/LearningIdeTopBar.vue'
+import LearningModuleLibrary from '@/components/learning-ide/LearningModuleLibrary.vue'
+import LearningOutputDock from '@/components/learning-ide/LearningOutputDock.vue'
+import LearningResourcePanel from '@/components/learning-ide/LearningResourcePanel.vue'
+import LocalGraphPanel from '@/components/learning-ide/LocalGraphPanel.vue'
+import WorkspaceTabs from '@/components/learning-ide/WorkspaceTabs.vue'
 import PdfLearningCanvas from '@/components/translation/PdfLearningCanvas.vue'
+import type {
+  LearningAssistantMessage,
+  LearningResourceExplorerView,
+  LearningResourceTreeFolder,
+  LearningResourceTreeItem,
+  LearningSidePanelOption,
+  LearningWorkspaceTab,
+} from '@/types/learningIde'
 import { showToast } from '@/utils/toast'
+import {
+  buildLearningModuleGroups,
+  demoLearningIdeContext,
+  resolveBacklinksForKnowledgeNode,
+} from './learningIdeMock'
 import {
   buildDocumentSelectionContext,
   buildIntensiveReadingDocument,
@@ -944,9 +386,19 @@ type ProjectTreeFolderId =
   | 'mistakes'
   | 'prompts'
   | 'pdf-outline'
+  | 'file-outline'
+  | 'file-bookmarks'
+  | 'file-annotations'
+  | 'file-references'
+  | `file-outline-chapter-${string}`
 
 type ProjectTreeResourceKind =
   | 'pdf'
+  | 'outline'
+  | 'page'
+  | 'bookmark'
+  | 'selection'
+  | 'reference'
   | 'note'
   | 'anchor-note'
   | 'asset'
@@ -962,6 +414,9 @@ interface ProjectTreeResource {
   subtitle?: string
   noteId?: string
   tabId?: string
+  outlineItemId?: string
+  bookmarkId?: string
+  pageNumber?: number
   count?: number
 }
 
@@ -971,6 +426,7 @@ interface ProjectTreeFolder {
   badge: string
   resources: ProjectTreeResource[]
   emptyText: string
+  children?: ProjectTreeFolder[]
 }
 
 interface DisplayOutlineItem extends DocumentOutlineItem {
@@ -1042,6 +498,7 @@ const agentColumnWidth = ref(430)
 const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
 const isOutlineCollapsed = ref(false)
 const isAgentCollapsed = ref(false)
+const activeResourceExplorerView = ref<LearningResourceExplorerView>('project')
 const activeSidePanel = ref<WorkspaceSidePanel>('outline')
 const collapsedProjectTreeFolderIds = ref<Set<ProjectTreeFolderId>>(new Set())
 const collapsedOutlineItemIds = ref<Set<string>>(new Set())
@@ -1062,6 +519,8 @@ const workspaceTabs = ref<WorkspaceTab[]>([])
 const activeWorkspaceTabId = ref<string | null>(null)
 const agentPanelMode = ref<AgentPanelMode>('agent')
 const workspaceStateSaving = ref(false)
+const moduleLibraryOpen = ref(false)
+const activeLearningOutputId = ref(demoLearningIdeContext.outputs[0]?.id ?? '')
 const agentMessages = ref<LocalAgentMessage[]>([
   {
     id: 'agent-welcome',
@@ -1248,12 +707,6 @@ const noteCountByPage = computed(() => {
   return counts
 })
 
-const outlineSummary = computed(() => {
-  const total = outlineTreeItems.value.length || outlinePageItems.value.length
-  const noteTotal = studyNotes.value.length
-  return `Page ${currentPdfPage.value} · ${total} 个定位 · ${noteTotal} 条笔记`
-})
-
 const outlineFilterScopes = computed<OutlineFilterScopeOption[]>(() => {
   const itemSource = outlineTreeItems.value
   const total = itemSource.length || outlinePageItems.value.length
@@ -1280,10 +733,6 @@ const filteredOutlinePageItems = computed<number[]>(() => {
   return outlinePageItems.value
     .filter((page) => matchesPageScope(page))
     .filter((page) => matchesPageSearch(page))
-})
-
-const activeBlockNotes = computed(() => {
-  return studyNotes.value.filter(isStudyNoteInActiveContext)
 })
 
 const activeUserBookmark = computed(() => {
@@ -1410,6 +859,137 @@ const projectTreeFolders = computed<ProjectTreeFolder[]>(() => {
   ]
 })
 
+const currentFileTitle = computed(() => readingDocument.value?.title ?? '未打开文件')
+
+const currentFileSubtitle = computed(() => {
+  const document = readingDocument.value
+  if (!document) return 'PDF / Word / Markdown 的大纲会显示在这里'
+  const sourceLabel = document.sourceLabel || (document.sourceType === 'pdf' ? 'PDF' : '学习资料')
+  const pageSummary = document.pageCount ? `${document.pageCount} 页` : `${outlineTreeItems.value.length || outlinePageItems.value.length} 个定位`
+  return `${sourceLabel} · ${pageSummary}`
+})
+
+const currentFileTreeFolders = computed<ProjectTreeFolder[]>(() => {
+  const document = readingDocument.value
+  const outlineResources = buildCurrentFileOutlineFolders()
+
+  const bookmarkResources = userBookmarks.value.map<ProjectTreeResource>((bookmark) => ({
+    id: `file-bookmark-${bookmark.id}`,
+    kind: 'bookmark',
+    title: bookmark.title,
+    subtitle: `Page ${bookmark.pageNumber}`,
+    bookmarkId: bookmark.id,
+    pageNumber: bookmark.pageNumber,
+  }))
+
+  const annotationResources = studyNotes.value
+    .filter((note) => note.selectedText || note.bbox || note.bookmarkId)
+    .map<ProjectTreeResource>((note) => ({
+      id: `file-annotation-${note.id}`,
+      kind: 'selection',
+      title: note.title,
+      subtitle: `Page ${note.pageNumber} · ${noteStatusLabels[note.status]}`,
+      noteId: note.id,
+      pageNumber: note.pageNumber,
+    }))
+
+  const referenceResources = demoLearningIdeContext.activeKnowledgeCard.blockRefs.map<ProjectTreeResource>((blockRef) => ({
+    id: `file-reference-${blockRef.id}`,
+    kind: 'reference',
+    title: trimResourceTitle(blockRef.excerpt || '块级引用'),
+    subtitle: blockRef.pageNumber ? `Page ${blockRef.pageNumber}` : '知识卡引用',
+    pageNumber: blockRef.pageNumber,
+  }))
+
+  return [
+    {
+      id: 'file-outline',
+      label: document?.sourceType === 'pdf' ? '大纲' : '标题大纲',
+      badge: String(outlineTreeItems.value.length || outlinePageItems.value.length),
+      resources: outlineResources,
+      children: buildChapterOutlineFolders(outlineTreeItems.value),
+      emptyText: '当前文件还没有解析出目录',
+    },
+    {
+      id: 'file-bookmarks',
+      label: '书签',
+      badge: String(bookmarkResources.length),
+      resources: bookmarkResources,
+      emptyText: '给当前页添加书签',
+    },
+    {
+      id: 'file-annotations',
+      label: '标注',
+      badge: String(annotationResources.length),
+      resources: annotationResources,
+      emptyText: '从选区创建标注或笔记',
+    },
+    {
+      id: 'file-references',
+      label: '引用',
+      badge: String(referenceResources.length),
+      resources: referenceResources,
+      emptyText: '当前文件暂无块级引用',
+    },
+  ]
+})
+
+function buildCurrentFileOutlineFolders(): ProjectTreeResource[] {
+  if (outlineTreeItems.value.length > 0) return []
+  return outlinePageItems.value.slice(0, 40).map<ProjectTreeResource>((page) => ({
+    id: `file-page-${page}`,
+    kind: 'page',
+    title: `Page ${page}`,
+    subtitle: '自动页面定位',
+    pageNumber: page,
+    count: getPageNoteCount(page) || undefined,
+  }))
+}
+
+function buildChapterOutlineFolders(items: DisplayOutlineItem[]): ProjectTreeFolder[] {
+  const outlineItemsForChapters = items
+    .filter((item) => !item.syntheticRoot)
+    .filter((item) => item.source !== 'user_bookmark' && item.source !== 'user_bookmark_root')
+    .slice(0, 80)
+
+  if (outlineItemsForChapters.length === 0) return []
+
+  const chapterLevel = Math.min(...outlineItemsForChapters.map((item) => item.displayLevel))
+  const chapterFolders: ProjectTreeFolder[] = []
+  let activeChapter: ProjectTreeFolder | null = null
+
+  for (const item of outlineItemsForChapters) {
+    if (!activeChapter || item.displayLevel <= chapterLevel) {
+      activeChapter = {
+        id: `file-outline-chapter-${normalizeProjectTreeId(item.id) || normalizeProjectTreeId(item.title)}`,
+        label: item.title,
+        badge: '1',
+        resources: [buildOutlineTreeResource(item, '章节首页')],
+        emptyText: '当前章节没有下级目录',
+      }
+      chapterFolders.push(activeChapter)
+      continue
+    }
+
+    activeChapter.resources.push(buildOutlineTreeResource(item))
+    activeChapter.badge = String(activeChapter.resources.length)
+  }
+
+  return chapterFolders
+}
+
+function buildOutlineTreeResource(item: DisplayOutlineItem, title = item.title): ProjectTreeResource {
+  return {
+    id: `file-outline-${item.id}`,
+    kind: 'outline',
+    title,
+    subtitle: `Page ${item.pageNumber || 1}`,
+    outlineItemId: item.id,
+    pageNumber: item.pageNumber || 1,
+    count: getOutlineItemNoteCount(item) || undefined,
+  }
+}
+
 const sidePanelOptions = computed<WorkspaceSidePanelOption[]>(() => [
   { id: 'outline', label: '目录', icon: '目', count: outlineTreeItems.value.length || outlinePageItems.value.length },
   { id: 'bookmarks', label: '书签', icon: '签', count: userBookmarks.value.length },
@@ -1418,13 +998,95 @@ const sidePanelOptions = computed<WorkspaceSidePanelOption[]>(() => [
   { id: 'search', label: '搜索', icon: '搜', count: filteredOutlineItems.value.length || filteredOutlinePageItems.value.length },
 ])
 
-const sidePanelSummary = computed(() => {
-  if (activeSidePanel.value === 'outline') return outlineSummary.value
-  if (activeSidePanel.value === 'bookmarks') return `${userBookmarks.value.length} 个书签 · Page ${currentPdfPage.value}`
-  if (activeSidePanel.value === 'notes') return `${studyNotes.value.length} 条笔记 · ${activeBlockNotes.value.length} 条在当前上下文`
-  if (activeSidePanel.value === 'assets') return `${totalStudyNoteCount.value} 条笔记 · ${workspaceStateSaving.value ? '同步中' : '已同步'}`
-  return `${filteredOutlineItems.value.length || filteredOutlinePageItems.value.length} 个匹配结果`
+const learningModuleGroups = computed(() => buildLearningModuleGroups(demoLearningIdeContext.moduleCatalog))
+
+const learningSidePanelOptions = computed<LearningSidePanelOption[]>(() => {
+  return sidePanelOptions.value.map((panel) => ({
+    id: panel.id,
+    label: panel.label,
+    count: panel.count,
+  }))
 })
+
+const collapsedProjectTreeFolderIdList = computed<string[]>(() => Array.from(collapsedProjectTreeFolderIds.value))
+
+const learningProjectTreeFolders = computed<LearningResourceTreeFolder[]>(() => {
+  return toLearningResourceTreeFolders(projectTreeFolders.value)
+})
+
+const learningCurrentFileTreeFolders = computed<LearningResourceTreeFolder[]>(() => {
+  return toLearningResourceTreeFolders(currentFileTreeFolders.value)
+})
+
+function toLearningResourceTreeFolders(folders: ProjectTreeFolder[]): LearningResourceTreeFolder[] {
+  return folders.map((folder) => ({
+    id: folder.id,
+    label: folder.label,
+    badge: folder.badge,
+    emptyText: folder.emptyText,
+    resources: folder.resources.map((resource) => ({
+      id: resource.id,
+      kind: resource.kind,
+      title: resource.title,
+      subtitle: resource.subtitle,
+      count: resource.count,
+    })),
+    children: folder.children ? toLearningResourceTreeFolders(folder.children) : undefined,
+  }))
+}
+
+const learningWorkspaceTabs = computed<LearningWorkspaceTab[]>(() => {
+  return workspaceTabs.value.map((tab) => ({
+    id: tab.id,
+    kind: tab.kind,
+    title: tab.title,
+    subtitle: tab.subtitle,
+    dirty: tab.dirty,
+  }))
+})
+
+const activeLearningKnowledgeCard = computed(() => demoLearningIdeContext.activeKnowledgeCard)
+
+const activeLearningBacklinks = computed(() => {
+  return resolveBacklinksForKnowledgeNode(demoLearningIdeContext, activeLearningKnowledgeCard.value.id)
+})
+
+const learningKnowledgeGraph = computed(() => demoLearningIdeContext.graph)
+
+const learningOutputItems = computed(() => demoLearningIdeContext.outputs)
+
+const learningAssistantMessages = computed<LearningAssistantMessage[]>(() => {
+  return agentMessages.value.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    citations: message.citations,
+  }))
+})
+
+// Kept during the shell split so bookmark, outline, and note actions can be reattached to focused components next.
+const retainedLearningIdeBindings = computed(() => ({
+  outlineFilterScopes: outlineFilterScopes.value,
+  projectTreeSummary: projectTreeSummary.value,
+  studyAssetPipeline: studyAssetPipeline.value,
+  actions: [
+    isProjectTreeFolderCollapsed,
+    getProjectTreeResourceIcon,
+    jumpToUserBookmark,
+    selectOutlineItem,
+    isOutlineItemActive,
+    toggleOutlineNode,
+    createUserBookmark,
+    renameActiveUserBookmark,
+    deleteActiveUserBookmark,
+    exportWorkspaceBookmarks,
+    startNoteFromAgentMessage,
+    editStudyNote,
+    updateStudyNoteStatus,
+    resolveNoteBookmarkLabel,
+  ],
+}))
+void retainedLearningIdeBindings
 
 const noteComposerContextLabel = computed(() => {
   const context = noteComposer.value.context
@@ -1540,6 +1202,116 @@ function openImportPdfEntry() {
   showToast('PDF 导入入口将在下一阶段接入当前上传流程', 'info')
 }
 
+function handleLearningCommandSearch(query: string) {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) return
+  outlineSearchQuery.value = normalizedQuery
+  activeSidePanel.value = 'search'
+  showToast(`已在当前学习项目中搜索：${normalizedQuery}`, 'info')
+}
+
+function handleAddLearningModule(moduleId: string) {
+  moduleLibraryOpen.value = false
+  const module = demoLearningIdeContext.moduleCatalog.find((item) => item.id === moduleId)
+  showToast(`${module?.label ?? '学习工具'} 已加入当前工作台视图`, 'success')
+}
+
+function selectResourceExplorerView(view: LearningResourceExplorerView) {
+  activeResourceExplorerView.value = view
+  if (isOutlineCollapsed.value) {
+    isOutlineCollapsed.value = false
+  }
+}
+
+function selectLearningSidePanel(panelId: string) {
+  activeResourceExplorerView.value = 'file'
+  selectSidePanel(panelId as WorkspaceSidePanel)
+}
+
+function toggleLearningProjectTreeFolder(folderId: string) {
+  toggleProjectTreeFolder(folderId as ProjectTreeFolderId)
+}
+
+function openLearningProjectTreeResource(resource: LearningResourceTreeItem) {
+  const originalResource = collectProjectTreeResources([...projectTreeFolders.value, ...currentFileTreeFolders.value])
+    .find((item) => item.id === resource.id)
+  if (originalResource) {
+    openProjectTreeResource(originalResource)
+    return
+  }
+  openTopicTab(resource.title)
+}
+
+function handleLearningProjectTreeFolderEmptyAction(folder: LearningResourceTreeFolder) {
+  const originalFolder = findProjectTreeFolderById([...projectTreeFolders.value, ...currentFileTreeFolders.value], folder.id)
+  if (originalFolder) {
+    handleProjectTreeFolderEmptyAction(originalFolder)
+    return
+  }
+  openTopicTab(folder.label)
+}
+
+function collectProjectTreeResources(folders: ProjectTreeFolder[]): ProjectTreeResource[] {
+  return folders.flatMap((folder) => [
+    ...folder.resources,
+    ...collectProjectTreeResources(folder.children ?? []),
+  ])
+}
+
+function findProjectTreeFolderById(folders: ProjectTreeFolder[], folderId: string): ProjectTreeFolder | null {
+  for (const folder of folders) {
+    if (folder.id === folderId) return folder
+    const matchedChild = findProjectTreeFolderById(folder.children ?? [], folderId)
+    if (matchedChild) return matchedChild
+  }
+  return null
+}
+
+function openLearningBlockReference(blockRefId: string) {
+  const blockRef = activeLearningKnowledgeCard.value.blockRefs.find((item) => item.id === blockRefId)
+  if (!blockRef) return
+  if (blockRef.pageNumber) {
+    selectOutlinePage(blockRef.pageNumber)
+  }
+  pdfSourceHighlight.value = {
+    pageNumber: blockRef.pageNumber ?? currentPdfPage.value,
+    bbox: blockRef.bbox ?? null,
+    label: activeLearningKnowledgeCard.value.title,
+    text: blockRef.excerpt,
+  }
+}
+
+function openLearningBacklinkSource(sourceId: string) {
+  const backlink = activeLearningBacklinks.value.find((item) => item.sourceId === sourceId)
+  if (!backlink) return
+  if (backlink.blockRef.pageNumber) {
+    selectOutlinePage(backlink.blockRef.pageNumber)
+  }
+  askAgent(`围绕 ${backlink.title} 解释它和 ${activeLearningKnowledgeCard.value.title} 的关系`)
+}
+
+function openLearningGraphNode(nodeId: string) {
+  const node = learningKnowledgeGraph.value.nodes.find((item) => item.id === nodeId)
+  if (!node) return
+  if (node.type === 'knowledge-card') {
+    showToast(`已聚焦知识卡：${node.label}`, 'info')
+    return
+  }
+  askAgent(`解释知识图谱节点：${node.label}`)
+}
+
+function handleLearningAssistantQuickAction(prompt: string) {
+  if (prompt === '加入知识卡') {
+    showToast('当前选区已关联到知识卡视图', 'success')
+    return
+  }
+  if (prompt === '整理笔记') {
+    startNoteFromActiveBlock()
+    return
+  }
+  askAgent(prompt)
+}
+
 function buildProjectTreeNoteResource(note: StudyNote, kind: Extract<ProjectTreeResourceKind, 'note' | 'anchor-note' | 'review'>): ProjectTreeResource {
   return {
     id: `project-${kind}-${note.id}`,
@@ -1598,6 +1370,37 @@ function openProjectTreeResource(resource: ProjectTreeResource) {
     return
   }
 
+  if (resource.kind === 'outline' && resource.outlineItemId) {
+    const outlineItem = findDisplayOutlineItemById(resource.outlineItemId)
+    if (outlineItem) {
+      selectOutlineItem(outlineItem)
+      documentView.value = 'pdf-canvas'
+      return
+    }
+  }
+
+  if ((resource.kind === 'page' || resource.kind === 'reference') && resource.pageNumber) {
+    selectOutlinePage(resource.pageNumber)
+    documentView.value = 'pdf-canvas'
+    return
+  }
+
+  if (resource.kind === 'bookmark' && resource.bookmarkId) {
+    const bookmark = userBookmarks.value.find((item) => item.id === resource.bookmarkId)
+    if (bookmark) {
+      jumpToUserBookmark(bookmark)
+      return
+    }
+  }
+
+  if (resource.kind === 'selection' && resource.noteId) {
+    const note = studyNotes.value.find((item) => item.id === resource.noteId)
+    if (note) {
+      jumpToStudyNote(note)
+      return
+    }
+  }
+
   if ((resource.kind === 'anchor-note' || resource.kind === 'note' || resource.kind === 'review') && resource.noteId) {
     openStudyNote(resource.noteId)
     return
@@ -1640,6 +1443,22 @@ function handleProjectTreeFolderEmptyAction(folder: ProjectTreeFolder) {
     askAgent('整理当前段落为笔记草稿')
     return
   }
+  if (folder.id === 'file-outline') {
+    activeSidePanel.value = 'outline'
+    return
+  }
+  if (folder.id === 'file-bookmarks') {
+    createUserBookmark()
+    return
+  }
+  if (folder.id === 'file-annotations') {
+    startNoteFromActiveBlock()
+    return
+  }
+  if (folder.id === 'file-references') {
+    openTopicTab('块级引用')
+    return
+  }
   openTopicTab(folder.label)
 }
 
@@ -1660,6 +1479,11 @@ function toggleProjectTreeFolder(folderId: ProjectTreeFolderId) {
 function getProjectTreeResourceIcon(kind: ProjectTreeResourceKind) {
   const icons: Record<ProjectTreeResourceKind, string> = {
     pdf: 'PDF',
+    outline: '目',
+    page: 'P',
+    bookmark: '签',
+    selection: '标',
+    reference: '引',
     note: 'MD',
     'anchor-note': '锚',
     asset: '资',
@@ -1673,6 +1497,12 @@ function getProjectTreeResourceIcon(kind: ProjectTreeResourceKind) {
 
 function normalizeProjectTreeId(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\u4e00-\u9fa5-]/g, '')
+}
+
+function trimResourceTitle(value: string, maxLength = 28) {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength)}...`
 }
 
 async function flushWorkspaceStateSave() {
@@ -2064,21 +1894,6 @@ function getOutlineItemNoteCount(item: DocumentOutlineItem) {
 
 function getPageNoteCount(page: number) {
   return noteCountByPage.value.get(page) ?? 0
-}
-
-function isStudyNoteInActiveContext(note: StudyNote) {
-  if (note.id === activeNoteId.value) return true
-
-  const context = selectedPdfContext.value
-  if (context && note.pageNumber === context.pageNumber) {
-    return note.blockId === context.blockId
-      || note.elementId === context.elementId
-      || (!!context.bbox && note.bbox === context.bbox)
-  }
-
-  const block = activeBlock.value
-  return (!!block && (note.blockId === block.id || note.elementId === block.elementId))
-    || (!!activeOutlineItemId.value && note.bookmarkId === activeOutlineItemId.value)
 }
 
 function isOutlineNodeCollapsed(item: DisplayOutlineItem) {
@@ -3020,7 +2835,6 @@ textarea {
 
 .workspace-shell--ide {
   grid-template-columns:
-    48px
     minmax(220px, var(--outline-column-width, 300px))
     8px
     minmax(560px, 1fr)
@@ -3034,8 +2848,7 @@ textarea {
 
 .workspace-shell--outline-collapsed {
   grid-template-columns:
-    48px
-    0
+    44px
     0
     minmax(560px, 1fr)
     8px
@@ -3044,7 +2857,6 @@ textarea {
 
 .workspace-shell--agent-collapsed {
   grid-template-columns:
-    48px
     minmax(220px, var(--outline-column-width, 300px))
     8px
     minmax(560px, 1fr)
@@ -3053,10 +2865,9 @@ textarea {
 }
 
 .workspace-shell--outline-collapsed.workspace-shell--agent-collapsed {
-  grid-template-columns: 48px 0 0 minmax(560px, 1fr) 0 44px;
+  grid-template-columns: 44px 0 minmax(560px, 1fr) 0 44px;
 }
 
-.workspace-activity-bar,
 .workspace-outline-panel,
 .workspace-canvas-panel,
 .workspace-agent-panel {
@@ -3069,32 +2880,8 @@ textarea {
   overflow: hidden;
 }
 
-.workspace-activity-bar {
-  grid-column: 1;
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  padding: 8px 6px;
-  border-right: 0;
-  background: #ffffff;
-}
-
-.workspace-activity-bar .activity-button {
-  border-color: transparent;
-  background: transparent;
-  color: var(--ide-muted);
-}
-
-.workspace-activity-bar .activity-button.active,
-.workspace-activity-bar .activity-button:hover,
-.workspace-activity-bar .activity-button:focus-visible {
-  border-color: rgba(45, 212, 191, 0.45);
-  background: rgba(45, 212, 191, 0.12);
-  color: var(--ide-accent);
-}
-
 .workspace-outline-panel {
-  grid-column: 2;
+  grid-column: 1;
 }
 
 .workspace-explorer {
@@ -3103,19 +2890,19 @@ textarea {
 }
 
 .workspace-resizer--outline {
-  grid-column: 3;
+  grid-column: 2;
 }
 
 .workspace-canvas-panel {
-  grid-column: 4;
+  grid-column: 3;
 }
 
 .workspace-resizer--agent {
-  grid-column: 5;
+  grid-column: 4;
 }
 
 .workspace-agent-panel {
-  grid-column: 6;
+  grid-column: 5;
 }
 
 .workspace-outline-panel {
@@ -4303,7 +4090,7 @@ textarea {
 
 .workspace-canvas-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .workspace-tabs {
@@ -4383,9 +4170,36 @@ textarea {
 
 .workspace-editor-area {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   background: var(--reader-bg);
+}
+
+.learning-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.learning-editor-primary {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--ide-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.learning-knowledge-column {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .workspace-editor-toolbar {
@@ -5701,7 +5515,6 @@ textarea:focus-visible {
 @media (max-width: 1440px) {
   .workspace-shell--ide {
     grid-template-columns:
-      44px
       minmax(190px, 240px)
       6px
       minmax(360px, 1fr)
@@ -5713,7 +5526,6 @@ textarea:focus-visible {
     grid-template-columns:
       44px
       0
-      0
       minmax(360px, 1fr)
       6px
       minmax(300px, 340px);
@@ -5721,7 +5533,6 @@ textarea:focus-visible {
 
   .workspace-shell--agent-collapsed {
     grid-template-columns:
-      44px
       minmax(190px, 240px)
       6px
       minmax(360px, 1fr)
@@ -5730,11 +5541,7 @@ textarea:focus-visible {
   }
 
   .workspace-shell--outline-collapsed.workspace-shell--agent-collapsed {
-    grid-template-columns: 44px 0 0 minmax(360px, 1fr) 0 40px;
-  }
-
-  .workspace-activity-bar {
-    padding: 7px 5px;
+    grid-template-columns: 44px 0 minmax(360px, 1fr) 0 40px;
   }
 
   .activity-button {
@@ -5745,6 +5552,15 @@ textarea:focus-visible {
 
   .workspace-tab {
     min-width: 120px;
+  }
+
+  .learning-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-knowledge-column {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
   }
 
   .workspace-resizer {

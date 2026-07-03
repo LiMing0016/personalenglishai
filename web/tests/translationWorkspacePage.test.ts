@@ -16,6 +16,21 @@ const pdfCanvasSource = readFileSync(
   'utf8',
 )
 
+const assistantPanelSource = readFileSync(
+  new URL('../src/components/learning-ide/ContextAssistantPanel.vue', import.meta.url),
+  'utf8',
+)
+
+const resourcePanelSource = readFileSync(
+  new URL('../src/components/learning-ide/LearningResourcePanel.vue', import.meta.url),
+  'utf8',
+)
+
+const topBarSource = readFileSync(
+  new URL('../src/components/learning-ide/LearningIdeTopBar.vue', import.meta.url),
+  'utf8',
+)
+
 function extractCssBlock(source: string, selector: string) {
   const start = source.indexOf(selector)
   assert.notEqual(start, -1, `Expected CSS selector ${selector} to exist`)
@@ -43,15 +58,32 @@ assert.ok(
   'workspace canvas should use a compact toolbar view switcher instead of a full reading-area header',
 )
 assert.ok(
-  workspaceSource.includes('aria-label="返回翻译列表"')
-    && workspaceSource.includes('title="返回翻译列表"')
-    && workspaceSource.includes('class="back-button-icon"'),
-  'workspace back action should be compact so it does not push into the document title',
+  workspaceSource.includes('<LearningIdeTopBar')
+    && workspaceSource.includes('@back="goBackToHub"')
+    && workspaceSource.includes('@complete="completeLearningSession"'),
+  'workspace should delegate top chrome actions to the learning IDE top bar',
 )
+
+for (const learningIdeComponent of [
+  'LearningIdeTopBar',
+  'LearningResourcePanel',
+  'LearningModuleLibrary',
+  'WorkspaceTabs',
+  'KnowledgeCardView',
+  'BacklinksPanel',
+  'LocalGraphPanel',
+  'ContextAssistantPanel',
+  'LearningOutputDock',
+]) {
+  assert.ok(
+    workspaceSource.includes(learningIdeComponent),
+    `workspace page should compose ${learningIdeComponent}`,
+  )
+}
+
 assert.ok(
-  workspaceSource.includes('grid-template-columns: 32px minmax(0, 1fr) auto')
-    && workspaceSource.includes('.document-heading {\n  min-width: 0;'),
-  'workspace toolbar should reserve a fixed compact back column and allow the title to truncate',
+  !workspaceSource.includes('workspace-activity-bar'),
+  'workspace should remove the far-left activity bar so the center learning surface has more room',
 )
 
 for (const requiredCopy of [
@@ -66,38 +98,56 @@ for (const requiredCopy of [
   '学习资产',
   '精读文本',
   'PDF 学习画布',
-  '目录导航',
   '当前选区',
   '当前页 / 当前段落',
   '学习笔记',
   '返回',
-  '完成学习',
   '调整左侧目录宽度',
   '调整右侧 Agent 宽度',
-  '收起左侧目录导航',
-  '收起右侧 Agent',
+  '展开左侧学习资源',
   '展开右侧 Agent',
+  'AI 上下文助手',
 ]) {
   assert.ok(workspaceSource.includes(requiredCopy), `workspace page should render ${requiredCopy}`)
 }
 
 for (const requiredProjectTreeCopy of [
   '学习项目',
-  '项目资源树',
   '资料',
-  'PDF 目录',
   '锚点笔记',
   '复习队列',
   '题库',
   '错题本',
   '提示词',
-  'project-tree',
-  'project-tree-folder',
-  'project-tree-outline',
-  'openProjectTreeResource',
+  'learningProjectTreeFolders',
+  'openLearningProjectTreeResource',
+  'handleLearningProjectTreeFolderEmptyAction',
 ]) {
   assert.ok(workspaceSource.includes(requiredProjectTreeCopy), `workspace project tree should render ${requiredProjectTreeCopy}`)
 }
+
+for (const requiredCurrentFileCopy of [
+  'currentFileTreeFolders',
+  'buildCurrentFileOutlineFolders',
+  'buildChapterOutlineFolders',
+  'currentFileTitle',
+  'currentFileSubtitle',
+  'activeResourceExplorerView',
+  'selectResourceExplorerView',
+  '大纲',
+  '标注',
+  '引用',
+  'outlineTreeItems',
+  'userBookmarks',
+  'studyNotes',
+]) {
+  assert.ok(workspaceSource.includes(requiredCurrentFileCopy), `workspace current file explorer should render ${requiredCurrentFileCopy}`)
+}
+assert.ok(
+  workspaceSource.includes("children: buildChapterOutlineFolders(outlineTreeItems.value)")
+    && workspaceSource.includes('children: folder.children ? toLearningResourceTreeFolders(folder.children) : undefined'),
+  'workspace current file outline should keep chapters as nested folders instead of flattening every heading into one list',
+)
 
 for (const removedVisibleChrome of [
   'class="workspace-titlebar-document"',
@@ -216,15 +266,15 @@ assert.ok(
   'workspace should expose a loading state while waiting for source-grounded Agent answers',
 )
 assert.ok(
-  workspaceSource.includes('message.citations') && workspaceSource.includes('引用'),
+  workspaceSource.includes('message.citations') && assistantPanelSource.includes('引用'),
   'workspace should render source citations returned by the Agent answer endpoint',
 )
 assert.ok(
-  workspaceSource.includes('jumpToCitation'),
+  workspaceSource.includes('jumpToCitation') && workspaceSource.includes('@open-citation="jumpToCitation"'),
   'workspace should let users click citations and jump back to the PDF source page',
 )
 assert.ok(
-  workspaceSource.includes('citation.pageNumber') && workspaceSource.includes('citation.elementId'),
+  assistantPanelSource.includes('citation.pageNumber') && assistantPanelSource.includes('citation.elementId'),
   'workspace citations should keep pageNumber and elementId visible to the user',
 )
 assert.ok(
@@ -361,29 +411,30 @@ assert.ok(
     && workspaceSource.includes('@note-selection="startNoteFromPdfSelection"'),
   'workspace should open the note workspace immediately when the user creates a note from a PDF selection',
 )
-const notePanelIndex = workspaceSource.indexOf('class="study-note-panel"')
-const agentContextIndex = workspaceSource.indexOf('class="agent-context"')
+const notePanelIndex = assistantPanelSource.indexOf('class="study-note-panel study-note-panel--composer-active"')
+const agentContextIndex = assistantPanelSource.indexOf('class="context-assistant-panel__context"')
 assert.ok(
   notePanelIndex !== -1 && agentContextIndex !== -1 && notePanelIndex < agentContextIndex,
   'workspace should keep the anchored note editor at the top of the right panel before context and translation cards',
 )
 assert.ok(
-  workspaceSource.includes('study-note-panel--composer-active')
-    && workspaceSource.includes('study-note-selected-text')
-    && workspaceSource.includes('ref="noteContentInputRef"'),
+  workspaceSource.includes(':note-composer-active="noteComposer.mode !== \'idle\'"')
+    && assistantPanelSource.includes('study-note-panel--composer-active')
+    && assistantPanelSource.includes('study-note-selected-text')
+    && assistantPanelSource.includes('ref="noteContentInputRef"'),
   'workspace should make the active anchored note editor explicit with selected text preview and focused note input',
 )
 assert.ok(
-  workspaceSource.includes('note-agent-compose')
+  assistantPanelSource.includes('note-agent-compose')
     && workspaceSource.includes('noteAgentPrompt')
     && workspaceSource.includes('askAgentToAppendNote')
     && workspaceSource.includes('appendAgentAnswerToNoteComposer'),
   'workspace note editor should let users ask Agent and append the answer into the active anchored note',
 )
 assert.ok(
-  workspaceSource.includes('追加到当前笔记')
+  assistantPanelSource.includes('追加到当前笔记')
     && workspaceSource.includes("noteComposer.mode !== 'idle'")
-    && workspaceSource.includes('@click="appendAgentAnswerToNoteComposer(message.content)"'),
+    && workspaceSource.includes('@append-agent-answer="appendAgentAnswerToNoteComposer"'),
   'workspace should let users append an existing Agent answer into the note they are editing',
 )
 assert.ok(
@@ -391,11 +442,12 @@ assert.ok(
   'workspace should re-highlight the original PDF selection when opening an anchored note',
 )
 assert.ok(
-  workspaceSource.includes('isStudyNoteInActiveContext'),
-  'workspace should include the active PDF anchored note in the right-side note panel even when it is not bound to the current text block',
+  workspaceSource.includes(':note-composer-active="noteComposer.mode !== \'idle\'"')
+    && workspaceSource.includes(':note-selected-text="noteComposer.context?.text || \'\'"'),
+  'workspace should keep the active PDF anchored note available in the right-side note composer',
 )
 assert.ok(
-  workspaceSource.includes('outline-node-toggle') && workspaceSource.includes('aria-expanded'),
+  resourcePanelSource.includes('aria-expanded') && resourcePanelSource.includes('toggleFolder'),
   'workspace should render accessible expand/collapse controls for outline tree nodes',
 )
 assert.ok(
@@ -411,40 +463,40 @@ assert.ok(
   'workspace grid should have a collapsed state for the agent drawer',
 )
 assert.ok(
-  workspaceSource.includes('workspace-activity-bar')
-    && workspaceSource.includes('sidePanelOptions')
-    && workspaceSource.includes('selectSidePanel'),
-  'workspace should use an IDE-style activity bar to switch outline, notes, assets, and search drawers',
+  !workspaceSource.includes('workspace-activity-bar')
+    && workspaceSource.includes('LearningResourcePanel')
+    && workspaceSource.includes('learningSidePanelOptions')
+    && workspaceSource.includes('selectLearningSidePanel'),
+  'workspace should use the resource panel itself to switch outline, notes, assets, and search drawers',
 )
 assert.ok(
-  workspaceSource.includes('grid-template-columns:\n    48px\n    minmax(220px, var(--outline-column-width, 300px))')
-    && workspaceSource.includes('grid-template-columns:\n    48px\n    0\n    0\n    minmax(560px, 1fr)'),
-  'workspace grid should keep a narrow activity bar while allowing the left drawer to collapse without taking space',
+  workspaceSource.includes('grid-template-columns:\n    minmax(220px, var(--outline-column-width, 300px))\n    8px\n    minmax(560px, 1fr)')
+    && workspaceSource.includes('grid-template-columns: 44px 0 minmax(560px, 1fr) 0 44px;'),
+  'workspace grid should remove the activity bar while allowing both side drawers to collapse',
 )
 assert.ok(
   workspaceSource.includes('@media (max-width: 1440px)')
-    && workspaceSource.includes('grid-template-columns:\n      44px\n      minmax(190px, 240px)')
+    && workspaceSource.includes('grid-template-columns:\n      minmax(190px, 240px)\n      6px\n      minmax(360px, 1fr)')
     && workspaceSource.includes('minmax(360px, 1fr)')
     && workspaceSource.includes('minmax(300px, 340px)'),
   'workspace should use a compact desktop grid before the mobile breakpoint so narrow browser windows do not overflow',
 )
 assert.ok(
-  workspaceSource.includes('.side-drawer-switcher {\n    grid-template-columns: repeat(3, minmax(0, 1fr));')
-    && workspaceSource.includes('.outline-filter-tabs {\n    grid-template-columns: 1fr;')
-    && workspaceSource.includes('.outline-quick-actions {\n    grid-template-columns: 1fr;'),
-  'workspace left drawer controls should stack in compact desktop layouts instead of overlapping',
+  resourcePanelSource.includes('.learning-resource-panel__switcher')
+    && resourcePanelSource.includes('grid-template-columns: repeat(2, minmax(0, 1fr));')
+    && resourcePanelSource.includes('min-height: 32px;'),
+  'workspace left drawer controls should stay compact in desktop layouts instead of using tall category tiles',
 )
 assert.ok(
-  workspaceSource.includes('grid-template-rows: auto auto auto minmax(0, 1fr);')
-    && workspaceSource.includes('.side-drawer-panel {\n  grid-row: 3 / 5;')
-    && workspaceSource.includes('.outline-list {\n  grid-row: 4;'),
+  resourcePanelSource.includes('grid-template-rows: auto auto minmax(0, 1fr);')
+    && resourcePanelSource.includes('.learning-resource-panel__tree'),
   'workspace left drawer should reserve explicit rows so controls and the scrollable outline list cannot overlap',
 )
 assert.ok(
-  workspaceSource.includes("v-else-if=\"activeSidePanel === 'assets'\"")
-    && workspaceSource.includes('side-asset-board')
-    && workspaceSource.includes('side-asset-card'),
-  'workspace should move the learning asset pipeline into the left drawer instead of a permanent bottom panel',
+  workspaceSource.includes('LearningOutputDock')
+    && workspaceSource.includes('learningOutputItems')
+    && workspaceSource.includes('activeLearningOutputId'),
+  'workspace should expose learning outputs through a dedicated output dock',
 )
 assert.ok(
   workspaceSource.includes('workspace-status-bar')
@@ -454,12 +506,12 @@ assert.ok(
   'workspace should replace the large bottom asset pipeline with a compact IDE status bar',
 )
 assert.ok(
-  workspaceSource.includes('workspace-ide-titlebar')
-    && workspaceSource.includes('workspace-tabs')
+  workspaceSource.includes('LearningIdeTopBar')
+    && workspaceSource.includes('WorkspaceTabs')
     && workspaceSource.includes('workspace-explorer')
     && workspaceSource.includes('workspace-editor-area')
     && workspaceSource.includes('workspace-status-bar--ide'),
-  'workspace should expose a VSCode-style titlebar, tabs, explorer, editor area, and IDE status bar',
+  'workspace should expose a componentized IDE topbar, tabs, explorer, editor area, and IDE status bar',
 )
 assert.ok(
   workspaceSource.includes('workspaceTabs')
@@ -470,33 +522,31 @@ assert.ok(
   'workspace should model PDF, note, and topic resources as IDE tabs',
 )
 assert.ok(
-  workspaceSource.includes('workspace-resource-actions')
-    && workspaceSource.includes('导入 PDF')
-    && workspaceSource.includes('新建专题'),
-  'workspace Explorer should expose import/new note/topic actions without duplicating opened resources',
+  resourcePanelSource.includes('learning-resource-panel__scope-tabs')
+    && !resourcePanelSource.includes('导入 PDF')
+    && !resourcePanelSource.includes('新建笔记'),
+  'workspace Explorer should separate project resources from current-file outline while keeping create/import commands in the top chrome',
 )
 assert.ok(
-  workspaceSource.includes('agentPanelMode')
-    && workspaceSource.includes("agentPanelMode === 'note-workbench'")
-    && workspaceSource.includes('class="note-workbench-panel"')
-    && workspaceSource.includes('返回 Agent'),
-  'workspace should switch the right panel from Agent to a note workbench when editing an anchored note',
+  workspaceSource.includes(':note-composer-active="noteComposer.mode !== \'idle\'"')
+    && assistantPanelSource.includes('class="study-note-panel study-note-panel--composer-active"'),
+  'workspace should switch the right panel into a note editor state when editing an anchored note',
 )
 assert.ok(
   workspaceSource.includes('aiCandidateContent')
     && workspaceSource.includes('appendAiCandidateToNote')
-    && workspaceSource.includes('AI 候选补充'),
+    && assistantPanelSource.includes('AI 候选补充'),
   'workspace should keep Agent output as a candidate before the user appends it to the active note',
 )
 assert.ok(
   !workspaceSource.includes('回答会追加到上面的笔记正文')
-    && workspaceSource.includes('Agent 的补充会先出现在这里，确认后再追加到笔记。'),
+    && assistantPanelSource.includes('Agent 的补充会先出现在这里，确认后再追加到笔记。'),
   'workspace should present Agent output as confirmable note candidates instead of automatic note-body writes',
 )
 assert.ok(
   workspaceSource.includes('--ide-bg')
     && workspaceSource.includes('--reader-bg')
-    && workspaceSource.includes('.workspace-tab.active'),
+    && workspaceSource.includes('learning-editor-grid'),
   'workspace should keep the learning IDE shell variables centralized',
 )
 assert.ok(
@@ -513,10 +563,11 @@ assert.ok(
   'workspace light theme should not leave hard-coded dark background blocks in the IDE chrome',
 )
 assert.ok(
-  extractCssBlock(workspaceSource, '.workspace-command-center input').includes('background: #ffffff;')
-    && extractCssBlock(workspaceSource, '.workspace-activity-bar {').includes('background: #ffffff;')
-    && extractCssBlock(workspaceSource, '.outline-search input').includes('background: #ffffff;'),
-  'command search, activity bar, and outline search should render as light IDE surfaces',
+  topBarSource.includes('.learning-ide-top-bar__search')
+    && topBarSource.includes('background: #ffffff;')
+    && resourcePanelSource.includes('.learning-resource-panel')
+    && resourcePanelSource.includes('background: #ffffff;'),
+  'command search and resource panel should render as light IDE surfaces',
 )
 assert.ok(
   pdfCanvasSource.includes('getToken'),

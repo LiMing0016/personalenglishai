@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
 import AssistantStarterCards from './AssistantStarterCards.vue'
@@ -160,6 +160,8 @@ const emit = defineEmits<{
 }>()
 
 const previewUrls = new Map<string, string>()
+const scrollContainerRef = ref<HTMLElement | null>(null)
+const shouldAutoFollowMessages = ref(true)
 const selectionToolbarWidth = 300
 const selectionToolbarHeight = 44
 const selectionToolbarGutter = 12
@@ -180,6 +182,21 @@ function previewUrlById(id: string, file: File) {
 
 function onRenderedMarkdownClick(event: MouseEvent) {
   void copyMarkdownCodeFromClick(event)
+}
+
+function handleScroll() {
+  const container = scrollContainerRef.value
+  if (!container) return
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+  shouldAutoFollowMessages.value = distanceFromBottom < 96
+}
+
+function scrollToConversationBottom() {
+  const container = scrollContainerRef.value
+  if (!container) return
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight
+  })
 }
 
 function handleLearningAssetSelection(message: AssistantMessage) {
@@ -290,8 +307,19 @@ function emitAppendToLearningAsset() {
   clearLearningAssetSelection()
 }
 
+watch(
+  () => props.messages.map((message) => `${message.id}:${message.status}:${message.content.length}`).join('|'),
+  async () => {
+    if (!shouldAutoFollowMessages.value) return
+    await nextTick()
+    scrollToConversationBottom()
+  },
+  { flush: 'post' },
+)
+
 onMounted(() => {
   document.addEventListener('selectionchange', handleDocumentSelectionChange)
+  scrollToConversationBottom()
 })
 
 onBeforeUnmount(() => {
