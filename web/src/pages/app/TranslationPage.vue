@@ -85,9 +85,17 @@
                   placeholder="搜索标题、来源或内容"
                 />
               </label>
-              <button type="button" class="filter-button" @click="showPlaceholderAction('高级筛选')">
-                筛选
-              </button>
+              <label class="format-field">
+                <span>按格式</span>
+                <select v-model="activeSourceType" aria-label="按格式筛选翻译记录">
+                  <option
+                    v-for="item in sourceFilterOptions"
+                    :key="item.key"
+                    :value="item.key">
+                    {{ item.label }}
+                  </option>
+                </select>
+              </label>
             </div>
           </div>
 
@@ -120,14 +128,42 @@
                   {{ sourceTypeLabels[item.sourceType] }}
                 </span>
                 <div>
-                  <h3>{{ item.title }}</h3>
+                  <input
+                    v-if="editingTranslationId === item.id"
+                    ref="inlineTitleInput"
+                    v-model="editingTitle"
+                    class="record-title-input"
+                    type="text"
+                    aria-label="重命名材料标题"
+                    @click.stop
+                    @dblclick.stop
+                    @blur="commitInlineTitleRename(item)"
+                    @keydown.enter.prevent="commitInlineTitleRename(item)"
+                    @keydown.esc.prevent="cancelInlineTitleRename"
+                  />
+                  <h3
+                    v-else
+                    class="record-title-text"
+                    tabindex="0"
+                    :title="`双击重命名：${item.title}`"
+                    @dblclick="startInlineTitleRename(item)"
+                    @keydown.enter.prevent="startInlineTitleRename(item)">
+                    {{ item.title }}
+                  </h3>
                   <p>{{ item.subtitle }}</p>
                 </div>
               </div>
               <span>{{ item.sourceLabel }}</span>
               <span>{{ modeLabels[item.mode] }}</span>
               <span>{{ item.updatedAt }}</span>
-              <span>{{ item.noteCount }} 条笔记</span>
+              <button
+                type="button"
+                class="note-count-button"
+                :aria-label="`打开 ${item.title} 的学习笔记`"
+                @click="openTranslationNotes(item)">
+                <strong>{{ item.noteCount }}</strong>
+                <span>条笔记</span>
+              </button>
               <div class="mini-progress">
                 <strong>{{ item.progress }}%</strong>
                 <span aria-hidden="true"><i :style="{ width: `${item.progress}%` }"></i></span>
@@ -138,13 +174,6 @@
               <div class="row-actions">
                 <button type="button" @click="continueReading(item)">
                   {{ item.status === 'reading' ? '继续阅读' : '查看笔记' }}
-                </button>
-                <button
-                  type="button"
-                  class="icon-button"
-                  :aria-label="`打开 ${item.title} 操作菜单`"
-                  @click="showPlaceholderAction(`${item.title} 操作菜单`)">
-                  ⋮
                 </button>
               </div>
             </article>
@@ -182,16 +211,21 @@
                 □
               </button>
             </article>
+            <p v-if="todayRecommendations.length === 0" class="side-empty">
+              暂无推荐内容，先导入一篇自己的材料。
+            </p>
           </div>
         </section>
 
         <section class="side-panel">
           <div class="side-heading">
             <h2>我的笔记摘要</h2>
-            <button type="button" @click="showPlaceholderAction('本周统计')">本周</button>
+            <button type="button" @click="showPlaceholderAction('本周统计')">
+              {{ hubKnowledgeLoading ? '同步中' : '本周' }}
+            </button>
           </div>
           <div class="stats-grid">
-            <div v-for="stat in noteStats" :key="stat.id" class="stat-card">
+            <div v-for="stat in displayedNoteStats" :key="stat.id" class="stat-card">
               <span>{{ stat.label }}</span>
               <strong>{{ stat.value }}</strong>
             </div>
@@ -205,11 +239,19 @@
             <button type="button" @click="showPlaceholderAction('全部笔记')">查看全部</button>
           </div>
           <div class="note-list">
-            <article v-for="note in recentNotes" :key="note.id" class="note-item">
+            <button
+              v-for="note in displayedRecentNotes"
+              :key="note.id"
+              type="button"
+              class="note-item"
+              @click="openRecentNote(note)">
               <h3>{{ note.title }}</h3>
               <p>{{ note.source }}</p>
               <span>{{ note.updatedAt }}</span>
-            </article>
+            </button>
+            <p v-if="displayedRecentNotes.length === 0" class="side-empty">
+              暂无笔记，进入材料后保存的笔记会出现在这里。
+            </p>
           </div>
         </section>
 
@@ -305,21 +347,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { importTranslationDocument } from '@/api/translation'
+import {
+  getTranslationDocumentKnowledge,
+  importTranslationDocument,
+  type TranslationDocumentStudyNoteDto,
+} from '@/api/translation'
 import { showToast } from '@/utils/toast'
 import {
+  buildWorkspaceNoteStats,
+  buildWorkspaceRecentNotes,
+  deriveWorkspaceRecord,
   filterTranslations,
   hubQuickActions,
   materialCategories,
-  myTranslations,
-  noteStats,
-  recentNotes,
+  noteStats as fallbackNoteStats,
   todayRecommendations,
+  type RecentNote,
   type TranslationFilter,
   type TranslationMode,
   type TranslationRecord,
+  type TranslationSourceFilter,
   type TranslationSourceType,
   type TranslationStatus,
 } from './translationHubData'
@@ -327,7 +376,9 @@ import {
   createTranslationWorkspaceDraft,
   createTranslationWorkspaceDraftFromParsedDocument,
   listTranslationWorkspaceDrafts,
+  renameTranslationWorkspaceDraft,
   saveTranslationWorkspaceDraft,
+  type TranslationWorkspaceDraft,
   validateNewTranslationInput,
 } from './translationWorkspaceData'
 
@@ -358,6 +409,14 @@ const sourceTypeLabels: Record<TranslationSourceType, string> = {
   library: 'LIB',
 }
 
+const sourceFilterOptions: Array<{ key: TranslationSourceFilter; label: string }> = [
+  { key: 'all', label: '全部格式' },
+  { key: 'pdf', label: 'PDF' },
+  { key: 'web', label: '网页' },
+  { key: 'text', label: '文本' },
+  { key: 'library', label: '素材' },
+]
+
 const createPanelOpen = ref(false)
 const createMode = ref<TranslationMode>('immersive')
 const pastedText = ref('')
@@ -365,10 +424,16 @@ const selectedFileName = ref('')
 const selectedFile = ref<File | null>(null)
 const isCreating = ref(false)
 const createdTranslations = ref<TranslationRecord[]>([])
+const workspaceRecentNotes = ref<RecentNote[]>([])
+const hubKnowledgeLoading = ref(false)
 const activeFilter = ref<TranslationFilter>('all')
+const activeSourceType = ref<TranslationSourceFilter>('all')
 const translationQuery = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
+const inlineTitleInput = ref<HTMLInputElement | null>(null)
 const myTranslationsSection = ref<HTMLElement | null>(null)
+const editingTranslationId = ref<string | null>(null)
+const editingTitle = ref('')
 
 const createInput = computed(() => ({
   mode: createMode.value,
@@ -384,18 +449,29 @@ const selectedFileIsPdf = computed(() => selectedFileName.value.toLowerCase().en
 const selectedParseMode = computed((): 'standard' => 'standard')
 
 const translationRows = computed(() => {
-  return [...createdTranslations.value, ...myTranslations]
+  return createdTranslations.value
 })
 
 const filteredTranslations = computed(() => {
   return filterTranslations(translationRows.value, {
     filter: activeFilter.value,
+    sourceType: activeSourceType.value,
     query: translationQuery.value,
   })
 })
 
+const displayedRecentNotes = computed(() => {
+  return workspaceRecentNotes.value
+})
+
+const displayedNoteStats = computed(() => {
+  return createdTranslations.value.length > 0
+    ? buildWorkspaceNoteStats(translationRows.value, displayedRecentNotes.value)
+    : fallbackNoteStats
+})
+
 onMounted(() => {
-  refreshCreatedTranslations()
+  void refreshCreatedTranslationsFromKnowledge()
 })
 
 function openCreatePanel(mode: TranslationMode) {
@@ -432,7 +508,7 @@ async function startTranslation() {
     const draft = await buildDraftFromCreateForm()
     if (typeof window !== 'undefined') {
       saveTranslationWorkspaceDraft(window.localStorage, draft)
-      refreshCreatedTranslations()
+      void refreshCreatedTranslationsFromKnowledge()
     }
 
     const warning = draft.warnings?.[0]
@@ -468,12 +544,84 @@ async function buildDraftFromCreateForm() {
 }
 
 function continueReading(item: TranslationRecord) {
-  if (item.id.startsWith('translation-')) {
+  if (isCreatedTranslationRecord(item.id)) {
     void router.push({ name: 'TranslationWorkspace', params: { id: item.id } })
     return
   }
   const title = item.title
   showToast(`继续阅读：${title}`, 'info')
+}
+
+function openTranslationNotes(item: TranslationRecord) {
+  if (!isCreatedTranslationRecord(item.id)) {
+    showToast(`查看笔记：${item.title}`, 'info')
+    return
+  }
+  if (item.activeNoteId) {
+    void router.push({
+      name: 'TranslationWorkspace',
+      params: { id: item.id },
+      query: { noteId: item.activeNoteId, focus: 'notes' },
+    })
+    return
+  }
+  void router.push({
+    name: 'TranslationWorkspace',
+    params: { id: item.id },
+    query: { focus: 'notes' },
+  })
+}
+
+function openRecentNote(note: RecentNote) {
+  if (note.documentId && isCreatedTranslationRecord(note.documentId)) {
+    void router.push({
+      name: 'TranslationWorkspace',
+      params: { id: note.documentId },
+      query: { noteId: note.id, focus: 'notes' },
+    })
+    return
+  }
+  showToast(`查看笔记：${note.title}`, 'info')
+}
+
+function startInlineTitleRename(item: TranslationRecord) {
+  if (!isCreatedTranslationRecord(item.id)) return
+  editingTranslationId.value = item.id
+  editingTitle.value = item.title
+  void nextTick(() => {
+    inlineTitleInput.value?.focus()
+    inlineTitleInput.value?.select()
+  })
+}
+
+function commitInlineTitleRename(item: TranslationRecord) {
+  if (editingTranslationId.value !== item.id) return
+  const nextTitle = editingTitle.value.trim()
+  if (!nextTitle || nextTitle === item.title) {
+    cancelInlineTitleRename()
+    return
+  }
+  saveRenamedTranslationRecord(item, nextTitle)
+  cancelInlineTitleRename()
+}
+
+function cancelInlineTitleRename() {
+  editingTranslationId.value = null
+  editingTitle.value = ''
+}
+
+function saveRenamedTranslationRecord(item: TranslationRecord, nextTitle: string) {
+  if (typeof window === 'undefined') return
+  const renamed = renameTranslationWorkspaceDraft(window.localStorage, item.id, nextTitle)
+  if (!renamed) {
+    showToast('没有找到可重命名的本地材料', 'error')
+    return
+  }
+  createdTranslations.value = createdTranslations.value.map((record) => record.id === item.id
+    ? { ...record, title: nextTitle, updatedAt: '刚刚' }
+    : record)
+  showToast('已重命名材料', 'success')
+  void refreshCreatedTranslationsFromKnowledge()
 }
 
 function showPlaceholderAction(label: string) {
@@ -504,9 +652,42 @@ function scrollToTranslations() {
   myTranslationsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function refreshCreatedTranslations() {
+async function refreshCreatedTranslationsFromKnowledge() {
   if (typeof window === 'undefined') return
-  createdTranslations.value = listTranslationWorkspaceDrafts(window.localStorage)
+  const drafts = listTranslationWorkspaceDrafts(window.localStorage)
+  createdTranslations.value = drafts
+  if (drafts.length === 0) {
+    workspaceRecentNotes.value = []
+    return
+  }
+
+  hubKnowledgeLoading.value = true
+  try {
+    const summaries = await Promise.all(drafts.map(resolveWorkspaceSummary))
+    createdTranslations.value = summaries.map((summary) => summary.document)
+    workspaceRecentNotes.value = buildWorkspaceRecentNotes(summaries)
+  } finally {
+    hubKnowledgeLoading.value = false
+  }
+}
+
+async function resolveWorkspaceSummary(draft: TranslationWorkspaceDraft) {
+  try {
+    const knowledge = await getTranslationDocumentKnowledge(draft.id)
+    return {
+      document: deriveWorkspaceRecord(draft, knowledge.workspaceState, knowledge.pageCount),
+      studyNotes: knowledge.workspaceState?.studyNotes ?? [],
+    }
+  } catch {
+    return {
+      document: deriveWorkspaceRecord(draft, draft.workspaceState, draft.pageCount),
+      studyNotes: (draft.workspaceState?.studyNotes ?? []) as TranslationDocumentStudyNoteDto[],
+    }
+  }
+}
+
+function isCreatedTranslationRecord(id: string) {
+  return createdTranslations.value.some((item) => item.id === id)
 }
 
 function resetCreateForm() {
@@ -661,7 +842,6 @@ button {
 
 .text-button,
 .side-heading button,
-.filter-button,
 .secondary-action {
   border: 1px solid #d9e2ec;
   border-radius: 8px;
@@ -885,7 +1065,27 @@ button {
   flex: 1;
 }
 
-.search-field input {
+.format-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #526071;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.format-field span {
+  white-space: nowrap;
+}
+
+.search-field input,
+.format-field select {
   width: 100%;
   min-height: 42px;
   padding: 0 14px;
@@ -897,9 +1097,16 @@ button {
   box-sizing: border-box;
 }
 
-.filter-button {
-  min-height: 42px;
-  padding: 0 14px;
+.format-field select {
+  width: 112px;
+  min-height: 38px;
+  padding: 0 26px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #1f2937;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .filter-tabs {
@@ -956,8 +1163,9 @@ button {
 }
 
 .translation-row > span,
+.note-count-button,
 .status-pill,
-.row-actions button:first-child {
+.row-actions button {
   white-space: nowrap;
 }
 
@@ -977,6 +1185,30 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.record-title-text {
+  cursor: text;
+}
+
+.record-title-text:focus-visible {
+  outline: 2px solid #b7eee7;
+  outline-offset: 3px;
+}
+
+.record-title-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #14b8a6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 30px;
+  box-sizing: border-box;
 }
 
 .record-file {
@@ -1006,6 +1238,35 @@ button {
   height: 5px;
 }
 
+.note-count-button {
+  justify-self: start;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #344054;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.note-count-button strong {
+  color: #0f8f89;
+  font-size: 14px;
+}
+
+.note-count-button:hover,
+.note-count-button:focus-visible {
+  border-color: #b7eee7;
+  background: #ecfdf9;
+  outline: none;
+}
+
 .status-pill {
   display: inline-flex;
   justify-content: center;
@@ -1033,7 +1294,7 @@ button {
   gap: 6px;
 }
 
-.row-actions button:first-child {
+.row-actions button {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid #d9e2ec;
@@ -1153,13 +1414,36 @@ button {
 }
 
 .note-item {
+  display: block;
+  width: 100%;
   padding-bottom: 12px;
+  border: 0;
   border-bottom: 1px solid #edf1f6;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .note-item:last-child {
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+.note-item:hover h3,
+.note-item:focus-visible h3 {
+  color: #0f766e;
+}
+
+.note-item:focus-visible {
+  outline: 2px solid #b7eee7;
+  outline-offset: 4px;
+}
+
+.side-empty {
+  margin: 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .starter-panel {

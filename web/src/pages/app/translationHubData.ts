@@ -1,7 +1,13 @@
+import type {
+  TranslationDocumentStudyNoteDto,
+  TranslationDocumentWorkspaceStateDto,
+} from '@/api/translation'
+
 export type TranslationMode = 'immersive' | 'exam'
 export type TranslationStatus = 'reading' | 'completed'
 export type TranslationSourceType = 'pdf' | 'web' | 'text' | 'library'
 export type TranslationFilter = 'all' | 'reading' | 'completed' | 'noted' | 'exam'
+export type TranslationSourceFilter = 'all' | TranslationSourceType
 
 export interface HubQuickAction {
   id: string
@@ -36,6 +42,7 @@ export interface TranslationRecord {
   noteCount: number
   progress: number
   status: TranslationStatus
+  activeNoteId?: string | null
 }
 
 export interface RecommendationItem {
@@ -55,14 +62,21 @@ export interface NoteStat {
 
 export interface RecentNote {
   id: string
+  documentId?: string | null
   title: string
   source: string
   updatedAt: string
 }
 
+export interface WorkspaceRecentNoteSource {
+  document: TranslationRecord
+  studyNotes: TranslationDocumentStudyNoteDto[]
+}
+
 export interface TranslationFilterOptions {
   filter: TranslationFilter
   query: string
+  sourceType?: TranslationSourceFilter
 }
 
 export const hubQuickActions: HubQuickAction[] = [
@@ -164,125 +178,20 @@ export const materialCategories: MaterialCategory[] = [
   },
 ]
 
-export const myTranslations: TranslationRecord[] = [
-  {
-    id: 'cefr-companion-volume-1',
-    title: 'CEFR Companion Volume 1',
-    subtitle: 'Chapter 2 · Education and Learning',
-    sourceLabel: 'PDF',
-    sourceType: 'pdf',
-    mode: 'immersive',
-    updatedAt: '今天 10:23',
-    noteCount: 12,
-    progress: 68,
-    status: 'reading',
-  },
-  {
-    id: 'economist-ai-and-jobs',
-    title: 'The Economist · AI and Jobs',
-    subtitle: 'AI is reshaping work faster than we think',
-    sourceLabel: 'Economist 外刊',
-    sourceType: 'web',
-    mode: 'immersive',
-    updatedAt: '昨天 21:15',
-    noteCount: 8,
-    progress: 42,
-    status: 'reading',
-  },
-  {
-    id: 'cet6-reading-dec-2023',
-    title: 'CET-6 阅读材料',
-    subtitle: '2023 年 12 月 · 第 2 套',
-    sourceLabel: 'PDF',
-    sourceType: 'pdf',
-    mode: 'exam',
-    updatedAt: '05-27 09:41',
-    noteCount: 21,
-    progress: 50,
-    status: 'reading',
-  },
-  {
-    id: 'economics-principles',
-    title: '经济学原理（节选）',
-    subtitle: '中文版附录 · 第 1 章',
-    sourceLabel: '粘贴文本',
-    sourceType: 'text',
-    mode: 'immersive',
-    updatedAt: '05-26 18:30',
-    noteCount: 15,
-    progress: 100,
-    status: 'completed',
-  },
-  {
-    id: 'postgrad-reading-text-2',
-    title: '考研英语（二）阅读理解 Text 2',
-    subtitle: '2022 年真题',
-    sourceLabel: 'PDF',
-    sourceType: 'pdf',
-    mode: 'exam',
-    updatedAt: '05-25 16:05',
-    noteCount: 6,
-    progress: 100,
-    status: 'completed',
-  },
-]
+export const myTranslations: TranslationRecord[] = []
 
-export const todayRecommendations: RecommendationItem[] = [
-  {
-    id: 'recommend-economist-education-ai',
-    source: 'The Economist',
-    title: 'How AI could change the future of education',
-    meta: '10 分钟 · 难度：中高',
-    coverLabel: 'TE',
-    tone: 'red',
-  },
-  {
-    id: 'recommend-ft-inflation',
-    source: 'Financial Times',
-    title: 'Global inflation shows signs of cooling',
-    meta: '8 分钟 · 难度：中等',
-    coverLabel: 'FT',
-    tone: 'sand',
-  },
-  {
-    id: 'recommend-nature-exoplanet',
-    source: 'Nature',
-    title: 'New exoplanet could support liquid water',
-    meta: '12 分钟 · 难度：高',
-    coverLabel: 'N',
-    tone: 'black',
-  },
-]
+export const todayRecommendations: RecommendationItem[] = []
 
 export const noteStats: NoteStat[] = [
-  { id: 'translations', label: '翻译篇数', value: '8' },
-  { id: 'minutes', label: '阅读时长', value: '320 分钟' },
-  { id: 'notes', label: '笔记数量', value: '56' },
-  { id: 'terms', label: '重点词汇', value: '128' },
-  { id: 'sentences', label: '句子收藏', value: '34' },
-  { id: 'cards', label: '复习卡片', value: '22' },
+  { id: 'translations', label: '翻译篇数', value: '0' },
+  { id: 'minutes', label: '阅读时长', value: '0 分钟' },
+  { id: 'notes', label: '笔记数量', value: '0' },
+  { id: 'terms', label: '重点词汇', value: '0' },
+  { id: 'sentences', label: '句子收藏', value: '0' },
+  { id: 'cards', label: '复习卡片', value: '0' },
 ]
 
-export const recentNotes: RecentNote[] = [
-  {
-    id: 'note-ai-and-jobs',
-    title: 'AI and Jobs 重点词汇',
-    source: 'The Economist · AI and Jobs',
-    updatedAt: '今天 10:20',
-  },
-  {
-    id: 'note-cefr-grammar',
-    title: 'Chapter 2 语法笔记',
-    source: 'CEFR Companion Volume 1',
-    updatedAt: '昨天 22:10',
-  },
-  {
-    id: 'note-cet6-reading',
-    title: 'CET-6 阅读技巧总结',
-    source: 'CET-6 阅读材料',
-    updatedAt: '05-27 09:45',
-  },
-]
+export const recentNotes: RecentNote[] = []
 
 export function filterTranslations(
   items: TranslationRecord[],
@@ -291,6 +200,7 @@ export function filterTranslations(
   const normalizedQuery = options.query.trim().toLowerCase()
 
   return items.filter((item) => {
+    const matchesSourceType = !options.sourceType || options.sourceType === 'all' || item.sourceType === options.sourceType
     const matchesFilter =
       options.filter === 'all'
       || (options.filter === 'reading' && item.status === 'reading')
@@ -298,11 +208,91 @@ export function filterTranslations(
       || (options.filter === 'noted' && item.noteCount > 0)
       || (options.filter === 'exam' && item.mode === 'exam')
 
-    if (!matchesFilter) return false
+    if (!matchesSourceType || !matchesFilter) return false
     if (!normalizedQuery) return true
 
     return `${item.title} ${item.subtitle} ${item.sourceLabel}`
       .toLowerCase()
       .includes(normalizedQuery)
   })
+}
+
+export function deriveWorkspaceRecord(
+  record: TranslationRecord,
+  workspaceState: TranslationDocumentWorkspaceStateDto | null | undefined,
+  pageCount?: number | null,
+): TranslationRecord {
+  if (!workspaceState) return record
+  const currentPage = normalizePositiveInteger(workspaceState.currentPage ?? null)
+  const resolvedPageCount = normalizePositiveInteger(pageCount ?? null)
+  const progress = currentPage && resolvedPageCount
+    ? Math.min(100, Math.max(0, Math.round((currentPage / resolvedPageCount) * 100)))
+    : record.progress
+
+  return {
+    ...record,
+    updatedAt: formatHubDateTime(workspaceState.updatedAt) ?? record.updatedAt,
+    noteCount: workspaceState.studyNotes?.length ?? 0,
+    activeNoteId: workspaceState.activeNoteId ?? resolveLatestStudyNoteId(workspaceState.studyNotes ?? []),
+    progress,
+    status: progress >= 100 ? 'completed' : record.status,
+  }
+}
+
+export function buildWorkspaceRecentNotes(sources: WorkspaceRecentNoteSource[], limit = 3): RecentNote[] {
+  return sources
+    .flatMap((source) => source.studyNotes.map((note) => ({
+      id: note.id,
+      documentId: note.documentId || source.document.id,
+      title: note.title,
+      source: `${source.document.title} · Page ${note.pageNumber || 1}`,
+      updatedAt: formatHubDateTime(note.updatedAt) ?? source.document.updatedAt,
+      sortKey: Date.parse(note.updatedAt ?? '') || 0,
+    })))
+    .sort((left, right) => right.sortKey - left.sortKey)
+    .slice(0, limit)
+    .map(({ sortKey: _sortKey, ...note }) => note)
+}
+
+export function buildWorkspaceNoteStats(records: TranslationRecord[], notes: RecentNote[]): NoteStat[] {
+  const totalNotes = records.reduce((sum, record) => sum + record.noteCount, 0)
+  const completedCount = records.filter((record) => record.status === 'completed').length
+  return noteStats.map((stat) => {
+    if (stat.id === 'translations') return { ...stat, value: String(records.length) }
+    if (stat.id === 'notes') return { ...stat, value: String(totalNotes) }
+    if (stat.id === 'cards') return { ...stat, value: String(notes.length) }
+    if (stat.id === 'minutes') return { ...stat, value: `${Math.max(0, records.length * 20)} 分钟` }
+    if (stat.id === 'sentences') return { ...stat, value: String(completedCount) }
+    return stat
+  })
+}
+
+function normalizePositiveInteger(value: number | null): number | null {
+  if (!Number.isFinite(value)) return null
+  return Math.max(1, Math.floor(Number(value)))
+}
+
+function resolveLatestStudyNoteId(notes: TranslationDocumentStudyNoteDto[]): string | null {
+  return [...notes]
+    .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0))[0]
+    ?.id ?? null
+}
+
+function formatHubDateTime(value: string | null | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const now = new Date()
+  const sameDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate()
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  const isYesterday = date.getFullYear() === yesterday.getFullYear()
+    && date.getMonth() === yesterday.getMonth()
+    && date.getDate() === yesterday.getDate()
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  if (sameDay) return `今天 ${time}`
+  if (isYesterday) return `昨天 ${time}`
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${time}`
 }

@@ -4,6 +4,7 @@ import type {
   TranslationDocumentElementDto,
   TranslationDocumentOutlineItemDto,
   TranslationDocumentParseResponse,
+  TranslationDocumentWorkspaceStateDto,
 } from '../../api/translation'
 
 export type WorkspaceSegmentStatus = 'pending' | 'translated'
@@ -40,6 +41,7 @@ export interface TranslationWorkspaceDraft extends TranslationRecord {
   pageCount?: number
   warnings?: string[]
   outline?: DocumentOutlineItem[]
+  workspaceState?: TranslationDocumentWorkspaceStateDto | null
 }
 
 export interface IntensiveReadingDocument {
@@ -56,6 +58,7 @@ export interface IntensiveReadingDocument {
   pageCount?: number
   warnings?: string[]
   outline: DocumentOutlineItem[]
+  workspaceState?: TranslationDocumentWorkspaceStateDto | null
   blocks: DocumentBlock[]
   insights: TranslationInsight[]
   assets: LearningAsset[]
@@ -249,6 +252,7 @@ export function createTranslationWorkspaceDraftFromParsedDocument(
     pageCount: parsedDocument.pageCount,
     warnings: parsedDocument.warnings ?? [],
     outline,
+    workspaceState: parsedDocument.workspaceState ?? null,
   }
 }
 
@@ -296,6 +300,20 @@ export function loadTranslationWorkspaceDraft(storage: Storage, id: string): Tra
   } catch {
     return null
   }
+}
+
+export function renameTranslationWorkspaceDraft(storage: Storage, id: string, title: string): boolean {
+  const nextTitle = title.trim()
+  if (!nextTitle) return false
+  const draft = loadTranslationWorkspaceDraft(storage, id)
+  if (!draft) return false
+
+  saveTranslationWorkspaceDraft(storage, {
+    ...draft,
+    title: nextTitle,
+    updatedAt: '刚刚',
+  })
+  return true
 }
 
 export function listTranslationWorkspaceDrafts(storage: Storage): TranslationWorkspaceDraft[] {
@@ -354,6 +372,7 @@ export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft):
     pageCount: draft.pageCount,
     warnings: draft.warnings ?? [],
     outline,
+    workspaceState: draft.workspaceState ?? null,
     blocks,
     insights,
     assets,
