@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.document_pipeline import DocumentPipelineEngine, build_ppstructure_kwargs
+from app.document_pipeline import DocumentPipelineEngine, build_ppstructure_kwargs, normalize_document_pipeline_result
 
 
 class LazyDocumentPipelineEngine(DocumentPipelineEngine):
@@ -45,6 +45,7 @@ class FakePPStructureV3:
         use_region_detection=None,
         format_block_content=None,
         cpu_threads=None,
+        device=None,
     ):
         pass
 
@@ -71,6 +72,12 @@ class DocumentPipelineEngineTest(unittest.TestCase):
 
         self.assertEqual(kwargs["cpu_threads"], 4)
 
+    def test_ppstructure_kwargs_pass_configured_device(self):
+        with patch.dict("os.environ", {"PADDLE_OCR_DEVICE": "gpu:0"}):
+            kwargs = build_ppstructure_kwargs(FakePPStructureV3, "ch")
+
+        self.assertEqual(kwargs["device"], "gpu:0")
+
     def test_document_pipeline_loads_lazily_on_first_recognition(self):
         engine = LazyDocumentPipelineEngine()
 
@@ -93,6 +100,25 @@ class DocumentPipelineEngineTest(unittest.TestCase):
         self.assertTrue(engine.sdk_loaded)
         self.assertIsNone(engine.unavailable_reason)
         self.assertEqual(engine.version, "test")
+
+    def test_normalize_document_pipeline_keeps_empty_image_regions(self):
+        result = normalize_document_pipeline_result({
+            "parsing_res_list": [
+                {
+                    "block_label": "image",
+                    "block_content": "",
+                    "block_order": 1,
+                    "block_bbox": [10, 20, 110, 220],
+                    "confidence": 0.84,
+                }
+            ]
+        })
+
+        self.assertEqual(len(result["elements"]), 1)
+        element = result["elements"][0]
+        self.assertEqual(element.type, "image")
+        self.assertEqual(element.text, "")
+        self.assertEqual(element.bbox, [[10.0, 20.0], [110.0, 20.0], [110.0, 220.0], [10.0, 220.0]])
 
 
 if __name__ == "__main__":

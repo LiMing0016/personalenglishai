@@ -81,6 +81,11 @@ export interface AssistantSelection {
   }
 }
 
+export interface AssistantConversationHistoryMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export interface AssistantWritingCoachContext {
   schemaVersion?: string
   action?: 'coach' | 'analyze' | 'outline' | 'next' | 'topic' | 'polish' | 'draft'
@@ -189,6 +194,7 @@ export interface AssistantRequest {
     timezone?: string
     userAgent?: string
   }
+  conversationHistory?: AssistantConversationHistoryMessage[]
 }
 
 export interface AssistantRunMetadata {

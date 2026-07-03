@@ -32,7 +32,7 @@ related_docs:
 | 路由判断 | Route Decision + Router Agent 并存 | 需要收敛 |
 | 专职 Agent | 8 个能力 Agent 已定义 | 可用 |
 | 动态上下文 | 学段、考试模式已接入 | 初版 |
-| 多轮记忆 | 文本链路启用 Agents SDK session | 初版 |
+| 多轮记忆 | 正式 `AssistantRequest` 链路使用后端历史窗口，旧 `chat` 链路保留 SDK session | 初版 |
 | Prompt 管理 | local / hybrid / remote resolver 已有 | 基础治理 |
 | 可观测性 | run / trace / route metadata 已有 | 初步可排查 |
 | 稳定性验证 | 单测有，但 eval harness 不完整 | 不足 |
@@ -58,7 +58,8 @@ AssistantRequest
 -> route_assistant_agent
 -> RouteDecisionRunner
 -> 选择目标 Agent
--> run_agent_session / stream_agent_session
+-> build_assistant_input_items
+-> run_agent / stream_agent
 -> AssistantReply
 ```
 
@@ -66,7 +67,7 @@ AssistantRequest
 
 - `run_id`
 - `trace_id`
-- 文本请求的 Agents SDK session 记忆
+- 后端注入的最近对话历史窗口
 - structured metadata
 - route request
 - routing decision
@@ -75,9 +76,9 @@ AssistantRequest
 
 这是未来主链路。
 
-当前实现中，`run_assistant_request` / `stream_assistant_request` 对无附件文本请求启用 Agents SDK session，使用 `appConversationId` 作为 session key。这样第二轮文本追问会由 SDK 自动取回历史 items，避免业务层手写完整 history 拼接。
+当前实现中，Java 后端会在调用 `run_assistant_request` / `stream_assistant_request` 前，从当前 `conversationUid` 读取最近已完成的 user / assistant 消息，写入 `AssistantRequest.conversationHistory`。Python 再把这些历史消息转成 Responses API input items，并把当前用户消息追加到最后。
 
-带附件请求暂时不进入 session，避免把图片、文件引用、临时 URL 或大段提取文本写进长期会话历史。附件多轮能力后续应在验证后单独开放，或改为保存“附件摘要 / active task 摘要”。
+该策略是滑动窗口，不是无限长记忆。超出窗口的长链路学习对话，后续应通过会话摘要、active task 或学习资产摘要补足。
 
 ### 旧入口：`chat`
 
@@ -314,7 +315,7 @@ Agent Orchestration P1：可用编排骨架
 - Route Decision 结构化输出
 - Specialist Agents
 - Dynamic Instructions 初版
-- 文本链路 Agents SDK session 多轮记忆
+- 正式 `AssistantRequest` 链路的后端历史窗口多轮记忆
 - local / remote / hybrid Prompt Resolver
 - 基础 trace metadata
 - streaming 输出

@@ -79,6 +79,9 @@ def apply_common_paddle_kwargs(kwargs: dict[str, Any], parameters: dict[str, Any
     cpu_threads = resolve_paddle_cpu_threads()
     if cpu_threads is not None and _supports_parameter(parameters, "cpu_threads"):
         kwargs["cpu_threads"] = cpu_threads
+    device = resolve_paddle_device()
+    if device is not None and _supports_parameter(parameters, "device"):
+        kwargs["device"] = device
 
 
 def resolve_paddle_cpu_threads() -> int | None:
@@ -92,6 +95,14 @@ def resolve_paddle_cpu_threads() -> int | None:
     if cpu_threads < 1:
         raise ValueError("PADDLE_OCR_CPU_THREADS must be a positive integer")
     return cpu_threads
+
+
+def resolve_paddle_device() -> str | None:
+    raw_value = os.getenv("PADDLE_OCR_DEVICE") or os.getenv("PADDLE_DEVICE")
+    if raw_value is None:
+        return None
+    device = raw_value.strip()
+    return device or None
 
 
 def _supports_parameter(parameters: dict[str, Any], name: str) -> bool:

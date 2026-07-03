@@ -18,6 +18,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .cache/
+services/paddle-ocr/.cache/
 .pytest_cache/
 pytest-cache-files-*/
 .tmp_pip/

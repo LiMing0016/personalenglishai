@@ -94,6 +94,11 @@ class AssistantRequestMessage(BaseModel):
     text: str | None = None
 
 
+class AssistantConversationHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class AssistantStudyContext(BaseModel):
     study_stage: str | None = Field(default=None, alias="studyStage")
     cefr_level: Literal["A1", "A2", "B1", "B2", "C1", "C2"] | None = Field(default=None, alias="cefrLevel")
@@ -161,6 +166,10 @@ class AssistantRequest(BaseModel):
     study_context: AssistantStudyContext | None = Field(default=None, alias="studyContext")
     writing_coach_context: AssistantWritingCoachContext | None = Field(default=None, alias="writingCoachContext")
     client_meta: AssistantClientMeta | None = Field(default=None, alias="clientMeta")
+    conversation_history: list[AssistantConversationHistoryMessage] = Field(
+        default_factory=list,
+        alias="conversationHistory",
+    )
 
     model_config = {"populate_by_name": True}
 

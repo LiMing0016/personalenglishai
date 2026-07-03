@@ -52,9 +52,11 @@ export interface IntensiveReadingDocument {
   sourceLabel: string
   mode: IntensiveAgentMode
   parseStatus: string
+  ocrStatus?: string
   progress: number
   pdfPreviewUrl?: string
   pageCount?: number
+  warnings?: string[]
   outline: DocumentOutlineItem[]
   workspaceState?: TranslationDocumentWorkspaceStateDto | null
   blocks: DocumentBlock[]
@@ -82,6 +84,16 @@ export interface DocumentBlock {
   pageNumber?: number
   bbox?: string | null
   confidence?: number | null
+}
+
+export interface DocumentParseBlock extends DocumentBlock {
+  displayType: DocumentBlockType
+}
+
+export interface DocumentParsePage {
+  pageNumber: number
+  blocks: DocumentParseBlock[]
+  textLength: number
 }
 
 export interface DocumentSelectionContext {
@@ -354,9 +366,11 @@ export function buildIntensiveReadingDocument(draft: TranslationWorkspaceDraft):
     sourceLabel: draft.sourceLabel,
     mode: draft.mode,
     parseStatus: formatParseStatus(draft),
+    ocrStatus: draft.ocrStatus,
     progress: draft.progress,
     pdfPreviewUrl: draft.pdfPreviewUrl,
     pageCount: draft.pageCount,
+    warnings: draft.warnings ?? [],
     outline,
     workspaceState: draft.workspaceState ?? null,
     blocks,
@@ -379,6 +393,37 @@ export function buildDocumentSelectionContext(
     bbox: block.bbox ?? null,
     text,
   }
+}
+
+export function buildDocumentParsePages(blocks: DocumentBlock[]): DocumentParsePage[] {
+  const grouped = new Map<number, DocumentParseBlock[]>()
+  const sortedBlocks = [...blocks]
+    .filter((block) => block.text.trim().length > 0)
+    .sort((left, right) => {
+      const leftPage = left.pageNumber || 1
+      const rightPage = right.pageNumber || 1
+      if (leftPage !== rightPage) return leftPage - rightPage
+      return left.order - right.order
+    })
+
+  for (const block of sortedBlocks) {
+    const pageNumber = Math.max(1, block.pageNumber || 1)
+    const pageBlocks = grouped.get(pageNumber) ?? []
+    pageBlocks.push({
+      ...block,
+      text: block.text.trim(),
+      displayType: normalizeDocumentBlockType(block.type),
+    })
+    grouped.set(pageNumber, pageBlocks)
+  }
+
+  return Array.from(grouped.entries())
+    .sort(([leftPage], [rightPage]) => leftPage - rightPage)
+    .map(([pageNumber, pageBlocks]) => ({
+      pageNumber,
+      blocks: pageBlocks,
+      textLength: pageBlocks.reduce((total, block) => total + block.text.length, 0),
+    }))
 }
 
 export function resolveDocumentSelectionContextFromText(
@@ -794,6 +839,7 @@ function normalizeParsedSourceLabel(sourceType: string | null | undefined, fileN
 }
 
 function formatParseStatus(draft: TranslationWorkspaceDraft): string {
+  if (draft.parseStatus === 'SUCCEEDED' && draft.ocrStatus === 'PARTIAL') return '本地 OCR 后台解析中'
   if (draft.parseStatus === 'SUCCEEDED' && draft.ocrStatus === 'SUCCEEDED') return 'OCR 解析完成'
   if (draft.parseStatus === 'SUCCEEDED') return draft.sourceType === 'pdf' ? 'PDF 结构解析完成' : 'AI 已生成精读材料'
   if (draft.parseStatus === 'NEEDS_OCR') return '需要 OCR 识别'

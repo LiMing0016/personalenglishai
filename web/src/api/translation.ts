@@ -1,5 +1,10 @@
 import { http } from './http'
 
+export type TranslationCreateMode = 'immersive' | 'exam'
+export type TranslationParseMode = 'standard' | 'high_quality'
+export type TranslationParseProvider = 'paddle-ocr' | 'local-paddle-vl'
+const SUPPORTED_TRANSLATION_PARSE_PROVIDERS = new Set<TranslationParseProvider>(['paddle-ocr', 'local-paddle-vl'])
+
 export interface TranslationDocumentBlockDto {
   id: string
   type: string
@@ -197,26 +202,44 @@ export interface TranslationDocumentParseResponse {
   warnings: string[]
 }
 
-export async function importTranslationDocument(
+export function buildTranslationDocumentImportFormData(
   file: File,
-  mode: 'immersive' | 'exam',
-  parseMode: 'standard' | 'high_quality' = 'standard',
-): Promise<TranslationDocumentParseResponse> {
+  mode: TranslationCreateMode,
+  parseMode: TranslationParseMode = 'standard',
+  parseProvider: TranslationParseProvider = 'paddle-ocr',
+): FormData {
   const formData = new FormData()
   formData.append('file', file, file.name)
   formData.append('mode', mode)
   formData.append('parseMode', parseMode)
+  formData.append('parseProvider', resolveStableTranslationParseProvider(parseProvider))
+  return formData
+}
+
+export function resolveStableTranslationParseProvider(
+  parseProvider: TranslationParseProvider,
+): TranslationParseProvider {
+  return SUPPORTED_TRANSLATION_PARSE_PROVIDERS.has(parseProvider) ? parseProvider : 'paddle-ocr'
+}
+
+export async function importTranslationDocument(
+  file: File,
+  mode: TranslationCreateMode,
+  parseMode: TranslationParseMode = 'standard',
+  parseProvider: TranslationParseProvider = 'paddle-ocr',
+): Promise<TranslationDocumentParseResponse> {
+  const formData = buildTranslationDocumentImportFormData(file, mode, parseMode, parseProvider)
 
   const response = await http.post<TranslationDocumentParseResponse>(
     '/translation/documents/import',
     formData,
-    { timeout: 120000 },
+    { timeout: 300000 },
   )
   return response.data
 }
 
 export async function parseTranslationPdfDocument(file: File): Promise<TranslationDocumentParseResponse> {
-  return importTranslationDocument(file, 'immersive')
+  return importTranslationDocument(file, 'immersive', 'standard', 'paddle-ocr')
 }
 
 export async function getTranslationDocumentKnowledge(documentId: string): Promise<TranslationDocumentParseResponse> {

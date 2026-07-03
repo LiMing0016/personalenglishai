@@ -277,6 +277,23 @@ final class TranslationDocumentKnowledgePipeline {
                 ? "doc"
                 : response.getDocumentId();
         int assetOrder = 1;
+        for (TranslationDocumentAssetDto asset : response.getAssets() == null ? List.<TranslationDocumentAssetDto>of() : response.getAssets()) {
+            if (asset.getAssetType() == null || asset.getAssetType().isBlank()) {
+                continue;
+            }
+            if (asset.getId() == null || asset.getId().isBlank()) {
+                asset.setId(stableDocumentId + "-a" + assetOrder);
+            }
+            if (asset.getProvider() == null || asset.getProvider().isBlank()) {
+                asset.setProvider(provider);
+            }
+            if (asset.getRecognitionStatus() == null || asset.getRecognitionStatus().isBlank()) {
+                asset.setRecognitionStatus("READY");
+            }
+            asset.setMetadata(new LinkedHashMap<>(asset.getMetadata()));
+            assets.add(asset);
+            assetOrder++;
+        }
         for (TranslationDocumentElementDto element : elements) {
             if (!"table".equals(element.getType())) {
                 continue;

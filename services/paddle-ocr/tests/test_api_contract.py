@@ -116,6 +116,82 @@ class UnavailableDocumentEngine:
         raise RuntimeError(self.unavailable_reason)
 
 
+class FakeVlEngine:
+    sdk_loaded = True
+    provider = "PaddleOCR-VL"
+    version = "v1.6-test"
+    unavailable_reason = None
+
+    def __init__(self):
+        self.last_request = None
+
+    def recognize_pdf(self, document_bytes, **kwargs):
+        self.last_request = {"document_bytes": document_bytes, **kwargs}
+        return {
+            "pages": [
+                OcrPage(
+                    pageNumber=1,
+                    text="# 第一章 概述\n\n这是第一段。",
+                    rawText="第一章 概述\n这是第一段。",
+                    cleanedText="# 第一章 概述\n\n这是第一段。",
+                    elements=[
+                        ElementBlock(
+                            type="heading",
+                            text="第一章 概述",
+                            bbox=[[10, 20], [200, 20], [200, 50], [10, 50]],
+                            confidence=0.98,
+                            order=1,
+                            source="paddle_vl",
+                            rawType="title",
+                        ),
+                        ElementBlock(
+                            type="paragraph",
+                            text="这是第一段。",
+                            bbox=[[10, 60], [300, 60], [300, 100], [10, 100]],
+                            confidence=0.91,
+                            order=2,
+                            source="paddle_vl",
+                            rawType="text",
+                        ),
+                    ],
+                    width=1200,
+                    height=1600,
+                    layoutStatus="SUCCEEDED",
+                    tableStatus="EMPTY",
+                    formulaStatus="NOT_REQUESTED",
+                )
+            ],
+            "warnings": ["VL_TEST_WARNING"],
+            "metadata": {"engine": "PaddleOCR-VL"},
+            "assets": [
+                {
+                    "id": "p1-vl-a1",
+                    "assetType": "image",
+                    "pageNumber": 1,
+                    "bbox": [[30, 120], [330, 120], [330, 260], [30, 260]],
+                    "mimeType": "image/jpeg",
+                    "dataBase64": "ZmFrZS1pbWFnZQ==",
+                    "width": 300,
+                    "height": 140,
+                    "order": 1,
+                    "source": "paddle_vl",
+                    "rawType": "image",
+                    "confidence": 0.87,
+                }
+            ],
+        }
+
+
+class UnavailableVlEngine:
+    sdk_loaded = False
+    provider = "PaddleOCR-VL"
+    version = None
+    unavailable_reason = "PaddleOCR-VL is disabled"
+
+    def recognize_pdf(self, document_bytes, **kwargs):
+        raise RuntimeError(self.unavailable_reason)
+
+
 class ApiContractTest(unittest.TestCase):
     def setUp(self):
         self.renderer = FakeRenderer()
@@ -258,6 +334,86 @@ class ApiContractTest(unittest.TestCase):
         self.assertIn("Computer Networking", page["text"])
         self.assertIn("E = mc^2", page["text"])
         self.assertIn("STRUCTURE_TEST_WARNING", page["warnings"])
+
+    def test_pdf_high_quality_preserves_text_ocr_when_document_elements_are_partial(self):
+        document_engine = FakeDocumentEngine()
+        client = TestClient(create_app(text_engine=FakeEngine(), renderer=self.renderer, document_engine=document_engine))
+        pdf_base64 = base64.b64encode(b"%PDF-1.4 fake").decode("ascii")
+
+        response = client.post(
+            "/ocr/pdf",
+            json={
+                "documentBase64": pdf_base64,
+                "parseMode": "high_quality",
+                "enableTextOcr": True,
+                "enableLayout": True,
+                "enableTable": True,
+                "enableFormula": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.json()["pages"][0]
+        self.assertIn("Computer Networking", page["text"])
+        self.assertIn("| Layer | Purpose |", page["text"])
+        self.assertIn("hello", page["text"])
+        self.assertEqual(page["rawText"], "hello")
+
+    def test_vl_pdf_returns_same_ocr_response_contract(self):
+        vl_engine = FakeVlEngine()
+        client = TestClient(create_app(text_engine=FakeEngine(), renderer=self.renderer, vl_engine=vl_engine))
+        pdf_bytes = b"%PDF-1.4 fake vl"
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+
+        response = client.post(
+            "/vl/pdf",
+            json={
+                "documentBase64": pdf_base64,
+                "language": "ch,eng",
+                "parseMode": "high_quality",
+                "maxPages": 3,
+                "dpi": 260,
+                "enableLayout": True,
+                "enableTable": True,
+                "enableFormula": False,
+                "enableOrientation": True,
+                "enableUnwarping": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(vl_engine.last_request["document_bytes"], pdf_bytes)
+        self.assertEqual(vl_engine.last_request["language"], "ch,eng")
+        self.assertEqual(vl_engine.last_request["max_pages"], 3)
+        self.assertTrue(vl_engine.last_request["enable_layout"])
+        self.assertTrue(vl_engine.last_request["enable_table"])
+        self.assertFalse(vl_engine.last_request["enable_formula"])
+        body = response.json()
+        self.assertEqual(body["status"], "SUCCEEDED")
+        self.assertEqual(body["provider"], "PaddleOCR-VL")
+        self.assertEqual(body["metadata"]["parseMode"], "high_quality")
+        self.assertEqual(body["metadata"]["engine"], "PaddleOCR-VL")
+        self.assertEqual(body["pages"][0]["elements"][0]["source"], "paddle_vl")
+        self.assertEqual(body["assets"][0]["assetType"], "image")
+        self.assertEqual(body["assets"][0]["dataBase64"], "ZmFrZS1pbWFnZQ==")
+        self.assertIn("第一章 概述", body["pages"][0]["text"])
+        self.assertIn("VL_TEST_WARNING", body["warnings"])
+
+    def test_vl_pdf_reports_failed_response_when_engine_unavailable(self):
+        client = TestClient(create_app(
+            text_engine=FakeEngine(),
+            renderer=self.renderer,
+            vl_engine=UnavailableVlEngine(),
+        ))
+        pdf_base64 = base64.b64encode(b"%PDF-1.4 fake vl").decode("ascii")
+
+        response = client.post("/vl/pdf", json={"documentBase64": pdf_base64, "parseMode": "high_quality"})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "FAILED")
+        self.assertEqual(body["provider"], "PaddleOCR-VL")
+        self.assertIn("PaddleOCR-VL is disabled", body["message"])
 
     def test_image_ocr_returns_same_page_contract(self):
         image_base64 = base64.b64encode(b"fake-image").decode("ascii")

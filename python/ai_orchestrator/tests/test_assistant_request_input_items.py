@@ -21,6 +21,27 @@ class AssistantRequestInputItemsTest(unittest.TestCase):
         self.assertIn("- 当前模式: 日常学习讲解模式", items[0]["content"][0]["text"])
         self.assertIn("解释现在完成时", items[0]["content"][0]["text"])
 
+    def test_request_maps_conversation_history_before_current_user_message(self) -> None:
+        request = AssistantRequest(
+            clientMessageId="client-1",
+            mode="daily_explain",
+            intent="free_chat",
+            message={"text": "那它怎么造句？"},
+            conversationHistory=[
+                {"role": "user", "content": "citation 是什么意思？"},
+                {"role": "assistant", "content": "citation 表示引用、引证。"},
+            ],
+        )
+
+        items = build_assistant_input_items(request)
+
+        self.assertEqual(items[0]["role"], "user")
+        self.assertEqual(items[0]["content"][0]["text"], "citation 是什么意思？")
+        self.assertEqual(items[1]["role"], "assistant")
+        self.assertEqual(items[1]["content"][0]["text"], "citation 表示引用、引证。")
+        self.assertEqual(items[2]["role"], "user")
+        self.assertIn("那它怎么造句？", items[2]["content"][0]["text"])
+
     def test_request_includes_mode_and_study_context_for_agent(self) -> None:
         request = AssistantRequest(
             clientMessageId="client-1",
