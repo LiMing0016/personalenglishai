@@ -47,12 +47,29 @@ def build_input_items(message: str, attachments: Iterable[UploadedAttachment]) -
 
 
 def build_assistant_input_items(request: AssistantRequest) -> list[dict]:
+    items = _build_conversation_history_items(request)
     content: list[dict] = [{"type": "input_text", "text": _build_assistant_text(request)}]
 
     for attachment in request.attachments:
         content.append(_attachment_to_input_part(attachment))
 
-    return [{"role": "user", "content": content}]
+    items.append({"role": "user", "content": content})
+    return items
+
+
+def _build_conversation_history_items(request: AssistantRequest) -> list[dict]:
+    items: list[dict] = []
+    for message in request.conversation_history:
+        content = (message.content or "").strip()
+        if not content:
+            continue
+        items.append(
+            {
+                "role": message.role,
+                "content": [{"type": "input_text", "text": content}],
+            }
+        )
+    return items
 
 
 def _build_assistant_text(request: AssistantRequest) -> str:

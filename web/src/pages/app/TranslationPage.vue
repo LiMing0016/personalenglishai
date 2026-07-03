@@ -269,20 +269,18 @@
           @change="handleFileChange"
         />
 
-        <div v-if="selectedFileIsPdf" class="parse-mode-choice" aria-label="PDF 解析模式">
+        <div v-if="selectedFileIsPdf" class="parse-mode-choice" aria-label="PDF 解析模型">
           <button
             type="button"
-            :class="{ active: parseMode === 'standard' }"
-            @click="parseMode = 'standard'">
-            <strong>标准解析</strong>
-            <span>速度快，适合有文本层的 PDF。</span>
+            class="active">
+            <strong>本地 PaddleOCR 首批 10 页解析</strong>
+            <span>先生成可阅读材料，剩余页面进入工作台后后台继续解析。</span>
           </button>
           <button
             type="button"
-            :class="{ active: parseMode === 'high_quality' }"
-            @click="parseMode = 'high_quality'">
-            <strong>高质量解析</strong>
-            <span>适合扫描 PDF、论文、试卷、双栏和表格。</span>
+            disabled>
+            <strong>PPStructureV3 高质量解析</strong>
+            <span>结构化解析耗时较长，稳定后再开放。</span>
           </button>
         </div>
 
@@ -298,7 +296,7 @@
         <div class="create-actions">
           <button type="button" class="secondary-action" @click="closeCreatePanel">取消</button>
           <button type="button" class="create-submit" :disabled="!canStartCreate" @click="startTranslation">
-            {{ isCreating ? '正在解析材料...' : createMode === 'exam' ? '开始考试翻译' : '开始沉浸式翻译' }}
+            {{ isCreating ? '正在解析前 10 页...' : createMode === 'exam' ? '开始考试翻译' : '开始沉浸式翻译' }}
           </button>
         </div>
       </section>
@@ -365,7 +363,6 @@ const createMode = ref<TranslationMode>('immersive')
 const pastedText = ref('')
 const selectedFileName = ref('')
 const selectedFile = ref<File | null>(null)
-const parseMode = ref<'standard' | 'high_quality'>('standard')
 const isCreating = ref(false)
 const createdTranslations = ref<TranslationRecord[]>([])
 const activeFilter = ref<TranslationFilter>('all')
@@ -384,6 +381,7 @@ const canStartCreate = computed(() => {
 })
 
 const selectedFileIsPdf = computed(() => selectedFileName.value.toLowerCase().endsWith('.pdf'))
+const selectedParseMode = computed((): 'standard' => 'standard')
 
 const translationRows = computed(() => {
   return [...createdTranslations.value, ...myTranslations]
@@ -419,9 +417,6 @@ function handleFileChange(event: Event) {
   if (!file) return
   selectedFile.value = file
   selectedFileName.value = file.name
-  if (!file.name.toLowerCase().endsWith('.pdf')) {
-    parseMode.value = 'standard'
-  }
   showToast(`已选择文件：${file.name}`, 'success')
 }
 
@@ -459,7 +454,12 @@ async function buildDraftFromCreateForm() {
     return createTranslationWorkspaceDraft(createInput.value)
   }
 
-  const parsedDocument = await importTranslationDocument(file, createMode.value, parseMode.value)
+  const parsedDocument = await importTranslationDocument(
+    file,
+    createMode.value,
+    selectedParseMode.value,
+    'paddle-ocr',
+  )
   const fallbackPdfPreviewUrl = file.name.toLowerCase().endsWith('.pdf') && typeof URL !== 'undefined'
     ? URL.createObjectURL(file)
     : undefined
@@ -513,7 +513,6 @@ function resetCreateForm() {
   pastedText.value = ''
   selectedFileName.value = ''
   selectedFile.value = null
-  parseMode.value = 'standard'
   if (fileInput.value) fileInput.value.value = ''
 }
 
@@ -1328,6 +1327,11 @@ button {
 .parse-mode-choice button.active {
   border-color: #0f8f89;
   background: #f0fdfa;
+}
+
+.parse-mode-choice button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .parse-mode-choice strong {

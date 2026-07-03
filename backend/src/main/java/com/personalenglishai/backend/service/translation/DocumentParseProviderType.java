@@ -3,6 +3,8 @@ package com.personalenglishai.backend.service.translation;
 public enum DocumentParseProviderType {
     LOCAL_PDFBOX("local-pdfbox"),
     THIRD_PARTY_LAYOUT("third-party-layout"),
+    LOCAL_PADDLE_VL("local-paddle-vl"),
+    BAIDU_PADDLE_VL("baidu-paddle-vl"),
     PADDLE_OCR("paddle-ocr"),
     CLOUD_DOCUMENT_AI("cloud-document-ai"),
     SELF_DEVELOPED("self-developed");

@@ -100,7 +100,7 @@ flowchart TD
 | 结构化路由 | `RouteAgent` 输出 `RoutingDecision` | 可用，适合后端选择目标 Agent |
 | 续问处理 | `ContinuationClassifier` + `ActiveTaskState` | 可用，仍需更多回归样例 |
 | 学段/考试模式注入 | `AssistantRunContext` + dynamic instructions | 已接入，后续应改为按 intent 渐进加载 |
-| 文本多轮记忆 | `SQLiteSession(appConversationId, AI_ASSISTANT_SESSION_DB_PATH)` | 已接入，附件链路暂不启用 |
+| 文本多轮记忆 | Java 注入 `AssistantRequest.conversationHistory`，Python 转 input items | 已接入滑动窗口，长链路仍需摘要记忆 |
 | 题单设计聊天 | Chat Agent 使用 function tool 调用 Canvas Agent | 可用，结构化输出约束较清晰 |
 | 远程 Prompt 发布 | `AI_ASSISTANT_PROMPT_SOURCE` + `Agent.prompt` | 可用，但远程版本需要人工发布和固定 |
 
@@ -420,13 +420,10 @@ flowchart TD
   RUN_CTX --> DYNAMIC["dynamic instructions<br/>渲染 Runtime Learning Context"]
   PROMPT --> DYNAMIC
 
-  VALIDATE --> SESSION{"attachments 为空?"}
-  SESSION -->|yes| SDK_SESSION["SQLiteSession<br/>读取并写回多轮 items"]
-  SESSION -->|no| NO_SESSION["不启用 session<br/>避免附件长期写入历史"]
+  VALIDATE --> HISTORY["conversationHistory<br/>服务端最近历史窗口"]
 
   DYNAMIC --> INPUT{"输入类型"}
-  SDK_SESSION --> INPUT
-  NO_SESSION --> INPUT
+  HISTORY --> INPUT
   INPUT -->|文本| TARGET_AGENT["Router Agent 或 Specialist Agent"]
   INPUT -->|附件| ATTACHMENT["Attachment Agent"]
 
@@ -489,22 +486,25 @@ flowchart LR
 
 ## 多轮记忆策略
 
-正式 `AssistantRequest` 链路已经对无附件文本请求启用 Agents SDK session：
+正式 `AssistantRequest` 链路当前使用服务端注入的滑动上下文窗口：
 
 ```text
 appConversationId
--> SQLiteSession(appConversationId, AI_ASSISTANT_SESSION_DB_PATH)
--> Runner.run / Runner.run_streamed
--> SDK 自动读取并写回本会话历史 items
+-> Java 从 assistant_message 读取已完成 user / assistant 消息
+-> 截取最近 20 条、总量约 12k 字符
+-> 写入 AssistantRequest.conversationHistory
+-> Python 转成 Responses API input items
+-> 当前用户消息追加到历史 items 之后
 ```
 
-这样第二轮文本追问可以复用上一轮用户输入、Assistant 输出、工具调用和 handoff 结果，不需要业务层手写完整 history 拼接。
+这样第二轮文本追问可以复用上一轮用户输入与 Assistant 输出，同时仍保持 `AssistantRequest` 对文本、选区和附件输入的统一 item-list 适配。
 
 当前限制：
 
-- 带附件请求暂时不启用 session，避免把文件输入、临时 URL 或过大的附件内容写进长期历史。
-- RouteDecision 前置路由本身仍是单轮判断；如果第二轮追问依赖强上下文，最终目标 Agent 可以通过 session 恢复上下文，但前置路由仍需要后续接入 active task 或 session 摘要。
-- Session 是 SDK 侧记忆，不等同于 OpenAI Platform Conversations；平台 Logs 中 Conversations 是否出现，取决于是否使用 `OpenAIConversationsSession` 或 server-managed `conversation_id`。
+- 当前是滑动窗口，不是无限长记忆；超过窗口的内容需要后续通过会话摘要或学习资产摘要补足。
+- 历史只携带已持久化且状态为 `done` 的 user / assistant 文本，不携带 failed 消息、空消息或非对话角色。
+- RouteDecision 前置路由只读取最近 6 条历史的轻量尾部，用于判断“继续 / 换个例子 / 它”等续问；最终目标 Agent 仍使用后端注入的完整历史窗口。
+- 该方案不是 OpenAI Platform Conversations；平台 Logs 中 Conversations 是否出现，取决于是否使用 `OpenAIConversationsSession` 或 server-managed `conversation_id`。
 
 推荐策略：
 

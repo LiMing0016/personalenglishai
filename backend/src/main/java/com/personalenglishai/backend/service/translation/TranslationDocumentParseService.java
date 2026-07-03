@@ -96,6 +96,22 @@ public class TranslationDocumentParseService {
         }
     }
 
+    public TranslationDocumentParseResponse parsePdfWithOcr(String originalFilename, byte[] pdfBytes) {
+        return parsePdfWithOcr(originalFilename, pdfBytes, DocumentParseMode.STANDARD);
+    }
+
+    public TranslationDocumentParseResponse parsePdfWithOcr(String originalFilename, byte[] pdfBytes, DocumentParseMode parseMode) {
+        return parsePdfWithOcr(originalFilename, pdfBytes, TranslationOcrOptions.of(parseMode));
+    }
+
+    public TranslationDocumentParseResponse parsePdfWithOcr(String originalFilename, byte[] pdfBytes, TranslationOcrOptions options) {
+        validatePdfUpload(originalFilename, pdfBytes);
+        TranslationOcrResult ocrResult = ocrService.recognizePdf(pdfBytes, options);
+        TranslationDocumentParseResponse response = baseResponse(originalFilename, inferOcrPageCount(ocrResult));
+        applyOcrResult(response, ocrResult, false);
+        return TranslationDocumentKnowledgePipeline.enrich(response);
+    }
+
     private List<TranslationDocumentOutlineItemDto> readDocumentOutline(PDDocument document) throws IOException {
         PDDocumentOutline documentOutline = document.getDocumentCatalog().getDocumentOutline();
         if (documentOutline == null || !documentOutline.hasChildren()) {
@@ -373,7 +389,11 @@ public class TranslationDocumentParseService {
     }
 
     private void applyOcrFallback(TranslationDocumentParseResponse response, byte[] pdfBytes) {
-        TranslationOcrResult ocrResult = ocrService.recognizePdf(pdfBytes);
+        TranslationOcrResult ocrResult = ocrService.recognizePdf(pdfBytes, DocumentParseMode.STANDARD);
+        applyOcrResult(response, ocrResult, true);
+    }
+
+    private void applyOcrResult(TranslationDocumentParseResponse response, TranslationOcrResult ocrResult, boolean fallback) {
         response.setRawOcrResponse(ocrResult.getRawResponse());
         if (ocrResult.isSucceeded()) {
             List<TranslationDocumentBlockDto> ocrBlocks = buildBlocksFromOcr(ocrResult);
@@ -381,21 +401,24 @@ public class TranslationDocumentParseService {
                 response.setParseStatus("SUCCEEDED");
                 response.setOcrStatus("SUCCEEDED");
                 response.setProvider("paddle_ocr");
-                response.setParseMode("ocr_fallback");
-                response.setFallbackUsed(true);
+                response.setParseMode(fallback ? "ocr_fallback" : "ocr_direct");
+                response.setFallbackUsed(fallback);
                 response.setBlocks(ocrBlocks);
                 response.setElements(buildElementsFromOcr(ocrResult));
-                response.setWarnings(ocrSuccessWarnings(ocrResult));
+                response.setWarnings(ocrSuccessWarnings(ocrResult, fallback));
                 return;
             }
         }
 
-        response.setParseStatus("NEEDS_OCR");
-        response.setOcrStatus("REQUIRED");
+        response.setParseStatus(fallback ? "NEEDS_OCR" : "FAILED");
+        response.setOcrStatus(fallback ? "REQUIRED" : "FAILED");
         response.setBlocks(List.of());
         response.setElements(List.of());
-        String message = ocrResult.getMessage() == null ? "PDF 文本层为空、过少或质量较低，需要 OCR 后再进入精读解析。" : ocrResult.getMessage();
-        response.setWarnings(List.of("PDF 文本层为空、过少或质量较低，需要 OCR 后再进入精读解析。", message));
+        String defaultMessage = fallback
+                ? "PDF 文本层为空、过少或质量较低，需要 OCR 后再进入精读解析。"
+                : "PaddleOCR 未能解析出可用文本。";
+        String message = ocrResult.getMessage() == null ? defaultMessage : ocrResult.getMessage();
+        response.setWarnings(List.of(defaultMessage, message));
     }
 
     private List<TranslationDocumentBlockDto> buildBlocksFromOcr(TranslationOcrResult ocrResult) {
@@ -456,9 +479,11 @@ public class TranslationDocumentParseService {
         return elements;
     }
 
-    private List<String> ocrSuccessWarnings(TranslationOcrResult ocrResult) {
+    private List<String> ocrSuccessWarnings(TranslationOcrResult ocrResult, boolean fallback) {
         List<String> warnings = new ArrayList<>();
-        warnings.add("PDF 文本层为空或质量较低，已使用 OCR 结果生成精读材料。");
+        warnings.add(fallback
+                ? "PDF 文本层为空或质量较低，已使用 OCR 结果生成精读材料。"
+                : "已使用 PaddleOCR 结果生成精读材料。");
         for (TranslationOcrPageText page : ocrResult.getPages()) {
             warnings.addAll(page.getWarnings());
             for (TranslationOcrElement element : page.getElements()) {
@@ -469,6 +494,16 @@ public class TranslationDocumentParseService {
                 .filter(warning -> warning != null && !warning.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private int inferOcrPageCount(TranslationOcrResult ocrResult) {
+        if (ocrResult == null || ocrResult.getPages().isEmpty()) {
+            return 0;
+        }
+        return ocrResult.getPages().stream()
+                .mapToInt(TranslationOcrPageText::getPageNumber)
+                .max()
+                .orElse(ocrResult.getPages().size());
     }
 
     private String normalizeOcrElementType(String type) {

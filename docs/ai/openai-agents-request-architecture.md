@@ -235,8 +235,15 @@ export interface AssistantRequest {
     timezone?: string
     userAgent?: string
   }
+
+  conversationHistory?: Array<{
+    role: 'user' | 'assistant'
+    content: string
+  }>
 }
 ```
+
+`conversationHistory` 是后端代理到 Python agent 前注入的服务端上下文字段。Web / iOS 客户端通常不需要自行传入历史消息，只需要稳定传 `appConversationId` 与当前轮输入；后端会从该会话已完成的消息中截取最近上下文，按时间顺序放到当前用户消息之前。
 
 ### 6.3 AssistantAttachmentRef
 

@@ -44,6 +44,9 @@ app:
     dictionary-upload-dir: ${DATA_CLEANING_DICTIONARY_UPLOAD_DIR:storage/data-cleaning/dictionaries}
   translation:
     document-storage-dir: ${APP_TRANSLATION_DOCUMENT_STORAGE_DIR:data/uploads/translation-documents}
+    document-import:
+      initial-ocr-pages: ${APP_TRANSLATION_DOCUMENT_IMPORT_INITIAL_OCR_PAGES:10}
+      background-chunk-pages: ${APP_TRANSLATION_DOCUMENT_IMPORT_BACKGROUND_CHUNK_PAGES:10}
   cookie:
     secure: ${COOKIE_SECURE:false}
   mail:
@@ -64,9 +67,9 @@ app:
       base-url: ${APP_OCR_PADDLE_BASE_URL:http://127.0.0.1:8090}
       endpoint: ${APP_OCR_PADDLE_ENDPOINT:/ocr/pdf}
       language: ${APP_OCR_PADDLE_LANGUAGE:ch,eng}
-      timeout-ms: ${APP_OCR_PADDLE_TIMEOUT_MS:60000}
+      timeout-ms: ${APP_OCR_PADDLE_TIMEOUT_MS:300000}
       parse-mode: ${APP_OCR_PADDLE_PARSE_MODE:standard}
-      max-pages: ${APP_OCR_PADDLE_MAX_PAGES:500}
+      max-pages: ${APP_OCR_PADDLE_MAX_PAGES:20}
       dpi: ${APP_OCR_PADDLE_DPI:220}
       enable-layout: ${APP_OCR_PADDLE_ENABLE_LAYOUT:false}
       enable-table: ${APP_OCR_PADDLE_ENABLE_TABLE:false}

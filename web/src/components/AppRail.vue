@@ -37,6 +37,12 @@
             <path d="M14 20l4-9 4 9" />
             <path d="M15.4 17h5.2" />
           </svg>
+          <svg v-else-if="item.skillIcon === 'toolbox'" viewBox="0 0 24 24">
+            <rect x="4" y="4" width="7" height="7" rx="1.8" />
+            <rect x="13" y="4" width="7" height="7" rx="1.8" />
+            <rect x="4" y="13" width="7" height="7" rx="1.8" />
+            <rect x="13" y="13" width="7" height="7" rx="1.8" />
+          </svg>
           <svg v-else-if="item.skillIcon === 'assistant'" viewBox="0 0 24 24">
             <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.2A8 8 0 1 1 21 12Z" />
           </svg>
@@ -122,7 +128,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 
-type SkillIcon = 'assistant' | 'writing' | 'translation' | 'reading' | 'listening' | 'speaking'
+type SkillIcon = 'assistant' | 'writing' | 'translation' | 'toolbox' | 'reading' | 'listening' | 'speaking'
 type AppNavItem = {
   to: string
   activePrefix: string
@@ -133,6 +139,7 @@ type AppNavItem = {
 const appNavItems = [
   { to: '/app/writing', activePrefix: '/app/writing', label: '写作', skillIcon: 'writing' },
   { to: '/app/translation', activePrefix: '/app/translation', label: '翻译', skillIcon: 'translation' },
+  { to: '/app/tools/document-parse', activePrefix: '/app/tools', label: '工具箱', skillIcon: 'toolbox' },
   { to: '/app/assistant', activePrefix: '/app/assistant', label: '学习助手', skillIcon: 'assistant' },
   { to: '/app/vocabulary', activePrefix: '/app/vocabulary', label: '阅读', skillIcon: 'reading' },
   { to: '/app/listening', activePrefix: '/app/listening', label: '听力', skillIcon: 'listening' },

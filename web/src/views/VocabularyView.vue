@@ -3271,7 +3271,6 @@ function normalizeError(err: unknown) {
 }
 
 @media (max-width: 1180px) {
-  .vocabulary-topbar,
   .search-page,
   .mode-page,
   .collection-page,
@@ -3282,10 +3281,6 @@ function normalizeError(err: unknown) {
   .vocabulary-nav {
     justify-content: flex-start;
     overflow-x: auto;
-  }
-
-  .topbar-actions {
-    justify-content: flex-start;
   }
 
   .word-preview-card {
@@ -3342,6 +3337,17 @@ function normalizeError(err: unknown) {
   .milestone-track {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .vocabulary-topbar {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
   }
 }
 </style>

@@ -44,6 +44,10 @@ public class AssistantRequest {
     @Valid
     private ClientMeta clientMeta;
 
+    @Valid
+    @Size(max = 20)
+    private List<ConversationHistoryMessage> conversationHistory = List.of();
+
     public String getAppConversationId() {
         return appConversationId;
     }
@@ -130,6 +134,14 @@ public class AssistantRequest {
 
     public void setClientMeta(ClientMeta clientMeta) {
         this.clientMeta = clientMeta;
+    }
+
+    public List<ConversationHistoryMessage> getConversationHistory() {
+        return conversationHistory;
+    }
+
+    public void setConversationHistory(List<ConversationHistoryMessage> conversationHistory) {
+        this.conversationHistory = conversationHistory == null ? List.of() : conversationHistory;
     }
 
     public static class Message {
@@ -308,6 +320,40 @@ public class AssistantRequest {
 
         public void setUserAgent(String userAgent) {
             this.userAgent = userAgent;
+        }
+    }
+
+    public static class ConversationHistoryMessage {
+        @NotBlank
+        @Size(max = 16)
+        private String role;
+
+        @NotBlank
+        @Size(max = 4000)
+        private String content;
+
+        public ConversationHistoryMessage() {
+        }
+
+        public ConversationHistoryMessage(String role, String content) {
+            this.role = role;
+            this.content = content;
+        }
+
+        public String getRole() {
+            return role;
+        }
+
+        public void setRole(String role) {
+            this.role = role;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public void setContent(String content) {
+            this.content = content;
         }
     }
 }

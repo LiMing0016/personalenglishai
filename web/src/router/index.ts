@@ -133,6 +133,12 @@ const routes: RouteRecordRaw[] = [
         meta: { immersive: true },
       },
       {
+        path: 'tools/document-parse',
+        name: 'DocumentParseToolbox',
+        component: () => import('@/pages/app/DocumentParseToolboxPage.vue'),
+        meta: { immersive: true },
+      },
+      {
         path: 'assistant',
         name: 'LearningAssistant',
         component: () => import('@/pages/app/AssistantPage.vue'),
@@ -520,6 +526,5 @@ router.beforeEach(async (to, from, next) => {
 })
 
 export default router
-
 
 

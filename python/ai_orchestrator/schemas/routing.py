@@ -59,11 +59,17 @@ TargetAgent = Literal[
 ]
 
 
+class RouteConversationHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class RouteRequestContext(BaseModel):
     essay_text: str | None = None
     topic_prompt: str | None = None
     selected_text: str | None = None
     current_page: str | None = None
+    conversation_history: list["RouteConversationHistoryMessage"] = Field(default_factory=list)
     active_task: dict[str, Any] | None = None
 
     @property

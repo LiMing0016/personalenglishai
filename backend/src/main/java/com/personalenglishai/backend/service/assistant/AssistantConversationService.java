@@ -40,6 +40,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -55,6 +56,9 @@ public class AssistantConversationService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int MAX_ATTACHMENT_COUNT = 5;
     private static final long MAX_ATTACHMENT_BYTES = 10L * 1024 * 1024;
+    private static final int AGENT_HISTORY_MESSAGE_LIMIT = 20;
+    private static final int AGENT_HISTORY_TOTAL_CHARS = 12_000;
+    private static final int AGENT_HISTORY_MESSAGE_CHARS = 4_000;
     private static final Set<String> ALLOWED_ATTACHMENT_TYPES = Set.of(
             "image/png",
             "image/jpeg",
@@ -211,6 +215,7 @@ public class AssistantConversationService {
 
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
+        attachConversationHistory(request, conversationUid);
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
         persistAndCaptureMessage(userMessage);
 
@@ -239,6 +244,7 @@ public class AssistantConversationService {
 
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
+        attachConversationHistory(request, conversationUid);
         persistAndCaptureMessage(buildMessage(userId, conversationUid, "user", prompt, nextOrder));
 
         StringBuilder deltaContent = new StringBuilder();
@@ -487,6 +493,62 @@ public class AssistantConversationService {
     private int nextSortOrder(String conversationUid) {
         Integer max = messageMapper.selectMaxSortOrder(conversationUid);
         return max == null ? 1 : max + 1;
+    }
+
+    private void attachConversationHistory(AssistantRequest request, String conversationUid) {
+        List<AssistantMessage> messages = messageMapper.selectByConversationUid(conversationUid);
+        if (messages == null || messages.isEmpty()) {
+            request.setConversationHistory(List.of());
+            return;
+        }
+
+        List<AssistantRequest.ConversationHistoryMessage> newestFirst = new ArrayList<>();
+        int totalChars = 0;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            AssistantMessage message = messages.get(i);
+            if (message == null || !"done".equals(message.getStatus())) {
+                continue;
+            }
+            String role = normalizeHistoryRole(message.getRole());
+            if (role == null) {
+                continue;
+            }
+            String content = truncateHistoryContent(message.getContent());
+            if (content.isBlank()) {
+                continue;
+            }
+            int nextTotal = totalChars + content.length();
+            if (nextTotal > AGENT_HISTORY_TOTAL_CHARS && !newestFirst.isEmpty()) {
+                break;
+            }
+            newestFirst.add(new AssistantRequest.ConversationHistoryMessage(role, content));
+            totalChars = nextTotal;
+            if (newestFirst.size() >= AGENT_HISTORY_MESSAGE_LIMIT) {
+                break;
+            }
+        }
+
+        Collections.reverse(newestFirst);
+        request.setConversationHistory(newestFirst);
+    }
+
+    private String normalizeHistoryRole(String role) {
+        if (role == null) {
+            return null;
+        }
+        String normalized = role.trim().toLowerCase(Locale.ROOT);
+        return ("user".equals(normalized) || "assistant".equals(normalized)) ? normalized : null;
+    }
+
+    private String truncateHistoryContent(String content) {
+        if (content == null) {
+            return "";
+        }
+        String trimmed = content.trim();
+        if (trimmed.length() <= AGENT_HISTORY_MESSAGE_CHARS) {
+            return trimmed;
+        }
+        return trimmed.substring(0, AGENT_HISTORY_MESSAGE_CHARS - 3).trim() + "...";
     }
 
     private boolean shouldAutoTitle(AssistantConversation conversation) {

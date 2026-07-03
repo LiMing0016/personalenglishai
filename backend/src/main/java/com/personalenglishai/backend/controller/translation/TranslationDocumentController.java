@@ -6,6 +6,7 @@ import com.personalenglishai.backend.dto.translation.TranslationDocumentAgentAns
 import com.personalenglishai.backend.dto.translation.TranslationDocumentAgentAnswerResponse;
 import com.personalenglishai.backend.dto.translation.TranslationDocumentParseResponse;
 import com.personalenglishai.backend.service.translation.DocumentParseMode;
+import com.personalenglishai.backend.service.translation.DocumentParseProviderPreference;
 import com.personalenglishai.backend.service.translation.StoredTranslationDocumentFile;
 import com.personalenglishai.backend.service.translation.TranslationDocumentFileStorage;
 import com.personalenglishai.backend.service.translation.TranslationDocumentKnowledgeStore;
@@ -67,14 +68,16 @@ public class TranslationDocumentController {
     public TranslationDocumentParseResponse importDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "mode", required = false, defaultValue = "immersive") String mode,
-            @RequestParam(value = "parseMode", required = false, defaultValue = "standard") String parseMode) {
+            @RequestParam(value = "parseMode", required = false, defaultValue = "standard") String parseMode,
+            @RequestParam(value = "parseProvider", required = false, defaultValue = "auto") String parseProvider) {
         try {
             return importService.importDocument(new UploadedTranslationDocument(
                     file.getOriginalFilename(),
                     file.getContentType(),
                     file.getBytes(),
                     mode,
-                    DocumentParseMode.fromWireName(parseMode)
+                    DocumentParseMode.fromWireName(parseMode),
+                    DocumentParseProviderPreference.fromWireName(parseProvider)
             ));
         } catch (IOException e) {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "读取上传文件失败");

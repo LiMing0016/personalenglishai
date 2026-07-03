@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -78,6 +80,22 @@ class ElementBlock(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class OcrAsset(BaseModel):
+    id: str
+    assetType: str = "image"
+    pageNumber: int = Field(ge=1)
+    bbox: list[list[float]] = Field(default_factory=list)
+    mimeType: str = "image/jpeg"
+    dataBase64: str | None = None
+    width: int | None = None
+    height: int | None = None
+    order: int = Field(default=0, ge=0)
+    source: str = "paddle_ocr"
+    rawType: str | None = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class OcrPage(BaseModel):
     pageNumber: int = Field(ge=1)
     text: str = ""
@@ -107,6 +125,7 @@ class OcrResponse(BaseModel):
     status: OcrStatus
     provider: str = "PaddleOCR"
     pages: list[OcrPage] = Field(default_factory=list)
+    assets: list[OcrAsset] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     elapsedMs: int = 0
     pageCount: int = 0
@@ -124,5 +143,9 @@ class HealthResponse(BaseModel):
     documentEngineProvider: str | None = None
     documentEngineVersion: str | None = None
     documentEngineMessage: str | None = None
+    vlEngineLoaded: bool = False
+    vlEngineProvider: str | None = None
+    vlEngineVersion: str | None = None
+    vlEngineMessage: str | None = None
     formulaEnabled: bool = False
     message: str | None = None

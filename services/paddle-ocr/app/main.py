@@ -11,7 +11,8 @@ from app.formula_engine import FormulaRecognitionEngine
 from app.ocr_engine import TextOcrEngine, merge_blocks_text, sort_blocks_reading_order
 from app.pdf_renderer import PdfRenderer, cleanup_rendered, decode_base64
 from app.quality import aggregate_document_status, assess_page_quality
-from app.schemas import ElementBlock, HealthResponse, OcrImageRequest, OcrPage, OcrPdfRequest, OcrResponse
+from app.schemas import ElementBlock, HealthResponse, OcrAsset, OcrImageRequest, OcrPage, OcrPdfRequest, OcrResponse
+from app.vl_engine import PaddleVlDocumentEngine
 
 
 def create_app(
@@ -19,22 +20,26 @@ def create_app(
     renderer: PdfRenderer | None = None,
     formula_engine: FormulaRecognitionEngine | None = None,
     document_engine: DocumentPipelineEngine | None = None,
+    vl_engine: PaddleVlDocumentEngine | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Personal English AI PaddleOCR Service", version="0.1.0")
     app.state.text_engine = text_engine or TextOcrEngine()
     app.state.renderer = renderer or PdfRenderer()
     app.state.formula_engine = formula_engine or FormulaRecognitionEngine()
     app.state.document_engine = document_engine or DocumentPipelineEngine()
+    app.state.vl_engine = vl_engine or PaddleVlDocumentEngine()
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         engine = app.state.text_engine
         formula = app.state.formula_engine
         document_engine = app.state.document_engine
+        vl_engine = app.state.vl_engine
         text_loaded = bool(getattr(engine, "sdk_loaded", False))
         document_loaded = bool(getattr(document_engine, "sdk_loaded", False))
         document_message = getattr(document_engine, "unavailable_reason", None)
         document_pending = not document_loaded and document_message == DocumentPipelineEngine.not_loaded_message
+        vl_loaded = bool(getattr(vl_engine, "sdk_loaded", False))
         return HealthResponse(
             status="UP" if text_loaded and (document_loaded or document_pending) else "DEGRADED",
             provider=getattr(engine, "provider", "PaddleOCR"),
@@ -44,6 +49,10 @@ def create_app(
             documentEngineProvider=getattr(document_engine, "provider", None),
             documentEngineVersion=getattr(document_engine, "version", None),
             documentEngineMessage=document_message,
+            vlEngineLoaded=vl_loaded,
+            vlEngineProvider=getattr(vl_engine, "provider", None),
+            vlEngineVersion=getattr(vl_engine, "version", None),
+            vlEngineMessage=getattr(vl_engine, "unavailable_reason", None),
             formulaEnabled=bool(getattr(formula, "enabled", False)),
             message=getattr(engine, "unavailable_reason", None),
         )
@@ -94,6 +103,47 @@ def create_app(
         finally:
             if rendered is not None:
                 cleanup_rendered(rendered)
+
+    @app.post("/vl/pdf", response_model=OcrResponse)
+    def vl_pdf(request: OcrPdfRequest):
+        started = time.perf_counter()
+        try:
+            document_bytes = decode_base64(request.documentBase64)
+            result = app.state.vl_engine.recognize_pdf(
+                document_bytes,
+                language=request.language,
+                page_start=request.pageStart,
+                page_end=request.pageEnd,
+                max_pages=request.maxPages,
+                dpi=request.dpi,
+                enable_layout=request.feature_enabled("enableLayout"),
+                enable_table=request.feature_enabled("enableTable"),
+                enable_formula=request.feature_enabled("enableFormula"),
+                enable_orientation=request.feature_enabled("enableOrientation"),
+                enable_unwarping=request.feature_enabled("enableUnwarping"),
+            )
+            pages = _coerce_vl_pages(result)
+            metadata = {
+                "parseMode": request.parseMode,
+                "maxPages": request.maxPages,
+                "dpi": request.dpi,
+                "enableLayout": request.feature_enabled("enableLayout"),
+                "enableTable": request.feature_enabled("enableTable"),
+                "enableFormula": request.feature_enabled("enableFormula"),
+                "enableOrientation": request.feature_enabled("enableOrientation"),
+                "enableUnwarping": request.feature_enabled("enableUnwarping"),
+            }
+            metadata.update(_result_value(result, "metadata", {}) or {})
+            return _build_response(
+                pages,
+                started,
+                provider=getattr(app.state.vl_engine, "provider", "PaddleOCR-VL"),
+                assets=_coerce_assets(_result_value(result, "assets", [])),
+                warnings=_coerce_string_list(_result_value(result, "warnings", [])),
+                metadata=metadata,
+            )
+        except Exception as exc:
+            return _error_response(str(exc), started, provider="PaddleOCR-VL")
 
     @app.post("/ocr/image", response_model=OcrResponse)
     def ocr_image(request: OcrImageRequest):
@@ -217,9 +267,9 @@ def _recognize_page(
     elements = document_elements or _blocks_to_elements(blocks)
     if formulas and not _has_element_type(elements, "formula"):
         elements.extend(_formulas_to_elements(formulas, start_order=len(elements) + 1))
-    text = merge_elements_text(elements) or raw_text
+    text = _merge_page_text(merge_elements_text(elements), raw_text)
     if formulas and not _has_element_type(document_elements, "formula"):
-        text = _append_formula_placeholders(raw_text, formulas)
+        text = _append_formula_placeholders(text or raw_text, formulas)
 
     return assess_page_quality(
         OcrPage(
@@ -240,25 +290,34 @@ def _recognize_page(
     )
 
 
-def _build_response(pages: list[OcrPage], started: float, metadata: dict[str, Any] | None = None) -> OcrResponse:
+def _build_response(
+    pages: list[OcrPage],
+    started: float,
+    metadata: dict[str, Any] | None = None,
+    provider: str = "PaddleOCR",
+    assets: list[OcrAsset] | None = None,
+    warnings: list[str] | None = None,
+) -> OcrResponse:
     status = aggregate_document_status(pages)
+    merged_warnings = list(dict.fromkeys([*(warnings or []), *status.warnings]))
     return OcrResponse(
         status=status.status,
-        provider="PaddleOCR",
+        provider=provider,
         pages=pages,
-        warnings=status.warnings,
+        assets=assets or [],
+        warnings=merged_warnings,
         elapsedMs=_elapsed_ms(started),
         pageCount=status.pageCount,
         recognizedPageCount=status.recognizedPageCount,
-        message=None if status.status != "FAILED" else "PaddleOCR 未识别到有效内容",
+        message=None if status.status != "FAILED" else f"{provider} 未识别到有效内容",
         metadata=metadata or {},
     )
 
 
-def _error_response(message: str, started: float) -> JSONResponse:
+def _error_response(message: str, started: float, provider: str = "PaddleOCR") -> JSONResponse:
     body = OcrResponse(
         status="FAILED",
-        provider="PaddleOCR",
+        provider=provider,
         pages=[],
         warnings=["OCR_REQUEST_FAILED"],
         elapsedMs=_elapsed_ms(started),
@@ -273,6 +332,20 @@ def _page_iter(rendered) -> list[Any]:
     if hasattr(rendered, "pages"):
         return list(rendered.pages)
     return list(rendered)
+
+
+def _merge_page_text(structured_text: str, raw_text: str) -> str:
+    structured_text = (structured_text or "").strip()
+    raw_text = (raw_text or "").strip()
+    if not structured_text:
+        return raw_text
+    if not raw_text:
+        return structured_text
+    if raw_text in structured_text:
+        return structured_text
+    if structured_text in raw_text:
+        return raw_text
+    return f"{structured_text}\n\n{raw_text}"
 
 
 def _page_value(page: Any, name: str, default=None):
@@ -346,9 +419,34 @@ def _coerce_document_elements(result: Any) -> list[ElementBlock]:
 
 def _coerce_document_warnings(result: Any) -> list[str]:
     warnings = _result_value(result, "warnings", [])
+    return _coerce_string_list(warnings)
+
+
+def _coerce_string_list(warnings: Any) -> list[str]:
     if not isinstance(warnings, list):
         return []
     return [str(item) for item in warnings if str(item).strip()]
+
+
+def _coerce_vl_pages(result: Any) -> list[OcrPage]:
+    raw_pages = _result_value(result, "pages", [])
+    pages: list[OcrPage] = []
+    for item in raw_pages or []:
+        if isinstance(item, OcrPage):
+            pages.append(item)
+        elif isinstance(item, dict):
+            pages.append(OcrPage(**item))
+    return pages
+
+
+def _coerce_assets(result: Any) -> list[OcrAsset]:
+    assets: list[OcrAsset] = []
+    for item in result or []:
+        if isinstance(item, OcrAsset):
+            assets.append(item)
+        elif isinstance(item, dict):
+            assets.append(OcrAsset(**item))
+    return assets
 
 
 def _result_value(result: Any, name: str, default=None):

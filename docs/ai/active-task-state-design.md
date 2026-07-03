@@ -2,7 +2,7 @@
 
 ## 背景
 
-学习助手当前已经使用 OpenAI Agents SDK 的 `SQLiteSession` 保存完整对话历史。Session 能让下一轮模型看到上一轮自然语言内容，但它不维护业务层状态，例如：
+学习助手当前有两类上下文来源：旧 `chat` 兼容链路仍可使用 OpenAI Agents SDK 的 `SQLiteSession`，正式 `AssistantRequest` 链路则由 Java 后端从 `assistant_message` 注入最近历史窗口。自然语言历史能让下一轮模型看到上一轮问答，但它不维护业务层状态，例如：
 
 - 上一轮任务的标准 intent 是什么
 - 上一轮由哪个专职 Agent 完成

@@ -111,28 +111,55 @@
           </div>
         </div>
 
-        <div v-if="documentView === 'text'" class="ide-reader-surface" role="list" aria-label="原文段落列表">
-          <article
-            v-for="block in readingDocument.blocks"
-            :key="block.id"
-            role="listitem"
-            class="ide-document-block"
-            :class="{ active: block.id === activeBlockId }"
-            @click="selectOutlineBlock(block.id, block.pageNumber || 1)">
-            <aside class="ide-gutter" aria-label="段落定位">
-              <span>P{{ block.order }}</span>
-              <small v-if="block.pageNumber">Page {{ block.pageNumber }}</small>
-            </aside>
-
-            <div class="ide-source-cell">
-              <div class="ide-block-meta">
-                <span>{{ block.type === 'heading' ? 'Heading' : 'Paragraph' }}</span>
-                <button type="button" @click.stop="askAgent('解释当前段落')">Ask</button>
-                <button type="button" @click.stop="askAgent('翻译当前段落')">Translate</button>
-              </div>
-              <p class="source-text source-text--ide">{{ block.text }}</p>
+        <div v-if="documentView === 'text'" class="parsed-document-shell" aria-label="文档解析结果">
+          <div class="parsed-document-toolbar" aria-label="解析结果工具栏">
+            <div class="parsed-document-tabs" aria-label="解析结果视图">
+              <button type="button" class="active">文档解析</button>
+              <button type="button" @click="showPlaceholderAction('JSON 解析结果')">JSON</button>
             </div>
-          </article>
+            <div class="parsed-document-status">
+              <span>{{ readingDocument.parseStatus }}</span>
+              <span>{{ documentParsePages.length }} / {{ readingDocument.pageCount || documentParsePages.length }} 页</span>
+            </div>
+          </div>
+
+          <div class="parsed-document-scroll">
+            <article
+              v-for="page in documentParsePages"
+              :key="page.pageNumber"
+              class="parsed-page-card"
+              :aria-label="`Page ${page.pageNumber} 文档解析`">
+              <header class="parsed-page-header">
+                <span>Page {{ page.pageNumber }}</span>
+                <small>{{ page.blocks.length }} 个解析块 · {{ page.textLength }} 字符</small>
+              </header>
+
+              <section class="parsed-page-body">
+                <article
+                  v-for="block in page.blocks"
+                  :key="block.id"
+                  class="parsed-block"
+                  :class="[`parsed-block--${block.displayType}`, { active: block.id === activeBlockId }]"
+                  @click="selectOutlineBlock(block.id, block.pageNumber || page.pageNumber)">
+                  <div class="parsed-block-meta">
+                    <span>{{ parsedBlockTypeLabel(block.displayType) }}</span>
+                    <small v-if="block.confidence !== null && block.confidence !== undefined">
+                      confidence {{ Math.round(block.confidence * 100) }}%
+                    </small>
+                  </div>
+                  <h1 v-if="block.displayType === 'title'" class="parsed-title">{{ block.text }}</h1>
+                  <h2 v-else-if="block.displayType === 'heading'" class="parsed-heading">{{ block.text }}</h2>
+                  <pre v-else-if="block.displayType === 'table' || block.displayType === 'code'" class="parsed-preformatted">{{ block.text }}</pre>
+                  <p v-else class="parsed-paragraph">{{ block.text }}</p>
+                </article>
+              </section>
+            </article>
+
+            <section v-if="documentParsePages.length === 0" class="parsed-empty-state">
+              <strong>暂无可展示的解析文本</strong>
+              <span>后台 OCR 完成后，这里会自动刷新展示文档解析结果。</span>
+            </section>
+          </div>
         </div>
 
         <PdfLearningCanvas
@@ -306,9 +333,11 @@ import type { TranslationSourceType } from './translationHubData'
 import {
   buildAssetStats,
   buildDocumentSelectionContext,
+  buildDocumentParsePages,
   buildIntensiveReadingDocument,
   createTranslationWorkspaceDraftFromParsedDocument,
   loadTranslationWorkspaceDraft,
+  saveTranslationWorkspaceDraft,
   type DocumentOutlineItem,
   type DocumentSelectionContext,
   type IntensiveReadingDocument,
@@ -363,6 +392,7 @@ const workspaceShellRef = ref<HTMLElement | null>(null)
 const readingDocument = ref<IntensiveReadingDocument | null>(null)
 const workspaceLoading = ref(false)
 const workspaceLoadError = ref('')
+let backgroundParseTimer: number | null = null
 const outlineColumnWidth = ref(280)
 const agentColumnWidth = ref(430)
 const activeResizeTarget = ref<WorkspaceResizeTarget | null>(null)
@@ -433,6 +463,10 @@ const outlinePageItems = computed<number[]>(() => {
   return Array.from(pages).sort((left, right) => left - right)
 })
 
+const documentParsePages = computed(() => {
+  return readingDocument.value ? buildDocumentParsePages(readingDocument.value.blocks) : []
+})
+
 const pageNotesStorageKey = computed(() => {
   return readingDocument.value ? `peai:translation-workbench-notes:${readingDocument.value.id}` : ''
 })
@@ -449,12 +483,14 @@ watch(readingDocument, (document) => {
 watch(
   () => String(route.params.id ?? ''),
   (id) => {
+    clearBackgroundParseRefresh()
     void restoreWorkspaceDocument(id)
   },
   { immediate: true },
 )
 
 onBeforeUnmount(() => {
+  clearBackgroundParseRefresh()
   stopWorkspaceResize()
 })
 
@@ -467,16 +503,18 @@ function goBackToHub() {
   void router.push('/app/translation')
 }
 
-async function restoreWorkspaceDocument(id: string) {
-  readingDocument.value = null
-  activeBlockId.value = ''
-  workspaceLoadError.value = ''
+async function restoreWorkspaceDocument(id: string, silent = false) {
+  if (!silent) {
+    readingDocument.value = null
+    activeBlockId.value = ''
+    workspaceLoadError.value = ''
+  }
   if (!id) {
     workspaceLoadError.value = '缺少翻译 ID。'
     return
   }
 
-  workspaceLoading.value = true
+  if (!silent) workspaceLoading.value = true
   try {
     const persisted = await getTranslationDocumentKnowledge(id)
     const localDraft = loadLocalWorkspaceDraft(id)
@@ -489,7 +527,16 @@ async function restoreWorkspaceDocument(id: string) {
     )
     activeMode.value = draft.mode
     readingDocument.value = buildIntensiveReadingDocument(draft)
+    if (typeof window !== 'undefined') {
+      saveTranslationWorkspaceDraft(window.localStorage, draft)
+    }
+    workspaceLoadError.value = ''
+    scheduleBackgroundParseRefresh(id, draft.ocrStatus)
   } catch {
+    if (silent) {
+      scheduleBackgroundParseRefresh(id, readingDocument.value?.ocrStatus)
+      return
+    }
     const localDraft = loadLocalWorkspaceDraft(id)
     if (localDraft) {
       activeMode.value = localDraft.mode
@@ -498,12 +545,28 @@ async function restoreWorkspaceDocument(id: string) {
         pdfPreviewUrl: localDraft.pdfPreviewUrl || getTranslationDocumentFileUrl(id),
       })
       workspaceLoadError.value = ''
+      scheduleBackgroundParseRefresh(id, localDraft.ocrStatus)
       return
     }
     workspaceLoadError.value = '后端知识快照不存在，且没有可兼容恢复的本地草稿。'
   } finally {
-    workspaceLoading.value = false
+    if (!silent) workspaceLoading.value = false
   }
+}
+
+function scheduleBackgroundParseRefresh(id: string, ocrStatus?: string) {
+  clearBackgroundParseRefresh()
+  if (ocrStatus !== 'PARTIAL' || typeof window === 'undefined') return
+  backgroundParseTimer = window.setTimeout(() => {
+    backgroundParseTimer = null
+    void restoreWorkspaceDocument(id, true)
+  }, 8000)
+}
+
+function clearBackgroundParseRefresh() {
+  if (!backgroundParseTimer || typeof window === 'undefined') return
+  window.clearTimeout(backgroundParseTimer)
+  backgroundParseTimer = null
 }
 
 function resolvePersistedPdfPreviewUrl(
@@ -673,6 +736,21 @@ function clamp(value: number, min: number, max: number) {
 
 function showPlaceholderAction(label: string) {
   showToast(`${label} 即将接入`, 'info')
+}
+
+function parsedBlockTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    title: '标题',
+    heading: '小标题',
+    paragraph: '段落',
+    list: '列表',
+    table: '表格',
+    quote: '引用',
+    code: '代码',
+    question: '题目',
+    option: '选项',
+  }
+  return labels[type] ?? '段落'
 }
 
 function askAgent(question: string) {
@@ -1275,6 +1353,204 @@ textarea {
   background:
     linear-gradient(#ffffff 31px, transparent 31px) 0 0 / 100% 32px,
     #ffffff;
+}
+
+.parsed-document-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  background: #f6f8fb;
+}
+
+.parsed-document-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.parsed-document-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.parsed-document-tabs button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.parsed-document-tabs button.active {
+  border-color: #dbeafe;
+  background: #eef4ff;
+  color: #2563eb;
+}
+
+.parsed-document-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.parsed-document-status span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parsed-document-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 0 42px;
+}
+
+.parsed-page-card {
+  width: min(920px, calc(100% - 48px));
+  min-width: 0;
+  margin: 0 auto 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05);
+}
+
+.parsed-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #edf1f6;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.parsed-page-header small {
+  min-width: 0;
+  overflow: hidden;
+  color: #98a2b3;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parsed-page-body {
+  padding: 40px 58px 54px;
+}
+
+.parsed-block {
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 9px 12px;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.parsed-block:hover {
+  background: #f8fafc;
+}
+
+.parsed-block.active {
+  border-left-color: #0f8f89;
+  background: #f0fdfa;
+}
+
+.parsed-block-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.parsed-block-meta span,
+.parsed-block-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parsed-title,
+.parsed-heading,
+.parsed-paragraph,
+.parsed-preformatted {
+  margin: 0;
+  color: #202733;
+  letter-spacing: 0;
+}
+
+.parsed-title {
+  font-size: 34px;
+  line-height: 1.28;
+  font-weight: 900;
+}
+
+.parsed-heading {
+  font-size: 24px;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.parsed-paragraph {
+  font-size: 18px;
+  line-height: 2.05;
+  font-weight: 600;
+  white-space: pre-wrap;
+}
+
+.parsed-preformatted {
+  overflow: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.parsed-empty-state {
+  display: grid;
+  width: min(620px, calc(100% - 48px));
+  margin: 70px auto 0;
+  gap: 8px;
+  place-items: center;
+  padding: 36px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #667085;
+  text-align: center;
+}
+
+.parsed-empty-state strong {
+  color: #111827;
+  font-size: 18px;
 }
 
 .ide-document-block {

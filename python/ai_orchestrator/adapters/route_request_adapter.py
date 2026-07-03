@@ -6,6 +6,10 @@ from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
 from python.ai_orchestrator.schemas.routing import RouteRequest, RouteRequestContext
 
 
+ROUTE_HISTORY_MESSAGE_LIMIT = 6
+ROUTE_HISTORY_MESSAGE_CHARS = 600
+
+
 def build_route_request(
     request: AssistantRequest,
     *,
@@ -39,6 +43,24 @@ def build_route_request(
             topic_prompt=topic_prompt,
             selected_text=selection_text,
             current_page=source_page,
+            conversation_history=_build_route_conversation_history(request),
             active_task=active_task,
         ),
     )
+
+
+def _build_route_conversation_history(request: AssistantRequest) -> list[dict[str, str]]:
+    history = []
+    for message in request.conversation_history[-ROUTE_HISTORY_MESSAGE_LIMIT:]:
+        content = _truncate_route_history_content(message.content)
+        if not content:
+            continue
+        history.append({"role": message.role, "content": content})
+    return history
+
+
+def _truncate_route_history_content(content: str | None) -> str:
+    normalized = (content or "").strip()
+    if len(normalized) <= ROUTE_HISTORY_MESSAGE_CHARS:
+        return normalized
+    return normalized[: ROUTE_HISTORY_MESSAGE_CHARS - 3].strip() + "..."

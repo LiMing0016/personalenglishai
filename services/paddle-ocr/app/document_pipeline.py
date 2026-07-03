@@ -274,7 +274,7 @@ def _element_from_formula_item(item: Any, fallback_order: int) -> ElementBlock:
 
 
 def _append_unique(elements: list[ElementBlock], element: ElementBlock, seen_keys: set[tuple[str, str, str]]) -> None:
-    if not element.text.strip():
+    if not element.text.strip() and element.type != "image":
         return
     key = (element.type, element.text.strip(), str(element.bbox))
     if key in seen_keys:

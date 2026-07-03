@@ -165,6 +165,16 @@ v1 支持以下学习 block：
     }
   },
   "attachments": [],
+  "conversationHistory": [
+    {
+      "role": "user",
+      "content": "citation 是什么意思？"
+    },
+    {
+      "role": "assistant",
+      "content": "citation 表示引用、引证。"
+    }
+  ],
   "studyContext": {
     "studyStage": "postgrad",
     "cefrLevel": "B2",
@@ -192,6 +202,9 @@ v1 支持以下学习 block：
 | `message.text` | 否 | 最长 8000 |
 | `selection.text` | 否 | 最长 8000 |
 | `attachments` | 否 | 最多 5 个 |
+| `conversationHistory` | 否 | 后端注入；最多 20 条，每条最长 4000 字符 |
+
+`conversationHistory` 用于 Java 后端调用 Python `/assistant/run` 或 `/assistant/run/stream` 时携带当前会话的最近历史。iOS / Web 客户端请求时可以省略该字段；服务端会依据 `conversationUid` 从已持久化且状态为 `done` 的 user / assistant 消息中构造上下文。
 
 ### AttachmentRef
 

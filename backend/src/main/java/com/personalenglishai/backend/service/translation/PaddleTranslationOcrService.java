@@ -2,11 +2,15 @@ package com.personalenglishai.backend.service.translation;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -23,6 +27,8 @@ import java.util.Map;
 @Service
 @ConditionalOnProperty(name = "app.ocr.provider", havingValue = "paddle")
 public class PaddleTranslationOcrService implements TranslationOcrService {
+    private static final Logger log = LoggerFactory.getLogger(PaddleTranslationOcrService.class);
+
     private final boolean enabled;
     private final String baseUrl;
     private final String endpoint;
@@ -47,7 +53,7 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
             @Value("${app.ocr.paddle.language:ch,eng}") String language,
             @Value("${app.ocr.paddle.timeout-ms:60000}") long timeoutMs,
             @Value("${app.ocr.paddle.parse-mode:standard}") String parseMode,
-            @Value("${app.ocr.paddle.max-pages:500}") int maxPages,
+            @Value("${app.ocr.paddle.max-pages:20}") int maxPages,
             @Value("${app.ocr.paddle.dpi:220}") int dpi,
             @Value("${app.ocr.paddle.enable-layout:false}") boolean enableLayout,
             @Value("${app.ocr.paddle.enable-table:false}") boolean enableTable,
@@ -89,7 +95,7 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
                 language,
                 timeoutMs,
                 "standard",
-                500,
+                20,
                 220,
                 false,
                 false,
@@ -102,15 +108,64 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
 
     @Override
     public TranslationOcrResult recognizePdf(byte[] pdfBytes) {
+        return recognizePdf(pdfBytes, TranslationOcrOptions.of(DocumentParseMode.fromWireName(parseMode)));
+    }
+
+    @Override
+    public TranslationOcrResult recognizePdf(byte[] pdfBytes, DocumentParseMode requestedParseMode) {
+        return recognizePdf(pdfBytes, TranslationOcrOptions.of(requestedParseMode));
+    }
+
+    @Override
+    public TranslationOcrResult recognizePdf(byte[] pdfBytes, TranslationOcrOptions options) {
         if (!enabled) {
+            log.warn("[document-parse] paddle disabled");
             return TranslationOcrResult.unavailable("PaddleOCR provider is disabled");
         }
         if (pdfBytes == null || pdfBytes.length == 0) {
             return TranslationOcrResult.failed("OCR 输入 PDF 为空");
         }
 
+        long startedAt = System.currentTimeMillis();
         try {
-            String requestBody = objectMapper.writeValueAsString(buildRequest(pdfBytes));
+            TranslationOcrOptions effectiveOptions = options == null
+                    ? TranslationOcrOptions.of(DocumentParseMode.fromWireName(parseMode))
+                    : options;
+            DocumentParseMode effectiveMode = effectiveOptions.effectiveParseMode();
+            int requestMaxPages = effectiveOptions.effectiveMaxPages(maxPages);
+            String effectiveParseMode = effectiveMode.wireName();
+            boolean effectiveEnableLayout = effectiveMode == DocumentParseMode.HIGH_QUALITY && enableLayout;
+            boolean effectiveEnableTable = effectiveMode == DocumentParseMode.HIGH_QUALITY && enableTable;
+            boolean effectiveEnableFormula = effectiveMode == DocumentParseMode.HIGH_QUALITY && enableFormula;
+            boolean effectiveEnableOrientation = enableOrientation;
+            boolean effectiveEnableUnwarping = effectiveMode == DocumentParseMode.HIGH_QUALITY && enableUnwarping;
+            SelectedPdfPages selectedPdf = selectPdfPagesForOcr(pdfBytes, effectiveOptions, requestMaxPages);
+            log.info(
+                    "[document-parse] paddle request endpoint={} parseMode={} layout={} table={} formula={} orientation={} unwarping={} pageStart={} pageEnd={} maxPages={} dpi={} originalBytes={} requestBytes={}",
+                    endpoint,
+                    effectiveParseMode,
+                    effectiveEnableLayout,
+                    effectiveEnableTable,
+                    effectiveEnableFormula,
+                    effectiveEnableOrientation,
+                    effectiveEnableUnwarping,
+                    selectedPdf.pageStart(),
+                    selectedPdf.pageEnd(),
+                    requestMaxPages,
+                    dpi,
+                    pdfBytes.length,
+                    selectedPdf.bytes().length
+            );
+            String requestBody = objectMapper.writeValueAsString(buildRequest(
+                    selectedPdf.bytes(),
+                    effectiveParseMode,
+                    requestMaxPages,
+                    effectiveEnableLayout,
+                    effectiveEnableTable,
+                    effectiveEnableFormula,
+                    effectiveEnableOrientation,
+                    effectiveEnableUnwarping
+            ));
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + endpoint))
                     .timeout(timeout)
@@ -120,35 +175,95 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("[document-parse] paddle response httpStatus={} elapsedMs={}",
+                        response.statusCode(),
+                        Math.max(0, System.currentTimeMillis() - startedAt));
                 return TranslationOcrResult.unavailable("PaddleOCR 服务返回异常状态: " + response.statusCode());
             }
-            return parseResponse(response.body());
+            TranslationOcrResult result = parseResponse(response.body(), selectedPdf.pageNumberOffset());
+            log.info("[document-parse] paddle response status={} pages={} elapsedMs={}",
+                    result.getStatus(),
+                    result.getPages().size(),
+                    Math.max(0, System.currentTimeMillis() - startedAt));
+            return result;
         } catch (IOException e) {
+            log.warn("[document-parse] paddle unavailable elapsedMs={} error={}",
+                    Math.max(0, System.currentTimeMillis() - startedAt),
+                    e.getMessage());
             return TranslationOcrResult.unavailable("PaddleOCR 服务不可用: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn("[document-parse] paddle interrupted elapsedMs={}",
+                    Math.max(0, System.currentTimeMillis() - startedAt));
             return TranslationOcrResult.failed("PaddleOCR 识别被中断");
         } catch (RuntimeException e) {
+            log.warn("[document-parse] paddle parse failed elapsedMs={} error={}",
+                    Math.max(0, System.currentTimeMillis() - startedAt),
+                    e.getMessage());
             return TranslationOcrResult.failed("PaddleOCR 响应解析失败: " + e.getMessage());
         }
     }
 
-    private Map<String, Object> buildRequest(byte[] pdfBytes) {
+    private SelectedPdfPages selectPdfPagesForOcr(byte[] pdfBytes, TranslationOcrOptions options, int requestMaxPages) {
+        int requestedStart = options.effectivePageStart();
+        Integer requestedEnd = options.pageEnd();
+        try (PDDocument source = PDDocument.load(pdfBytes)) {
+            int pageCount = source.getNumberOfPages();
+            int pageStart = Math.min(Math.max(1, requestedStart), Math.max(1, pageCount));
+            int maxEnd = Math.min(pageCount, pageStart + requestMaxPages - 1);
+            int pageEnd = requestedEnd == null ? maxEnd : Math.min(maxEnd, Math.max(pageStart, requestedEnd));
+            int selectedPageCount = Math.max(0, pageEnd - pageStart + 1);
+            if (pageStart == 1 && pageEnd == pageCount && selectedPageCount <= requestMaxPages) {
+                return new SelectedPdfPages(pdfBytes, pageStart, pageEnd, 0);
+            }
+            try (PDDocument limited = new PDDocument();
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                for (int pageIndex = pageStart - 1; pageIndex < pageEnd; pageIndex++) {
+                    limited.importPage(source.getPage(pageIndex));
+                }
+                limited.save(output);
+                byte[] limitedBytes = output.toByteArray();
+                log.info(
+                        "[document-parse] paddle request pdf pages selected originalPages={} pageStart={} pageEnd={} maxPages={} originalBytes={} requestBytes={}",
+                        pageCount,
+                        pageStart,
+                        pageEnd,
+                        requestMaxPages,
+                        pdfBytes.length,
+                        limitedBytes.length
+                );
+                return new SelectedPdfPages(limitedBytes, pageStart, pageEnd, pageStart - 1);
+            }
+        } catch (IOException e) {
+            log.warn("[document-parse] paddle request pdf page limiting skipped error={}", e.getMessage());
+            return new SelectedPdfPages(pdfBytes, requestedStart, null, 0);
+        }
+    }
+
+    private Map<String, Object> buildRequest(
+            byte[] pdfBytes,
+            String requestParseMode,
+            int requestMaxPages,
+            boolean requestEnableLayout,
+            boolean requestEnableTable,
+            boolean requestEnableFormula,
+            boolean requestEnableOrientation,
+            boolean requestEnableUnwarping) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("documentBase64", Base64.getEncoder().encodeToString(pdfBytes));
         request.put("language", language);
-        request.put("parseMode", parseMode);
-        request.put("maxPages", maxPages);
+        request.put("parseMode", requestParseMode);
+        request.put("maxPages", requestMaxPages);
         request.put("dpi", dpi);
-        request.put("enableLayout", enableLayout);
-        request.put("enableTable", enableTable);
-        request.put("enableFormula", enableFormula);
-        request.put("enableOrientation", enableOrientation);
-        request.put("enableUnwarping", enableUnwarping);
+        request.put("enableLayout", requestEnableLayout);
+        request.put("enableTable", requestEnableTable);
+        request.put("enableFormula", requestEnableFormula);
+        request.put("enableOrientation", requestEnableOrientation);
+        request.put("enableUnwarping", requestEnableUnwarping);
         return request;
     }
 
-    private TranslationOcrResult parseResponse(String body) throws IOException {
+    private TranslationOcrResult parseResponse(String body, int pageNumberOffset) throws IOException {
         JsonNode root = objectMapper.readTree(body);
         if (root.path("status").asText("").equalsIgnoreCase("FAILED")) {
             return TranslationOcrResult.failed(root.path("message").asText("PaddleOCR 识别失败"));
@@ -161,7 +276,7 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
 
         List<TranslationOcrPageText> pages = new ArrayList<>();
         for (JsonNode pageNode : pagesNode) {
-            int pageNumber = pageNode.path("pageNumber").asInt(pages.size() + 1);
+            int pageNumber = pageNode.path("pageNumber").asInt(pages.size() + 1) + Math.max(0, pageNumberOffset);
             String text = extractPageText(pageNode);
             List<TranslationOcrElement> elements = extractElements(pageNode);
             if (text.isBlank() && !elements.isEmpty()) {
@@ -359,5 +474,8 @@ public class PaddleTranslationOcrService implements TranslationOcrService {
             return "high_quality";
         }
         return "standard";
+    }
+
+    private record SelectedPdfPages(byte[] bytes, int pageStart, Integer pageEnd, int pageNumberOffset) {
     }
 }

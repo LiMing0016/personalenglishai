@@ -41,6 +41,7 @@ class FakePaddleOcrV3:
         use_doc_unwarping=None,
         use_textline_orientation=None,
         cpu_threads=None,
+        device=None,
     ):
         pass
 
@@ -51,6 +52,12 @@ class OcrEngineTest(unittest.TestCase):
             kwargs = build_paddle_ocr_kwargs(FakePaddleOcrV3, "ch")
 
         self.assertEqual(kwargs["cpu_threads"], 4)
+
+    def test_build_kwargs_passes_configured_device(self):
+        with patch.dict("os.environ", {"PADDLE_OCR_DEVICE": "gpu:0"}):
+            kwargs = build_paddle_ocr_kwargs(FakePaddleOcrV3, "ch")
+
+        self.assertEqual(kwargs["device"], "gpu:0")
 
     def test_normalizes_common_paddle_result_shape(self):
         raw_result = [
