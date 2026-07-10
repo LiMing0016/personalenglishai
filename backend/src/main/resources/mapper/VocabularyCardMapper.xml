@@ -82,7 +82,8 @@
             last_captured_at = #{capturedAt},
             deleted_at = NULL,
             updated_at = CURRENT_TIMESTAMP
-        WHERE card_uid = #{cardUid}
+        WHERE user_id = #{userId}
+          AND card_uid = #{cardUid}
           AND deleted_at IS NOT NULL
     </update>
 
@@ -90,7 +91,8 @@
         UPDATE vocabulary_card
         SET last_captured_at = #{capturedAt},
             updated_at = CURRENT_TIMESTAMP
-        WHERE card_uid = #{cardUid}
+        WHERE user_id = #{userId}
+          AND card_uid = #{cardUid}
           AND deleted_at IS NULL
     </update>
 

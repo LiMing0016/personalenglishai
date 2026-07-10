@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.db;
 
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
+import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.session.Configuration;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +40,53 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void restoreAndTouchIsScopedToOwningUser() throws Exception {
+        String sql = statementSql("VocabularyCardMapper", "restoreAndTouch", Map.of(
+                "userId", 7L,
+                "cardUid", "card_1",
+                "displayTerm", "innovative",
+                "status", "generating",
+                "capturedAt", "2026-07-10T12:00:00"
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("WHERE user_id = ?")),
+                () -> assertTrue(sql.contains("card_uid = ?")),
+                () -> assertTrue(sql.contains("deleted_at IS NOT NULL"))
+        );
+    }
+
+    @Test
+    void touchIsScopedToOwningUser() throws Exception {
+        String sql = statementSql("VocabularyCardMapper", "touch", Map.of(
+                "userId", 7L,
+                "cardUid", "card_1",
+                "capturedAt", "2026-07-10T12:00:00"
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("WHERE user_id = ?")),
+                () -> assertTrue(sql.contains("card_uid = ?")),
+                () -> assertTrue(sql.contains("deleted_at IS NULL"))
+        );
+    }
+
+    @Test
+    void staleRunningRecoveryOnlyRequeuesExpiredClaimsForImmediateRetry() throws Exception {
+        String sql = statementSql("VocabularyGenerationJobMapper", "requeueStaleRunning", Map.of(
+                "staleBefore", "2026-07-10T12:00:00"
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("SET status = 'pending'")),
+                () -> assertTrue(sql.contains("available_at = CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("started_at = NULL")),
+                () -> assertTrue(sql.contains("WHERE status = 'running'")),
+                () -> assertTrue(sql.contains("started_at < ?"))
+        );
+    }
+
+    @Test
     void mapperXmlResourcesParseAndRegisterAllStatements() throws Exception {
         Configuration configuration = new Configuration();
         Map<String, String[]> mapperStatements = Map.of(
@@ -55,7 +103,8 @@ class VocabularyMapperContractTest {
                 },
                 "VocabularyGenerationJobMapper", new String[]{
                         "insertJob", "selectClaimable", "findLatestByCard", "markRunning",
-                        "markSucceeded", "markFailed", "cancel", "cancelPendingForCard"
+                        "markSucceeded", "markFailed", "cancel", "cancelPendingForCard",
+                        "requeueStaleRunning"
                 },
                 "UserVocabularyPreferenceMapper", new String[]{
                         "findPreferenceByUser", "upsertDefaultTemplate"
@@ -78,5 +127,32 @@ class VocabularyMapperContractTest {
 
     private String readMapper(String fileName) throws Exception {
         return Files.readString(Path.of("src/main/resources/mapper", fileName));
+    }
+
+    private String statementSql(String mapperName, String statement, Map<String, Object> parameters)
+            throws Exception {
+        Configuration configuration = parseVocabularyMappers();
+        String namespace = "com.personalenglishai.backend.mapper.vocabulary." + mapperName;
+        BoundSql boundSql = configuration.getMappedStatement(namespace + "." + statement)
+                .getBoundSql(parameters);
+        return boundSql.getSql().replaceAll("\\s+", " ").trim();
+    }
+
+    private Configuration parseVocabularyMappers() throws Exception {
+        Configuration configuration = new Configuration();
+        for (String mapperName : new String[]{
+                "VocabularyCardMapper",
+                "VocabularySourceMapper",
+                "VocabularyRevisionMapper",
+                "VocabularyGenerationJobMapper",
+                "UserVocabularyPreferenceMapper"
+        }) {
+            String resource = "mapper/" + mapperName + ".xml";
+            try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
+                assertTrue(input != null, () -> "Missing mapper resource: " + resource);
+                new XMLMapperBuilder(input, configuration, resource, configuration.getSqlFragments()).parse();
+            }
+        }
+        return configuration;
     }
 }

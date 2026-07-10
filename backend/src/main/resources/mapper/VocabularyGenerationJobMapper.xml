@@ -118,4 +118,17 @@
         WHERE card_uid = #{cardUid}
           AND status = 'pending'
     </update>
+
+    <update id="requeueStaleRunning">
+        UPDATE vocabulary_generation_job
+        SET status = 'pending',
+            available_at = CURRENT_TIMESTAMP,
+            started_at = NULL,
+            finished_at = NULL,
+            error_code = NULL,
+            error_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'running'
+          AND started_at &lt; #{staleBefore}
+    </update>
 </mapper>

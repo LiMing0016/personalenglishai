@@ -19,12 +19,16 @@ public interface VocabularyCardMapper {
     VocabularyCard findByUidIncludingDeleted(@Param("cardUid") String cardUid);
 
     int restoreAndTouch(
+            @Param("userId") Long userId,
             @Param("cardUid") String cardUid,
             @Param("displayTerm") String displayTerm,
             @Param("status") String status,
             @Param("capturedAt") LocalDateTime capturedAt);
 
-    int touch(@Param("cardUid") String cardUid, @Param("capturedAt") LocalDateTime capturedAt);
+    int touch(
+            @Param("userId") Long userId,
+            @Param("cardUid") String cardUid,
+            @Param("capturedAt") LocalDateTime capturedAt);
 
     VocabularyCard findOwnedByUid(@Param("userId") Long userId, @Param("cardUid") String cardUid);
 

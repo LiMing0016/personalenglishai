@@ -29,4 +29,6 @@ public interface VocabularyGenerationJobMapper {
     int cancel(@Param("jobUid") String jobUid);
 
     int cancelPendingForCard(@Param("cardUid") String cardUid);
+
+    int requeueStaleRunning(@Param("staleBefore") LocalDateTime staleBefore);
 }
