@@ -7,6 +7,7 @@ import com.personalenglishai.backend.dto.dictionary.DictionaryWordStateResponse;
 import com.personalenglishai.backend.entity.UserDictionaryWordState;
 import com.personalenglishai.backend.mapper.DictionaryContentMapper;
 import com.personalenglishai.backend.mapper.UserDictionaryWordStateMapper;
+import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,11 +23,14 @@ public class DictionaryWordStateService {
 
     private final UserDictionaryWordStateMapper mapper;
     private final DictionaryContentMapper dictionaryContentMapper;
+    private final VocabularyCaptureService vocabularyCaptureService;
 
     public DictionaryWordStateService(UserDictionaryWordStateMapper mapper,
-                                      DictionaryContentMapper dictionaryContentMapper) {
+                                      DictionaryContentMapper dictionaryContentMapper,
+                                      VocabularyCaptureService vocabularyCaptureService) {
         this.mapper = mapper;
         this.dictionaryContentMapper = dictionaryContentMapper;
+        this.vocabularyCaptureService = vocabularyCaptureService;
     }
 
     public void attachLookupState(Long userId, DictionaryLookupResponse response, String requestedWord, String language) {
@@ -54,8 +58,12 @@ public class DictionaryWordStateService {
             throw new IllegalArgumentException("invalid user or word");
         }
         String displayWord = word.trim();
-        mapper.setFavorite(userId, displayWord, normalizedWord, firstNonBlank(language, "en-gb"), favorite);
-        return toResponse(mapper.selectByUserAndWord(userId, normalizedWord), displayWord, language);
+        String effectiveLanguage = firstNonBlank(language, "en-gb");
+        mapper.setFavorite(userId, displayWord, normalizedWord, effectiveLanguage, favorite);
+        if (favorite) {
+            vocabularyCaptureService.captureDictionaryFavorite(userId, displayWord, effectiveLanguage, null);
+        }
+        return toResponse(mapper.selectByUserAndWord(userId, normalizedWord), displayWord, effectiveLanguage);
     }
 
     public AdminPageResponse<DictionaryFavoriteItemResponse> listFavorites(Long userId,
