@@ -7,12 +7,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 public class VocabularyCaptureService {
@@ -56,8 +59,11 @@ public class VocabularyCaptureService {
             String word,
             String language,
             String contextText) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId is required");
+        }
         String normalizedTerm = termNormalizer.normalize(word);
-        String requestId = "dictionary-favorite-" + UUID.randomUUID().toString().replace("-", "");
+        String requestId = dictionaryFavoriteRequestId(userId, normalizedTerm);
         VocabularyCaptureRequest request = new VocabularyCaptureRequest(
                 requestId,
                 List.of(word),
@@ -70,7 +76,9 @@ public class VocabularyCaptureService {
                         null,
                         contextText,
                         Map.of()));
-        return capture(userId, request);
+        validate(userId, request);
+        VocabularyCaptureResponse.Item item = itemService.captureOne(userId, request, 0);
+        return new VocabularyCaptureResponse(List.of(item));
     }
 
     private void validate(Long userId, VocabularyCaptureRequest request) {
@@ -95,5 +103,16 @@ public class VocabularyCaptureService {
         }
         String normalized = language.trim().toLowerCase(Locale.ROOT);
         return normalized.equals("en-gb") || normalized.equals("en-us") ? "en" : normalized;
+    }
+
+    private String dictionaryFavoriteRequestId(Long userId, String normalizedTerm) {
+        String value = userId + ":" + normalizedTerm;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return "dictionary-favorite-" + userId + "-" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 }
