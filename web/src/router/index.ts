@@ -155,6 +155,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/VocabularyView.vue'),
       },
       {
+        path: 'vocabulary/card/:cardUid',
+        name: 'vocabulary-card',
+        component: () => import('@/views/VocabularyView.vue'),
+      },
+      {
         path: 'listening',
         name: 'Listening',
         component: () => import('@/views/ListeningView.vue'),

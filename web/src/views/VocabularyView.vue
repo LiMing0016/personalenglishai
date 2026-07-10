@@ -214,7 +214,7 @@
           :loading="listQuery.isLoading.value"
           :error="listQuery.error.value instanceof Error ? listQuery.error.value.message : ''"
           :selected-card-uid="selectedCardUid"
-          @select="selectedCardUid = $event"
+          @select="selectVocabularyCard"
           @update:filters="updateVocabularyFilters"
         />
       </div>
@@ -222,12 +222,17 @@
         <div v-if="!selectedCardUid" class="vocabulary-card-detail__empty">选择一张单词卡查看详情</div>
         <div v-else-if="detailQuery.isLoading.value" class="vocabulary-card-detail__empty">正在加载单词卡...</div>
         <div v-else-if="detailQuery.error.value" class="vocabulary-card-detail__empty vocabulary-card-detail__empty--error">单词卡详情加载失败</div>
-        <template v-else-if="detailQuery.data.value">
-          <p>{{ detailQuery.data.value.templateKey }}</p>
-          <h2>{{ detailQuery.data.value.displayTerm }}</h2>
-          <span>{{ detailQuery.data.value.generationStatus || '已沉淀' }}</span>
-          <p class="vocabulary-card-detail__sources">{{ detailQuery.data.value.sources.length }} 个来源</p>
-        </template>
+        <VocabularyCardInspector
+          v-else-if="detailQuery.data.value"
+          :card="detailQuery.data.value"
+          :list-vocabulary-revisions="revisionsQuery.data.value"
+          :update-mutation="updateMutation"
+          :delete-mutation="deleteMutation"
+          :regenerate-mutation="regenerateMutation"
+          :retry-vocabulary-card="retryMutation"
+          :resolve-conflict-mutation="resolveConflictMutation"
+          @back="returnToVocabularyCollection"
+        />
       </aside>
     </section>
 
@@ -309,6 +314,7 @@ import { lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
 import type { DictionaryEntry, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
 import type { VocabularyCardFilters, VocabularyCaptureResponse } from '@/api/vocabulary'
 import VocabularyCapturePanel from '@/components/vocabulary/VocabularyCapturePanel.vue'
+import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspector.vue'
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { showToast } from '@/utils/toast'
@@ -346,6 +352,15 @@ function isVocabularyWordCardRoute() {
   return route.name === 'VocabularyWordCard'
 }
 
+function isVocabularyPersistentCardRoute() {
+  return route.name === 'vocabulary-card'
+}
+
+function persistentVocabularyCardUid() {
+  const cardUid = Array.isArray(route.params.cardUid) ? route.params.cardUid[0] : route.params.cardUid
+  return typeof cardUid === 'string' && cardUid.trim() ? cardUid : null
+}
+
 function legacyVocabularyCardKeyword() {
   const word = Array.isArray(route.params.word) ? route.params.word[0] : route.params.word
   return typeof word === 'string' ? word.trim() || undefined : undefined
@@ -353,7 +368,11 @@ function legacyVocabularyCardKeyword() {
 
 const cachedLookup = readCachedLookup()
 const activeView = ref<VocabularyViewKey>(
-  isVocabularyWordCardRoute() ? 'collection' : parseVocabularyView(route.query.tab) ?? 'search',
+  isVocabularyWordCardRoute()
+    ? 'collection'
+    : isVocabularyPersistentCardRoute()
+      ? 'collection'
+      : parseVocabularyView(route.query.tab) ?? 'search',
 )
 const selectedWordId = ref('')
 const query = ref(cachedLookup?.word ?? '')
@@ -368,8 +387,19 @@ const vocabularyFilters = ref<VocabularyCardFilters>({
   page: 1,
   size: 20,
 })
-const selectedCardUid = ref<string | null>(null)
-const { templateQuery, listQuery, detailQuery, captureMutation } = useVocabularyCards(vocabularyFilters, selectedCardUid)
+const selectedCardUid = ref<string | null>(persistentVocabularyCardUid())
+const {
+  templateQuery,
+  listQuery,
+  detailQuery,
+  revisionsQuery,
+  captureMutation,
+  updateMutation,
+  deleteMutation,
+  regenerateMutation,
+  retryMutation,
+  resolveConflictMutation,
+} = useVocabularyCards(vocabularyFilters, selectedCardUid)
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
@@ -1045,11 +1075,20 @@ function switchVocabularyView(view: VocabularyViewKey) {
 function updateVocabularyFilters(filters: VocabularyCardFilters) {
   vocabularyFilters.value = filters
   selectedCardUid.value = null
+  if (isVocabularyPersistentCardRoute()) void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
 }
 
 function handleVocabularyCaptured(response: VocabularyCaptureResponse) {
   const selected = response.items.find((item) => item.cardUid)
-  if (selected?.cardUid) selectedCardUid.value = selected.cardUid
+  if (selected?.cardUid) selectVocabularyCard(selected.cardUid)
+}
+
+function selectVocabularyCard(cardUid: string) {
+  void router.push({ name: 'vocabulary-card', params: { cardUid } })
+}
+
+function returnToVocabularyCollection() {
+  void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
 }
 
 function syncVocabularyRoute() {
@@ -1064,10 +1103,18 @@ function syncVocabularyRoute() {
     return
   }
 
+  if (isVocabularyPersistentCardRoute()) {
+    activeView.value = 'collection'
+    selectedCardUid.value = persistentVocabularyCardUid()
+    return
+  }
+
   activeView.value = parseVocabularyView(route.query.tab) ?? 'search'
+  selectedCardUid.value = null
 }
 
 watch(() => [route.name, route.params.word, route.query.tab], syncVocabularyRoute)
+watch(() => route.params.cardUid, syncVocabularyRoute)
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
@@ -4373,12 +4420,8 @@ function normalizeError(err: unknown) {
 }
 
 .vocabulary-card-detail {
-  min-height: 220px;
+  min-width: 0;
   align-self: start;
-  border: 1px solid #dce7e1;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 18px;
 }
 
 .vocabulary-card-detail p {
@@ -4409,6 +4452,10 @@ function normalizeError(err: unknown) {
   display: grid;
   min-height: 184px;
   place-items: center;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
   color: #64748b;
   font-size: 13px;
   text-align: center;
