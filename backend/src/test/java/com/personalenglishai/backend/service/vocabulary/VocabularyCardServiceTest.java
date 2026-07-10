@@ -23,8 +23,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -91,26 +95,68 @@ class VocabularyCardServiceTest {
     }
 
     @Test
-    void listsOwnedCardsWithClampedPaginationAndDistinctOwnedSourceTypes() {
+    void rejectsMalformedActiveRevisionJsonWithoutExposingRawContent() {
+        String malformedContent = "{\"raw-secret\":\"private-value\"";
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
-        VocabularyCardSource manual = VocabularyTestFixtures.manualSource(null);
-        VocabularyCardSource duplicateManual = VocabularyTestFixtures.manualSource(null);
-        duplicateManual.setSourceUid("src_2");
-        VocabularyCardSource foreignDictionary = VocabularyTestFixtures.manualSource(null);
-        foreignDictionary.setSourceUid("src_3");
-        foreignDictionary.setUserId(8L);
-        foreignDictionary.setSourceType("dictionary");
-        when(cards.listByUser(7L, "inno", "ready", "manual", 0, 50)).thenReturn(List.of(card));
-        when(cards.countByUser(7L, "inno", "ready", "manual")).thenReturn(1L);
-        when(sources.listSources("card_1"))
-                .thenReturn(List.of(manual, duplicateManual, foreignDictionary));
+        var revision = VocabularyTestFixtures.userRevision("rev_1");
+        revision.setContentJson(malformedContent);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_1")).thenReturn(revision);
 
-        var result = service.list(7L, "inno", "ready", "manual", 0, 99);
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.getDetail(7L, "card_1"));
+
+        assertEquals("invalid stored content_json", error.getMessage());
+        assertFalse(error.getMessage().contains(malformedContent));
+        assertNull(error.getCause());
+    }
+
+    @Test
+    void rejectsMalformedSourceMetadataJsonWithoutExposingRawContent() {
+        String malformedMetadata = "{\"raw-secret\":\"private-value\"";
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", null);
+        VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
+        source.setMetadataJson(malformedMetadata);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of(source));
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.getDetail(7L, "card_1"));
+
+        assertEquals("invalid stored metadata_json", error.getMessage());
+        assertFalse(error.getMessage().contains(malformedMetadata));
+        assertNull(error.getCause());
+    }
+
+    @Test
+    void listsOwnedCardsWithClampedPaginationAndDistinctOwnedSourceTypes() {
+        VocabularyCard firstCard = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        VocabularyCard secondCard = VocabularyTestFixtures.ready("card_2", 7L, "sustainable", "rev_2");
+        VocabularyCardSource manual = VocabularyTestFixtures.manualSource(null);
+        VocabularyCardSource dictionary = VocabularyTestFixtures.manualSource(null);
+        dictionary.setSourceUid("src_2");
+        dictionary.setSourceType("dictionary");
+        VocabularyCardSource secondManual = VocabularyTestFixtures.manualSource(null);
+        secondManual.setSourceUid("src_3");
+        secondManual.setCardUid("card_2");
+        when(cards.listByUser(7L, null, "ready", null, 0, 50))
+                .thenReturn(List.of(firstCard, secondCard));
+        when(cards.countByUser(7L, null, "ready", null)).thenReturn(2L);
+        when(sources.listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2")))
+                .thenReturn(List.of(manual, dictionary, secondManual));
+
+        var result = service.list(7L, null, "ready", null, 0, 99);
 
         assertEquals(1, result.getPage());
         assertEquals(50, result.getSize());
-        assertEquals(1, result.getTotal());
-        assertEquals(List.of("manual"), result.getItems().get(0).sourceTypes());
+        assertEquals(2, result.getTotal());
+        assertEquals(List.of("manual", "dictionary"), result.getItems().get(0).sourceTypes());
+        assertEquals(List.of("manual"), result.getItems().get(1).sourceTypes());
+        verify(sources).listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2"));
+        verify(sources, never()).listSources(anyString());
     }
 
     @Test

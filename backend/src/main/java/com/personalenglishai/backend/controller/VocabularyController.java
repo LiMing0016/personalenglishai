@@ -80,6 +80,6 @@ public class VocabularyController {
 
     private <T> ResponseEntity<ApiResponse<T>> unauthorized() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponse.error("401000", "请先登录"));
+                .body(ApiResponse.error("401001", "Unauthorized"));
     }
 }

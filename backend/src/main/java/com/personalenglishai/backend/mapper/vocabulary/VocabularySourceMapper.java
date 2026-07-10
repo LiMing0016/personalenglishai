@@ -15,4 +15,8 @@ public interface VocabularySourceMapper {
             @Param("idempotencyKey") String idempotencyKey);
 
     List<VocabularyCardSource> listSources(@Param("cardUid") String cardUid);
+
+    List<VocabularyCardSource> listDistinctSourceTypesByCardUids(
+            @Param("userId") Long userId,
+            @Param("cardUids") List<String> cardUids);
 }

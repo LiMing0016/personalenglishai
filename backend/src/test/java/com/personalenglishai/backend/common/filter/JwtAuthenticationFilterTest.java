@@ -36,4 +36,26 @@ class JwtAuthenticationFilterTest {
         assertThat(chainInvoked).isTrue();
         assertThat(response.getStatus()).isEqualTo(200);
     }
+
+    @Test
+    void shouldRejectAnonymousVocabularyRequestWithProductionContract() throws Exception {
+        JwtUtil jwtUtil = mock(JwtUtil.class);
+        Environment environment = mock(Environment.class);
+        when(environment.getActiveProfiles()).thenReturn(new String[0]);
+
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtUtil, new ObjectMapper(), environment);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/vocabulary/cards");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainInvoked = new AtomicBoolean(false);
+        FilterChain chain = (ServletRequest req, ServletResponse res) -> chainInvoked.set(true);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chainInvoked).isFalse();
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentType()).isEqualTo("application/json;charset=UTF-8");
+        assertThat(response.getContentAsString()).contains(
+                "\"code\":\"401001\"",
+                "\"message\":\"Unauthorized\"");
+    }
 }

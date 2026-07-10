@@ -23,6 +23,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -121,6 +122,25 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void mapsStoredJsonFailureToGenericErrorWithoutRawJsonLeakage() throws Exception {
+        String rawJson = "{\"raw-secret\":\"private-value\"";
+        when(cardService.getDetail(7L, "card_1"))
+                .thenThrow(new IllegalStateException("invalid stored content_json"));
+
+        String responseBody = mockMvc.perform(
+                        get("/api/vocabulary/cards/card_1").requestAttr("userId", 7L))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("500000"))
+                .andExpect(jsonPath("$.message").value("系统内部错误"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertFalse(responseBody.contains("raw-secret"));
+        assertFalse(responseBody.contains("private-value"));
+    }
+
+    @Test
     void rejectsAnonymousVocabularyRequests() throws Exception {
         mockMvc.perform(post("/api/vocabulary/captures")
                         .contentType("application/json")
@@ -128,15 +148,19 @@ class VocabularyControllerTest {
                                 {"clientRequestId":"req-1","terms":["innovative"],"language":"en","source":{"type":"manual"}}
                                 """))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("401000"));
+                .andExpect(jsonPath("$.code").value("401001"))
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
         mockMvc.perform(get("/api/vocabulary/templates"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("401000"));
+                .andExpect(jsonPath("$.code").value("401001"))
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
         mockMvc.perform(get("/api/vocabulary/cards"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("401000"));
+                .andExpect(jsonPath("$.code").value("401001"))
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
         mockMvc.perform(get("/api/vocabulary/cards/card_1"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("401000"));
+                .andExpect(jsonPath("$.code").value("401001"))
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
     }
 }

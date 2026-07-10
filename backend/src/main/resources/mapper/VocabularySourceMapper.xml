@@ -52,4 +52,19 @@
         WHERE card_uid = #{cardUid}
         ORDER BY captured_at DESC, id DESC
     </select>
+
+    <select id="listDistinctSourceTypesByCardUids" resultMap="VocabularySourceResultMap">
+        SELECT DISTINCT source.card_uid, source.user_id, source.source_type
+        FROM vocabulary_card_source source
+        INNER JOIN vocabulary_card card
+            ON card.card_uid = source.card_uid
+           AND card.user_id = #{userId}
+           AND card.deleted_at IS NULL
+        WHERE source.user_id = #{userId}
+          AND source.card_uid IN
+          <foreach collection="cardUids" item="cardUid" open="(" separator="," close=")">
+              #{cardUid}
+          </foreach>
+        ORDER BY source.card_uid, source.source_type
+    </select>
 </mapper>

@@ -20,7 +20,10 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 
@@ -73,10 +76,11 @@ public class VocabularyCardService {
         int safePage = page == null || page < 1 ? 1 : page;
         int safeSize = size == null ? 20 : Math.max(1, Math.min(size, 50));
         int offset = (safePage - 1) * safeSize;
-        List<VocabularyCardSummaryResponse> items = cards
-                .listByUser(userId, keyword, status, sourceType, offset, safeSize)
-                .stream()
-                .map(card -> toSummary(userId, card))
+        List<VocabularyCard> pageItems = cards.listByUser(
+                userId, keyword, status, sourceType, offset, safeSize);
+        Map<String, List<String>> sourceTypesByCardUid = sourceTypesByCardUid(userId, pageItems);
+        List<VocabularyCardSummaryResponse> items = pageItems.stream()
+                .map(card -> toSummary(card, sourceTypesByCardUid.getOrDefault(card.getCardUid(), List.of())))
                 .toList();
         long total = cards.countByUser(userId, keyword, status, sourceType);
         return new AdminPageResponse<>(items, total, safePage, safeSize);
@@ -112,7 +116,7 @@ public class VocabularyCardService {
                 card.getUpdatedAt());
     }
 
-    private VocabularyCardSummaryResponse toSummary(Long userId, VocabularyCard card) {
+    private VocabularyCardSummaryResponse toSummary(VocabularyCard card, List<String> sourceTypes) {
         return new VocabularyCardSummaryResponse(
                 card.getCardUid(),
                 card.getDisplayTerm(),
@@ -120,9 +124,29 @@ public class VocabularyCardService {
                 card.getTemplateKey(),
                 card.getStatus(),
                 card.getActiveRevisionUid(),
-                sourceTypes(ownedSources(userId, card.getCardUid())),
+                sourceTypes,
                 card.getLastCapturedAt(),
                 card.getUpdatedAt());
+    }
+
+    private Map<String, List<String>> sourceTypesByCardUid(Long userId, List<VocabularyCard> pageItems) {
+        if (pageItems.isEmpty()) {
+            return Map.of();
+        }
+        List<String> cardUids = pageItems.stream().map(VocabularyCard::getCardUid).toList();
+        Map<String, List<String>> grouped = new HashMap<>();
+        for (VocabularyCardSource source : sources.listDistinctSourceTypesByCardUids(userId, cardUids)) {
+            if (!Objects.equals(userId, source.getUserId())
+                    || !cardUids.contains(source.getCardUid())
+                    || source.getSourceType() == null) {
+                continue;
+            }
+            List<String> types = grouped.computeIfAbsent(source.getCardUid(), ignored -> new ArrayList<>());
+            if (!types.contains(source.getSourceType())) {
+                types.add(source.getSourceType());
+            }
+        }
+        return grouped;
     }
 
     private List<String> sourceTypes(List<VocabularyCardSource> sourceItems) {
@@ -170,8 +194,8 @@ public class VocabularyCardService {
         }
         try {
             return objectMapper.readTree(value);
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("invalid stored " + field, exception);
+        } catch (JsonProcessingException ignored) {
+            throw new IllegalStateException("invalid stored " + field);
         }
     }
 }

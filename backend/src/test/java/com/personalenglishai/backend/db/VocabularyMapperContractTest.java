@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -30,6 +31,7 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(cards.contains("source_type = #{sourceType}")),
                 () -> assertTrue(sources.contains("id=\"insertSource\"")),
                 () -> assertTrue(sources.contains("id=\"findSourceByIdempotencyKey\"")),
+                () -> assertTrue(sources.contains("id=\"listDistinctSourceTypesByCardUids\"")),
                 () -> assertTrue(revisions.contains("id=\"insertRevision\"")),
                 () -> assertTrue(revisions.contains("id=\"listRevisions\"")),
                 () -> assertTrue(jobs.contains("status = 'pending'")),
@@ -90,6 +92,22 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void batchSourceTypesAreDistinctUserScopedAndSoftDeleteSafe() throws Exception {
+        String sql = statementSql("VocabularySourceMapper", "listDistinctSourceTypesByCardUids", Map.of(
+                "userId", 7L,
+                "cardUids", List.of("card_1", "card_2")
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("SELECT DISTINCT")),
+                () -> assertTrue(sql.contains("source.user_id = ?")),
+                () -> assertTrue(sql.contains("card.user_id = ?")),
+                () -> assertTrue(sql.contains("card.deleted_at IS NULL")),
+                () -> assertTrue(sql.contains("source.card_uid IN"))
+        );
+    }
+
+    @Test
     void staleRunningRecoveryOnlyRequeuesExpiredClaimsForImmediateRetry() throws Exception {
         String sql = statementSql("VocabularyGenerationJobMapper", "requeueStaleRunning", Map.of(
                 "staleBefore", "2026-07-10T12:00:00"
@@ -114,7 +132,8 @@ class VocabularyMapperContractTest {
                         "updateActiveRevision", "markConflictCandidate", "markGenerationFailed", "softDelete"
                 },
                 "VocabularySourceMapper", new String[]{
-                        "insertSource", "findSourceByIdempotencyKey", "listSources"
+                        "insertSource", "findSourceByIdempotencyKey", "listSources",
+                        "listDistinctSourceTypesByCardUids"
                 },
                 "VocabularyRevisionMapper", new String[]{
                         "insertRevision", "findRevision", "listRevisions"
