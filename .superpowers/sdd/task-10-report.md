@@ -52,3 +52,10 @@
 - Only `deleteVocabularyCard` accepts a success envelope with missing or `null` `data`; other vocabulary calls continue to reject missing data.
 - API contract tests call the actual API functions through the shared Axios instance and verify both `409030` payload preservation and void delete success.
 - No project documentation update is needed; this is a small client-contract correction and is suitable to merge into `main` after the required build and diff checks.
+
+## Source Contract Gap Closure
+
+- Added source-contract assertions to `web/tests/vocabularyApiContract.test.ts` for all ten vocabulary API functions and their exact endpoint expressions.
+- Added the required `baseRevisionUid` contract assertion.
+- Preserved the existing runtime Axios coverage for `409030` conflict mapping and successful void delete responses.
+- No production code, dependency, or project documentation was changed. The isolated test/report change is suitable for merge to `main` after verification.

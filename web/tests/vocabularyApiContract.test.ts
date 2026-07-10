@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import axios from 'axios'
 
@@ -9,6 +10,39 @@ import {
   VocabularyConflictError,
   type VocabularyConflictResponse,
 } from '../src/api/vocabulary'
+
+const vocabularyApiSource = readFileSync(
+  new URL('../src/api/vocabulary.ts', import.meta.url),
+  'utf8',
+)
+
+test('keeps every vocabulary API function on its source-contract endpoint', () => {
+  for (const requiredText of [
+    "listVocabularyTemplates = () =>",
+    "'/vocabulary/templates'",
+    "captureVocabulary = (payload: VocabularyCaptureRequest)",
+    "'/vocabulary/captures'",
+    "listVocabularyCards = (params: VocabularyCardFilters)",
+    "'/vocabulary/cards'",
+    'getVocabularyCard = (cardUid: string)',
+    "`/vocabulary/cards/${encodeURIComponent(cardUid)}`",
+    'updateVocabularyCard = (cardUid: string, payload: UpdateVocabularyCardRequest)',
+    "put(`/vocabulary/cards/${encodeURIComponent(cardUid)}`",
+    'deleteVocabularyCard = (cardUid: string)',
+    "delete(`/vocabulary/cards/${encodeURIComponent(cardUid)}`",
+    'regenerateVocabularyCard = (cardUid: string)',
+    "`/vocabulary/cards/${encodeURIComponent(cardUid)}/regenerate`",
+    'retryVocabularyCard = (cardUid: string)',
+    "`/vocabulary/cards/${encodeURIComponent(cardUid)}/retry`",
+    'listVocabularyRevisions = (cardUid: string)',
+    "`/vocabulary/cards/${encodeURIComponent(cardUid)}/revisions`",
+    'resolveVocabularyConflict = (',
+    "`/vocabulary/cards/${encodeURIComponent(cardUid)}/conflicts/${encodeURIComponent(revisionUid)}/resolve`",
+    'baseRevisionUid: string',
+  ]) {
+    assert.ok(vocabularyApiSource.includes(requiredText), `vocabulary API should include ${requiredText}`)
+  }
+})
 
 globalThis.localStorage = {
   getItem: () => null,
