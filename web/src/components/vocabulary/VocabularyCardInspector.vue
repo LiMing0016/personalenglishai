@@ -10,7 +10,8 @@
     </header>
 
     <div class="card-inspector__actions" aria-label="单词卡操作">
-      <button type="button" @click="editing = !editing">{{ editing ? '取消编辑' : '编辑卡片' }}</button>
+      <button v-if="editing" type="button" @click="cancelEditing">取消编辑</button>
+      <button v-else type="button" @click="editing = true">编辑卡片</button>
       <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">
         {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
       </button>
@@ -136,6 +137,7 @@ import {
   type VocabularyCardStatus,
   type VocabularyConflictResponse,
   type VocabularyRevisionListResponse,
+  type VocabularyTemplate,
 } from '@/api/vocabulary'
 import { showToast } from '@/utils/toast'
 
@@ -144,6 +146,7 @@ type EditableContent = Record<string, string | string[]>
 
 const props = defineProps<{
   card: VocabularyCardDetail
+  template: VocabularyTemplate
   listVocabularyRevisions?: VocabularyRevisionListResponse
   updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }>
   deleteMutation: MutationBridge<string>
@@ -169,23 +172,22 @@ function cloneEditableContent(value: unknown): EditableContent {
       ? fieldValue.map((item) => String(item))
       : fieldValue == null ? '' : String(fieldValue)
   }
+  for (const field of props.template.fields) {
+    if (field in content) continue
+    const candidateValue = asRecord(props.card.candidateContent)[field]
+    content[field] = Array.isArray(candidateValue) ? [] : ''
+  }
   if (!('term' in content)) content.term = props.card.displayTerm
   if (!('notes' in content)) content.notes = ''
   return content
 }
 
-watch(() => props.card, (card) => {
-  editContent.value = cloneEditableContent(card.content)
-  editing.value = false
-  conflict.value = null
-}, { immediate: true, deep: true })
-
 const fieldNames = computed(() => {
-  const names = Object.keys(editContent.value)
-  return ['term', ...names.filter((field) => field !== 'term' && field !== 'notes'), 'notes']
+  const templateFields = props.template.fields.filter((field) => field !== 'term' && field !== 'notes')
+  return ['term', ...new Set(templateFields), 'notes']
 })
-const conflictFields = computed(() => Object.keys(asRecord(conflict.value?.currentContent)))
-const mergeableFields = computed(() => conflictFields.value.filter((field) => field !== 'term'))
+const conflictFields = computed(() => fieldNames.value)
+const mergeableFields = computed(() => fieldNames.value.filter((field) => field !== 'term'))
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -195,7 +197,11 @@ function fieldId(field: string) { return `vocabulary-card-${field}` }
 function fieldLabel(field: string) {
   return ({ term: '单词', definitions: '释义', examples: '例句', notes: '个人笔记' } as Record<string, string>)[field] ?? field
 }
-function isArrayField(field: string) { return Array.isArray(editContent.value[field]) }
+function isArrayField(field: string) {
+  return Array.isArray(editContent.value[field])
+    || Array.isArray(asRecord(props.card.content)[field])
+    || Array.isArray(asRecord(props.card.candidateContent)[field])
+}
 function arrayValue(field: string): string[] {
   const value = editContent.value[field]
   if (!Array.isArray(value)) editContent.value[field] = []
@@ -214,6 +220,40 @@ function displayValue(content: unknown, field: string) {
   return Array.isArray(value) ? value.join('；') : value == null ? '未填写' : String(value)
 }
 
+function setConflict(nextConflict: VocabularyConflictResponse) {
+  conflict.value = nextConflict
+  conflictChoice.value = 'keep_current'
+  mergeChoice.value = Object.fromEntries(mergeableFields.value.map((field) => [field, 'current']))
+}
+
+watch(() => [props.card, props.template] as const, ([card]) => {
+  editContent.value = cloneEditableContent(card.content)
+  editing.value = false
+  if (card.status === 'needs_review' && card.candidateRevisionUid && card.candidateContent) {
+    setConflict({
+      currentRevisionUid: card.activeRevisionUid,
+      candidateRevisionUid: card.candidateRevisionUid,
+      currentContent: card.content,
+      candidateContent: card.candidateContent,
+      conflictStatus: 'needs_review',
+    })
+  } else {
+    conflict.value = null
+  }
+}, { immediate: true, deep: true })
+
+function cancelEditing() {
+  editContent.value = cloneEditableContent(props.card.content)
+  editing.value = false
+}
+
+function snapshotEditableContent(): EditableContent {
+  return Object.fromEntries(Object.entries(editContent.value).map(([field, value]) => [
+    field,
+    Array.isArray(value) ? [...value] : value,
+  ]))
+}
+
 async function save() {
   if (!props.card.activeRevisionUid) return
   try {
@@ -221,7 +261,7 @@ async function save() {
       cardUid: props.card.cardUid,
       payload: {
         baseRevisionUid: props.card.activeRevisionUid,
-        content: structuredClone(editContent.value),
+        content: snapshotEditableContent(),
         changeSummary: '用户编辑卡片',
       },
     })
@@ -229,9 +269,7 @@ async function save() {
     showToast('单词卡已保存', 'success')
   } catch (error) {
     if (error instanceof VocabularyConflictError) {
-      conflict.value = error.conflict
-      conflictChoice.value = 'keep_current'
-      mergeChoice.value = Object.fromEntries(mergeableFields.value.map((field) => [field, 'current']))
+      setConflict(error.conflict)
       return
     }
     showToast(error instanceof Error ? error.message : '保存失败，请重试', 'error')
@@ -265,7 +303,7 @@ async function resolveConflict() {
   if (!conflict.value?.candidateRevisionUid) return
   const mergeFields = Object.fromEntries(mergeableFields.value.map((field) => [
     field,
-    asRecord(mergeChoice.value[field] === 'candidate' ? conflict.value?.candidateContent : conflict.value?.currentContent)[field],
+    asRecord(mergeChoice.value[field] === 'candidate' ? conflict.value?.candidateContent : conflict.value?.currentContent)[field] ?? null,
   ]))
   try {
     await props.resolveConflictMutation.mutateAsync({

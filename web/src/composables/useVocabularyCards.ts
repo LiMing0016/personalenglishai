@@ -78,7 +78,11 @@ export function useVocabularyCards(
 
   const deleteMutation = useMutation({
     mutationFn: deleteVocabularyCard,
-    onSuccess: async (_, cardUid) => invalidateCardQueries(cardUid),
+    onSuccess: async (_, cardUid) => {
+      queryClient.removeQueries({ queryKey: ['vocabulary', 'card', cardUid], exact: true })
+      queryClient.removeQueries({ queryKey: ['vocabulary', 'card', cardUid, 'revisions'], exact: true })
+      await queryClient.invalidateQueries({ queryKey: ['vocabulary', 'cards'] })
+    },
   })
 
   const regenerateMutation = useMutation({

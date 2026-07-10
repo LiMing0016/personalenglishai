@@ -223,8 +223,9 @@
         <div v-else-if="detailQuery.isLoading.value" class="vocabulary-card-detail__empty">正在加载单词卡...</div>
         <div v-else-if="detailQuery.error.value" class="vocabulary-card-detail__empty vocabulary-card-detail__empty--error">单词卡详情加载失败</div>
         <VocabularyCardInspector
-          v-else-if="detailQuery.data.value"
+          v-else-if="detailQuery.data.value && selectedVocabularyTemplate"
           :card="detailQuery.data.value"
+          :template="selectedVocabularyTemplate"
           :list-vocabulary-revisions="revisionsQuery.data.value"
           :update-mutation="updateMutation"
           :delete-mutation="deleteMutation"
@@ -407,6 +408,11 @@ const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'collection', label: '单词沉淀', icon: '☆' },
   { key: 'stats', label: '学习统计', icon: '◷' },
 ]
+
+const selectedVocabularyTemplate = computed(() => {
+  const templateKey = detailQuery.data.value?.templateKey
+  return templateQuery.data.value?.items.find((template) => template.key === templateKey)
+})
 
 const words = ref<LearningWord[]>([
   {
@@ -1254,8 +1260,10 @@ function normalizeError(err: unknown) {
 }
 
 .vocabulary-nav {
+  min-width: 0;
   justify-content: center;
   gap: 16px;
+  overflow-x: auto;
 }
 
 .vocabulary-nav button,
@@ -1280,12 +1288,14 @@ function normalizeError(err: unknown) {
 
 .vocabulary-nav button {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 8px;
   align-items: center;
   min-height: 44px;
   padding: 0 12px;
   background: transparent;
   color: #475569;
+  white-space: nowrap;
 }
 
 .vocabulary-nav button.active {
@@ -4294,7 +4304,16 @@ function normalizeError(err: unknown) {
   }
 
   .vocabulary-topbar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    min-width: 0;
     padding: 14px;
+    overflow: hidden;
+  }
+
+  .brand-lockup,
+  .topbar-actions {
+    flex: 0 0 auto;
   }
 
   .dictionary-search,
