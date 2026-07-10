@@ -10,6 +10,8 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
+import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
@@ -29,6 +31,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -162,5 +166,59 @@ class VocabularyControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("401001"))
                 .andExpect(jsonPath("$.message").value("Unauthorized"));
+    }
+
+    @Test
+    void exposesCardMutationEndpointsAndRevisionHistory() throws Exception {
+        mockMvc.perform(put("/api/vocabulary/cards/card_1")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("""
+                                {"baseRevisionUid":"rev_1","content":{"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"edited"}}
+                                """))
+                .andExpect(status().isOk());
+        verify(cardService).update(eq(7L), eq("card_1"), any());
+
+        mockMvc.perform(delete("/api/vocabulary/cards/card_1").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        verify(cardService).delete(7L, "card_1");
+
+        mockMvc.perform(get("/api/vocabulary/cards/card_1/revisions").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        verify(cardService).revisions(7L, "card_1");
+
+        mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        verify(cardService).regenerate(7L, "card_1");
+
+        mockMvc.perform(post("/api/vocabulary/cards/card_1/retry").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        verify(cardService).retry(7L, "card_1");
+
+        mockMvc.perform(post("/api/vocabulary/cards/card_1/conflicts/rev_candidate/resolve")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"choice\":\"keep_current\"}"))
+                .andExpect(status().isOk());
+        verify(cardService).resolveConflict(eq(7L), eq("card_1"), eq("rev_candidate"), any());
+    }
+
+    @Test
+    void returnsConflictSummaryForStaleVocabularyRevision() throws Exception {
+        var content = JsonNodeFactory.instance.objectNode().put("term", "innovative");
+        when(cardService.update(eq(7L), eq("card_1"), any()))
+                .thenThrow(new VocabularyRevisionConflictException(new VocabularyConflictResponse(
+                        "rev_current", "rev_candidate", content, content, "needs_review")));
+
+        mockMvc.perform(put("/api/vocabulary/cards/card_1")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("""
+                                {"baseRevisionUid":"rev_current","content":{"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"edited"}}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("409030"))
+                .andExpect(jsonPath("$.data.currentRevisionUid").value("rev_current"))
+                .andExpect(jsonPath("$.data.candidateRevisionUid").value("rev_candidate"));
     }
 }

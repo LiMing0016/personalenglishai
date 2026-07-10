@@ -140,6 +140,33 @@
           AND status = 'pending'
     </update>
 
+    <update id="cancelActiveForCard">
+        UPDATE vocabulary_generation_job
+        SET status = 'cancelled',
+            finished_at = CURRENT_TIMESTAMP,
+            lease_token = NULL,
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE card_uid = #{cardUid}
+          AND status IN ('pending', 'running')
+    </update>
+
+    <update id="retryFailed">
+        UPDATE vocabulary_generation_job
+        SET status = 'pending',
+            attempt_count = 0,
+            available_at = CURRENT_TIMESTAMP,
+            started_at = NULL,
+            finished_at = NULL,
+            error_code = NULL,
+            error_message = NULL,
+            lease_token = NULL,
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_uid = #{jobUid}
+          AND status = 'failed'
+    </update>
+
     <update id="requeueStaleRunning">
         UPDATE vocabulary_generation_job
         SET status = 'pending',

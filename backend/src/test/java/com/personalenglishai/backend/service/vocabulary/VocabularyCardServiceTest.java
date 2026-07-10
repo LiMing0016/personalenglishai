@@ -1,8 +1,11 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
+import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
+import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
 import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
@@ -16,6 +19,7 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -194,5 +199,159 @@ class VocabularyCardServiceTest {
         assertEquals("exam", result.defaultTemplateKey());
         assertTrue(result.items().stream().anyMatch(item -> item.key().equals("exam")));
         verify(preferences).findPreferenceByUser(7L);
+    }
+
+    @Test
+    void updateAppendsUserRevisionPreservesTermAndActivatesWithBaseGuard() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        ObjectNode content = (ObjectNode) objectMapper.readTree("""
+                {"term":"client override","phonetic":"","partOfSpeech":"adjective","definitions":["new"],"examples":[],"notes":"edited"}
+                """);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_1"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+
+        service.update(7L, "card_1", new UpdateVocabularyCardRequest("rev_1", content, "Edited"));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(revision.capture());
+        assertEquals("user", revision.getValue().getAuthorType());
+        assertEquals("rev_1", revision.getValue().getBaseRevisionUid());
+        assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
+    }
+
+    @Test
+    void staleUpdateReturnsCurrentAndCandidateConflictSummary() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_old");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(0);
+        when(revisions.findRevision("rev_current")).thenReturn(VocabularyTestFixtures.userRevision("rev_current"));
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate));
+        ObjectNode content = (ObjectNode) objectMapper.readTree("""
+                {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"edited"}
+                """);
+
+        VocabularyRevisionConflictException error = assertThrows(
+                VocabularyRevisionConflictException.class,
+                () -> service.update(7L, "card_1", new UpdateVocabularyCardRequest(
+                        "rev_current", content, "Edited")));
+
+        assertEquals(ErrorCode.VOCABULARY_REVISION_CONFLICT, error.getErrorCode());
+        assertEquals("rev_current", error.getConflict().currentRevisionUid());
+        assertEquals("rev_candidate", error.getConflict().candidateRevisionUid());
+    }
+
+    @Test
+    void deleteSoftDeletesOwnedCardAndCancelsPendingAndRunningJobs() {
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(VocabularyTestFixtures.ready("card_1", "rev_1"));
+        when(cards.softDelete(7L, "card_1")).thenReturn(1);
+
+        service.delete(7L, "card_1");
+
+        verify(jobs).cancelActiveForCard("card_1");
+        verify(cards).softDelete(7L, "card_1");
+    }
+
+    @Test
+    void regenerateCancelsExistingWorkAndQueuesJobFromActiveRevision() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+
+        var result = service.regenerate(7L, "card_1");
+
+        assertEquals("pending", result.status());
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(jobs).cancelActiveForCard("card_1");
+        verify(jobs).insertJob(job.capture());
+        assertEquals("rev_1", job.getValue().getBaseRevisionUid());
+    }
+
+    @Test
+    void retryRequeuesOnlyLatestFailedJob() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        VocabularyGenerationJob failed = VocabularyTestFixtures.pendingJob("job_1", "card_1", "rev_1", 3);
+        failed.setStatus("failed");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(jobs.findLatestByCard("card_1")).thenReturn(failed);
+        when(jobs.retryFailed("job_1")).thenReturn(1);
+
+        var result = service.retry(7L, "card_1");
+
+        assertEquals("job_1", result.jobUid());
+        verify(jobs).retryFailed("job_1");
+    }
+
+    @Test
+    void revisionsExposeCandidateContentAndConflictState() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_old");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+
+        var result = service.revisions(7L, "card_1");
+
+        assertEquals("rev_current", result.currentRevisionUid());
+        assertEquals("needs_review", result.conflictStatus());
+        assertEquals("rev_candidate", result.items().get(0).revisionUid());
+        assertTrue(result.items().get(0).candidate());
+        assertEquals("innovative", result.items().get(0).content().get("term").asText());
+    }
+
+    @Test
+    void mergeConflictOnlyAcceptsTemplateFieldsAndCreatesSystemMergeRevision() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_old");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+
+        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "term", objectMapper.getNodeFactory().textNode("blocked"),
+                        "notes", objectMapper.getNodeFactory().textNode("merged")))));
+    }
+
+    @Test
+    void mergeConflictAppendsSystemMergeRevisionAndUsesCurrentRevisionGuard() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        current.setContentJson("""
+                {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"current"}
+                """);
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_old");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "notes", objectMapper.getNodeFactory().textNode("merged"))));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(revision.capture());
+        assertEquals("system_merge", revision.getValue().getAuthorType());
+        assertEquals("rev_current", revision.getValue().getBaseRevisionUid());
+        assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
     }
 }

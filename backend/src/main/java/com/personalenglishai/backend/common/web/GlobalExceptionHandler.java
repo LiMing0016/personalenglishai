@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.common.response.ApiResponse;
+import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -58,6 +59,16 @@ public class GlobalExceptionHandler {
         log.warn("业务异常: {} - {}", e.getErrorCode().getCode(), e.getMessage());
         HttpStatus status = resolveStatus(e.getErrorCode());
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
+    }
+
+    @ExceptionHandler(VocabularyRevisionConflictException.class)
+    public ResponseEntity<ApiResponse<Object>> handleVocabularyRevisionConflict(
+            VocabularyRevisionConflictException e) {
+        log.warn("单词卡版本冲突: {}", e.getConflict().currentRevisionUid());
+        ApiResponse<Object> response = new ApiResponse<>(
+                e.getErrorCode().getCode(), e.getMessage(), e.getConflict());
+        response.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(AsyncRequestNotUsableException.class)

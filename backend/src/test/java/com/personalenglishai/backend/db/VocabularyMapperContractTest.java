@@ -35,6 +35,8 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(revisions.contains("id=\"insertRevision\"")),
                 () -> assertTrue(revisions.contains("id=\"listRevisions\"")),
                 () -> assertTrue(jobs.contains("status = 'pending'")),
+                () -> assertTrue(jobs.contains("id=\"cancelActiveForCard\"")),
+                () -> assertTrue(jobs.contains("id=\"retryFailed\"")),
                 () -> assertTrue(jobs.contains("available_at &lt;= CURRENT_TIMESTAMP")),
                 () -> assertTrue(jobs.contains("attempt_count &lt; 3")),
                 () -> assertTrue(jobs.contains("lease_token = #{leaseToken}")),
@@ -183,6 +185,23 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void deleteCancelsPendingAndRunningJobsAndRetryResetsOnlyFailedJob() throws Exception {
+        String cancelled = statementSql("VocabularyGenerationJobMapper", "cancelActiveForCard", Map.of(
+                "cardUid", "card_1"));
+        String retried = statementSql("VocabularyGenerationJobMapper", "retryFailed", Map.of(
+                "jobUid", "job_1"));
+
+        assertAll(
+                () -> assertTrue(cancelled.contains("status IN ('pending', 'running')")),
+                () -> assertTrue(cancelled.contains("lease_token = NULL")),
+                () -> assertTrue(retried.contains("SET status = 'pending'")),
+                () -> assertTrue(retried.contains("attempt_count = 0")),
+                () -> assertTrue(retried.contains("WHERE job_uid = ?")),
+                () -> assertTrue(retried.contains("status = 'failed'"))
+        );
+    }
+
+    @Test
     void cardFinalizationLocksRowsAndFailureUpdateCannotRevertReadyCard() throws Exception {
         String cards = readMapper("VocabularyCardMapper.xml");
         String failureSql = statementSql("VocabularyCardMapper", "markGenerationFailed", Map.of(
@@ -216,7 +235,7 @@ class VocabularyMapperContractTest {
                 "VocabularyGenerationJobMapper", new String[]{
                         "insertJob", "selectClaimable", "findLatestByCard", "markRunning",
                         "markSucceeded", "markFailed", "cancel", "cancelPendingForCard",
-                        "requeueStaleRunning", "failStaleRunning"
+                        "cancelActiveForCard", "retryFailed", "requeueStaleRunning", "failStaleRunning"
                 },
                 "UserVocabularyPreferenceMapper", new String[]{
                         "findPreferenceByUser", "upsertDefaultTemplate"

@@ -32,6 +32,7 @@ public enum ErrorCode {
     ASSISTANT_PROJECT_NOT_FOUND("404021", "助手项目不存在"),
     ASSISTANT_SHARE_NOT_FOUND("404022", "分享不存在或已失效"),
     VOCABULARY_CARD_NOT_FOUND("404050", "单词卡不存在"),
+    VOCABULARY_REVISION_CONFLICT("409030", "单词卡版本冲突"),
     ASSISTANT_UPSTREAM_UNAVAILABLE("503020", "学习助手暂时不可用"),
     ASSISTANT_CHATKIT_NOT_CONFIGURED("503030", "ChatKit workflow id 未配置"),
     ESSAY_TOO_SHORT("400010", "作文太短，至少需要 20 个词"),

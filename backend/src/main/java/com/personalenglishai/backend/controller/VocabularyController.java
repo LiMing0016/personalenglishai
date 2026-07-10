@@ -6,6 +6,10 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
+import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
+import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyGenerationJobResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
@@ -13,8 +17,10 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -76,6 +82,71 @@ public class VocabularyController {
             return unauthorized();
         }
         return ResponseEntity.ok(ApiResponse.success(cardService.getDetail(userId, cardUid)));
+    }
+
+    @PutMapping("/cards/{cardUid}")
+    public ResponseEntity<ApiResponse<VocabularyCardDetailResponse>> update(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid,
+            @Valid @RequestBody UpdateVocabularyCardRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(cardService.update(userId, cardUid, request)));
+    }
+
+    @DeleteMapping("/cards/{cardUid}")
+    public ResponseEntity<ApiResponse<Void>> delete(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        cardService.delete(userId, cardUid);
+        return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    @PostMapping("/cards/{cardUid}/regenerate")
+    public ResponseEntity<ApiResponse<VocabularyGenerationJobResponse>> regenerate(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(cardService.regenerate(userId, cardUid)));
+    }
+
+    @PostMapping("/cards/{cardUid}/retry")
+    public ResponseEntity<ApiResponse<VocabularyGenerationJobResponse>> retry(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(cardService.retry(userId, cardUid)));
+    }
+
+    @GetMapping("/cards/{cardUid}/revisions")
+    public ResponseEntity<ApiResponse<VocabularyRevisionListResponse>> revisions(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(cardService.revisions(userId, cardUid)));
+    }
+
+    @PostMapping("/cards/{cardUid}/conflicts/{revisionUid}/resolve")
+    public ResponseEntity<ApiResponse<VocabularyCardDetailResponse>> resolveConflict(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String cardUid,
+            @PathVariable String revisionUid,
+            @Valid @RequestBody ResolveVocabularyConflictRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(
+                cardService.resolveConflict(userId, cardUid, revisionUid, request)));
     }
 
     private <T> ResponseEntity<ApiResponse<T>> unauthorized() {
