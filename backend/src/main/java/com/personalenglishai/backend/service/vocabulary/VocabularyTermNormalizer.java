@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class VocabularyTermNormalizer {
 
-    private static final Pattern SPACE = Pattern.compile("\\s+");
+    private static final Pattern SPACE = Pattern.compile("\\s+", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern WRAPPING = Pattern.compile("^[\\p{Punct}\\p{Ps}\\p{Pe}‘’“”]+|[\\p{Punct}\\p{Ps}\\p{Pe}‘’“”]+$");
     private static final Pattern ENGLISH_TERM = Pattern.compile("[a-z]+(?:[ '-][a-z]+)*");
 
@@ -17,7 +17,7 @@ public final class VocabularyTermNormalizer {
             return "";
         }
         String value = Normalizer.normalize(raw, Normalizer.Form.NFKC)
-                .replace("·", "").replace("•", "").replace("\u00AD", "")
+                .replace("·", "").replace("•", "").replace("‧", "").replace("\u00AD", "")
                 .trim().toLowerCase(Locale.ROOT);
         value = WRAPPING.matcher(value).replaceAll("").trim();
         return SPACE.matcher(value).replaceAll(" ");

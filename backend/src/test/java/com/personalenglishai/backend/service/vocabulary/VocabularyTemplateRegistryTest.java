@@ -18,6 +18,14 @@ class VocabularyTemplateRegistryTest {
         assertEquals(List.of("basic", "exam", "reading"),
                 registry.list().stream().map(VocabularyTemplateResponse::key).toList());
         assertEquals(1, registry.require("basic").version());
+        assertEquals(List.of("term", "phonetic", "partOfSpeech", "definitions", "examples", "notes"),
+                registry.require("basic").requiredFields());
+        assertEquals(1, registry.require("exam").version());
+        assertEquals(List.of("term", "phonetic", "partOfSpeech", "definitions", "examTips", "collocations", "examples", "notes"),
+                registry.require("exam").requiredFields());
+        assertEquals(1, registry.require("reading").version());
+        assertEquals(List.of("term", "definitions", "sourceContext", "contextExplanation", "paraphrases", "notes"),
+                registry.require("reading").requiredFields());
     }
 
     @Test

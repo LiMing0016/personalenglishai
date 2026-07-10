@@ -15,9 +15,11 @@ class VocabularyTermNormalizerTest {
     void normalizesDictionaryAndPastedForms() {
         assertAll(
                 () -> assertEquals("innovative", normalizer.normalize("  (In·nova\u00ADtive). ")),
+                () -> assertEquals("innovative", normalizer.normalize("In‧no‧va‧tive")),
                 () -> assertEquals("state-of-the-art", normalizer.normalize("STATE-OF-THE-ART")),
                 () -> assertEquals("don't", normalizer.normalize("‘Don't’")),
-                () -> assertEquals("machine learning", normalizer.normalize("machine   learning"))
+                () -> assertEquals("machine learning", normalizer.normalize("machine   learning")),
+                () -> assertEquals("machine learning", normalizer.normalize("machine\u2028learning"))
         );
     }
 
