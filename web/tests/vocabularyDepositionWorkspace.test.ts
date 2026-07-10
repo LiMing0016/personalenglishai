@@ -24,3 +24,12 @@ test('capture panel exposes template choice and bulk submission states', () => {
 test('list renders every persisted status and filters', () => {
   for (const token of ['generating', 'ready', 'needs_review', 'failed', 'sourceType']) assert.match(list, new RegExp(token))
 })
+
+test('legacy word-card route opens the collection workspace with a keyword filter', () => {
+  assert.match(view, /route\.name\s*===\s*['"]VocabularyWordCard['"]/)
+  assert.match(view, /route\.params\.word/)
+  assert.match(view, /isVocabularyWordCardRoute\(\)\s*\?\s*['"]collection['"]/)
+  assert.match(view, /keyword:\s*legacyVocabularyCardKeyword\(\)/)
+  assert.match(view, /watch\(\(\)\s*=>\s*\[route\.name,\s*route\.params\.word,\s*route\.query\.tab\]/)
+  assert.match(view, /selectedCardUid\.value\s*=\s*null/)
+})

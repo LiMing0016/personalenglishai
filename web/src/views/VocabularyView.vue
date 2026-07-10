@@ -341,8 +341,20 @@ const recentSearchesStorageKey = 'vocabulary.recentSearches'
 const route = useRoute()
 const router = useRouter()
 const vocabularyViewKeys: VocabularyViewKey[] = ['search', 'modes', 'collection', 'stats']
+
+function isVocabularyWordCardRoute() {
+  return route.name === 'VocabularyWordCard'
+}
+
+function legacyVocabularyCardKeyword() {
+  const word = Array.isArray(route.params.word) ? route.params.word[0] : route.params.word
+  return typeof word === 'string' ? word.trim() || undefined : undefined
+}
+
 const cachedLookup = readCachedLookup()
-const activeView = ref<VocabularyViewKey>(parseVocabularyView(route.query.tab) ?? 'search')
+const activeView = ref<VocabularyViewKey>(
+  isVocabularyWordCardRoute() ? 'collection' : parseVocabularyView(route.query.tab) ?? 'search',
+)
 const selectedWordId = ref('')
 const query = ref(cachedLookup?.word ?? '')
 const language = ref<DictionaryLanguage>(cachedLookup?.language ?? 'en-gb')
@@ -351,7 +363,11 @@ const result = ref<DictionaryLookupResponse | null>(cachedLookup?.result ?? null
 const errorMessage = ref('')
 const debugMessage = ref('')
 const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
-const vocabularyFilters = ref<VocabularyCardFilters>({ page: 1, size: 20 })
+const vocabularyFilters = ref<VocabularyCardFilters>({
+  keyword: legacyVocabularyCardKeyword(),
+  page: 1,
+  size: 20,
+})
 const selectedCardUid = ref<string | null>(null)
 const { templateQuery, listQuery, detailQuery, captureMutation } = useVocabularyCards(vocabularyFilters, selectedCardUid)
 
@@ -1036,9 +1052,22 @@ function handleVocabularyCaptured(response: VocabularyCaptureResponse) {
   if (selected?.cardUid) selectedCardUid.value = selected.cardUid
 }
 
-watch(() => route.query.tab, (tab) => {
-  activeView.value = parseVocabularyView(tab) ?? 'search'
-})
+function syncVocabularyRoute() {
+  if (isVocabularyWordCardRoute()) {
+    activeView.value = 'collection'
+    vocabularyFilters.value = {
+      ...vocabularyFilters.value,
+      keyword: legacyVocabularyCardKeyword(),
+      page: 1,
+    }
+    selectedCardUid.value = null
+    return
+  }
+
+  activeView.value = parseVocabularyView(route.query.tab) ?? 'search'
+}
+
+watch(() => [route.name, route.params.word, route.query.tab], syncVocabularyRoute)
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
