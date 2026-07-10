@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper">
+
+    <resultMap id="VocabularyRevisionResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision">
+        <id column="id" property="id"/>
+        <result column="revision_uid" property="revisionUid"/>
+        <result column="card_uid" property="cardUid"/>
+        <result column="base_revision_uid" property="baseRevisionUid"/>
+        <result column="author_type" property="authorType"/>
+        <result column="template_key" property="templateKey"/>
+        <result column="template_version" property="templateVersion"/>
+        <result column="content_json" property="contentJson"/>
+        <result column="change_summary" property="changeSummary"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <sql id="VocabularyRevisionColumns">
+        id, revision_uid, card_uid, base_revision_uid, author_type, template_key,
+        template_version, content_json, change_summary, created_at
+    </sql>
+
+    <insert id="insertRevision" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_card_revision (
+            revision_uid, card_uid, base_revision_uid, author_type, template_key,
+            template_version, content_json, change_summary
+        ) VALUES (
+            #{revisionUid}, #{cardUid}, #{baseRevisionUid}, #{authorType}, #{templateKey},
+            #{templateVersion}, #{contentJson}, #{changeSummary}
+        )
+    </insert>
+
+    <select id="findRevision" resultMap="VocabularyRevisionResultMap">
+        SELECT <include refid="VocabularyRevisionColumns"/>
+        FROM vocabulary_card_revision
+        WHERE revision_uid = #{revisionUid}
+        LIMIT 1
+    </select>
+
+    <select id="listRevisions" resultMap="VocabularyRevisionResultMap">
+        SELECT <include refid="VocabularyRevisionColumns"/>
+        FROM vocabulary_card_revision
+        WHERE card_uid = #{cardUid}
+        ORDER BY created_at DESC, id DESC
+    </select>
+</mapper>

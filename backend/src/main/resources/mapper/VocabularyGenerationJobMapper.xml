@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper">
+
+    <resultMap id="VocabularyGenerationJobResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob">
+        <id column="id" property="id"/>
+        <result column="job_uid" property="jobUid"/>
+        <result column="card_uid" property="cardUid"/>
+        <result column="base_revision_uid" property="baseRevisionUid"/>
+        <result column="template_key" property="templateKey"/>
+        <result column="template_version" property="templateVersion"/>
+        <result column="status" property="status"/>
+        <result column="attempt_count" property="attemptCount"/>
+        <result column="request_json" property="requestJson"/>
+        <result column="result_revision_uid" property="resultRevisionUid"/>
+        <result column="error_code" property="errorCode"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="available_at" property="availableAt"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="VocabularyGenerationJobColumns">
+        id, job_uid, card_uid, base_revision_uid, template_key, template_version,
+        status, attempt_count, request_json, result_revision_uid, error_code,
+        error_message, available_at, started_at, finished_at, created_at, updated_at
+    </sql>
+
+    <insert id="insertJob" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_generation_job (
+            job_uid, card_uid, base_revision_uid, template_key, template_version,
+            status, attempt_count, request_json, result_revision_uid, error_code,
+            error_message, available_at, started_at, finished_at
+        ) VALUES (
+            #{jobUid}, #{cardUid}, #{baseRevisionUid}, #{templateKey}, #{templateVersion},
+            #{status}, #{attemptCount}, #{requestJson}, #{resultRevisionUid}, #{errorCode},
+            #{errorMessage}, #{availableAt}, #{startedAt}, #{finishedAt}
+        )
+    </insert>
+
+    <select id="selectClaimable" resultMap="VocabularyGenerationJobResultMap">
+        SELECT <include refid="VocabularyGenerationJobColumns"/>
+        FROM vocabulary_generation_job
+        WHERE status = 'pending'
+          AND available_at &lt;= CURRENT_TIMESTAMP
+        ORDER BY available_at ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findLatestByCard" resultMap="VocabularyGenerationJobResultMap">
+        SELECT <include refid="VocabularyGenerationJobColumns"/>
+        FROM vocabulary_generation_job
+        WHERE card_uid = #{cardUid}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <update id="markRunning">
+        UPDATE vocabulary_generation_job
+        SET status = 'running',
+            attempt_count = attempt_count + 1,
+            started_at = CURRENT_TIMESTAMP,
+            finished_at = NULL,
+            error_code = NULL,
+            error_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_uid = #{jobUid} AND status = 'pending' AND available_at &lt;= CURRENT_TIMESTAMP
+    </update>
+
+    <update id="markSucceeded">
+        UPDATE vocabulary_generation_job
+        SET status = 'succeeded',
+            result_revision_uid = #{revisionUid},
+            finished_at = CURRENT_TIMESTAMP,
+            error_code = NULL,
+            error_message = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_uid = #{jobUid}
+          AND status = 'running'
+    </update>
+
+    <update id="markFailed">
+        UPDATE vocabulary_generation_job
+        SET status = <choose>
+                <when test="terminal">'failed'</when>
+                <otherwise>'pending'</otherwise>
+            </choose>,
+            error_code = #{errorCode},
+            error_message = #{errorMessage},
+            available_at = #{availableAt},
+            finished_at = <choose>
+                <when test="terminal">CURRENT_TIMESTAMP</when>
+                <otherwise>NULL</otherwise>
+            </choose>,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_uid = #{jobUid}
+          AND status = 'running'
+    </update>
+
+    <update id="cancel">
+        UPDATE vocabulary_generation_job
+        SET status = 'cancelled',
+            finished_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE job_uid = #{jobUid}
+          AND status IN ('pending', 'running')
+    </update>
+
+    <update id="cancelPendingForCard">
+        UPDATE vocabulary_generation_job
+        SET status = 'cancelled',
+            finished_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE card_uid = #{cardUid}
+          AND status = 'pending'
+    </update>
+</mapper>
