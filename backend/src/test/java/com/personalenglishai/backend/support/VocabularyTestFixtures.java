@@ -9,8 +9,8 @@ import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import com.personalenglishai.backend.service.vocabulary.GeneratedVocabularyCard;
 
-import java.lang.reflect.InvocationTargetException;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -121,7 +121,7 @@ public final class VocabularyTestFixtures {
         return revision;
     }
 
-    public static <T> T basicGeneratedCard() {
+    public static GeneratedVocabularyCard basicGeneratedCard() {
         ObjectNode content = OBJECT_MAPPER.createObjectNode();
         content.put("term", "innovative");
         content.put("phonetic", "");
@@ -129,20 +129,7 @@ public final class VocabularyTestFixtures {
         content.putArray("definitions").add("introducing new ideas");
         content.putArray("examples");
         content.put("notes", "");
-        try {
-            Class<?> type = Class.forName(
-                    "com.personalenglishai.backend.service.vocabulary.GeneratedVocabularyCard");
-            Object generated = type.getConstructor(JsonNode.class, String.class, String.class)
-                    .newInstance(content, "test-model", "Generated fixture");
-            @SuppressWarnings("unchecked")
-            T typed = (T) generated;
-            return typed;
-        } catch (ClassNotFoundException exception) {
-            throw new IllegalStateException("GeneratedVocabularyCard is not available until the generation task", exception);
-        } catch (NoSuchMethodException | InstantiationException | IllegalAccessException
-                 | InvocationTargetException exception) {
-            throw new IllegalStateException("GeneratedVocabularyCard constructor contract changed", exception);
-        }
+        return new GeneratedVocabularyCard(content, "test-model", "Generated fixture");
     }
 
     public static DictionaryLookupResponse dictionaryLookup(
