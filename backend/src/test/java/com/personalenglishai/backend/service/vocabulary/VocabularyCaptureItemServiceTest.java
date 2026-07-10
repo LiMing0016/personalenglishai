@@ -268,6 +268,18 @@ class VocabularyCaptureItemServiceTest {
     }
 
     @Test
+    void captureOneInCallerTransactionUsesRequiredTransaction() throws NoSuchMethodException {
+        Method method = VocabularyCaptureItemService.class.getMethod(
+                "captureOneInCallerTransaction", Long.class, VocabularyCaptureRequest.class, int.class);
+
+        Transactional transactional = method.getAnnotation(Transactional.class);
+
+        assertNotNull(transactional);
+        assertEquals(Propagation.REQUIRED, transactional.propagation());
+        assertEquals(Isolation.READ_COMMITTED, transactional.isolation());
+    }
+
+    @Test
     void generatedIdentifiersUseStablePrefixes() {
         ArgumentCaptor<VocabularyCard> cardCaptor = ArgumentCaptor.forClass(VocabularyCard.class);
         ArgumentCaptor<VocabularyCardSource> sourceCaptor = ArgumentCaptor.forClass(VocabularyCardSource.class);

@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,6 +49,7 @@ class VocabularyCaptureServiceTest {
 
         assertEquals(List.of("created", "rejected"),
                 result.items().stream().map(VocabularyCaptureResponse.Item::action).toList());
+        verify(itemService, never()).captureOneInCallerTransaction(anyLong(), any(), anyInt());
     }
 
     @Test
@@ -65,13 +68,14 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void dictionaryFavoriteUsesCanonicalLanguageAndStableSourceReference() {
-        when(itemService.captureOne(eq(7L), any(), eq(0)))
+        when(itemService.captureOneInCallerTransaction(eq(7L), any(), eq(0)))
                 .thenReturn(new VocabularyCaptureResponse.Item("innovative", "card_1", "created", "generating"));
         ArgumentCaptor<VocabularyCaptureRequest> requestCaptor = ArgumentCaptor.forClass(VocabularyCaptureRequest.class);
 
         service.captureDictionaryFavorite(7L, "In·nova·tive", "en-gb", "context");
 
-        verify(itemService).captureOne(eq(7L), requestCaptor.capture(), eq(0));
+        verify(itemService).captureOneInCallerTransaction(eq(7L), requestCaptor.capture(), eq(0));
+        verify(itemService, never()).captureOne(anyLong(), any(), anyInt());
         VocabularyCaptureRequest request = requestCaptor.getValue();
         assertTrue(request.clientRequestId().startsWith("dictionary-favorite-"));
         assertEquals("en", request.language());
@@ -82,7 +86,7 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void repeatedDictionaryFavoritesUseOneBoundedIdempotencyPath() {
-        when(itemService.captureOne(anyLong(), any(), eq(0)))
+        when(itemService.captureOneInCallerTransaction(anyLong(), any(), eq(0)))
                 .thenReturn(new VocabularyCaptureResponse.Item("innovative", "card_1", "created", "generating"));
         ArgumentCaptor<VocabularyCaptureRequest> repeatedCaptor =
                 ArgumentCaptor.forClass(VocabularyCaptureRequest.class);
@@ -93,8 +97,8 @@ class VocabularyCaptureServiceTest {
         service.captureDictionaryFavorite(7L, "innovative", "en-us", null);
         service.captureDictionaryFavorite(8L, "innovative", "en-us", null);
 
-        verify(itemService, times(2)).captureOne(eq(7L), repeatedCaptor.capture(), eq(0));
-        verify(itemService).captureOne(eq(8L), otherUserCaptor.capture(), eq(0));
+        verify(itemService, times(2)).captureOneInCallerTransaction(eq(7L), repeatedCaptor.capture(), eq(0));
+        verify(itemService).captureOneInCallerTransaction(eq(8L), otherUserCaptor.capture(), eq(0));
         List<VocabularyCaptureRequest> repeatedRequests = repeatedCaptor.getAllValues();
         String requestId = repeatedRequests.get(0).clientRequestId();
         assertEquals(requestId, repeatedRequests.get(1).clientRequestId());
@@ -108,7 +112,7 @@ class VocabularyCaptureServiceTest {
     @Test
     void dictionaryFavoritePropagatesItemFailure() {
         RuntimeException failure = new RuntimeException("job insert failed");
-        when(itemService.captureOne(eq(7L), any(), eq(0))).thenThrow(failure);
+        when(itemService.captureOneInCallerTransaction(eq(7L), any(), eq(0))).thenThrow(failure);
 
         RuntimeException thrown = assertThrows(RuntimeException.class,
                 () -> service.captureDictionaryFavorite(7L, "innovative", "en-gb", null));

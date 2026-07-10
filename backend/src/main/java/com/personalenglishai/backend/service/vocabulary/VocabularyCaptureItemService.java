@@ -58,6 +58,21 @@ public class VocabularyCaptureItemService {
             Long userId,
             VocabularyCaptureRequest request,
             int index) {
+        return captureOneInternal(userId, request, index);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public VocabularyCaptureResponse.Item captureOneInCallerTransaction(
+            Long userId,
+            VocabularyCaptureRequest request,
+            int index) {
+        return captureOneInternal(userId, request, index);
+    }
+
+    private VocabularyCaptureResponse.Item captureOneInternal(
+            Long userId,
+            VocabularyCaptureRequest request,
+            int index) {
         String rawTerm = request.terms().get(index);
         String idempotencyKey = request.clientRequestId() + ":" + index;
         VocabularyCardSource existingSource = sources.findSourceByIdempotencyKey(userId, idempotencyKey);

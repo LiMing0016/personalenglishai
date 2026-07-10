@@ -77,7 +77,7 @@ public class VocabularyCaptureService {
                         contextText,
                         Map.of()));
         validate(userId, request);
-        VocabularyCaptureResponse.Item item = itemService.captureOne(userId, request, 0);
+        VocabularyCaptureResponse.Item item = itemService.captureOneInCallerTransaction(userId, request, 0);
         return new VocabularyCaptureResponse(List.of(item));
     }
 
