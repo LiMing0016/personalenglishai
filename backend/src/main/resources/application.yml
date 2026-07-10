@@ -176,6 +176,14 @@ learning:
         fixed-delay-ms: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_FIXED_DELAY_MS:60000}
         batch-size: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_BATCH_SIZE:10}
 
+vocabulary:
+  generation:
+    scheduler:
+      enabled: ${VOCABULARY_GENERATION_SCHEDULER_ENABLED:true}
+      fixed-delay-ms: ${VOCABULARY_GENERATION_SCHEDULER_FIXED_DELAY_MS:5000}
+      batch-size: ${VOCABULARY_GENERATION_SCHEDULER_BATCH_SIZE:5}
+      lease-ms: ${VOCABULARY_GENERATION_SCHEDULER_LEASE_MS:300000}
+
 languagetool:
   enabled: ${LANGUAGETOOL_ENABLED:false}
 
