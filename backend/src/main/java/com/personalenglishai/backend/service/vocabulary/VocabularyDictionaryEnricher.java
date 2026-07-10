@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
+import com.personalenglishai.backend.service.dictionary.DictionaryLookupException;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupService;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,13 @@ public final class VocabularyDictionaryEnricher {
     }
 
     public DictionaryLookupResponse lookupWithoutUserState(String term, String language) {
-        return dictionaryLookupService.lookup(term, language);
+        try {
+            return dictionaryLookupService.lookup(term, language);
+        } catch (DictionaryLookupException exception) {
+            if (exception.getKind() == DictionaryLookupException.Kind.NOT_FOUND) {
+                return null;
+            }
+            throw exception;
+        }
     }
 }

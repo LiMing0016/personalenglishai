@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.ai.client;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -1718,8 +1719,6 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 lastUser = content;
             }
 
-            log.debug("OpenAI message traceId={} index={} role={} contentLength={} contentPreview={}",
-                    traceId, i, role, content.length(), previewForLog(content, 120));
         }
         String payloadCanonical = canonicalMessages(messages);
         String payloadSha256 = sha256Hex(payloadCanonical);
@@ -1738,32 +1737,6 @@ public class OpenAiClient implements AssistantOpenAiClient {
             log.info("OpenAI prompt raw traceId={} role=system content=\n{}", traceId, limitForRawLog(redactForLog(lastSystem)));
             log.info("OpenAI prompt raw traceId={} role=user content=\n{}", traceId, limitForRawLog(redactForLog(lastUser)));
         }
-        log.debug("OpenAI system prompt (last) traceId={} content={}", traceId, redactForLog(lastSystem));
-        log.debug("OpenAI user prompt (last) traceId={} content={}", traceId, redactForLog(lastUser));
-        log.debug("OpenAI messages payload traceId={} payload={}", traceId, formatMessagesForLog(messages));
-    }
-
-    private String formatMessagesForLog(List<Message> messages) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < messages.size(); i++) {
-            Message m = messages.get(i);
-            String role = m.getRole() == null ? "" : m.getRole();
-            String content = m.getContent() == null ? "" : m.getContent();
-            if (i > 0) {
-                sb.append(", ");
-            }
-            sb.append("{index=")
-                    .append(i)
-                    .append(", role=\"")
-                    .append(role)
-                    .append("\", contentLength=")
-                    .append(content.length())
-                    .append(", contentPreview=\"")
-                    .append(previewForLog(content, 120))
-                    .append("\"}");
-        }
-        sb.append("]");
-        return sb.toString();
     }
 
     private String previewForLog(String content, int maxLen) {
@@ -1778,10 +1751,55 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (content == null) {
             return "";
         }
-        String redacted = content;
+        String redacted = redactSourceContext(content);
         redacted = redacted.replaceAll("sk-[a-zA-Z0-9]+", "sk-***");
         redacted = redacted.replaceAll("(?i)(api[_-]?key\\s*[:=]\\s*)([^\\s,;]+)", "$1***");
         return redacted;
+    }
+
+    private String redactSourceContext(String content) {
+        try {
+            JsonNode parsed = objectMapper.readTree(content);
+            if (parsed == null || (!parsed.isObject() && !parsed.isArray())) {
+                return content;
+            }
+            JsonNode copy = parsed.deepCopy();
+            if (!redactSourceContextFields(copy)) {
+                return content;
+            }
+            return objectMapper.writeValueAsString(copy);
+        } catch (JsonProcessingException exception) {
+            return content;
+        }
+    }
+
+    private boolean redactSourceContextFields(JsonNode node) {
+        boolean redacted = false;
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            List<String> fieldNames = new java.util.ArrayList<>();
+            object.fieldNames().forEachRemaining(fieldNames::add);
+            for (String fieldName : fieldNames) {
+                JsonNode value = object.get(fieldName);
+                if (isSourceContextField(fieldName)) {
+                    object.put(fieldName, "[REDACTED]");
+                    redacted = true;
+                } else if (value != null) {
+                    redacted |= redactSourceContextFields(value);
+                }
+            }
+        } else if (node.isArray()) {
+            for (JsonNode item : node) {
+                redacted |= redactSourceContextFields(item);
+            }
+        }
+        return redacted;
+    }
+
+    private boolean isSourceContextField(String fieldName) {
+        return "capturedSourceContext".equalsIgnoreCase(fieldName)
+                || "sourceContext".equalsIgnoreCase(fieldName)
+                || "contextText".equalsIgnoreCase(fieldName);
     }
 
     private String limitForRawLog(String content) {

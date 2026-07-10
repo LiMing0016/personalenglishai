@@ -61,15 +61,16 @@ public final class VocabularyCardGenerator {
         String cacheKey = cache.key(
                 card.getNormalizedTerm(), template.key(), template.version(), dictionaryData, capturedContext);
 
-        Optional<JsonNode> cached = cache.get(cacheKey);
-        if (cached.isPresent()
-                && isValidCachedContent(card, template, cached.get(), capturedContext, traceId)) {
+        Optional<ObjectNode> cached = cache.get(cacheKey)
+                .flatMap(content -> prepareCachedContent(
+                        cacheKey, card, template, content, dictionaryData, capturedContext, traceId));
+        if (cached.isPresent()) {
             return new GeneratedVocabularyCard(cached.get(), "cache", "Reused validated generated content");
         }
 
         String rawOutput = callAi(card, dictionaryData, capturedContext, template, traceId);
         ObjectNode generated = parseObject(rawOutput);
-        ObjectNode merged = mergeDictionaryTruth(generated, dictionaryData);
+        ObjectNode merged = mergeDictionaryTruth(generated, dictionaryData, template);
         merged.put("term", valueOrEmpty(card.getDisplayTerm()));
         if ("reading".equals(template.key())) {
             merged.put("sourceContext", capturedContext);
@@ -113,29 +114,30 @@ public final class VocabularyCardGenerator {
         }
     }
 
-    private boolean isValidCachedContent(
+    private Optional<ObjectNode> prepareCachedContent(
+            String cacheKey,
             VocabularyCard card,
             TemplateDefinition template,
             JsonNode content,
+            DictionaryLookupResponse dictionaryData,
             String capturedContext,
             String traceId) {
         try {
-            templateRegistry.validate(template.key(), content);
-            if (!valueOrEmpty(card.getDisplayTerm()).equals(content.path("term").asText())) {
-                throw new IllegalArgumentException("cached term does not match");
+            if (!content.isObject()) {
+                throw new IllegalArgumentException("cached content is not an object");
             }
-            if ("reading".equals(template.key())
-                    && !capturedContext.equals(content.path("sourceContext").asText())) {
-                throw new IllegalArgumentException("cached context does not match");
+            ObjectNode rebuilt = mergeDictionaryTruth((ObjectNode) content.deepCopy(), dictionaryData, template);
+            rebuilt.put("term", valueOrEmpty(card.getDisplayTerm()));
+            if ("reading".equals(template.key())) {
+                rebuilt.put("sourceContext", capturedContext);
             }
-            if (!"reading".equals(template.key()) && content.has("sourceContext")) {
-                throw new IllegalArgumentException("unexpected cached context");
-            }
-            return true;
+            templateRegistry.validate(template.key(), rebuilt);
+            return Optional.of(rebuilt);
         } catch (IllegalArgumentException exception) {
             log.warn("Vocabulary generation cache entry rejected traceId={} template={}",
                     safeTraceId(traceId), template.key());
-            return false;
+            cache.evict(cacheKey);
+            return Optional.empty();
         }
     }
 
@@ -153,16 +155,27 @@ public final class VocabularyCardGenerator {
         }
     }
 
-    private ObjectNode mergeDictionaryTruth(ObjectNode aiContent, DictionaryLookupResponse dictionaryData) {
+    private ObjectNode mergeDictionaryTruth(
+            ObjectNode aiContent,
+            DictionaryLookupResponse dictionaryData,
+            TemplateDefinition template) {
         ObjectNode merged = aiContent.deepCopy();
         if (dictionaryData == null) {
             return merged;
         }
 
-        firstPhonetic(dictionaryData).ifPresent(value -> merged.put("phonetic", value));
-        firstPartOfSpeech(dictionaryData).ifPresent(value -> merged.put("partOfSpeech", value));
-        overwriteArrayWhenPresent(merged, "definitions", dictionaryDefinitions(dictionaryData));
-        overwriteArrayWhenPresent(merged, "examples", dictionaryExamples(dictionaryData));
+        if (template.requiredFields().contains("phonetic")) {
+            firstPhonetic(dictionaryData).ifPresent(value -> merged.put("phonetic", value));
+        }
+        if (template.requiredFields().contains("partOfSpeech")) {
+            firstPartOfSpeech(dictionaryData).ifPresent(value -> merged.put("partOfSpeech", value));
+        }
+        if (template.requiredFields().contains("definitions")) {
+            overwriteArrayWhenPresent(merged, "definitions", dictionaryDefinitions(dictionaryData));
+        }
+        if (template.requiredFields().contains("examples")) {
+            overwriteArrayWhenPresent(merged, "examples", dictionaryExamples(dictionaryData));
+        }
         return merged;
     }
 

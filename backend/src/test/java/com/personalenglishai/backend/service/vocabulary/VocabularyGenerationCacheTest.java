@@ -1,8 +1,10 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,5 +76,32 @@ class VocabularyGenerationCacheTest {
         cache.put("cache-key", content, Duration.ofDays(7));
 
         verify(valueOperations).set("cache-key", "{\"term\":\"innovative\"}", Duration.ofDays(7));
+    }
+
+    @Test
+    void treatsRedisReadExceptionAsCacheMiss() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("cache-key")).thenThrow(new IllegalStateException("redis unavailable"));
+
+        assertTrue(cache.get("cache-key").isEmpty());
+    }
+
+    @Test
+    void evictsMalformedSerializedContent() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("cache-key")).thenReturn("not-json");
+
+        assertTrue(cache.get("cache-key").isEmpty());
+        verify(redisTemplate).delete("cache-key");
+    }
+
+    @Test
+    void containsRedisWriteException() throws Exception {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        JsonNode content = objectMapper.readTree("{\"term\":\"innovative\"}");
+        doThrow(new IllegalStateException("redis unavailable"))
+                .when(valueOperations).set("cache-key", "{\"term\":\"innovative\"}", Duration.ofDays(7));
+
+        assertDoesNotThrow(() -> cache.put("cache-key", content, Duration.ofDays(7)));
     }
 }

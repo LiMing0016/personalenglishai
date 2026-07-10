@@ -57,9 +57,19 @@ public final class VocabularyGenerationCache {
             if (value == null || value.isBlank()) {
                 return Optional.empty();
             }
-            JsonNode content = objectMapper.readTree(value);
-            return content != null && content.isObject() ? Optional.of(content) : Optional.empty();
-        } catch (RuntimeException | JsonProcessingException exception) {
+            try {
+                JsonNode content = objectMapper.readTree(value);
+                if (content != null && content.isObject()) {
+                    return Optional.of(content);
+                }
+                log.warn("Vocabulary generation cache content rejected key={} reasonType=NonObjectJson", key);
+            } catch (JsonProcessingException exception) {
+                log.warn("Vocabulary generation cache content rejected key={} reasonType={}",
+                        key, exception.getClass().getSimpleName());
+            }
+            evict(key);
+            return Optional.empty();
+        } catch (RuntimeException exception) {
             log.warn("Vocabulary generation cache read failed key={} reasonType={}",
                     key, exception.getClass().getSimpleName());
             return Optional.empty();
@@ -77,6 +87,15 @@ public final class VocabularyGenerationCache {
             redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(content), ttl);
         } catch (RuntimeException | JsonProcessingException exception) {
             log.warn("Vocabulary generation cache write failed key={} reasonType={}",
+                    key, exception.getClass().getSimpleName());
+        }
+    }
+
+    public void evict(String key) {
+        try {
+            redisTemplate.delete(key);
+        } catch (RuntimeException exception) {
+            log.warn("Vocabulary generation cache eviction failed key={} reasonType={}",
                     key, exception.getClass().getSimpleName());
         }
     }
