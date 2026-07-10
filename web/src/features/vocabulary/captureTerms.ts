@@ -1,11 +1,11 @@
 const MAX_CAPTURE_TERMS = 100
 
 export function parseCaptureTerms(raw: string): string[] {
-  return raw
+  return [...new Set(raw
     .split(/[\n,;，；]+/u)
     .map((term) => term.trim())
     .filter(Boolean)
-    .slice(0, MAX_CAPTURE_TERMS)
+  )].slice(0, MAX_CAPTURE_TERMS)
 }
 
 export function createClientRequestId(): string {

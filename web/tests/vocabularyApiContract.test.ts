@@ -1,37 +1,79 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import axios from 'axios'
 
-const source = readFileSync(new URL('../src/api/vocabulary.ts', import.meta.url), 'utf8')
+import { http } from '../src/api/http'
+import {
+  deleteVocabularyCard,
+  updateVocabularyCard,
+  VocabularyConflictError,
+  type VocabularyConflictResponse,
+} from '../src/api/vocabulary'
 
-test('matches the vocabulary endpoint and DTO contract', () => {
-  for (const endpoint of [
-    "'/vocabulary/templates'",
-    "'/vocabulary/captures'",
-    "'/vocabulary/cards'",
-    '`/vocabulary/cards/${encodeURIComponent(cardUid)}`',
-    '`/vocabulary/cards/${encodeURIComponent(cardUid)}/regenerate`',
-    '`/vocabulary/cards/${encodeURIComponent(cardUid)}/retry`',
-    '`/vocabulary/cards/${encodeURIComponent(cardUid)}/revisions`',
-    '`/vocabulary/cards/${encodeURIComponent(cardUid)}/conflicts/${encodeURIComponent(revisionUid)}/resolve`',
-  ]) {
-    assert.ok(source.includes(endpoint), `vocabulary API should call ${endpoint}`)
+globalThis.localStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+  clear: () => undefined,
+  key: () => null,
+  get length() { return 0 },
+} as Storage
+
+const originalAdapter = http.defaults.adapter
+
+test.afterEach(() => {
+  http.defaults.adapter = originalAdapter
+})
+
+test('returns undefined when deleting a vocabulary card succeeds with missing or null data', async () => {
+  let requestCount = 0
+
+  http.defaults.adapter = async (config) => {
+    assert.equal(config.method, 'delete')
+    assert.equal(config.url, '/vocabulary/cards/card%20uid')
+    requestCount += 1
+
+    return {
+      config,
+      data: requestCount === 1
+        ? { code: '200000', message: 'deleted' }
+        : { code: '200000', message: 'deleted', data: null },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    }
   }
 
-  for (const field of [
-    'baseRevisionUid',
-    'candidateRevisionUid',
-    'conflictStatus',
-    'VocabularyGenerationJobResponse',
-    'VocabularyRevisionListResponse',
-    'VocabularyConflictError',
-    '409030',
-  ]) {
-    assert.ok(source.includes(field), `vocabulary API should include ${field}`)
+  assert.equal(await deleteVocabularyCard('card uid'), undefined)
+  assert.equal(await deleteVocabularyCard('card uid'), undefined)
+})
+
+test('converts a revision conflict envelope into VocabularyConflictError with its payload', async () => {
+  const conflict: VocabularyConflictResponse = {
+    currentRevisionUid: 'revision-current',
+    candidateRevisionUid: 'revision-candidate',
+    currentContent: { definition: 'current' },
+    candidateContent: { definition: 'candidate' },
+    conflictStatus: 'needs_review',
   }
 
-  const conflictStart = source.indexOf('export interface VocabularyConflictResponse')
-  const conflictSource = source.slice(conflictStart, source.indexOf('\n}', conflictStart))
-  assert.ok(conflictSource.includes('currentRevisionUid: string | null'))
-  assert.ok(conflictSource.includes('candidateRevisionUid: string | null'))
+  http.defaults.adapter = async (config) => {
+    const response = {
+      config,
+      data: { code: '409030', message: 'revision conflict', data: conflict },
+      headers: {},
+      status: 409,
+      statusText: 'Conflict',
+    }
+    throw new axios.AxiosError('Request failed with status code 409', undefined, config, undefined, response)
+  }
+
+  await assert.rejects(
+    updateVocabularyCard('card uid', { baseRevisionUid: 'revision-base', content: { definition: 'edited' } }),
+    (error: unknown) => {
+      assert.ok(error instanceof VocabularyConflictError)
+      assert.deepEqual(error.conflict, conflict)
+      return true
+    },
+  )
 })

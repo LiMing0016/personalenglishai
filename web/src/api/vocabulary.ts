@@ -147,7 +147,7 @@ export interface VocabularyConflictResponse {
 type ApiEnvelope<T> = {
   code?: string
   message?: string
-  data?: T
+  data?: T | null
 }
 
 const VOCABULARY_CONFLICT_CODE = '409030'
@@ -166,9 +166,15 @@ function hasData<T>(body: ApiEnvelope<T>): body is ApiEnvelope<T> & { data: T } 
   return Object.prototype.hasOwnProperty.call(body, 'data')
 }
 
-async function unwrap<T>(request: Promise<AxiosResponse<ApiEnvelope<T>>>): Promise<T> {
+async function unwrap<T>(
+  request: Promise<AxiosResponse<ApiEnvelope<T>>>,
+  allowEmptyData = false,
+): Promise<T> {
   try {
     const response = await request
+    if (allowEmptyData && response.data.data == null) {
+      return undefined as T
+    }
     if (!hasData(response.data)) {
       throw new Error('Vocabulary API response is missing data')
     }
@@ -200,7 +206,7 @@ export const updateVocabularyCard = (cardUid: string, payload: UpdateVocabularyC
   unwrap<VocabularyCardDetail>(http.put(`/vocabulary/cards/${encodeURIComponent(cardUid)}`, payload))
 
 export const deleteVocabularyCard = (cardUid: string) =>
-  unwrap<void>(http.delete(`/vocabulary/cards/${encodeURIComponent(cardUid)}`))
+  unwrap<void>(http.delete(`/vocabulary/cards/${encodeURIComponent(cardUid)}`), true)
 
 export const regenerateVocabularyCard = (cardUid: string) =>
   unwrap<VocabularyGenerationJobResponse>(
