@@ -75,6 +75,14 @@
         LIMIT 1
     </select>
 
+    <select id="findByUidForUpdate" resultMap="VocabularyCardResultMap">
+        SELECT <include refid="VocabularyCardColumns"/>
+        FROM vocabulary_card
+        WHERE card_uid = #{cardUid}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
     <update id="restoreAndTouch">
         UPDATE vocabulary_card
         SET display_term = #{displayTerm},
@@ -162,6 +170,8 @@
             updated_at = CURRENT_TIMESTAMP
         WHERE card_uid = #{cardUid}
           AND deleted_at IS NULL
+          AND active_revision_uid IS NULL
+          AND status = 'generating'
     </update>
 
     <update id="softDelete">

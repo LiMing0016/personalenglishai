@@ -82,11 +82,14 @@ CREATE TABLE IF NOT EXISTS vocabulary_generation_job (
     error_message VARCHAR(1000) NULL,
     available_at DATETIME NOT NULL,
     started_at DATETIME NULL,
+    lease_token VARCHAR(64) NULL,
+    lease_expires_at DATETIME NULL,
     finished_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_vocabulary_job_uid (job_uid),
     KEY idx_vocabulary_job_claim (status, available_at, id),
+    KEY idx_vocabulary_job_lease (status, lease_expires_at, attempt_count),
     KEY idx_vocabulary_job_card (card_uid, created_at),
     CONSTRAINT fk_vocabulary_job_card FOREIGN KEY (card_uid) REFERENCES vocabulary_card(card_uid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

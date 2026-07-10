@@ -245,6 +245,8 @@ public class VocabularyCaptureItemService {
         job.setErrorMessage(null);
         job.setAvailableAt(capturedAt);
         job.setStartedAt(null);
+        job.setLeaseToken(null);
+        job.setLeaseExpiresAt(null);
         job.setFinishedAt(null);
         return job;
     }

@@ -1,15 +1,13 @@
 package com.personalenglishai.backend.service.vocabulary;
 
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -20,21 +18,24 @@ class VocabularyGenerationSchedulerTest {
     @Mock private VocabularyGenerationJobMapper jobs;
 
     @Test
-    void recoversExpiredRunningJobsBeforeClaimingBatch() {
-        Clock clock = Clock.fixed(Instant.parse("2026-07-11T08:00:00Z"), ZoneOffset.UTC);
+    void terminallyFailsThenRequeuesExpiredLeasesBeforeClaiming() {
+        when(jobs.failStaleRunning()).thenReturn(2);
+        when(jobs.requeueStaleRunning()).thenReturn(3);
         VocabularyGenerationScheduler scheduler =
-                new VocabularyGenerationScheduler(worker, jobs, true, 7, 300_000L, clock);
+                new VocabularyGenerationScheduler(worker, jobs, true, 7);
 
         scheduler.runBatch();
 
-        verify(jobs).requeueStaleRunning(LocalDateTime.of(2026, 7, 11, 7, 55));
-        verify(worker).processPendingJobs(7);
+        InOrder order = inOrder(jobs, worker);
+        order.verify(jobs).failStaleRunning();
+        order.verify(jobs).requeueStaleRunning();
+        order.verify(worker).processPendingJobs(7);
     }
 
     @Test
     void disabledSchedulerDoesNotRecoverOrClaimJobs() {
-        VocabularyGenerationScheduler scheduler = new VocabularyGenerationScheduler(
-                worker, jobs, false, 5, 300_000L, Clock.systemUTC());
+        VocabularyGenerationScheduler scheduler =
+                new VocabularyGenerationScheduler(worker, jobs, false, 5);
 
         scheduler.runBatch();
 

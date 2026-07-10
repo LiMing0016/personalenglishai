@@ -182,6 +182,7 @@ vocabulary:
       enabled: ${VOCABULARY_GENERATION_SCHEDULER_ENABLED:true}
       fixed-delay-ms: ${VOCABULARY_GENERATION_SCHEDULER_FIXED_DELAY_MS:5000}
       batch-size: ${VOCABULARY_GENERATION_SCHEDULER_BATCH_SIZE:5}
+      # Must exceed the maximum end-to-end external generation time; expiry fences late workers.
       lease-ms: ${VOCABULARY_GENERATION_SCHEDULER_LEASE_MS:300000}
 
 languagetool:

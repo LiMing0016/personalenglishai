@@ -17,6 +17,8 @@ public class VocabularyGenerationJob {
     private String errorMessage;
     private LocalDateTime availableAt;
     private LocalDateTime startedAt;
+    private String leaseToken;
+    private LocalDateTime leaseExpiresAt;
     private LocalDateTime finishedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -49,6 +51,10 @@ public class VocabularyGenerationJob {
     public void setAvailableAt(LocalDateTime availableAt) { this.availableAt = availableAt; }
     public LocalDateTime getStartedAt() { return startedAt; }
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
+    public String getLeaseToken() { return leaseToken; }
+    public void setLeaseToken(String leaseToken) { this.leaseToken = leaseToken; }
+    public LocalDateTime getLeaseExpiresAt() { return leaseExpiresAt; }
+    public void setLeaseExpiresAt(LocalDateTime leaseExpiresAt) { this.leaseExpiresAt = leaseExpiresAt; }
     public LocalDateTime getFinishedAt() { return finishedAt; }
     public void setFinishedAt(LocalDateTime finishedAt) { this.finishedAt = finishedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

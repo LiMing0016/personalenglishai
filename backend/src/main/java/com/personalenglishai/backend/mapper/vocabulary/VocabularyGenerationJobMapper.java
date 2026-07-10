@@ -15,20 +15,29 @@ public interface VocabularyGenerationJobMapper {
 
     VocabularyGenerationJob findLatestByCard(@Param("cardUid") String cardUid);
 
-    int markRunning(@Param("jobUid") String jobUid);
+    int markRunning(
+            @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
+            @Param("leaseSeconds") int leaseSeconds);
 
-    int markSucceeded(@Param("jobUid") String jobUid, @Param("revisionUid") String revisionUid);
+    int markSucceeded(
+            @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
+            @Param("revisionUid") String revisionUid);
 
     int markFailed(
             @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
             @Param("errorCode") String errorCode,
             @Param("errorMessage") String errorMessage,
             @Param("availableAt") LocalDateTime availableAt,
             @Param("terminal") boolean terminal);
 
-    int cancel(@Param("jobUid") String jobUid);
+    int cancel(@Param("jobUid") String jobUid, @Param("leaseToken") String leaseToken);
 
     int cancelPendingForCard(@Param("cardUid") String cardUid);
 
-    int requeueStaleRunning(@Param("staleBefore") LocalDateTime staleBefore);
+    int requeueStaleRunning();
+
+    int failStaleRunning();
 }

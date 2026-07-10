@@ -36,9 +36,53 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(revisions.contains("id=\"listRevisions\"")),
                 () -> assertTrue(jobs.contains("status = 'pending'")),
                 () -> assertTrue(jobs.contains("available_at &lt;= CURRENT_TIMESTAMP")),
-                () -> assertTrue(jobs.contains("WHERE job_uid = #{jobUid} AND status = 'pending'")),
+                () -> assertTrue(jobs.contains("attempt_count &lt; 3")),
+                () -> assertTrue(jobs.contains("lease_token = #{leaseToken}")),
                 () -> assertTrue(preferences.contains("ON DUPLICATE KEY UPDATE"))
         );
+    }
+
+    @Test
+    void atomicClaimUsesDatabaseTimeAndAttemptFence() throws Exception {
+        String sql = statementSql("VocabularyGenerationJobMapper", "markRunning", Map.of(
+                "jobUid", "job_1",
+                "leaseToken", "lease_1",
+                "leaseSeconds", 300
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("lease_token = ?")),
+                () -> assertTrue(sql.contains("lease_expires_at = TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP)")),
+                () -> assertTrue(sql.contains("attempt_count = attempt_count + 1")),
+                () -> assertTrue(sql.contains("status = 'pending'")),
+                () -> assertTrue(sql.contains("attempt_count < 3")),
+                () -> assertTrue(!sql.contains("lease_expires_at = ?"))
+        );
+    }
+
+    @Test
+    void runningTransitionsRequireCurrentUnexpiredLeaseToken() throws Exception {
+        String succeeded = statementSql("VocabularyGenerationJobMapper", "markSucceeded", Map.of(
+                "jobUid", "job_1", "leaseToken", "lease_1", "revisionUid", "rev_1"));
+        String failed = statementSql("VocabularyGenerationJobMapper", "markFailed", Map.of(
+                "jobUid", "job_1",
+                "leaseToken", "lease_1",
+                "errorCode", "AI_TIMEOUT",
+                "errorMessage", "timeout",
+                "availableAt", "2026-07-11T12:00:00",
+                "terminal", false));
+        String cancelled = statementSql("VocabularyGenerationJobMapper", "cancel", Map.of(
+                "jobUid", "job_1", "leaseToken", "lease_1"));
+
+        for (String sql : List.of(succeeded, failed, cancelled)) {
+            assertAll(
+                    () -> assertTrue(sql.contains("status = 'running'")),
+                    () -> assertTrue(sql.contains("lease_token = ?")),
+                    () -> assertTrue(sql.contains("lease_expires_at > CURRENT_TIMESTAMP")),
+                    () -> assertTrue(sql.contains("lease_token = NULL")),
+                    () -> assertTrue(sql.contains("lease_expires_at = NULL"))
+            );
+        }
     }
 
     @Test
@@ -108,17 +152,47 @@ class VocabularyMapperContractTest {
     }
 
     @Test
-    void staleRunningRecoveryOnlyRequeuesExpiredClaimsForImmediateRetry() throws Exception {
-        String sql = statementSql("VocabularyGenerationJobMapper", "requeueStaleRunning", Map.of(
-                "staleBefore", "2026-07-10T12:00:00"
-        ));
+    void staleRunningRecoveryRequeuesOnlyRetryableExpiredLeases() throws Exception {
+        String sql = statementSql("VocabularyGenerationJobMapper", "requeueStaleRunning", Map.of());
 
         assertAll(
                 () -> assertTrue(sql.contains("SET status = 'pending'")),
                 () -> assertTrue(sql.contains("available_at = CURRENT_TIMESTAMP")),
                 () -> assertTrue(sql.contains("started_at = NULL")),
+                () -> assertTrue(sql.contains("lease_token = NULL")),
+                () -> assertTrue(sql.contains("lease_expires_at = NULL")),
                 () -> assertTrue(sql.contains("WHERE status = 'running'")),
-                () -> assertTrue(sql.contains("started_at < ?"))
+                () -> assertTrue(sql.contains("lease_expires_at <= CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("attempt_count < 3"))
+        );
+    }
+
+    @Test
+    void staleRunningRecoveryTerminallyFailsExpiredThirdAttempt() throws Exception {
+        String sql = statementSql("VocabularyGenerationJobMapper", "failStaleRunning", Map.of());
+
+        assertAll(
+                () -> assertTrue(sql.contains("SET status = 'failed'")),
+                () -> assertTrue(sql.contains("error_code = 'LEASE_EXPIRED'")),
+                () -> assertTrue(sql.contains("finished_at = CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("lease_token = NULL")),
+                () -> assertTrue(sql.contains("lease_expires_at = NULL")),
+                () -> assertTrue(sql.contains("lease_expires_at <= CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("attempt_count >= 3"))
+        );
+    }
+
+    @Test
+    void cardFinalizationLocksRowsAndFailureUpdateCannotRevertReadyCard() throws Exception {
+        String cards = readMapper("VocabularyCardMapper.xml");
+        String failureSql = statementSql("VocabularyCardMapper", "markGenerationFailed", Map.of(
+                "cardUid", "card_1", "terminal", true));
+
+        assertAll(
+                () -> assertTrue(cards.contains("id=\"findByUidForUpdate\"")),
+                () -> assertTrue(cards.contains("FOR UPDATE")),
+                () -> assertTrue(failureSql.contains("active_revision_uid IS NULL")),
+                () -> assertTrue(failureSql.contains("status = 'generating'"))
         );
     }
 
@@ -128,6 +202,7 @@ class VocabularyMapperContractTest {
         Map<String, String[]> mapperStatements = Map.of(
                 "VocabularyCardMapper", new String[]{
                         "findByIdentityIncludingDeleted", "insert", "findByUidIncludingDeleted",
+                        "findByUidForUpdate",
                         "restoreAndTouch", "touch", "markNeedsReview", "findOwnedByUid", "listByUser", "countByUser",
                         "updateActiveRevision", "markConflictCandidate", "markGenerationFailed", "softDelete"
                 },
@@ -141,7 +216,7 @@ class VocabularyMapperContractTest {
                 "VocabularyGenerationJobMapper", new String[]{
                         "insertJob", "selectClaimable", "findLatestByCard", "markRunning",
                         "markSucceeded", "markFailed", "cancel", "cancelPendingForCard",
-                        "requeueStaleRunning"
+                        "requeueStaleRunning", "failStaleRunning"
                 },
                 "UserVocabularyPreferenceMapper", new String[]{
                         "findPreferenceByUser", "upsertDefaultTemplate"

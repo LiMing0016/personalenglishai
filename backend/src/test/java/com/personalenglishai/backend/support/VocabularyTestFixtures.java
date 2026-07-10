@@ -100,6 +100,8 @@ public final class VocabularyTestFixtures {
         job.setErrorMessage(null);
         job.setAvailableAt(now);
         job.setStartedAt(null);
+        job.setLeaseToken(null);
+        job.setLeaseExpiresAt(null);
         job.setFinishedAt(null);
         job.setCreatedAt(now);
         job.setUpdatedAt(now);

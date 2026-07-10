@@ -18,6 +18,8 @@ public interface VocabularyCardMapper {
 
     VocabularyCard findByUidIncludingDeleted(@Param("cardUid") String cardUid);
 
+    VocabularyCard findByUidForUpdate(@Param("cardUid") String cardUid);
+
     int restoreAndTouch(
             @Param("userId") Long userId,
             @Param("cardUid") String cardUid,
