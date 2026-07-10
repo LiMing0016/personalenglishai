@@ -96,6 +96,15 @@
           AND deleted_at IS NULL
     </update>
 
+    <update id="markNeedsReview">
+        UPDATE vocabulary_card
+        SET status = 'needs_review',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND card_uid = #{cardUid}
+          AND deleted_at IS NULL
+    </update>
+
     <select id="findOwnedByUid" resultMap="VocabularyCardResultMap">
         SELECT <include refid="VocabularyCardColumns"/>
         FROM vocabulary_card

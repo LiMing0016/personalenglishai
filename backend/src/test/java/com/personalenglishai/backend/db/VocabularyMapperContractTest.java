@@ -72,6 +72,24 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void markNeedsReviewIsScopedAndPreservesCardContentPointers() throws Exception {
+        String sql = statementSql("VocabularyCardMapper", "markNeedsReview", Map.of(
+                "userId", 7L,
+                "cardUid", "card_1"
+        ));
+
+        assertAll(
+                () -> assertTrue(sql.contains("SET status = 'needs_review'")),
+                () -> assertTrue(sql.contains("WHERE user_id = ?")),
+                () -> assertTrue(sql.contains("card_uid = ?")),
+                () -> assertTrue(sql.contains("deleted_at IS NULL")),
+                () -> assertTrue(!sql.contains("active_revision_uid")),
+                () -> assertTrue(!sql.contains("template_key")),
+                () -> assertTrue(!sql.contains("template_version"))
+        );
+    }
+
+    @Test
     void staleRunningRecoveryOnlyRequeuesExpiredClaimsForImmediateRetry() throws Exception {
         String sql = statementSql("VocabularyGenerationJobMapper", "requeueStaleRunning", Map.of(
                 "staleBefore", "2026-07-10T12:00:00"
@@ -92,7 +110,7 @@ class VocabularyMapperContractTest {
         Map<String, String[]> mapperStatements = Map.of(
                 "VocabularyCardMapper", new String[]{
                         "findByIdentityIncludingDeleted", "insert", "findByUidIncludingDeleted",
-                        "restoreAndTouch", "touch", "findOwnedByUid", "listByUser", "countByUser",
+                        "restoreAndTouch", "touch", "markNeedsReview", "findOwnedByUid", "listByUser", "countByUser",
                         "updateActiveRevision", "markConflictCandidate", "markGenerationFailed", "softDelete"
                 },
                 "VocabularySourceMapper", new String[]{

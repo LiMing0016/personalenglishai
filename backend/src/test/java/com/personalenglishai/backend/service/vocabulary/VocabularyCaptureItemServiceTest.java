@@ -101,6 +101,25 @@ class VocabularyCaptureItemServiceTest {
     }
 
     @Test
+    void marksExistingIdentityNeedsReviewWithoutReplacingRevisionOrTemplate() {
+        String malformed = "(".repeat(121) + "innovative" + ")".repeat(121);
+        VocabularyCard existing = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user");
+        when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(existing);
+
+        var result = service.captureOne(7L,
+                VocabularyCaptureRequest.manual("req-review-existing", List.of(malformed), "en", "exam"), 0);
+
+        assertEquals("card_1", result.cardUid());
+        assertEquals("needs_review", result.action());
+        assertEquals("needs_review", result.status());
+        verify(cards).touch(eq(7L), eq("card_1"), any());
+        verify(cards).markNeedsReview(7L, "card_1");
+        assertEquals("rev_user", existing.getActiveRevisionUid());
+        assertEquals("basic", existing.getTemplateKey());
+        verifyNoInteractions(jobs);
+    }
+
+    @Test
     void retryingTheSameRequestDoesNotInsertAnotherSourceOrJob() {
         when(sources.findSourceByIdempotencyKey(7L, "req-4:0"))
                 .thenReturn(VocabularyTestFixtures.manualSource(null));
@@ -120,6 +139,8 @@ class VocabularyCaptureItemServiceTest {
         VocabularyCard deleted = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
         deleted.setDeletedAt(LocalDateTime.now());
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(deleted);
+        when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("ready"), any()))
+                .thenReturn(1);
 
         var result = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-5", List.of("innovative"), "en", "basic"), 0);
@@ -136,6 +157,8 @@ class VocabularyCaptureItemServiceTest {
         VocabularyCard deleted = VocabularyTestFixtures.generating("card_1", null);
         deleted.setDeletedAt(LocalDateTime.now());
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(deleted);
+        when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("generating"), any()))
+                .thenReturn(1);
 
         var result = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-restore", List.of("innovative"), "en", "basic"), 0);
@@ -144,6 +167,27 @@ class VocabularyCaptureItemServiceTest {
         assertEquals("generating", result.status());
         verify(cards).restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("generating"), any());
         verify(jobs).insertJob(argThat(job -> job.getCardUid().equals("card_1")));
+    }
+
+    @Test
+    void concurrentRestoreLoserReselectsActiveCardWithoutSchedulingAnotherJob() {
+        VocabularyCard staleDeleted = VocabularyTestFixtures.generating("card_1", null);
+        staleDeleted.setDeletedAt(LocalDateTime.now());
+        VocabularyCard restoredByWinner = VocabularyTestFixtures.generating("card_1", null);
+        when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative"))
+                .thenReturn(staleDeleted, restoredByWinner);
+        when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("generating"), any()))
+                .thenReturn(0);
+
+        var result = service.captureOne(7L,
+                VocabularyCaptureRequest.manual("req-restore-race", List.of("innovative"), "en", "basic"), 0);
+
+        assertEquals("card_1", result.cardUid());
+        assertEquals("source_merged", result.action());
+        assertEquals("generating", result.status());
+        verify(cards).touch(eq(7L), eq("card_1"), any());
+        verify(sources).insertSource(any());
+        verifyNoInteractions(jobs);
     }
 
     @Test

@@ -96,11 +96,24 @@ public class VocabularyCaptureItemService {
             status = card.getStatus();
         } else if (card.getDeletedAt() != null) {
             status = restoredStatus(card, reviewRequired);
-            cards.restoreAndTouch(userId, card.getCardUid(), normalizedTerm, status, capturedAt);
-            restored = true;
+            int restoredCount = cards.restoreAndTouch(
+                    userId, card.getCardUid(), normalizedTerm, status, capturedAt);
+            if (restoredCount == 1) {
+                restored = true;
+            } else {
+                card = cards.findByIdentityIncludingDeleted(userId, language, normalizedTerm);
+                if (card == null || card.getDeletedAt() != null) {
+                    throw new IllegalStateException("concurrent card restoration could not be resolved");
+                }
+                cards.touch(userId, card.getCardUid(), capturedAt);
+                status = reviewRequired ? "needs_review" : card.getStatus();
+            }
         } else {
             cards.touch(userId, card.getCardUid(), capturedAt);
             status = reviewRequired ? "needs_review" : card.getStatus();
+        }
+        if (reviewRequired && !created) {
+            cards.markNeedsReview(userId, card.getCardUid());
         }
 
         VocabularyCardSource source = newSource(

@@ -30,6 +30,10 @@ public interface VocabularyCardMapper {
             @Param("cardUid") String cardUid,
             @Param("capturedAt") LocalDateTime capturedAt);
 
+    int markNeedsReview(
+            @Param("userId") Long userId,
+            @Param("cardUid") String cardUid);
+
     VocabularyCard findOwnedByUid(@Param("userId") Long userId, @Param("cardUid") String cardUid);
 
     List<VocabularyCard> listByUser(
