@@ -332,12 +332,12 @@ class VocabularyCardServiceTest {
         failed.setStatus("failed");
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
         when(jobs.findLatestByCard("card_1")).thenReturn(failed);
-        when(jobs.retryFailed("job_1")).thenReturn(1);
+        when(jobs.retryFailed("card_1", "job_1")).thenReturn(1);
 
         var result = service.retry(7L, "card_1");
 
         assertEquals("job_1", result.jobUid());
-        verify(jobs).retryFailed("job_1");
+        verify(jobs).retryFailed("card_1", "job_1");
     }
 
     @Test

@@ -207,7 +207,8 @@ public class VocabularyCardService {
     public VocabularyGenerationJobResponse retry(Long userId, String cardUid) {
         requireOwnedCard(userId, cardUid);
         VocabularyGenerationJob latest = jobs.findLatestByCard(cardUid);
-        if (latest == null || !"failed".equals(latest.getStatus()) || jobs.retryFailed(latest.getJobUid()) != 1) {
+        if (latest == null || !"failed".equals(latest.getStatus())
+                || jobs.retryFailed(cardUid, latest.getJobUid()) != 1) {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "Only the latest failed generation can be retried");
         }
         return new VocabularyGenerationJobResponse(latest.getJobUid(), "pending");

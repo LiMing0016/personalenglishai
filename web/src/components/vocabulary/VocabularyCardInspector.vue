@@ -21,7 +21,7 @@
       <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">
         {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
       </button>
-      <button v-if="card.status === 'failed'" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
+      <button v-if="card.status === 'failed' || card.generationStatus === 'failed'" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
         {{ retryVocabularyCard.isPending.value ? '重试中...' : '重试生成' }}
       </button>
       <button type="button" class="card-inspector__danger" @click="deleteDialogOpen = true">删除</button>

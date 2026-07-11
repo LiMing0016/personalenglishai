@@ -175,19 +175,24 @@
     </update>
 
     <update id="retryFailed">
-        UPDATE vocabulary_generation_job
-        SET status = 'pending',
-            attempt_count = 0,
-            available_at = CURRENT_TIMESTAMP,
-            started_at = NULL,
-            finished_at = NULL,
-            error_code = NULL,
-            error_message = NULL,
-            lease_token = NULL,
-            lease_expires_at = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE job_uid = #{jobUid}
-          AND status = 'failed'
+        UPDATE vocabulary_generation_job target
+        LEFT JOIN vocabulary_generation_job newer
+            ON newer.card_uid = target.card_uid
+           AND newer.id &gt; target.id
+        SET target.status = 'pending',
+            target.attempt_count = 0,
+            target.available_at = CURRENT_TIMESTAMP,
+            target.started_at = NULL,
+            target.finished_at = NULL,
+            target.error_code = NULL,
+            target.error_message = NULL,
+            target.lease_token = NULL,
+            target.lease_expires_at = NULL,
+            target.updated_at = CURRENT_TIMESTAMP
+        WHERE target.card_uid = #{cardUid}
+          AND target.job_uid = #{jobUid}
+          AND target.status = 'failed'
+          AND newer.id IS NULL
     </update>
 
     <update id="requeueStaleRunning">

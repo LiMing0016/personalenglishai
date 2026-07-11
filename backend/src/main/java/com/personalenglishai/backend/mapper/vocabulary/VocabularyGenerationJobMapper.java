@@ -43,7 +43,7 @@ public interface VocabularyGenerationJobMapper {
 
     int cancelActiveForCard(@Param("cardUid") String cardUid);
 
-    int retryFailed(@Param("jobUid") String jobUid);
+    int retryFailed(@Param("cardUid") String cardUid, @Param("jobUid") String jobUid);
 
     int requeueStaleRunning();
 

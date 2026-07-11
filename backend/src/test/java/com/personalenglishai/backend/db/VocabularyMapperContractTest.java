@@ -237,14 +237,20 @@ class VocabularyMapperContractTest {
         String cancelled = statementSql("VocabularyGenerationJobMapper", "cancelActiveForCard", Map.of(
                 "cardUid", "card_1"));
         String retried = statementSql("VocabularyGenerationJobMapper", "retryFailed", Map.of(
-                "jobUid", "job_1"));
+                "cardUid", "card_1", "jobUid", "job_1"));
 
         assertAll(
                 () -> assertTrue(cancelled.contains("status IN ('pending', 'running')")),
                 () -> assertTrue(cancelled.contains("lease_token = NULL")),
-                () -> assertTrue(retried.contains("SET status = 'pending'")),
-                () -> assertTrue(retried.contains("attempt_count = 0")),
-                () -> assertTrue(retried.contains("WHERE job_uid = ?")),
+                () -> assertTrue(retried.contains("SET target.status = 'pending'")),
+                () -> assertTrue(retried.contains("target.attempt_count = 0")),
+                () -> assertTrue(retried.contains("UPDATE vocabulary_generation_job target")),
+                () -> assertTrue(retried.contains("LEFT JOIN vocabulary_generation_job newer")),
+                () -> assertTrue(retried.contains("newer.card_uid = target.card_uid")),
+                () -> assertTrue(retried.contains("newer.id > target.id")),
+                () -> assertTrue(retried.contains("newer.id IS NULL")),
+                () -> assertTrue(retried.contains("target.card_uid = ?")),
+                () -> assertTrue(retried.contains("target.job_uid = ?")),
                 () -> assertTrue(retried.contains("status = 'failed'"))
         );
     }

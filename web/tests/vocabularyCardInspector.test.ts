@@ -59,6 +59,10 @@ test('inspector opens a persisted needs-review conflict without requiring a save
   assert.match(inspector, /currentContent:\s*card\.content/)
 })
 
+test('inspector exposes retry when either card or generation status is failed', () => {
+  assert.match(inspector, /card\.status\s*===\s*['"]failed['"]\s*\|\|\s*card\.generationStatus\s*===\s*['"]failed['"]/)
+})
+
 test('inspector describes soft deletion and uses a safe source URL guard', () => {
   assert.match(inspector, /safeExternalUrl\(source\.sourceUrl\)/)
   assert.match(inspector, /再次收藏或录入时可恢复/)
