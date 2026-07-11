@@ -15,6 +15,9 @@ type Card = {
   updatedAt: string
   candidateRevisionUid: string | null
   conflictStatus: 'none' | 'needs_review'
+  phonetic: string | null
+  coreDefinition: string | null
+  sourceCount: number
   language: string
   templateVersion: number
   content: CardContent
@@ -38,6 +41,9 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     updatedAt: '2026-07-11T00:00:00Z',
     candidateRevisionUid: null,
     conflictStatus: 'none',
+    phonetic: '/in/',
+    coreDefinition: 'using new ideas or methods',
+    sourceCount: 1,
     language: 'en',
     templateVersion: 1,
     content: {
@@ -90,7 +96,11 @@ async function installApiMocks(page: Page, initialCards: Card[]) {
     requests.push({ method, path, body })
 
     if (path.endsWith('/templates')) {
-      return route.fulfill({ json: { code: '0', data: { items: [{ key: 'basic', version: 1, name: '基础卡片', fields: ['term', 'definitions', 'examples', 'usage'] }], defaultTemplateKey: 'basic' } } })
+      return route.fulfill({ json: { code: '0', data: { items: [
+        { key: 'basic', version: 1, name: '基础卡片', fields: ['term', 'definitions', 'examples', 'usage'] },
+        { key: 'exam', version: 1, name: '考试卡片', fields: ['term', 'definitions', 'examples', 'examTips'] },
+        { key: 'reading', version: 1, name: '阅读卡片', fields: ['term', 'definitions', 'sourceContext'] },
+      ], defaultTemplateKey: 'basic' } } })
     }
     if (path.endsWith('/cards') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: { items: cards, total: cards.length, page: 1, size: 20 } } })
@@ -222,12 +232,15 @@ test('card commands, source/history tabs, cancel reset, and delete confirmation 
   await expect(page.getByText('创建卡片')).toBeVisible()
 
   await page.getByRole('button', { name: '重试生成' }).click()
+  await page.getByLabel('重新生成模板').selectOption('exam')
   await page.getByRole('button', { name: '重新生成' }).click()
   await expect.poll(() => requests.filter((request) => request.path.endsWith('/retry')).length).toBe(1)
   await expect.poll(() => requests.filter((request) => request.path.endsWith('/regenerate')).length).toBe(1)
+  expect(requests.find((request) => request.path.endsWith('/regenerate'))?.body).toEqual({ templateKey: 'exam' })
 
   await page.getByRole('button', { name: '删除' }).click()
   await expect(page.getByRole('dialog', { name: '删除单词卡？' })).toBeVisible()
+  await expect(page.getByText('再次收藏或录入时可恢复')).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
   await expect(page.getByRole('dialog', { name: '删除单词卡？' })).toHaveCount(0)
   await page.getByRole('button', { name: '删除' }).click()
