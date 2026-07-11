@@ -20,6 +20,7 @@ import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +47,7 @@ class VocabularyCardServiceTest {
     @Mock VocabularyRevisionMapper revisions;
     @Mock VocabularyGenerationJobMapper jobs;
     @Mock UserVocabularyPreferenceMapper preferences;
+    @Mock VocabularyRevisionWriteService revisionWriter;
 
     ObjectMapper objectMapper;
     VocabularyTemplateRegistry templateRegistry;
@@ -55,7 +58,7 @@ class VocabularyCardServiceTest {
         objectMapper = new ObjectMapper();
         templateRegistry = new VocabularyTemplateRegistry(objectMapper);
         service = new VocabularyCardService(
-                cards, sources, revisions, jobs, preferences, templateRegistry, objectMapper);
+                cards, sources, revisions, jobs, preferences, templateRegistry, objectMapper, revisionWriter);
     }
 
     @Test
@@ -208,14 +211,14 @@ class VocabularyCardServiceTest {
                 {"term":"client override","phonetic":"","partOfSpeech":"adjective","definitions":["new"],"examples":[],"notes":"edited"}
                 """);
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
-        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_1"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(card), any()))
+                .thenReturn(VocabularyRevisionWriteService.WriteOutcome.ACTIVATED);
 
         service.update(7L, "card_1", new UpdateVocabularyCardRequest("rev_1", content, "Edited"));
 
         org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
                 org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
-        verify(revisions).insertRevision(revision.capture());
+        verify(revisionWriter).appendAndActivate(eq(7L), eq(card), revision.capture());
         assertEquals("user", revision.getValue().getAuthorType());
         assertEquals("rev_1", revision.getValue().getBaseRevisionUid());
         assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
@@ -223,16 +226,18 @@ class VocabularyCardServiceTest {
 
     @Test
     void staleUpdateReturnsCurrentAndCandidateConflictSummary() throws Exception {
-        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
-        card.setStatus("needs_review");
-        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
-        candidate.setAuthorType("ai");
-        candidate.setBaseRevisionUid("rev_old");
-        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
-        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(0);
+        VocabularyCard staleSnapshot = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_old");
+        VocabularyCard currentCard = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        currentCard.setStatus("needs_review");
+        AtomicReference<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> candidate =
+                new AtomicReference<>();
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(staleSnapshot, currentCard);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(staleSnapshot), any())).thenAnswer(invocation -> {
+            candidate.set(invocation.getArgument(2));
+            return VocabularyRevisionWriteService.WriteOutcome.STALE;
+        });
         when(revisions.findRevision("rev_current")).thenReturn(VocabularyTestFixtures.userRevision("rev_current"));
-        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate));
+        when(revisions.listRevisions("card_1")).thenAnswer(ignored -> List.of(candidate.get()));
         ObjectNode content = (ObjectNode) objectMapper.readTree("""
                 {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"edited"}
                 """);
@@ -240,11 +245,13 @@ class VocabularyCardServiceTest {
         VocabularyRevisionConflictException error = assertThrows(
                 VocabularyRevisionConflictException.class,
                 () -> service.update(7L, "card_1", new UpdateVocabularyCardRequest(
-                        "rev_current", content, "Edited")));
+                        "rev_old", content, "Edited")));
 
         assertEquals(ErrorCode.VOCABULARY_REVISION_CONFLICT, error.getErrorCode());
         assertEquals("rev_current", error.getConflict().currentRevisionUid());
-        assertEquals("rev_candidate", error.getConflict().candidateRevisionUid());
+        assertEquals(candidate.get().getRevisionUid(), error.getConflict().candidateRevisionUid());
+        assertEquals("user", candidate.get().getAuthorType());
+        verify(revisions).listRevisions("card_1");
     }
 
     @Test

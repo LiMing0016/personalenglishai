@@ -48,6 +48,7 @@ public class VocabularyCardService {
     private final UserVocabularyPreferenceMapper preferences;
     private final VocabularyTemplateRegistry templateRegistry;
     private final ObjectMapper objectMapper;
+    private final VocabularyRevisionWriteService revisionWriter;
 
     public VocabularyCardService(
             VocabularyCardMapper cards,
@@ -56,7 +57,8 @@ public class VocabularyCardService {
             VocabularyGenerationJobMapper jobs,
             UserVocabularyPreferenceMapper preferences,
             VocabularyTemplateRegistry templateRegistry,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            VocabularyRevisionWriteService revisionWriter) {
         this.cards = cards;
         this.sources = sources;
         this.revisions = revisions;
@@ -64,6 +66,7 @@ public class VocabularyCardService {
         this.preferences = preferences;
         this.templateRegistry = templateRegistry;
         this.objectMapper = objectMapper;
+        this.revisionWriter = revisionWriter;
     }
 
     public VocabularyTemplateCatalogResponse templateCatalog(Long userId) {
@@ -131,7 +134,6 @@ public class VocabularyCardService {
                 conflictStatus(card, candidate));
     }
 
-    @Transactional
     public VocabularyCardDetailResponse update(Long userId, String cardUid, UpdateVocabularyCardRequest request) {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
         VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
@@ -147,10 +149,9 @@ public class VocabularyCardService {
         revision.setTemplateVersion(template.version());
         revision.setContentJson(writeJson(content));
         revision.setChangeSummary(request.changeSummary());
-        revisions.insertRevision(revision);
-
-        if (cards.updateActiveRevision(userId, cardUid, request.baseRevisionUid(), revision.getRevisionUid(),
-                "ready", template.key(), template.version()) != 1) {
+        VocabularyRevisionWriteService.WriteOutcome outcome =
+                revisionWriter.appendAndActivate(userId, card, revision);
+        if (outcome == VocabularyRevisionWriteService.WriteOutcome.STALE) {
             throw conflictFor(userId, cardUid);
         }
         return getDetail(userId, cardUid);
@@ -344,8 +345,8 @@ public class VocabularyCardService {
         }
         return history.stream()
                 .filter(revision -> Objects.equals(card.getCardUid(), revision.getCardUid()))
-                .filter(revision -> "ai".equals(revision.getAuthorType()))
                 .filter(revision -> !Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()))
+                .filter(revision -> "ai".equals(revision.getAuthorType()) || "user".equals(revision.getAuthorType()))
                 .findFirst()
                 .orElse(null);
     }
