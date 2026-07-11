@@ -227,6 +227,7 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(sql.contains("job.attempt_count >= 3")),
                 () -> assertTrue(sql.contains("card.active_revision_uid IS NULL")),
                 () -> assertTrue(sql.contains("card.status = 'generating'")),
+                () -> assertTrue(sql.contains("card.updated_at = CURRENT_TIMESTAMP")),
                 () -> assertTrue(sql.contains("THEN 'failed' ELSE card.status END"))
         );
     }

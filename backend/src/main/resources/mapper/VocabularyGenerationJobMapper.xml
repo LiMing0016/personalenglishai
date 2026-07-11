@@ -217,9 +217,7 @@
             job.lease_token = NULL,
             job.lease_expires_at = NULL,
             job.updated_at = CURRENT_TIMESTAMP,
-            card.updated_at = CASE
-                WHEN card.active_revision_uid IS NULL AND card.status = 'generating'
-                    THEN CURRENT_TIMESTAMP ELSE card.updated_at END,
+            card.updated_at = CURRENT_TIMESTAMP,
             card.status = CASE
                 WHEN card.active_revision_uid IS NULL AND card.status = 'generating'
                     THEN 'failed' ELSE card.status END
