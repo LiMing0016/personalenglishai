@@ -1,5 +1,10 @@
 # 单词沉淀架构
 
+## 当前阶段范围
+
+- 当前阶段仅支持 `manual` 和 `dictionary` 两种单词沉淀来源：分别对应手动录入和词典收藏。
+- PDF、AI 对话、笔记和错题尚未接入，当前不会自动沉淀到单词卡中心；这些来源属于后续接入范围。
+
 ## 资产边界
 
 - `dictionary_*` 是共享的词典内容，提供只读查词和补全来源；不保存某个用户的收藏、查询次数或卡片内容。
@@ -11,19 +16,19 @@
 
 ## 数据库部署
 
-新建数据库使用初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
+新建数据库只执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
 ```
 
-已有单词沉淀表、但 `vocabulary_generation_job` 尚未具备租约字段的数据库，执行已有库租约迁移：
+只有历史旧表中的 `vocabulary_generation_job` 尚未具备租约字段时，才执行已有库租约迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
-`migrate_create_vocabulary_deposition_tables.sql` 已包含新库所需的 `lease_token`、`lease_expires_at` 和索引；`migrate_add_vocabulary_generation_job_leases.sql` 仅用于升级已创建的旧表。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
+初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引。新库只执行初始迁移，不得再执行租约迁移；租约迁移只用于历史旧表。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
 
 ## 生成任务与调度器
 

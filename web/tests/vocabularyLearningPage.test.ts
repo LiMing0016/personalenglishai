@@ -21,7 +21,7 @@ for (const requiredText of [
   '查询、学习、一步到位',
   '选择适合你的学习模式',
   '单词卡中心',
-  '从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里',
+  '手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入',
   '全部来源',
   '今天',
   '本周',
@@ -126,6 +126,11 @@ for (const requiredClass of [
 assert.ok(
   !pageSource.includes('单词端数据源验收标记'),
   'vocabulary learning page should not expose backend integration status as student-facing content',
+)
+
+assert.ok(
+  !pageSource.includes('从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里'),
+  'vocabulary learning page should not promise sources that are not connected yet',
 )
 
 assert.ok(

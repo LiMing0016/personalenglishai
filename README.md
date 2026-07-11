@@ -111,13 +111,15 @@ npm run build
 
 ### 单词沉淀数据库
 
-新建本地数据库后，先执行单词卡初始迁移：
+当前阶段单词沉淀仅支持 `manual`（手动录入）和 `dictionary`（词典收藏）；PDF、AI 对话、笔记和错题尚未接入。
+
+新建本地数据库后，只执行单词卡初始迁移。初始迁移已经包含生成任务租约字段和索引：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
 ```
 
-若本地库已执行过初始迁移但缺少生成任务租约字段，再执行：
+只有历史旧表已执行过初始迁移、但缺少生成任务租约字段时，才执行租约迁移；新库不得再执行该迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql

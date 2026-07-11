@@ -197,7 +197,7 @@
           <section class="page-heading">
             <p>Word Cards</p>
             <h1>单词卡中心</h1>
-            <span>从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里</span>
+            <span>手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入</span>
           </section>
         </header>
         <VocabularyCapturePanel
