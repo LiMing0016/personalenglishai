@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -39,10 +40,11 @@ class VocabularyCaptureServiceTest {
     }
 
     @Test
-    void bulkCaptureKeepsSuccessfulItemsWhenOneItemFails() {
+    void bulkCaptureKeepsSuccessfulItemsWhenOneItemHasKnownRejection() {
         when(itemService.captureOne(eq(7L), any(), eq(0)))
                 .thenReturn(new VocabularyCaptureResponse.Item("good", "card_1", "created", "generating"));
-        when(itemService.captureOne(eq(7L), any(), eq(1))).thenThrow(new RuntimeException("db unavailable"));
+        when(itemService.captureOne(eq(7L), any(), eq(1)))
+                .thenThrow(new VocabularyCaptureRejectedException("invalid term"));
 
         var result = service.capture(7L,
                 VocabularyCaptureRequest.manual("req-bulk", List.of("good", "bad"), "en", "basic"));
@@ -50,6 +52,19 @@ class VocabularyCaptureServiceTest {
         assertEquals(List.of("created", "rejected"),
                 result.items().stream().map(VocabularyCaptureResponse.Item::action).toList());
         verify(itemService, never()).captureOneInCallerTransaction(anyLong(), any(), anyInt());
+    }
+
+    @Test
+    void bulkCapturePropagatesDatabaseAndInfrastructureFailures() {
+        DataAccessResourceFailureException failure =
+                new DataAccessResourceFailureException("database unavailable");
+        when(itemService.captureOne(eq(7L), any(), eq(0))).thenThrow(failure);
+
+        RuntimeException thrown = assertThrows(RuntimeException.class, () -> service.capture(
+                7L,
+                VocabularyCaptureRequest.manual("req-db", List.of("word"), "en", "basic")));
+
+        assertSame(failure, thrown);
     }
 
     @Test

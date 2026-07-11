@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -144,22 +146,33 @@ class VocabularyCardServiceTest {
         VocabularyCard firstCard = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
         VocabularyCard secondCard = VocabularyTestFixtures.ready("card_2", 7L, "sustainable", "rev_2");
         VocabularyCardSource manual = VocabularyTestFixtures.manualSource(null);
+        manual.setSourceCount(2);
         VocabularyCardSource dictionary = VocabularyTestFixtures.manualSource(null);
         dictionary.setSourceUid("src_2");
         dictionary.setSourceType("dictionary");
+        dictionary.setSourceCount(2);
         VocabularyCardSource secondManual = VocabularyTestFixtures.manualSource(null);
         secondManual.setSourceUid("src_3");
         secondManual.setCardUid("card_2");
+        secondManual.setSourceCount(1);
+        var firstRevision = VocabularyTestFixtures.userRevision("rev_1");
+        firstRevision.setContentJson("""
+                {"term":"innovative","phonetic":"/in/","partOfSpeech":"adjective","definitions":["using new ideas"],"examples":[],"notes":""}
+                """);
+        var secondRevision = VocabularyTestFixtures.userRevision("rev_2");
+        secondRevision.setCardUid("card_2");
         VocabularyGenerationJob running = VocabularyTestFixtures.pendingJob("job_1", "card_1", "rev_1", 1);
         running.setStatus("running");
-        when(cards.listByUser(7L, null, "ready", null, 0, 50))
+        when(cards.listByUser(7L, null, "ready", null, "az", 0, 50))
                 .thenReturn(List.of(firstCard, secondCard));
         when(cards.countByUser(7L, null, "ready", null)).thenReturn(2L);
         when(sources.listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2")))
                 .thenReturn(List.of(manual, dictionary, secondManual));
         when(jobs.listLatestByCardUids(7L, List.of("card_1", "card_2"))).thenReturn(List.of(running));
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(firstRevision));
+        when(revisions.listRevisions("card_2")).thenReturn(List.of(secondRevision));
 
-        var result = service.list(7L, null, "ready", null, 0, 99);
+        var result = service.list(7L, null, "ready", null, "az", 0, 99);
 
         assertEquals(1, result.getPage());
         assertEquals(50, result.getSize());
@@ -168,9 +181,19 @@ class VocabularyCardServiceTest {
         assertEquals(List.of("manual"), result.getItems().get(1).sourceTypes());
         assertEquals("running", result.getItems().get(0).generationStatus());
         assertNull(result.getItems().get(1).generationStatus());
+        assertEquals("/in/", result.getItems().get(0).phonetic());
+        assertEquals("using new ideas", result.getItems().get(0).coreDefinition());
+        assertEquals(2, result.getItems().get(0).sourceCount());
         verify(sources).listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2"));
         verify(jobs).listLatestByCardUids(7L, List.of("card_1", "card_2"));
         verify(sources, never()).listSources(anyString());
+    }
+
+    @Test
+    void listRejectsUnsupportedSort() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.list(7L, null, null, null, "oldest", 1, 20));
+        verifyNoInteractions(cards, sources, revisions, jobs);
     }
 
     @Test
@@ -287,6 +310,22 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void regenerateUsesRequestedTemplateAndVersion() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+
+        service.regenerate(7L, "card_1", "exam");
+
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(jobs).insertJob(job.capture());
+        assertEquals("exam", job.getValue().getTemplateKey());
+        assertEquals(1, job.getValue().getTemplateVersion());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.regenerate(7L, "card_1", "unsupported"));
+    }
+
+    @Test
     void retryRequeuesOnlyLatestFailedJob() {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
         VocabularyGenerationJob failed = VocabularyTestFixtures.pendingJob("job_1", "card_1", "rev_1", 3);
@@ -332,6 +371,7 @@ class VocabularyCardServiceTest {
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
         when(revisions.findRevision("rev_current")).thenReturn(current);
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
 
         assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("merge_fields", Map.of(
@@ -353,6 +393,7 @@ class VocabularyCardServiceTest {
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
         when(revisions.findRevision("rev_current")).thenReturn(current);
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
                 eq("ready"), eq("basic"), eq(1))).thenReturn(1);
 
@@ -366,5 +407,66 @@ class VocabularyCardServiceTest {
         assertEquals("system_merge", revision.getValue().getAuthorType());
         assertEquals("rev_current", revision.getValue().getBaseRevisionUid());
         assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"keep_current", "use_ai", "merge_fields"})
+    void everyConflictChoiceAppendsGuardedSystemMergeRevision(String choice) throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        current.setContentJson("""
+                {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":["current"],"examples":[],"notes":"current"}
+                """);
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_current");
+        candidate.setContentJson("""
+                {"term":"tampered","phonetic":"","partOfSpeech":"adjective","definitions":["candidate"],"examples":[],"notes":"candidate"}
+                """);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+        ResolveVocabularyConflictRequest request = "merge_fields".equals(choice)
+                ? new ResolveVocabularyConflictRequest(choice, Map.of(
+                        "notes", objectMapper.getNodeFactory().textNode("merged")))
+                : new ResolveVocabularyConflictRequest(choice, null);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate", request);
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(revision.capture());
+        assertEquals("system_merge", revision.getValue().getAuthorType());
+        assertEquals("rev_current", revision.getValue().getBaseRevisionUid());
+        assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
+    }
+
+    @Test
+    void conflictResolutionRejectsAnOlderNonCurrentCandidate() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var latestCandidate = VocabularyTestFixtures.userRevision("rev_candidate_latest");
+        latestCandidate.setAuthorType("ai");
+        var staleCandidate = VocabularyTestFixtures.userRevision("rev_candidate_old");
+        staleCandidate.setAuthorType("ai");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate_old")).thenReturn(staleCandidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(latestCandidate, staleCandidate, current));
+
+        assertThrows(BizException.class, () -> service.resolveConflict(
+                7L,
+                "card_1",
+                "rev_candidate_old",
+                new ResolveVocabularyConflictRequest("keep_current", null)));
+
+        verify(revisions, never()).insertRevision(any());
+        verify(cards, never()).updateActiveRevision(any(), anyString(), anyString(), anyString(),
+                anyString(), anyString(), any(Integer.class));
     }
 }

@@ -12,6 +12,12 @@
     <div class="card-inspector__actions" aria-label="单词卡操作">
       <button v-if="editing" type="button" @click="cancelEditing">取消编辑</button>
       <button v-else type="button" @click="editing = true">编辑卡片</button>
+      <label class="card-inspector__regenerate-template">
+        <span>模板</span>
+        <select v-model="regenerateTemplateKey" aria-label="重新生成模板">
+          <option v-for="option in templates" :key="option.key" :value="option.key">{{ option.name }}</option>
+        </select>
+      </label>
       <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">
         {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
       </button>
@@ -69,7 +75,7 @@
       <article v-for="source in card.sources" :key="source.sourceUid">
         <strong>{{ source.sourceTitle || source.sourceType }}</strong>
         <span>{{ source.contextText || '未记录语境' }}</span>
-        <a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noreferrer">查看原始来源</a>
+        <a v-if="safeExternalUrl(source.sourceUrl)" :href="safeExternalUrl(source.sourceUrl)!" target="_blank" rel="noreferrer">查看原始来源</a>
       </article>
     </section>
 
@@ -84,7 +90,7 @@
     <div v-if="deleteDialogOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="deleteDialogOpen = false">
       <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="delete-card-title">
         <h3 id="delete-card-title">删除单词卡？</h3>
-        <p>删除后无法恢复这张单词卡及其修订历史。</p>
+        <p>删除后会从单词卡列表移除；再次收藏或录入时可恢复，修订历史会保留。</p>
         <div>
           <button type="button" @click="deleteDialogOpen = false">取消</button>
           <button type="button" class="card-inspector__danger" :disabled="deleteMutation.isPending.value" @click="removeCard">
@@ -138,8 +144,10 @@ import {
   type VocabularyConflictResponse,
   type VocabularyRevisionListResponse,
   type VocabularyTemplate,
+  type VocabularyTemplateKey,
 } from '@/api/vocabulary'
 import { showToast } from '@/utils/toast'
+import { safeExternalUrl } from '@/features/vocabulary/safeExternalUrl'
 
 type MutationBridge<T> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<unknown> }
 type EditableContent = Record<string, string | string[]>
@@ -147,10 +155,11 @@ type EditableContent = Record<string, string | string[]>
 const props = defineProps<{
   card: VocabularyCardDetail
   template: VocabularyTemplate
+  templates: VocabularyTemplate[]
   listVocabularyRevisions?: VocabularyRevisionListResponse
   updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }>
   deleteMutation: MutationBridge<string>
-  regenerateMutation: MutationBridge<string>
+  regenerateMutation: MutationBridge<{ cardUid: string, templateKey: VocabularyTemplateKey }>
   retryVocabularyCard: MutationBridge<string>
   resolveConflictMutation: MutationBridge<{ cardUid: string, revisionUid: string, payload: ResolveVocabularyConflictRequest }>
 }>()
@@ -163,6 +172,7 @@ const conflict = ref<VocabularyConflictResponse | null>(null)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
 const mergeChoice = ref<Record<string, 'current' | 'candidate'>>({})
 const editContent = ref<EditableContent>({})
+const regenerateTemplateKey = ref<VocabularyTemplateKey>(props.card.templateKey)
 
 function cloneEditableContent(value: unknown): EditableContent {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -228,6 +238,7 @@ function setConflict(nextConflict: VocabularyConflictResponse) {
 
 watch(() => [props.card, props.template] as const, ([card]) => {
   editContent.value = cloneEditableContent(card.content)
+  regenerateTemplateKey.value = card.templateKey
   editing.value = false
   if (card.status === 'needs_review' && card.candidateRevisionUid && card.candidateContent) {
     setConflict({
@@ -278,7 +289,10 @@ async function save() {
 
 async function regenerate() {
   try {
-    await props.regenerateMutation.mutateAsync(props.card.cardUid)
+    await props.regenerateMutation.mutateAsync({
+      cardUid: props.card.cardUid,
+      templateKey: regenerateTemplateKey.value,
+    })
     showToast('已提交重新生成任务', 'success')
   } catch (error) { showToast(error instanceof Error ? error.message : '重新生成失败，请重试', 'error') }
 }
@@ -328,6 +342,7 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector { min-width: 0; padding: 18px; border: 1px solid #dce7e1; border-radius: 8px; background: #fff; color: #334155; }
 .card-inspector__header, .card-inspector__actions, .card-inspector__dialog-actions { display: flex; align-items: start; justify-content: space-between; gap: 10px; }.card-inspector__header p, .card-inspector__header h2 { margin: 0; }.card-inspector__header p { color: #64748b; font-size: 12px; }.card-inspector__header h2 { margin-top: 5px; color: #0f172a; font-size: 22px; overflow-wrap: anywhere; }.card-inspector__status { display: inline-block; margin-top: 7px; color: #047857; font-size: 12px; font-weight: 800; }.card-inspector__status--failed { color: #b91c1c; }.card-inspector__status--needs_review { color: #b45309; }
 .card-inspector button { min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }.card-inspector button:disabled { cursor: not-allowed; opacity: .55; }.card-inspector__back { white-space: nowrap; }.card-inspector__actions { flex-wrap: wrap; margin-top: 16px; align-items: center; justify-content: flex-start; }.card-inspector__actions button:first-child, .card-inspector__save-row button, .card-inspector__dialog-actions button:last-child { border-color: #059669; background: #059669; color: #fff; }.card-inspector__danger { border-color: #fecaca !important; color: #b91c1c !important; }.card-inspector__error { margin: 12px 0 0; color: #b91c1c; font-size: 13px; }
+.card-inspector__regenerate-template { display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; }.card-inspector__regenerate-template select { width: auto; min-height: 34px; padding-block: 0; }
 .card-inspector__tabs { display: flex; gap: 4px; margin-top: 18px; border-bottom: 1px solid #dce7e1; }.card-inspector__tabs button { border: 0; border-radius: 0; background: transparent; padding: 0 8px 9px; }.card-inspector__tabs button[aria-selected="true"] { border-bottom: 2px solid #059669; color: #047857; }
 .card-inspector__content { display: grid; gap: 13px; margin-top: 16px; }.card-inspector__field { display: grid; gap: 6px; min-width: 0; }.card-inspector__field > label { color: #475569; font-size: 13px; font-weight: 800; }.card-inspector input, .card-inspector textarea, .card-inspector select { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font: inherit; padding: 8px 10px; }.card-inspector textarea { resize: vertical; }.card-inspector input[readonly], .card-inspector textarea[readonly] { background: #f8fafc; color: #64748b; }.card-inspector__array-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }.card-inspector__add { justify-self: start; }.card-inspector__save-row { display: flex; justify-content: flex-end; }
 .card-inspector__sources, .card-inspector__history { display: grid; gap: 10px; margin-top: 16px; }.card-inspector__sources article, .card-inspector__history article { display: grid; gap: 4px; padding: 11px; border: 1px solid #edf2f7; border-radius: 6px; }.card-inspector__sources span, .card-inspector__history span, .card-inspector__history small { color: #64748b; font-size: 13px; overflow-wrap: anywhere; }.card-inspector__sources a { color: #047857; font-size: 13px; }.card-inspector__history article div { display: flex; justify-content: space-between; gap: 8px; }.card-inspector__empty { color: #64748b; font-size: 13px; }

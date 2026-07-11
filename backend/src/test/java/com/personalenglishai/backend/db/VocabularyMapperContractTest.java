@@ -102,6 +102,33 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void cardListSearchesOriginalAndActiveDefinitionsAndSupportsBothSorts() throws Exception {
+        Map<String, Object> base = Map.of(
+                "userId", 7L,
+                "keyword", "idea",
+                "status", "ready",
+                "sourceType", "manual",
+                "offset", 0,
+                "limit", 20);
+        Map<String, Object> az = new java.util.HashMap<>(base);
+        az.put("sort", "az");
+        Map<String, Object> recent = new java.util.HashMap<>(base);
+        recent.put("sort", "recent");
+        String azSql = statementSql("VocabularyCardMapper", "listByUser", az);
+        String recentSql = statementSql("VocabularyCardMapper", "listByUser", recent);
+
+        assertAll(
+                () -> assertTrue(azSql.contains("original_term LIKE")),
+                () -> assertTrue(azSql.contains("revision.revision_uid = vocabulary_card.active_revision_uid")),
+                () -> assertTrue(azSql.contains("JSON_EXTRACT(revision.content_json, '$.definitions')")),
+                () -> assertTrue(azSql.contains("ORDER BY normalized_term ASC")),
+                () -> assertTrue(recentSql.contains("ORDER BY last_captured_at DESC")),
+                () -> assertTrue(azSql.contains("source_type = ?")),
+                () -> assertTrue(azSql.contains("LIMIT ? OFFSET ?"))
+        );
+    }
+
+    @Test
     void restoreAndTouchIsScopedToOwningUser() throws Exception {
         String sql = statementSql("VocabularyCardMapper", "restoreAndTouch", Map.of(
                 "userId", 7L,
@@ -159,11 +186,12 @@ class VocabularyMapperContractTest {
         ));
 
         assertAll(
-                () -> assertTrue(sql.contains("SELECT DISTINCT")),
+                () -> assertTrue(sql.contains("GROUP BY source.card_uid, source.user_id, source.source_type")),
                 () -> assertTrue(sql.contains("source.user_id = ?")),
                 () -> assertTrue(sql.contains("card.user_id = ?")),
                 () -> assertTrue(sql.contains("card.deleted_at IS NULL")),
-                () -> assertTrue(sql.contains("source.card_uid IN"))
+                () -> assertTrue(sql.contains("source.card_uid IN")),
+                () -> assertTrue(sql.contains("SUM(COUNT(*)) OVER"))
         );
     }
 

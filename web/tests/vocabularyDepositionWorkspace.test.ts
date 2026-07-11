@@ -24,6 +24,7 @@ test('capture panel exposes template choice and bulk submission states', () => {
 
 test('list renders every persisted status and filters', () => {
   for (const token of ['generating', 'ready', 'needs_review', 'failed', 'sourceType']) assert.match(list, new RegExp(token))
+  for (const token of ['phonetic', 'coreDefinition', 'sourceCount', 'updatedAt', 'recent', 'az']) assert.match(list, new RegExp(token))
 })
 
 test('single card route opens persistent cards and maps legacy words into collection filters', () => {

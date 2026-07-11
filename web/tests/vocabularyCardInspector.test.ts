@@ -38,6 +38,14 @@ test('inspector derives editable and merge fields from the selected template', (
   assert.match(view, /:template="selectedVocabularyTemplate"/)
 })
 
+test('inspector provides a compact catalog-backed regenerate template selector', () => {
+  assert.match(inspector, /templates:\s*VocabularyTemplate\[\]/)
+  assert.match(inspector, /v-model="regenerateTemplateKey"/)
+  assert.match(inspector, /aria-label="重新生成模板"/)
+  assert.match(inspector, /templateKey:\s*regenerateTemplateKey\.value/)
+  assert.match(view, /:templates="templateQuery\.data\.value\?\.items\s*\?\?\s*\[\]"/)
+})
+
 test('inspector restores card content when editing is cancelled', () => {
   assert.match(inspector, /function\s+cancelEditing/)
   assert.match(inspector, /cloneEditableContent\(props\.card\.content\)/)
@@ -49,4 +57,10 @@ test('inspector opens a persisted needs-review conflict without requiring a save
   assert.match(inspector, /card\.candidateRevisionUid/)
   assert.match(inspector, /card\.candidateContent/)
   assert.match(inspector, /currentContent:\s*card\.content/)
+})
+
+test('inspector describes soft deletion and uses a safe source URL guard', () => {
+  assert.match(inspector, /safeExternalUrl\(source\.sourceUrl\)/)
+  assert.match(inspector, /再次收藏或录入时可恢复/)
+  assert.doesNotMatch(inspector, /无法恢复这张单词卡|永久丢失/)
 })

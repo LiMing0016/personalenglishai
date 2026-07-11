@@ -28,7 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -63,6 +65,20 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void rejectsInvalidCaptureEnvelopeBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/api/vocabulary/captures")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("""
+                                {"clientRequestId":" ","terms":[],"language":"en","source":{"type":"assistant"}}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400001"));
+
+        verifyNoInteractions(captureService);
+    }
+
+    @Test
     void exposesTemplateCatalog() throws Exception {
         var catalog = new VocabularyTemplateCatalogResponse(
                 List.of(new VocabularyTemplateResponse("basic", 1, "Basic", List.of("term"))),
@@ -81,7 +97,7 @@ class VocabularyControllerTest {
         var item = new VocabularyCardSummaryResponse(
                 "card_1", "Innovative", "innovative", "basic", "ready", "rev_1",
                 List.of("manual"), now, now);
-        when(cardService.list(7L, "inno", "ready", "manual", 2, 25))
+        when(cardService.list(7L, "inno", "ready", "manual", "az", 2, 25))
                 .thenReturn(new AdminPageResponse<>(List.of(item), 1, 2, 25));
 
         mockMvc.perform(get("/api/vocabulary/cards")
@@ -89,6 +105,7 @@ class VocabularyControllerTest {
                         .param("keyword", "inno")
                         .param("status", "ready")
                         .param("sourceType", "manual")
+                        .param("sort", "az")
                         .param("page", "2")
                         .param("size", "25"))
                 .andExpect(status().isOk())
@@ -96,7 +113,7 @@ class VocabularyControllerTest {
                 .andExpect(jsonPath("$.data.items[0].cardUid").value("card_1"))
                 .andExpect(jsonPath("$.data.items[0].sourceTypes[0]").value("manual"));
 
-        verify(cardService).list(7L, "inno", "ready", "manual", 2, 25);
+        verify(cardService).list(7L, "inno", "ready", "manual", "az", 2, 25);
     }
 
     @Test
@@ -189,7 +206,7 @@ class VocabularyControllerTest {
 
         mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate").requestAttr("userId", 7L))
                 .andExpect(status().isOk());
-        verify(cardService).regenerate(7L, "card_1");
+        verify(cardService).regenerate(eq(7L), eq("card_1"), isNull());
 
         mockMvc.perform(post("/api/vocabulary/cards/card_1/retry").requestAttr("userId", 7L))
                 .andExpect(status().isOk());
@@ -201,6 +218,23 @@ class VocabularyControllerTest {
                         .content("{\"choice\":\"keep_current\"}"))
                 .andExpect(status().isOk());
         verify(cardService).resolveConflict(eq(7L), eq("card_1"), eq("rev_candidate"), any());
+    }
+
+    @Test
+    void regenerateAcceptsValidatedTemplateAndRejectsUnsupportedTemplate() throws Exception {
+        mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"templateKey\":\"exam\"}"))
+                .andExpect(status().isOk());
+        verify(cardService).regenerate(7L, "card_1", "exam");
+
+        mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"templateKey\":\"unsupported\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400001"));
     }
 
     @Test

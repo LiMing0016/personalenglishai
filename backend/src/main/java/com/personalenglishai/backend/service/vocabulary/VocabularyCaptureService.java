@@ -40,7 +40,7 @@ public class VocabularyCaptureService {
         for (int index = 0; index < request.terms().size(); index++) {
             try {
                 items.add(itemService.captureOne(userId, request, index));
-            } catch (RuntimeException exception) {
+            } catch (VocabularyCaptureRejectedException exception) {
                 log.warn(
                         "Vocabulary capture item rejected requestId={} index={} errorType={}",
                         request.clientRequestId(),

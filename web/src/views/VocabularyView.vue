@@ -226,6 +226,7 @@
           v-else-if="detailQuery.data.value && selectedVocabularyTemplate"
           :card="detailQuery.data.value"
           :template="selectedVocabularyTemplate"
+          :templates="templateQuery.data.value?.items ?? []"
           :list-vocabulary-revisions="revisionsQuery.data.value"
           :update-mutation="updateMutation"
           :delete-mutation="deleteMutation"
@@ -381,6 +382,7 @@ const debugMessage = ref('')
 const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
 const vocabularyFilters = ref<VocabularyCardFilters>({
   keyword: legacyVocabularyCardKeyword(),
+  sort: 'recent',
   page: 1,
   size: 20,
 })

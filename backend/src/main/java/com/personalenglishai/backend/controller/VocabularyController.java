@@ -8,6 +8,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
+import com.personalenglishai.backend.dto.vocabulary.RegenerateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyGenerationJobResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
@@ -65,13 +66,14 @@ public class VocabularyController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String sourceType,
+            @RequestParam(defaultValue = "recent") String sort,
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "20") Integer size) {
         if (userId == null) {
             return unauthorized();
         }
         return ResponseEntity.ok(ApiResponse.success(
-                cardService.list(userId, keyword, status, sourceType, page, size)));
+                cardService.list(userId, keyword, status, sourceType, sort, page, size)));
     }
 
     @GetMapping("/cards/{cardUid}")
@@ -109,11 +111,13 @@ public class VocabularyController {
     @PostMapping("/cards/{cardUid}/regenerate")
     public ResponseEntity<ApiResponse<VocabularyGenerationJobResponse>> regenerate(
             @RequestAttribute(value = "userId", required = false) Long userId,
-            @PathVariable String cardUid) {
+            @PathVariable String cardUid,
+            @Valid @RequestBody(required = false) RegenerateVocabularyCardRequest request) {
         if (userId == null) {
             return unauthorized();
         }
-        return ResponseEntity.ok(ApiResponse.success(cardService.regenerate(userId, cardUid)));
+        return ResponseEntity.ok(ApiResponse.success(cardService.regenerate(
+                userId, cardUid, request == null ? null : request.templateKey())));
     }
 
     @PostMapping("/cards/{cardUid}/retry")

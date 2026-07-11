@@ -59,6 +59,7 @@ import {
   type VocabularyTemplateKey,
 } from '@/api/vocabulary'
 import { createClientRequestId, parseCaptureTerms } from '@/features/vocabulary/captureTerms'
+import { isVocabularyCaptureComplete } from '@/features/vocabulary/captureCompletion'
 
 type CaptureMutation = {
   isPending: Ref<boolean>
@@ -121,9 +122,13 @@ async function submitCapture() {
       },
     })
     outcomes.value = response.items
+    emit('captured', response)
+    if (!isVocabularyCaptureComplete(response)) {
+      requestError.value = '部分单词未能沉淀，请修正后重试'
+      return
+    }
     rawTerms.value = ''
     requestId.value = createClientRequestId()
-    emit('captured', response)
   } catch (error) {
     requestError.value = error instanceof Error ? error.message : '录入失败，请重试'
   }

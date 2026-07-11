@@ -32,7 +32,15 @@
           AND deleted_at IS NULL
         <if test="keyword != null and keyword != ''">
             AND (display_term LIKE CONCAT('%', #{keyword}, '%')
-                 OR normalized_term LIKE CONCAT('%', #{keyword}, '%'))
+                 OR normalized_term LIKE CONCAT('%', #{keyword}, '%')
+                 OR original_term LIKE CONCAT('%', #{keyword}, '%')
+                 OR EXISTS (
+                    SELECT 1
+                    FROM vocabulary_card_revision revision
+                    WHERE revision.revision_uid = vocabulary_card.active_revision_uid
+                      AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(revision.content_json, '$.definitions')))
+                          LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                 ))
         </if>
         <if test="status != null and status != ''">
             AND status = #{status}
@@ -126,7 +134,10 @@
         SELECT <include refid="VocabularyCardColumns"/>
         FROM vocabulary_card
         <include refid="UserCardFilters"/>
-        ORDER BY last_captured_at DESC, id DESC
+        <choose>
+            <when test="sort == 'az'">ORDER BY normalized_term ASC, id ASC</when>
+            <otherwise>ORDER BY last_captured_at DESC, id DESC</otherwise>
+        </choose>
         LIMIT #{limit} OFFSET #{offset}
     </select>
 

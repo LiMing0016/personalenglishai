@@ -19,6 +19,7 @@
         <result column="metadata_json" property="metadataJson"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
+        <result column="source_count" property="sourceCount"/>
     </resultMap>
 
     <sql id="VocabularySourceColumns">
@@ -54,7 +55,8 @@
     </select>
 
     <select id="listDistinctSourceTypesByCardUids" resultMap="VocabularySourceResultMap">
-        SELECT DISTINCT source.card_uid, source.user_id, source.source_type
+        SELECT source.card_uid, source.user_id, source.source_type,
+               SUM(COUNT(*)) OVER (PARTITION BY source.card_uid) AS source_count
         FROM vocabulary_card_source source
         INNER JOIN vocabulary_card card
             ON card.card_uid = source.card_uid
@@ -65,6 +67,7 @@
           <foreach collection="cardUids" item="cardUid" open="(" separator="," close=")">
               #{cardUid}
           </foreach>
+        GROUP BY source.card_uid, source.user_id, source.source_type
         ORDER BY source.card_uid, source.source_type
     </select>
 </mapper>

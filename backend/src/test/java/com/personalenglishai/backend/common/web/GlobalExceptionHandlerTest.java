@@ -41,4 +41,16 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @Test
+    void handleIllegalArgument_mapsClientInputToHttp400WithoutCatchingInfrastructureFailures() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var invalidInput = handler.handleIllegalArgument(new IllegalArgumentException("unsupported template"));
+        var infrastructure = handler.handleOther(new IllegalStateException("database unavailable"));
+
+        assertThat(invalidInput.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(invalidInput.getBody().getCode()).isEqualTo(ErrorCode.COMMON_VALIDATION_ERROR.getCode());
+        assertThat(infrastructure.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }

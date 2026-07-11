@@ -6,6 +6,7 @@ import axios from 'axios'
 import { http } from '../src/api/http'
 import {
   deleteVocabularyCard,
+  regenerateVocabularyCard,
   updateVocabularyCard,
   VocabularyConflictError,
   type VocabularyConflictResponse,
@@ -30,7 +31,7 @@ test('keeps every vocabulary API function on its source-contract endpoint', () =
     "put(`/vocabulary/cards/${encodeURIComponent(cardUid)}`",
     'deleteVocabularyCard = (cardUid: string)',
     "delete(`/vocabulary/cards/${encodeURIComponent(cardUid)}`",
-    'regenerateVocabularyCard = (cardUid: string)',
+    'regenerateVocabularyCard = (cardUid: string, payload: RegenerateVocabularyCardRequest)',
     "`/vocabulary/cards/${encodeURIComponent(cardUid)}/regenerate`",
     'retryVocabularyCard = (cardUid: string)',
     "`/vocabulary/cards/${encodeURIComponent(cardUid)}/retry`",
@@ -42,6 +43,26 @@ test('keeps every vocabulary API function on its source-contract endpoint', () =
   ]) {
     assert.ok(vocabularyApiSource.includes(requiredText), `vocabulary API should include ${requiredText}`)
   }
+})
+
+test('regenerate sends the selected template in the request body', async () => {
+  http.defaults.adapter = async (config) => {
+    assert.equal(config.method, 'post')
+    assert.equal(config.url, '/vocabulary/cards/card%20uid/regenerate')
+    assert.deepEqual(JSON.parse(String(config.data)), { templateKey: 'exam' })
+    return {
+      config,
+      data: { code: '200000', data: { jobUid: 'job_1', status: 'pending' } },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    }
+  }
+
+  assert.deepEqual(await regenerateVocabularyCard('card uid', { templateKey: 'exam' }), {
+    jobUid: 'job_1',
+    status: 'pending',
+  })
 })
 
 globalThis.localStorage = {

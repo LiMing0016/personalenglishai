@@ -1,20 +1,25 @@
 package com.personalenglishai.backend.dto.vocabulary;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 
 public record VocabularyCaptureRequest(
-        String clientRequestId,
-        List<String> terms,
-        String language,
-        String templateKey,
-        Source source) {
+        @NotBlank @Size(max = 128) String clientRequestId,
+        @NotEmpty @Size(max = 100) List<@NotBlank @Size(max = 255) String> terms,
+        @Size(max = 16) String language,
+        @Pattern(regexp = "basic|exam|reading") String templateKey,
+        @Valid Source source) {
 
     public record Source(
-            String type,
-            String sourceRef,
-            String sourceTitle,
-            String sourceUrl,
+            @NotBlank @Pattern(regexp = "manual|dictionary") String type,
+            @Size(max = 128) String sourceRef,
+            @Size(max = 255) String sourceTitle,
+            @Size(max = 1024) String sourceUrl,
             String contextText,
             Map<String, Object> metadata) {
     }

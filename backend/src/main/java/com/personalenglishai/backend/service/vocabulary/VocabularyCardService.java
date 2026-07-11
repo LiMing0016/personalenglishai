@@ -86,17 +86,36 @@ public class VocabularyCardService {
             String sourceType,
             Integer page,
             Integer size) {
+        return list(userId, keyword, status, sourceType, "recent", page, size);
+    }
+
+    public AdminPageResponse<VocabularyCardSummaryResponse> list(
+            Long userId,
+            String keyword,
+            String status,
+            String sourceType,
+            String sort,
+            Integer page,
+            Integer size) {
+        if (!"recent".equals(sort) && !"az".equals(sort)) {
+            throw new IllegalArgumentException("unsupported vocabulary sort");
+        }
         int safePage = page == null || page < 1 ? 1 : page;
         int safeSize = size == null ? 20 : Math.max(1, Math.min(size, 50));
         int offset = (safePage - 1) * safeSize;
         List<VocabularyCard> pageItems = cards.listByUser(
-                userId, keyword, status, sourceType, offset, safeSize);
-        Map<String, List<String>> sourceTypesByCardUid = sourceTypesByCardUid(userId, pageItems);
+                userId, keyword, status, sourceType, sort, offset, safeSize);
+        Map<String, SourceSummary> sourcesByCardUid = sourceSummariesByCardUid(userId, pageItems);
         Map<String, VocabularyGenerationJob> latestJobsByCardUid = latestJobsByCardUid(userId, pageItems);
         List<VocabularyCardSummaryResponse> items = pageItems.stream()
-                .map(card -> toSummary(card, sourceTypesByCardUid.getOrDefault(card.getCardUid(), List.of()),
-                        candidateRevision(card, revisions.listRevisions(card.getCardUid())),
-                        latestJobsByCardUid.get(card.getCardUid())))
+                .map(card -> {
+                    List<VocabularyCardRevision> history = revisions.listRevisions(card.getCardUid());
+                    return toSummary(
+                            card,
+                            sourcesByCardUid.getOrDefault(card.getCardUid(), SourceSummary.EMPTY),
+                            history,
+                            latestJobsByCardUid.get(card.getCardUid()));
+                })
                 .toList();
         long total = cards.countByUser(userId, keyword, status, sourceType);
         return new AdminPageResponse<>(items, total, safePage, safeSize);
@@ -170,8 +189,14 @@ public class VocabularyCardService {
 
     @Transactional
     public VocabularyGenerationJobResponse regenerate(Long userId, String cardUid) {
+        return regenerate(userId, cardUid, null);
+    }
+
+    @Transactional
+    public VocabularyGenerationJobResponse regenerate(Long userId, String cardUid, String templateKey) {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
-        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
+        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(
+                templateKey == null || templateKey.isBlank() ? card.getTemplateKey() : templateKey);
         jobs.cancelActiveForCard(cardUid);
         VocabularyGenerationJob job = newGenerationJob(card, template, "regenerate");
         jobs.insertJob(job);
@@ -215,30 +240,34 @@ public class VocabularyCardService {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
         VocabularyCardRevision current = ownedRevision(card, card.getActiveRevisionUid());
         VocabularyCardRevision candidate = ownedRevision(card, revisionUid);
+        VocabularyCardRevision currentCandidate = candidateRevision(card, revisions.listRevisions(cardUid));
         if (!"needs_review".equals(card.getStatus()) || current == null || candidate == null
-                || "ai".equals(candidate.getAuthorType()) == false
+                || currentCandidate == null
+                || !Objects.equals(currentCandidate.getRevisionUid(), candidate.getRevisionUid())
                 || Objects.equals(candidate.getRevisionUid(), current.getRevisionUid())) {
             throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "Vocabulary conflict candidate is invalid");
         }
 
-        switch (request.choice()) {
-            case "keep_current" -> activateResolution(userId, card, current, current);
-            case "use_ai" -> activateResolution(userId, card, current, candidate);
-            case "merge_fields" -> {
-                VocabularyCardRevision merged = mergedRevision(card, current, request.mergeFields());
-                revisions.insertRevision(merged);
-                activateResolution(userId, card, current, merged);
-            }
+        VocabularyCardRevision resolution = switch (request.choice()) {
+            case "keep_current" -> resolutionRevision(
+                    card, current, current, revisionContent(current), "Kept current vocabulary revision");
+            case "use_ai" -> resolutionRevision(
+                    card, current, candidate, revisionContent(candidate), "Accepted vocabulary conflict candidate");
+            case "merge_fields" -> mergedRevision(card, current, request.mergeFields());
             default -> throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "Unsupported vocabulary conflict choice");
-        }
+        };
+        revisions.insertRevision(resolution);
+        activateResolution(userId, card, current, resolution);
         return getDetail(userId, cardUid);
     }
 
     private VocabularyCardSummaryResponse toSummary(
             VocabularyCard card,
-            List<String> sourceTypes,
-            VocabularyCardRevision candidate,
+            SourceSummary sources,
+            List<VocabularyCardRevision> history,
             VocabularyGenerationJob latestJob) {
+        VocabularyCardRevision candidate = candidateRevision(card, history);
+        JsonNode content = activeContent(card, history);
         return new VocabularyCardSummaryResponse(
                 card.getCardUid(),
                 card.getDisplayTerm(),
@@ -246,13 +275,16 @@ public class VocabularyCardService {
                 card.getTemplateKey(),
                 card.getStatus(),
                 card.getActiveRevisionUid(),
-                sourceTypes,
+                sources.types(),
                 card.getLastCapturedAt(),
                 card.getUpdatedAt(),
                 candidate == null ? null : candidate.getRevisionUid(),
                 conflictStatus(card, candidate),
                 latestJob == null ? null : latestJob.getStatus(),
-                latestJob == null ? null : latestJob.getErrorMessage());
+                latestJob == null ? null : latestJob.getErrorMessage(),
+                textField(content, "phonetic"),
+                coreDefinition(content),
+                sources.count());
     }
 
     private Map<String, VocabularyGenerationJob> latestJobsByCardUid(
@@ -271,24 +303,32 @@ public class VocabularyCardService {
         return latestByCardUid;
     }
 
-    private Map<String, List<String>> sourceTypesByCardUid(Long userId, List<VocabularyCard> pageItems) {
+    private Map<String, SourceSummary> sourceSummariesByCardUid(Long userId, List<VocabularyCard> pageItems) {
         if (pageItems.isEmpty()) {
             return Map.of();
         }
         List<String> cardUids = pageItems.stream().map(VocabularyCard::getCardUid).toList();
-        Map<String, List<String>> grouped = new HashMap<>();
+        Map<String, List<String>> typesByCardUid = new HashMap<>();
+        Map<String, Integer> countsByCardUid = new HashMap<>();
         for (VocabularyCardSource source : sources.listDistinctSourceTypesByCardUids(userId, cardUids)) {
             if (!Objects.equals(userId, source.getUserId())
                     || !cardUids.contains(source.getCardUid())
                     || source.getSourceType() == null) {
                 continue;
             }
-            List<String> types = grouped.computeIfAbsent(source.getCardUid(), ignored -> new ArrayList<>());
+            List<String> types = typesByCardUid.computeIfAbsent(source.getCardUid(), ignored -> new ArrayList<>());
             if (!types.contains(source.getSourceType())) {
                 types.add(source.getSourceType());
             }
+            countsByCardUid.merge(
+                    source.getCardUid(),
+                    source.getSourceCount() == null ? 0 : source.getSourceCount(),
+                    Math::max);
         }
-        return grouped;
+        Map<String, SourceSummary> summaries = new HashMap<>();
+        typesByCardUid.forEach((cardUid, types) -> summaries.put(
+                cardUid, new SourceSummary(List.copyOf(types), countsByCardUid.getOrDefault(cardUid, 0))));
+        return summaries;
     }
 
     private List<String> sourceTypes(List<VocabularyCardSource> sourceItems) {
@@ -314,6 +354,38 @@ public class VocabularyCardService {
             return null;
         }
         return revisionContent(revision);
+    }
+
+    private JsonNode activeContent(VocabularyCard card, List<VocabularyCardRevision> history) {
+        if (card.getActiveRevisionUid() == null) {
+            return null;
+        }
+        return history.stream()
+                .filter(revision -> Objects.equals(card.getCardUid(), revision.getCardUid()))
+                .filter(revision -> Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()))
+                .findFirst()
+                .map(this::revisionContent)
+                .orElse(null);
+    }
+
+    private String textField(JsonNode content, String field) {
+        if (content == null || !content.path(field).isTextual()) {
+            return null;
+        }
+        String value = content.path(field).asText().trim();
+        return value.isEmpty() ? null : value;
+    }
+
+    private String coreDefinition(JsonNode content) {
+        if (content == null || !content.path("definitions").isArray()) {
+            return null;
+        }
+        for (JsonNode definition : content.path("definitions")) {
+            if (definition.isTextual() && !definition.asText().isBlank()) {
+                return definition.asText();
+            }
+        }
+        return null;
     }
 
     private VocabularyCardDetailResponse.SourceItem toSourceItem(VocabularyCardSource source) {
@@ -427,16 +499,30 @@ public class VocabularyCardService {
         content.put("term", card.getNormalizedTerm());
         templateRegistry.validate(template.key(), content);
 
-        VocabularyCardRevision merged = new VocabularyCardRevision();
-        merged.setRevisionUid(uid("rev_"));
-        merged.setCardUid(card.getCardUid());
-        merged.setBaseRevisionUid(current.getRevisionUid());
-        merged.setAuthorType("system_merge");
-        merged.setTemplateKey(template.key());
-        merged.setTemplateVersion(template.version());
-        merged.setContentJson(writeJson(content));
-        merged.setChangeSummary("Resolved vocabulary revision conflict");
-        return merged;
+        return resolutionRevision(
+                card, current, current, content, "Merged vocabulary conflict fields");
+    }
+
+    private VocabularyCardRevision resolutionRevision(
+            VocabularyCard card,
+            VocabularyCardRevision current,
+            VocabularyCardRevision contentRevision,
+            JsonNode selectedContent,
+            String changeSummary) {
+        VocabularyTemplateRegistry.TemplateDefinition template =
+                templateRegistry.require(contentRevision.getTemplateKey());
+        ObjectNode content = editableContent(card, selectedContent);
+        templateRegistry.validate(template.key(), content);
+        VocabularyCardRevision resolution = new VocabularyCardRevision();
+        resolution.setRevisionUid(uid("rev_"));
+        resolution.setCardUid(card.getCardUid());
+        resolution.setBaseRevisionUid(current.getRevisionUid());
+        resolution.setAuthorType("system_merge");
+        resolution.setTemplateKey(template.key());
+        resolution.setTemplateVersion(template.version());
+        resolution.setContentJson(writeJson(content));
+        resolution.setChangeSummary(changeSummary);
+        return resolution;
     }
 
     private VocabularyGenerationJob newGenerationJob(
@@ -474,5 +560,9 @@ public class VocabularyCardService {
 
     private String uid(String prefix) {
         return prefix + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record SourceSummary(List<String> types, int count) {
+        private static final SourceSummary EMPTY = new SourceSummary(List.of(), 0);
     }
 }

@@ -61,6 +61,12 @@ public class GlobalExceptionHandler {
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Object>> handleIllegalArgument(IllegalArgumentException e) {
+        log.warn("请求参数无效: {}", e.getMessage());
+        return body(ErrorCode.COMMON_VALIDATION_ERROR.getCode(), e.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(VocabularyRevisionConflictException.class)
     public ResponseEntity<ApiResponse<Object>> handleVocabularyRevisionConflict(
             VocabularyRevisionConflictException e) {

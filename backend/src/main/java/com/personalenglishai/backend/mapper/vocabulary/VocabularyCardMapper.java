@@ -43,6 +43,7 @@ public interface VocabularyCardMapper {
             @Param("keyword") String keyword,
             @Param("status") String status,
             @Param("sourceType") String sourceType,
+            @Param("sort") String sort,
             @Param("offset") int offset,
             @Param("limit") int limit);
 

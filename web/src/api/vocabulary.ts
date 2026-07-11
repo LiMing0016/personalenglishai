@@ -61,6 +61,9 @@ export interface VocabularyCardSummary {
   conflictStatus: VocabularyConflictStatus
   generationStatus: string | null
   generationError: string | null
+  phonetic: string | null
+  coreDefinition: string | null
+  sourceCount: number
 }
 
 export interface VocabularyCardSource {
@@ -89,6 +92,7 @@ export interface VocabularyCardFilters {
   keyword?: string
   status?: VocabularyCardStatus
   sourceType?: string
+  sort?: 'recent' | 'az'
   page?: number
   size?: number
 }
@@ -123,6 +127,10 @@ export interface VocabularyRevisionListResponse {
 export interface VocabularyGenerationJobResponse {
   jobUid: string
   status: string
+}
+
+export interface RegenerateVocabularyCardRequest {
+  templateKey: VocabularyTemplateKey
 }
 
 export interface UpdateVocabularyCardRequest {
@@ -208,9 +216,9 @@ export const updateVocabularyCard = (cardUid: string, payload: UpdateVocabularyC
 export const deleteVocabularyCard = (cardUid: string) =>
   unwrap<void>(http.delete(`/vocabulary/cards/${encodeURIComponent(cardUid)}`), true)
 
-export const regenerateVocabularyCard = (cardUid: string) =>
+export const regenerateVocabularyCard = (cardUid: string, payload: RegenerateVocabularyCardRequest) =>
   unwrap<VocabularyGenerationJobResponse>(
-    http.post(`/vocabulary/cards/${encodeURIComponent(cardUid)}/regenerate`),
+    http.post(`/vocabulary/cards/${encodeURIComponent(cardUid)}/regenerate`, payload),
   )
 
 export const retryVocabularyCard = (cardUid: string) =>
