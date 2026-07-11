@@ -109,6 +109,22 @@ npm run build
 - MySQL 8 或可用的远程 MySQL
 - Redis 7（部分链路需要）
 
+### 单词沉淀数据库
+
+新建本地数据库后，先执行单词卡初始迁移：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
+```
+
+若本地库已执行过初始迁移但缺少生成任务租约字段，再执行：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
+```
+
+启动后端时保持 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`（对应 `vocabulary.generation.scheduler.enabled`），以处理单词卡生成任务。
+
 ### Docker 本地启动
 
 如果只是想在新电脑快速跑起完整项目，优先使用 Docker：

@@ -474,3 +474,7 @@ CREATE TABLE IF NOT EXISTS user_dictionary_word_state (
 - README 或本地启动文档是否需要补充 Oxford 本地配置说明。
 - 当前改动是否只包含词典需求相关文件。
 - 后端测试和前端构建是否通过。
+
+## 单词沉淀边界
+
+词典内容、用户词典状态与单词卡已拆分为独立资产。单词卡的数据库迁移、生成任务租约、捕获/编辑冲突契约和工作区路由见[单词沉淀架构](./vocabulary-deposition.md)。
