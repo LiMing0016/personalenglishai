@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Added the persistent card detail route `vocabulary/card/:cardUid` (`vocabulary-card`) while retaining the legacy `vocabulary/cards/:word` route.
+- Unified persistent card details and legacy word links on `vocabulary/cards/:cardUid` (`vocabulary-card`); `card_` values open the Inspector while legacy words open the collection keyword view.
 - Added structured card inspector editing, sources/history tabs, generation retry/regenerate, deletion confirmation, and conflict resolution UI.
 - Added query mutations for update, delete, regenerate, retry, and conflict resolution. Successful mutations invalidate list, detail, and revisions queries.
 - Added Playwright base URL compatibility so this worktree can be verified without reusing another worktree's Vite server.
