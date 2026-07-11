@@ -125,6 +125,12 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_voc
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
+已部署单词沉淀表的环境还必须执行精确身份迁移，使重音不同的规范词形不会被 MySQL 合并：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocabulary_identity_exact.sql
+```
+
 租约迁移成功执行后不得重复执行。
 
 启动后端时保持 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`（对应 `vocabulary.generation.scheduler.enabled`），以处理单词卡生成任务。

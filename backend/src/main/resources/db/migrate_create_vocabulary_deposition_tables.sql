@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS vocabulary_card (
     user_id BIGINT NOT NULL,
     language VARCHAR(16) NOT NULL DEFAULT 'en',
     original_term VARCHAR(255) NOT NULL,
-    normalized_term VARCHAR(255) NOT NULL,
+    normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     display_term VARCHAR(255) NOT NULL,
     template_key VARCHAR(32) NOT NULL,
     template_version INT NOT NULL,

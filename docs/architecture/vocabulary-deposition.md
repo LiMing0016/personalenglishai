@@ -42,6 +42,12 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_voc
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
+已有表随后执行精确身份迁移，将 `normalized_term` 改为 `utf8mb4_bin`。该列仍保存应用层规范化结果，但 MySQL 唯一键会区分重音不同的词形：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocabulary_identity_exact.sql
+```
+
 初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引。新库只执行初始迁移，不得再执行租约迁移；租约迁移只用于历史旧表，成功执行后不得重复执行。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
 
 ## 生成任务与调度器

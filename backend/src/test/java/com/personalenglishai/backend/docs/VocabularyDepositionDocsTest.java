@@ -17,6 +17,7 @@ class VocabularyDepositionDocsTest {
         assertAll(
                 () -> assertTrue(docs.contains("migrate_create_vocabulary_deposition_tables.sql")),
                 () -> assertTrue(docs.contains("migrate_add_vocabulary_generation_job_leases.sql")),
+                () -> assertTrue(docs.contains("migrate_make_vocabulary_identity_exact.sql")),
                 () -> assertTrue(docs.contains("当前阶段仅支持 `manual` 和 `dictionary`")),
                 () -> assertTrue(docs.contains("PDF、AI 对话、笔记和错题尚未接入")),
                 () -> assertTrue(docs.contains("初始迁移已包含")),

@@ -28,6 +28,25 @@ class VocabularyDepositionSchemaTest {
     }
 
     @Test
+    void vocabularyIdentityUsesAccentSensitiveMysqlCollationAndHasAnUpgradeMigration() throws Exception {
+        String schema = Files.readString(Path.of("src/main/resources/db/schema.sql"));
+        String initialMigration = Files.readString(Path.of(
+                "src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql"));
+        String upgradeMigration = Files.readString(Path.of(
+                "src/main/resources/db/migrate_make_vocabulary_identity_exact.sql"));
+
+        for (String sql : new String[]{schema, initialMigration}) {
+            assertTrue(sql.contains(
+                    "normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL"));
+        }
+        assertAll(
+                () -> assertTrue(upgradeMigration.contains("ALTER TABLE vocabulary_card")),
+                () -> assertTrue(upgradeMigration.contains(
+                        "MODIFY normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL"))
+        );
+    }
+
+    @Test
     void leaseUpgradeMigrationAddsFieldsAndRecoveryIndexForExistingVocabularyJobs() throws Exception {
         String migration = Files.readString(Path.of(
                 "src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql"));
