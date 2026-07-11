@@ -1,3 +1,16 @@
+---
+title: Oxford 词典集成
+status: active
+owner: backend
+last_updated: 2026-07-11
+review_cycle: on-change
+related_code:
+  - backend/src/main/java/com/personalenglishai/backend/service/dictionary/
+  - web/src/api/dictionary.ts
+related_docs:
+  - docs/architecture/vocabulary-deposition.md
+---
+
 # 单词模块第一版设计方案：Oxford Dictionaries API 接入
 
 ## 目标

@@ -1,3 +1,17 @@
+---
+title: 单词沉淀架构
+status: active
+owner: backend
+last_updated: 2026-07-11
+review_cycle: on-change
+related_code:
+  - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/
+  - backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
+  - web/src/views/VocabularyView.vue
+related_docs:
+  - docs/architecture/dictionary-oxford.md
+---
+
 # 单词沉淀架构
 
 ## 当前阶段范围
@@ -28,7 +42,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_voc
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
-初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引。新库只执行初始迁移，不得再执行租约迁移；租约迁移只用于历史旧表。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
+初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引。新库只执行初始迁移，不得再执行租约迁移；租约迁移只用于历史旧表，成功执行后不得重复执行。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
 
 ## 生成任务与调度器
 

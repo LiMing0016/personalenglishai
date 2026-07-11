@@ -30,6 +30,7 @@ Personal English AI 是一个全栈英语学习应用：
 - [鉴权](./auth.md)
 - [助手会话管理](./assistant-conversation-management.md)
 - [Oxford 词典集成](./dictionary-oxford.md)
+- [单词沉淀架构](./vocabulary-deposition.md)
 - [学习材料高质量解析总方案](./学习材料高质量解析总方案.md)
 - [文档知识提取管线设计](./文档知识提取管线设计.md)
 - [仓库结构规范](./repository-structure.md)

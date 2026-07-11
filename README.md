@@ -125,6 +125,8 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_voc
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
+租约迁移成功执行后不得重复执行。
+
 启动后端时保持 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`（对应 `vocabulary.generation.scheduler.enabled`），以处理单词卡生成任务。
 
 ### Docker 本地启动
