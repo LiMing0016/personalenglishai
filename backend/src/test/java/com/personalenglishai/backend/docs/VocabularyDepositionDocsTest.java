@@ -34,6 +34,13 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("keep_current")),
                 () -> assertTrue(docs.contains("use_ai")),
                 () -> assertTrue(docs.contains("merge_fields")),
+                () -> assertTrue(docs.contains("system_merge")),
+                () -> assertTrue(docs.contains("templateKey")),
+                () -> assertTrue(docs.contains("`sort=recent`")),
+                () -> assertTrue(docs.contains("`sort=az`")),
+                () -> assertTrue(docs.contains("active revision 的 `definitions`")),
+                () -> assertTrue(docs.contains("数据库和基础设施异常必须向上抛出")),
+                () -> assertTrue(docs.contains("同一条 MySQL 多表更新")),
                 () -> assertFalse(docs.contains("PaddleOCR")));
     }
 }

@@ -54,6 +54,8 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocab
 
 后端的 `VocabularyGenerationScheduler` 在每轮开始时处理过期的 `running` 租约，再领取 `pending` 任务。正常任务会按 `pending`、`running`、`succeeded` 或可重试/终态 `failed` 流转；租约令牌用于隔离过期工作者的迟到写入。
 
+达到最大尝试次数的过期租约使用同一条 MySQL 多表更新：job 原子进入 `failed`，同时将没有 active revision 且仍为 `generating` 的 card 置为 `failed`。已有 active revision 的卡片保留可用内容，最新 job 状态单独暴露给列表和详情轮询。
+
 默认配置在 `backend/src/main/resources/application.yml`：
 
 ```yaml
@@ -74,17 +76,39 @@ vocabulary:
 
 `POST /api/vocabulary/captures` 接收用户捕获。调用方为同一次重试复用同一个 `clientRequestId`，以保证幂等；新请求会按规范化词形定位已有卡片，并把新来源写入 `vocabulary_card_source`。同一词形不会生成第二张卡，响应动作为 `source_merged`。
 
+批量捕获只把已识别的逐词校验拒绝转换成 item `rejected`。数据库和基础设施异常必须向上抛出，由请求返回 5xx；前端在 HTTP 失败或响应包含 `rejected` 时保留输入草稿和原 `clientRequestId`，供用户修正后重试。
+
 词典详情中的收藏仍先写入 `user_dictionary_word_state`。收藏会额外以 `dictionary` 来源捕获到卡片；取消收藏只更新词典收藏状态，不删除已经存在的单词卡。对已软删除的同一词再次捕获会恢复原卡片和原 `cardUid`，而不是创建新卡。
 
 ### 编辑与冲突
 
 编辑使用 `PUT /api/vocabulary/cards/{cardUid}`，请求必须携带当前 `baseRevisionUid`。成功编辑会创建新的用户版本并推进活跃版本；过期的 `baseRevisionUid` 返回版本冲突错误码 `409030`。
 
-生成候选与当前用户版本发生冲突时，使用 `POST /api/vocabulary/cards/{cardUid}/conflicts/{revisionUid}/resolve` 解决。支持 `keep_current`、`use_ai` 和 `merge_fields` 三种选择；字段合并只提交调用方明确选择的字段来源。
+过期用户编辑仍是 append-only candidate revision。事务内先写 revision、尝试 guarded activation 并标记冲突候选；该事务正常提交后，外层再读取最新 card/revisions 构造 `409030`，因此构造冲突响应不会回滚用户候选版本。
+
+生成候选或过期用户编辑与当前版本发生冲突时，使用 `POST /api/vocabulary/cards/{cardUid}/conflicts/{revisionUid}/resolve` 解决。只接受 revisions history 推导出的当前候选。`keep_current`、`use_ai` 和 `merge_fields` 都会追加新的 `system_merge` revision，再以当前 active revision 做 guard 激活；`term` 始终由 card 的规范词形覆盖，不能通过候选内容或合并字段修改。
+
+### 重新生成
+
+`POST /api/vocabulary/cards/{cardUid}/regenerate` 接受可选 JSON body：
+
+```json
+{
+  "templateKey": "exam"
+}
+```
+
+`templateKey` 只允许 `basic`、`exam` 或 `reading`，选中的 template key/version 固化到 generation job。为兼容旧客户端，无 body 时继续使用卡片当前模板。非法客户端输入统一返回稳定的 HTTP 400/`400001`；数据库、存储 JSON 和其他基础设施错误不得映射为 400。
+
+### 列表查询
+
+`GET /api/vocabulary/cards` 保留 `keyword`、`status`、`sourceType`、`page` 和 `size`，并支持 `sort`：`sort=recent` 按最近沉淀排序，`sort=az` 按规范词形 A-Z 排序。搜索范围包括 display/normalized/original term 和 active revision 的 `definitions`。
+
+列表 summary 返回 `phonetic`、`coreDefinition`、`sourceCount`、`updatedAt`、`generationStatus` 和 `generationError`。来源类型与数量、最新 generation job 都按当前页批量加载。
 
 ## 前端路由
 
-词典和卡片工作台入口是 `/app/vocabulary`，卡片详情工作区路由为 `/app/vocabulary/cards/:cardUid`。卡片列表可按来源类型筛选，详情显示来源、最新任务状态、活跃版本和候选冲突状态。
+词典和卡片工作台入口是 `/app/vocabulary`，卡片详情工作区路由为 `/app/vocabulary/cards/:cardUid`。卡片列表可按来源类型筛选并切换最近/A-Z 排序，详情显示来源、最新任务状态、活跃版本和候选冲突状态。列表与详情仅在最新 job 为 `pending`/`running`（或兼容旧 `generating` 状态）时轮询，终态后停止。Inspector 只为合法 `http`/`https` 来源渲染外链；删除是软删除，再次收藏或录入可恢复。
 
 ## 验证
 
