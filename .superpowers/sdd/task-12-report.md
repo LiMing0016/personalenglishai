@@ -90,3 +90,41 @@ $env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:3001'; npx playwright test tests/voca
 - `web/test-results/vocabulary-deposition-mobile.png`: 390x844, nav labels remain single-line in a horizontally scrollable nav region; no page overflow, error toast, or control overlap.
 
 No backend or Task 10 API files changed. This focused frontend fix is suitable for merge to `main` after normal review.
+
+## Route Specification Fix Addendum (2026-07-11)
+
+### RED
+
+- Updated the Task 11 workspace regression before changing production code.
+- On baseline `aef81f5`, `node --test tests/vocabularyDepositionWorkspace.test.ts` failed because the router did not contain `vocabulary/cards/:cardUid`; it still exposed the singular `vocabulary/card/:cardUid` route and separate word route.
+
+### Implementation
+
+- Consolidated detail navigation on the sole `vocabulary/cards/:cardUid` route named `vocabulary-card`; removed `vocabulary/card/:cardUid` and `VocabularyWordCard`.
+- `cardUid` values beginning with `card_` select the persistent card Inspector. Other values are treated as legacy word links, open the collection, set its keyword filter, and leave `selectedCardUid` null so card-detail requests are not issued.
+- Updated all card navigation and Chromium flow URLs to the canonical plural route.
+- Added a browser regression that visits `/app/vocabulary/cards/innovative`, asserts the collection workspace, and verifies no `GET /cards/innovative` detail request occurs.
+
+### Verification
+
+```powershell
+cd web
+npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyCardInspector.test.ts
+# 13 passed, 0 failed
+
+npm run build
+# passed: vue-tsc && vite build
+
+$env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:3001'; npx playwright test tests/vocabularyDepositionFlow.spec.ts --project=chromium --no-deps
+# 7 passed, 0 failed
+
+git diff --check
+# passed
+```
+
+### Screenshot Review
+
+- Regenerated `web/test-results/vocabulary-deposition-desktop.png` and `web/test-results/vocabulary-deposition-mobile.png` because the page URL changed.
+- The Chromium flow asserts no error toast, console error, `pageerror`, or document overflow; screenshot review confirmed the desktop and mobile Inspector layouts remain coherent.
+
+No backend, API, or public product documentation changes are required. This focused route correction is suitable for merge to `main` after normal review.

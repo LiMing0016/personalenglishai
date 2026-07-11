@@ -6,6 +6,11 @@ const pageSource = readFileSync(
   'utf8',
 )
 
+const routerSource = readFileSync(
+  new URL('../src/router/index.ts', import.meta.url),
+  'utf8',
+)
+
 for (const requiredText of [
   '词启',
   'Vocabulary',
@@ -164,8 +169,13 @@ assert.ok(
 )
 
 assert.ok(
-  pageSource.includes('VocabularyWordCard'),
+  pageSource.includes("route.name === 'vocabulary-card'"),
   'vocabulary word-card organizing workspace should be route addressable',
+)
+
+assert.ok(
+  routerSource.includes("path: 'vocabulary/cards/:cardUid'") && routerSource.includes("name: 'vocabulary-card'"),
+  'vocabulary card detail should use the canonical route',
 )
 
 assert.ok(

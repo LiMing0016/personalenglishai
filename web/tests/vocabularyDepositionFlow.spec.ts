@@ -144,6 +144,19 @@ async function expectCleanRuntime(page: Page, errors: string[]) {
   expect(errors).toEqual([])
 }
 
+test('legacy word URL stays in collection and does not fetch a card detail', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const { requests } = await installApiMocks(page, [makeCard()])
+
+  await page.goto('/app/vocabulary/cards/innovative')
+  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/innovative$/)
+  await expect(page.getByRole('heading', { name: '单词卡中心' })).toBeVisible()
+  await expect(page.getByText('选择一张单词卡查看详情')).toBeVisible()
+  await expect.poll(() => requests.filter((request) => request.method === 'GET' && request.path.endsWith('/cards')).length).toBe(1)
+  expect(requests.filter((request) => request.method === 'GET' && request.path.endsWith('/cards/innovative'))).toEqual([])
+  await expectCleanRuntime(page, errors)
+})
+
 for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
   test(`persisted needs-review card resolves ${choice} immediately`, async ({ page }) => {
     const errors = collectRuntimeErrors(page)
@@ -157,7 +170,7 @@ for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
     })
     const { requests } = await installApiMocks(page, [reviewCard])
 
-    await page.goto(`/app/vocabulary/card/${reviewCard.cardUid}`)
+    await page.goto(`/app/vocabulary/cards/${reviewCard.cardUid}`)
     await expect.poll(() => requests.filter((request) => request.path.endsWith('/templates')).length).toBe(1)
     expect(errors).toEqual([])
     await expect(page.getByRole('dialog', { name: '发现版本冲突' })).toBeVisible()
@@ -194,7 +207,7 @@ test('card commands, source/history tabs, cancel reset, and delete confirmation 
   const errors = collectRuntimeErrors(page)
   const failedCard = makeCard({ cardUid: 'card_failed', status: 'failed', generationStatus: 'failed', generationError: 'temporary generation failure' })
   const { requests } = await installApiMocks(page, [failedCard])
-  await page.goto('/app/vocabulary/card/card_failed')
+  await page.goto('/app/vocabulary/cards/card_failed')
 
   await page.getByRole('button', { name: '编辑卡片' }).click()
   await page.getByLabel('个人笔记').fill('Unsaved note')
@@ -232,7 +245,7 @@ for (const { name, viewport } of [
     await page.setViewportSize(viewport)
     const errors = collectRuntimeErrors(page)
     await installApiMocks(page, [makeCard()])
-    await page.goto('/app/vocabulary/card/card_ready')
+    await page.goto('/app/vocabulary/cards/card_ready')
     await expect(page.getByRole('heading', { name: 'innovative' })).toBeVisible()
 
     const navButtons = page.locator('.vocabulary-nav button')

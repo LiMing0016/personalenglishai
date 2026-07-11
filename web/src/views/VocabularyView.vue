@@ -349,31 +349,27 @@ const route = useRoute()
 const router = useRouter()
 const vocabularyViewKeys: VocabularyViewKey[] = ['search', 'modes', 'collection', 'stats']
 
-function isVocabularyWordCardRoute() {
-  return route.name === 'VocabularyWordCard'
-}
-
-function isVocabularyPersistentCardRoute() {
+function isVocabularyCardRoute() {
   return route.name === 'vocabulary-card'
 }
 
-function persistentVocabularyCardUid() {
+function vocabularyCardRouteParam() {
   const cardUid = Array.isArray(route.params.cardUid) ? route.params.cardUid[0] : route.params.cardUid
-  return typeof cardUid === 'string' && cardUid.trim() ? cardUid : null
+  return typeof cardUid === 'string' ? cardUid.trim() || null : null
+}
+
+function persistentVocabularyCardUid() {
+  const cardUid = vocabularyCardRouteParam()
+  return cardUid && cardUid.startsWith('card_') ? cardUid : null
 }
 
 function legacyVocabularyCardKeyword() {
-  const word = Array.isArray(route.params.word) ? route.params.word[0] : route.params.word
-  return typeof word === 'string' ? word.trim() || undefined : undefined
+  return persistentVocabularyCardUid() ? undefined : vocabularyCardRouteParam() ?? undefined
 }
 
 const cachedLookup = readCachedLookup()
 const activeView = ref<VocabularyViewKey>(
-  isVocabularyWordCardRoute()
-    ? 'collection'
-    : isVocabularyPersistentCardRoute()
-      ? 'collection'
-      : parseVocabularyView(route.query.tab) ?? 'search',
+  isVocabularyCardRoute() ? 'collection' : parseVocabularyView(route.query.tab) ?? 'search',
 )
 const selectedWordId = ref('')
 const query = ref(cachedLookup?.word ?? '')
@@ -1081,7 +1077,7 @@ function switchVocabularyView(view: VocabularyViewKey) {
 function updateVocabularyFilters(filters: VocabularyCardFilters) {
   vocabularyFilters.value = filters
   selectedCardUid.value = null
-  if (isVocabularyPersistentCardRoute()) void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
+  if (isVocabularyCardRoute()) void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
 }
 
 function handleVocabularyCaptured(response: VocabularyCaptureResponse) {
@@ -1098,8 +1094,13 @@ function returnToVocabularyCollection() {
 }
 
 function syncVocabularyRoute() {
-  if (isVocabularyWordCardRoute()) {
+  if (isVocabularyCardRoute()) {
     activeView.value = 'collection'
+    const cardUid = persistentVocabularyCardUid()
+    if (cardUid) {
+      selectedCardUid.value = cardUid
+      return
+    }
     vocabularyFilters.value = {
       ...vocabularyFilters.value,
       keyword: legacyVocabularyCardKeyword(),
@@ -1109,18 +1110,11 @@ function syncVocabularyRoute() {
     return
   }
 
-  if (isVocabularyPersistentCardRoute()) {
-    activeView.value = 'collection'
-    selectedCardUid.value = persistentVocabularyCardUid()
-    return
-  }
-
   activeView.value = parseVocabularyView(route.query.tab) ?? 'search'
   selectedCardUid.value = null
 }
 
-watch(() => [route.name, route.params.word, route.query.tab], syncVocabularyRoute)
-watch(() => route.params.cardUid, syncVocabularyRoute)
+watch(() => [route.name, route.params.cardUid, route.query.tab], syncVocabularyRoute)
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)
