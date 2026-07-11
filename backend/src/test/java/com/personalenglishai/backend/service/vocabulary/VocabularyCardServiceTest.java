@@ -150,11 +150,14 @@ class VocabularyCardServiceTest {
         VocabularyCardSource secondManual = VocabularyTestFixtures.manualSource(null);
         secondManual.setSourceUid("src_3");
         secondManual.setCardUid("card_2");
+        VocabularyGenerationJob running = VocabularyTestFixtures.pendingJob("job_1", "card_1", "rev_1", 1);
+        running.setStatus("running");
         when(cards.listByUser(7L, null, "ready", null, 0, 50))
                 .thenReturn(List.of(firstCard, secondCard));
         when(cards.countByUser(7L, null, "ready", null)).thenReturn(2L);
         when(sources.listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2")))
                 .thenReturn(List.of(manual, dictionary, secondManual));
+        when(jobs.listLatestByCardUids(7L, List.of("card_1", "card_2"))).thenReturn(List.of(running));
 
         var result = service.list(7L, null, "ready", null, 0, 99);
 
@@ -163,7 +166,10 @@ class VocabularyCardServiceTest {
         assertEquals(2, result.getTotal());
         assertEquals(List.of("manual", "dictionary"), result.getItems().get(0).sourceTypes());
         assertEquals(List.of("manual"), result.getItems().get(1).sourceTypes());
+        assertEquals("running", result.getItems().get(0).generationStatus());
+        assertNull(result.getItems().get(1).generationStatus());
         verify(sources).listDistinctSourceTypesByCardUids(7L, List.of("card_1", "card_2"));
+        verify(jobs).listLatestByCardUids(7L, List.of("card_1", "card_2"));
         verify(sources, never()).listSources(anyString());
     }
 

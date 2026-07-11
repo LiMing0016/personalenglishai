@@ -15,6 +15,10 @@ public interface VocabularyGenerationJobMapper {
 
     VocabularyGenerationJob findLatestByCard(@Param("cardUid") String cardUid);
 
+    List<VocabularyGenerationJob> listLatestByCardUids(
+            @Param("userId") Long userId,
+            @Param("cardUids") List<String> cardUids);
+
     int markRunning(
             @Param("jobUid") String jobUid,
             @Param("leaseToken") String leaseToken,

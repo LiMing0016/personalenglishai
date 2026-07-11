@@ -92,9 +92,11 @@ public class VocabularyCardService {
         List<VocabularyCard> pageItems = cards.listByUser(
                 userId, keyword, status, sourceType, offset, safeSize);
         Map<String, List<String>> sourceTypesByCardUid = sourceTypesByCardUid(userId, pageItems);
+        Map<String, VocabularyGenerationJob> latestJobsByCardUid = latestJobsByCardUid(userId, pageItems);
         List<VocabularyCardSummaryResponse> items = pageItems.stream()
                 .map(card -> toSummary(card, sourceTypesByCardUid.getOrDefault(card.getCardUid(), List.of()),
-                        candidateRevision(card, revisions.listRevisions(card.getCardUid()))))
+                        candidateRevision(card, revisions.listRevisions(card.getCardUid())),
+                        latestJobsByCardUid.get(card.getCardUid())))
                 .toList();
         long total = cards.countByUser(userId, keyword, status, sourceType);
         return new AdminPageResponse<>(items, total, safePage, safeSize);
@@ -235,7 +237,8 @@ public class VocabularyCardService {
     private VocabularyCardSummaryResponse toSummary(
             VocabularyCard card,
             List<String> sourceTypes,
-            VocabularyCardRevision candidate) {
+            VocabularyCardRevision candidate,
+            VocabularyGenerationJob latestJob) {
         return new VocabularyCardSummaryResponse(
                 card.getCardUid(),
                 card.getDisplayTerm(),
@@ -247,7 +250,25 @@ public class VocabularyCardService {
                 card.getLastCapturedAt(),
                 card.getUpdatedAt(),
                 candidate == null ? null : candidate.getRevisionUid(),
-                conflictStatus(card, candidate));
+                conflictStatus(card, candidate),
+                latestJob == null ? null : latestJob.getStatus(),
+                latestJob == null ? null : latestJob.getErrorMessage());
+    }
+
+    private Map<String, VocabularyGenerationJob> latestJobsByCardUid(
+            Long userId,
+            List<VocabularyCard> pageItems) {
+        if (pageItems.isEmpty()) {
+            return Map.of();
+        }
+        List<String> cardUids = pageItems.stream().map(VocabularyCard::getCardUid).toList();
+        Map<String, VocabularyGenerationJob> latestByCardUid = new HashMap<>();
+        for (VocabularyGenerationJob job : jobs.listLatestByCardUids(userId, cardUids)) {
+            if (job != null && cardUids.contains(job.getCardUid())) {
+                latestByCardUid.put(job.getCardUid(), job);
+            }
+        }
+        return latestByCardUid;
     }
 
     private Map<String, List<String>> sourceTypesByCardUid(Long userId, List<VocabularyCard> pageItems) {

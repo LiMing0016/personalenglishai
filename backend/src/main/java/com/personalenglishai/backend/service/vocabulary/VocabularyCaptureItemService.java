@@ -78,6 +78,9 @@ public class VocabularyCaptureItemService {
         VocabularyCardSource existingSource = sources.findSourceByIdempotencyKey(userId, idempotencyKey);
         if (existingSource != null) {
             VocabularyCard existingCard = cards.findByUidIncludingDeleted(existingSource.getCardUid());
+            if (existingCard != null && existingCard.getDeletedAt() != null) {
+                return restoreIdempotentCard(userId, rawTerm, existingSource, existingCard);
+            }
             String status = existingCard == null ? "captured" : existingCard.getStatus();
             return new VocabularyCaptureResponse.Item(
                     rawTerm, existingSource.getCardUid(), "source_merged", status);
@@ -156,6 +159,33 @@ public class VocabularyCaptureItemService {
 
         String action = reviewRequired ? "needs_review" : created ? "created" : "source_merged";
         return new VocabularyCaptureResponse.Item(rawTerm, card.getCardUid(), action, status);
+    }
+
+    private VocabularyCaptureResponse.Item restoreIdempotentCard(
+            Long userId,
+            String rawTerm,
+            VocabularyCardSource source,
+            VocabularyCard card) {
+        String normalizedTerm = termNormalizer.normalize(rawTerm);
+        boolean reviewRequired = termNormalizer.isReviewRequired(rawTerm, normalizedTerm);
+        LocalDateTime capturedAt = LocalDateTime.now();
+        String status = restoredStatus(card, reviewRequired);
+        int restored = cards.restoreAndTouch(
+                userId, card.getCardUid(), normalizedTerm, status, capturedAt);
+        if (restored == 1 && !reviewRequired && card.getActiveRevisionUid() == null) {
+            VocabularyTemplateRegistry.TemplateDefinition fallback = templateRegistry.require(null);
+            jobs.insertJob(newJob(
+                    card, source, cardTemplate(card, fallback), capturedAt,
+                    source.getIdempotencyKey(), 0));
+        } else if (restored != 1) {
+            VocabularyCard current = cards.findByUidIncludingDeleted(card.getCardUid());
+            if (current == null || current.getDeletedAt() != null) {
+                throw new IllegalStateException("concurrent idempotent card restoration could not be resolved");
+            }
+            status = current.getStatus();
+        }
+        return new VocabularyCaptureResponse.Item(
+                rawTerm, card.getCardUid(), "source_merged", status);
     }
 
     private VocabularyTemplateRegistry.TemplateDefinition resolveTemplate(Long userId, String requestedTemplate) {

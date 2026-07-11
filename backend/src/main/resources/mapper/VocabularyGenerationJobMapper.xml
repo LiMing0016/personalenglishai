@@ -63,6 +63,29 @@
         LIMIT 1
     </select>
 
+    <select id="listLatestByCardUids" resultMap="VocabularyGenerationJobResultMap">
+        SELECT job.id, job.job_uid, job.card_uid, job.base_revision_uid, job.template_key,
+               job.template_version, job.status, job.attempt_count, job.request_json,
+               job.result_revision_uid, job.error_code, job.error_message, job.available_at,
+               job.started_at, job.lease_token, job.lease_expires_at, job.finished_at,
+               job.created_at, job.updated_at
+        FROM vocabulary_generation_job job
+        INNER JOIN (
+            SELECT candidate.card_uid, MAX(candidate.id) AS latest_id
+            FROM vocabulary_generation_job candidate
+            INNER JOIN vocabulary_card card
+                ON card.card_uid = candidate.card_uid
+               AND card.user_id = #{userId}
+               AND card.deleted_at IS NULL
+            WHERE candidate.card_uid IN
+            <foreach collection="cardUids" item="cardUid" open="(" separator="," close=")">
+                #{cardUid}
+            </foreach>
+            GROUP BY candidate.card_uid
+        ) latest ON latest.latest_id = job.id
+        ORDER BY job.card_uid
+    </select>
+
     <update id="markRunning">
         UPDATE vocabulary_generation_job
         SET status = 'running',
@@ -185,17 +208,24 @@
     </update>
 
     <update id="failStaleRunning">
-        UPDATE vocabulary_generation_job
-        SET status = 'failed',
-            error_code = 'LEASE_EXPIRED',
-            error_message = 'Generation lease expired after maximum attempts',
-            finished_at = CURRENT_TIMESTAMP,
-            lease_token = NULL,
-            lease_expires_at = NULL,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE status = 'running'
-          AND lease_expires_at IS NOT NULL
-          AND lease_expires_at &lt;= CURRENT_TIMESTAMP
-          AND attempt_count &gt;= 3
+        UPDATE vocabulary_generation_job job
+        INNER JOIN vocabulary_card card ON card.card_uid = job.card_uid
+        SET job.status = 'failed',
+            job.error_code = 'LEASE_EXPIRED',
+            job.error_message = 'Generation lease expired after maximum attempts',
+            job.finished_at = CURRENT_TIMESTAMP,
+            job.lease_token = NULL,
+            job.lease_expires_at = NULL,
+            job.updated_at = CURRENT_TIMESTAMP,
+            card.updated_at = CASE
+                WHEN card.active_revision_uid IS NULL AND card.status = 'generating'
+                    THEN CURRENT_TIMESTAMP ELSE card.updated_at END,
+            card.status = CASE
+                WHEN card.active_revision_uid IS NULL AND card.status = 'generating'
+                    THEN 'failed' ELSE card.status END
+        WHERE job.status = 'running'
+          AND job.lease_expires_at IS NOT NULL
+          AND job.lease_expires_at &lt;= CURRENT_TIMESTAMP
+          AND job.attempt_count &gt;= 3
     </update>
 </mapper>

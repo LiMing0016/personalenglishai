@@ -59,6 +59,8 @@ export interface VocabularyCardSummary {
   updatedAt: string | null
   candidateRevisionUid: string | null
   conflictStatus: VocabularyConflictStatus
+  generationStatus: string | null
+  generationError: string | null
 }
 
 export interface VocabularyCardSource {
@@ -79,8 +81,6 @@ export interface VocabularyCardDetail extends VocabularyCardSummary {
   templateVersion: number | null
   content: unknown
   sources: VocabularyCardSource[]
-  generationStatus: string | null
-  generationError: string | null
   createdAt: string | null
   candidateContent: unknown
 }

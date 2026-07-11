@@ -123,6 +123,8 @@ class VocabularyCaptureItemServiceTest {
     void retryingTheSameRequestDoesNotInsertAnotherSourceOrJob() {
         when(sources.findSourceByIdempotencyKey(7L, "req-4:0"))
                 .thenReturn(VocabularyTestFixtures.manualSource(null));
+        when(cards.findByUidIncludingDeleted("card_1"))
+                .thenReturn(VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user"));
 
         var result = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-4", List.of("innovative"), "en", "basic"), 0);
@@ -131,6 +133,36 @@ class VocabularyCaptureItemServiceTest {
         assertEquals("card_1", result.cardUid());
         verify(sources, never()).insertSource(any());
         verify(cards, never()).insert(any());
+        verifyNoInteractions(jobs);
+    }
+
+    @Test
+    void repeatedDictionaryFavoriteRestoresSoftDeletedCardDespiteExistingIdempotencyKey() {
+        VocabularyCardSource dictionarySource = VocabularyTestFixtures.manualSource(null);
+        dictionarySource.setSourceType("dictionary");
+        VocabularyCard deleted = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user");
+        deleted.setDeletedAt(LocalDateTime.now());
+        when(sources.findSourceByIdempotencyKey(7L, "dictionary-favorite:0"))
+                .thenReturn(dictionarySource);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(deleted);
+        when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("ready"), any()))
+                .thenReturn(1);
+
+        var result = service.captureOne(7L,
+                new VocabularyCaptureRequest(
+                        "dictionary-favorite",
+                        List.of("innovative"),
+                        "en",
+                        null,
+                        new VocabularyCaptureRequest.Source(
+                                "dictionary", "dictionary:innovative", "词典收藏", null, null, Map.of())),
+                0);
+
+        assertEquals("card_1", result.cardUid());
+        assertEquals("source_merged", result.action());
+        assertEquals("ready", result.status());
+        verify(cards).restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("ready"), any());
+        verify(sources, never()).insertSource(any());
         verifyNoInteractions(jobs);
     }
 

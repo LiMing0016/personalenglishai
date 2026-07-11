@@ -88,6 +88,20 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void latestGenerationStateIsLoadedInOneOwnedBatch() throws Exception {
+        String sql = statementSql("VocabularyGenerationJobMapper", "listLatestByCardUids", Map.of(
+                "userId", 7L,
+                "cardUids", List.of("card_1", "card_2")));
+
+        assertAll(
+                () -> assertTrue(sql.contains("MAX(candidate.id)")),
+                () -> assertTrue(sql.contains("candidate.card_uid IN")),
+                () -> assertTrue(sql.contains("card.user_id = ?")),
+                () -> assertTrue(sql.contains("card.deleted_at IS NULL"))
+        );
+    }
+
+    @Test
     void restoreAndTouchIsScopedToOwningUser() throws Exception {
         String sql = statementSql("VocabularyCardMapper", "restoreAndTouch", Map.of(
                 "userId", 7L,
@@ -174,13 +188,18 @@ class VocabularyMapperContractTest {
         String sql = statementSql("VocabularyGenerationJobMapper", "failStaleRunning", Map.of());
 
         assertAll(
-                () -> assertTrue(sql.contains("SET status = 'failed'")),
-                () -> assertTrue(sql.contains("error_code = 'LEASE_EXPIRED'")),
-                () -> assertTrue(sql.contains("finished_at = CURRENT_TIMESTAMP")),
-                () -> assertTrue(sql.contains("lease_token = NULL")),
-                () -> assertTrue(sql.contains("lease_expires_at = NULL")),
-                () -> assertTrue(sql.contains("lease_expires_at <= CURRENT_TIMESTAMP")),
-                () -> assertTrue(sql.contains("attempt_count >= 3"))
+                () -> assertTrue(sql.contains("UPDATE vocabulary_generation_job job")),
+                () -> assertTrue(sql.contains("INNER JOIN vocabulary_card card")),
+                () -> assertTrue(sql.contains("SET job.status = 'failed'")),
+                () -> assertTrue(sql.contains("job.error_code = 'LEASE_EXPIRED'")),
+                () -> assertTrue(sql.contains("job.finished_at = CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("job.lease_token = NULL")),
+                () -> assertTrue(sql.contains("job.lease_expires_at = NULL")),
+                () -> assertTrue(sql.contains("job.lease_expires_at <= CURRENT_TIMESTAMP")),
+                () -> assertTrue(sql.contains("job.attempt_count >= 3")),
+                () -> assertTrue(sql.contains("card.active_revision_uid IS NULL")),
+                () -> assertTrue(sql.contains("card.status = 'generating'")),
+                () -> assertTrue(sql.contains("THEN 'failed' ELSE card.status END"))
         );
     }
 
@@ -233,7 +252,7 @@ class VocabularyMapperContractTest {
                         "insertRevision", "findRevision", "listRevisions"
                 },
                 "VocabularyGenerationJobMapper", new String[]{
-                        "insertJob", "selectClaimable", "findLatestByCard", "markRunning",
+                        "insertJob", "selectClaimable", "findLatestByCard", "listLatestByCardUids", "markRunning",
                         "markSucceeded", "markFailed", "cancel", "cancelPendingForCard",
                         "cancelActiveForCard", "retryFailed", "requeueStaleRunning", "failStaleRunning"
                 },

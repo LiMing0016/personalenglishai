@@ -16,6 +16,7 @@ import {
   type ResolveVocabularyConflictRequest,
   type UpdateVocabularyCardRequest,
 } from '@/api/vocabulary'
+import { isVocabularyGenerationActive } from '@/features/vocabulary/generationPolling'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -34,7 +35,7 @@ export function useVocabularyCards(
   const listQuery = useQuery({
     queryKey: computed(() => ['vocabulary', 'cards', filters.value]),
     queryFn: () => listVocabularyCards(filters.value),
-    refetchInterval: (query) => query.state.data?.items.some((item) => item.status === 'generating')
+    refetchInterval: (query) => query.state.data?.items.some(isVocabularyGenerationActive)
       ? POLL_INTERVAL_MS
       : false,
   })
@@ -43,7 +44,7 @@ export function useVocabularyCards(
     queryKey: computed(() => ['vocabulary', 'card', selectedCardUid.value]),
     queryFn: () => getVocabularyCard(selectedCardUid.value!),
     enabled: computed(() => Boolean(selectedCardUid.value)),
-    refetchInterval: (query) => query.state.data?.status === 'generating'
+    refetchInterval: (query) => query.state.data && isVocabularyGenerationActive(query.state.data)
       ? POLL_INTERVAL_MS
       : false,
   })
