@@ -75,6 +75,42 @@ class VocabularyCaptureItemServiceTest {
     }
 
     @Test
+    void freezesResolvedCustomThemeOnNewCardsAndJobs() {
+        ResolvedVocabularyTheme theme = new ResolvedVocabularyTheme(
+                "theme_user_1", 3, "Personal", "Purpose", "custom-markdown-v1", 1, "basic");
+        VocabularyCaptureRequest request = new VocabularyCaptureRequest(
+                "req-theme", List.of("innovative"), "en", "theme_user_1", null,
+                new VocabularyCaptureRequest.Source("manual", null, "Manual", null, null, Map.of()));
+        ArgumentCaptor<VocabularyCard> card = ArgumentCaptor.forClass(VocabularyCard.class);
+        ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob> job =
+                ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob.class);
+
+        service.captureOne(7L, request, theme, 0);
+
+        verify(cards).insert(card.capture());
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_user_1", card.getValue().getThemeUid());
+        assertEquals(3, card.getValue().getThemeVersion());
+        assertEquals("basic", card.getValue().getTemplateKey());
+        assertEquals("theme_user_1", job.getValue().getThemeUid());
+        assertEquals(3, job.getValue().getThemeVersion());
+        assertEquals("basic", job.getValue().getTemplateKey());
+    }
+
+    @Test
+    void freezesLegacyExamTemplateAsItsSystemTheme() {
+        ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob> job =
+                ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob.class);
+
+        service.captureOne(7L, VocabularyCaptureRequest.manual("req-legacy", List.of("innovative"), "en", "exam"), 0);
+
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_system_exam", job.getValue().getThemeUid());
+        assertEquals(1, job.getValue().getThemeVersion());
+        assertEquals("exam", job.getValue().getTemplateKey());
+    }
+
+    @Test
     void mergesARepeatedTermWithoutCreatingAnotherJob() {
         VocabularyCard existing = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user");
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(existing);
@@ -153,6 +189,7 @@ class VocabularyCaptureItemServiceTest {
                         "dictionary-favorite",
                         List.of("innovative"),
                         "en",
+                        null,
                         null,
                         new VocabularyCaptureRequest.Source(
                                 "dictionary", "dictionary:innovative", "词典收藏", null, null, Map.of())),
@@ -261,7 +298,7 @@ class VocabularyCaptureItemServiceTest {
     void capsContextAtGlobalLimitBeforePersistence() {
         String context = "x".repeat(2_001);
         VocabularyCaptureRequest request = new VocabularyCaptureRequest(
-                "req-context", List.of("innovative"), "en", "basic",
+                "req-context", List.of("innovative"), "en", null, "basic",
                 new VocabularyCaptureRequest.Source("manual", null, "Manual", null, context, Map.of()));
         ArgumentCaptor<VocabularyCardSource> sourceCaptor = ArgumentCaptor.forClass(VocabularyCardSource.class);
 

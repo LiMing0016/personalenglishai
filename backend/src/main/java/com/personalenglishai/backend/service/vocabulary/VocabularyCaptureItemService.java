@@ -58,7 +58,16 @@ public class VocabularyCaptureItemService {
             Long userId,
             VocabularyCaptureRequest request,
             int index) {
-        return captureOneInternal(userId, request, index);
+        return captureOneInternal(userId, request, legacyTheme(userId, request.templateKey()), index);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
+    public VocabularyCaptureResponse.Item captureOne(
+            Long userId,
+            VocabularyCaptureRequest request,
+            ResolvedVocabularyTheme theme,
+            int index) {
+        return captureOneInternal(userId, request, theme, index);
     }
 
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
@@ -66,12 +75,22 @@ public class VocabularyCaptureItemService {
             Long userId,
             VocabularyCaptureRequest request,
             int index) {
-        return captureOneInternal(userId, request, index);
+        return captureOneInternal(userId, request, legacyTheme(userId, request.templateKey()), index);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public VocabularyCaptureResponse.Item captureOneInCallerTransaction(
+            Long userId,
+            VocabularyCaptureRequest request,
+            ResolvedVocabularyTheme theme,
+            int index) {
+        return captureOneInternal(userId, request, theme, index);
     }
 
     private VocabularyCaptureResponse.Item captureOneInternal(
             Long userId,
             VocabularyCaptureRequest request,
+            ResolvedVocabularyTheme theme,
             int index) {
         String rawTerm = request.terms().get(index);
         String idempotencyKey = request.clientRequestId() + ":" + index;
@@ -79,14 +98,14 @@ public class VocabularyCaptureItemService {
         if (existingSource != null) {
             VocabularyCard existingCard = cards.findByUidIncludingDeleted(existingSource.getCardUid());
             if (existingCard != null && existingCard.getDeletedAt() != null) {
-                return restoreIdempotentCard(userId, rawTerm, existingSource, existingCard);
+                return restoreIdempotentCard(userId, rawTerm, existingSource, existingCard, theme);
             }
             String status = existingCard == null ? "captured" : existingCard.getStatus();
             return new VocabularyCaptureResponse.Item(
                     rawTerm, existingSource.getCardUid(), "source_merged", status);
         }
 
-        VocabularyTemplateRegistry.TemplateDefinition selectedTemplate = resolveTemplate(userId, request.templateKey());
+        VocabularyTemplateRegistry.TemplateDefinition selectedTemplate = templateFor(theme);
         String normalizedTerm = termNormalizer.normalize(rawTerm);
         boolean reviewRequired = termNormalizer.isReviewRequired(rawTerm, normalizedTerm);
         String language = canonicalLanguage(request.language());
@@ -97,7 +116,7 @@ public class VocabularyCaptureItemService {
         boolean restored = false;
         if (card == null) {
             card = newCard(
-                    userId, rawTerm, normalizedTerm, language, selectedTemplate, reviewRequired, capturedAt);
+                    userId, rawTerm, normalizedTerm, language, selectedTemplate, theme, reviewRequired, capturedAt);
             try {
                 cards.insert(card);
                 created = true;
@@ -151,9 +170,10 @@ public class VocabularyCaptureItemService {
                 && (created || restored)
                 && card.getActiveRevisionUid() == null;
         if (shouldGenerate) {
-            VocabularyTemplateRegistry.TemplateDefinition generationTemplate =
-                    created ? selectedTemplate : cardTemplate(card, selectedTemplate);
-            jobs.insertJob(newJob(card, source, generationTemplate, capturedAt, request.clientRequestId(), index));
+            ResolvedVocabularyTheme generationTheme = created ? theme : cardTheme(card, theme);
+            VocabularyTemplateRegistry.TemplateDefinition generationTemplate = templateFor(generationTheme);
+            jobs.insertJob(newJob(
+                    card, source, generationTemplate, generationTheme, capturedAt, request.clientRequestId(), index));
             status = "generating";
         }
 
@@ -165,7 +185,8 @@ public class VocabularyCaptureItemService {
             Long userId,
             String rawTerm,
             VocabularyCardSource source,
-            VocabularyCard card) {
+            VocabularyCard card,
+            ResolvedVocabularyTheme requestedTheme) {
         String normalizedTerm = termNormalizer.normalize(rawTerm);
         boolean reviewRequired = termNormalizer.isReviewRequired(rawTerm, normalizedTerm);
         LocalDateTime capturedAt = LocalDateTime.now();
@@ -173,9 +194,9 @@ public class VocabularyCaptureItemService {
         int restored = cards.restoreAndTouch(
                 userId, card.getCardUid(), normalizedTerm, status, capturedAt);
         if (restored == 1 && !reviewRequired && card.getActiveRevisionUid() == null) {
-            VocabularyTemplateRegistry.TemplateDefinition fallback = templateRegistry.require(null);
+            ResolvedVocabularyTheme generationTheme = cardTheme(card, requestedTheme);
             jobs.insertJob(newJob(
-                    card, source, cardTemplate(card, fallback), capturedAt,
+                    card, source, templateFor(generationTheme), generationTheme, capturedAt,
                     source.getIdempotencyKey(), 0));
         } else if (restored != 1) {
             VocabularyCard current = cards.findByUidIncludingDeleted(card.getCardUid());
@@ -188,7 +209,7 @@ public class VocabularyCaptureItemService {
                 rawTerm, card.getCardUid(), "source_merged", status);
     }
 
-    private VocabularyTemplateRegistry.TemplateDefinition resolveTemplate(Long userId, String requestedTemplate) {
+    private ResolvedVocabularyTheme legacyTheme(Long userId, String requestedTemplate) {
         String templateKey = requestedTemplate;
         if (templateKey == null || templateKey.isBlank()) {
             UserVocabularyPreference preference = preferences.findPreferenceByUser(userId);
@@ -196,7 +217,12 @@ public class VocabularyCaptureItemService {
         }
         VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(templateKey);
         preferences.upsertDefaultTemplate(userId, template.key());
-        return template;
+        return new ResolvedVocabularyTheme(
+                "theme_system_" + template.key(), 1, template.name(), "", "", 1, template.key());
+    }
+
+    private VocabularyTemplateRegistry.TemplateDefinition templateFor(ResolvedVocabularyTheme theme) {
+        return templateRegistry.require(theme.legacyTemplateKey());
     }
 
     private VocabularyCard newCard(
@@ -205,6 +231,7 @@ public class VocabularyCaptureItemService {
             String normalizedTerm,
             String language,
             VocabularyTemplateRegistry.TemplateDefinition template,
+            ResolvedVocabularyTheme theme,
             boolean reviewRequired,
             LocalDateTime capturedAt) {
         VocabularyCard card = new VocabularyCard();
@@ -216,6 +243,8 @@ public class VocabularyCaptureItemService {
         card.setDisplayTerm(normalizedTerm);
         card.setTemplateKey(template.key());
         card.setTemplateVersion(template.version());
+        card.setThemeUid(theme.themeUid());
+        card.setThemeVersion(theme.version());
         card.setStatus(reviewRequired ? "needs_review" : "generating");
         card.setActiveRevisionUid(null);
         card.setLastCapturedAt(capturedAt);
@@ -253,6 +282,7 @@ public class VocabularyCaptureItemService {
             VocabularyCard card,
             VocabularyCardSource source,
             VocabularyTemplateRegistry.TemplateDefinition template,
+            ResolvedVocabularyTheme theme,
             LocalDateTime capturedAt,
             String clientRequestId,
             int index) {
@@ -262,6 +292,8 @@ public class VocabularyCaptureItemService {
         job.setBaseRevisionUid(card.getActiveRevisionUid());
         job.setTemplateKey(template.key());
         job.setTemplateVersion(template.version());
+        job.setThemeUid(theme.themeUid());
+        job.setThemeVersion(theme.version());
         job.setStatus("pending");
         job.setAttemptCount(0);
 
@@ -281,13 +313,15 @@ public class VocabularyCaptureItemService {
         return job;
     }
 
-    private VocabularyTemplateRegistry.TemplateDefinition cardTemplate(
-            VocabularyCard card,
-            VocabularyTemplateRegistry.TemplateDefinition fallback) {
-        if (card.getTemplateKey() == null || card.getTemplateKey().isBlank()) {
+    private ResolvedVocabularyTheme cardTheme(VocabularyCard card, ResolvedVocabularyTheme fallback) {
+        if (card.getThemeUid() == null || card.getThemeUid().isBlank() || card.getThemeVersion() == null) {
             return fallback;
         }
-        return templateRegistry.require(card.getTemplateKey());
+        return new ResolvedVocabularyTheme(
+                card.getThemeUid(), card.getThemeVersion(), "", "", "", 1,
+                card.getTemplateKey() == null || card.getTemplateKey().isBlank()
+                        ? fallback.legacyTemplateKey()
+                        : card.getTemplateKey());
     }
 
     private String restoredStatus(VocabularyCard card, boolean reviewRequired) {

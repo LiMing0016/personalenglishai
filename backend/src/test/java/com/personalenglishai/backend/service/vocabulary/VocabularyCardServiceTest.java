@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
+import com.personalenglishai.backend.dto.vocabulary.RegenerateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
 import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
@@ -50,6 +51,7 @@ class VocabularyCardServiceTest {
     @Mock VocabularyGenerationJobMapper jobs;
     @Mock UserVocabularyPreferenceMapper preferences;
     @Mock VocabularyRevisionWriteService revisionWriter;
+    @Mock VocabularyThemeService themeService;
 
     ObjectMapper objectMapper;
     VocabularyTemplateRegistry templateRegistry;
@@ -60,7 +62,7 @@ class VocabularyCardServiceTest {
         objectMapper = new ObjectMapper();
         templateRegistry = new VocabularyTemplateRegistry(objectMapper);
         service = new VocabularyCardService(
-                cards, sources, revisions, jobs, preferences, templateRegistry, objectMapper, revisionWriter);
+                cards, sources, revisions, jobs, preferences, themeService, templateRegistry, objectMapper, revisionWriter);
     }
 
     @Test
@@ -313,8 +315,12 @@ class VocabularyCardServiceTest {
     void regenerateUsesRequestedTemplateAndVersion() {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(themeService.resolve(7L, null, "exam")).thenReturn(new ResolvedVocabularyTheme(
+                "theme_system_exam", 1, "Exam", "", "", 1, "exam"));
+        when(themeService.resolve(7L, null, "unsupported"))
+                .thenThrow(new IllegalArgumentException("unsupported legacy template"));
 
-        service.regenerate(7L, "card_1", "exam");
+        service.regenerate(7L, "card_1", new RegenerateVocabularyCardRequest(null, true, "exam"));
 
         org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
                 org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
@@ -322,7 +328,45 @@ class VocabularyCardServiceTest {
         assertEquals("exam", job.getValue().getTemplateKey());
         assertEquals(1, job.getValue().getTemplateVersion());
         assertThrows(IllegalArgumentException.class,
-                () -> service.regenerate(7L, "card_1", "unsupported"));
+                () -> service.regenerate(7L, "card_1", new RegenerateVocabularyCardRequest(
+                        null, true, "unsupported")));
+    }
+
+    @Test
+    void regenerateKeepsTheFrozenThemeWhenLatestVersionIsNotRequested() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        card.setThemeUid("theme_user_1");
+        card.setThemeVersion(2);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+
+        service.regenerate(7L, "card_1", new RegenerateVocabularyCardRequest("theme_user_1", false, null));
+
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_user_1", job.getValue().getThemeUid());
+        assertEquals(2, job.getValue().getThemeVersion());
+        verifyNoInteractions(themeService);
+    }
+
+    @Test
+    void regenerateResolvesAndFreezesTheLatestThemeOnlyWhenRequested() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        card.setThemeUid("theme_user_1");
+        card.setThemeVersion(2);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(themeService.resolve(7L, "theme_user_1", null)).thenReturn(new ResolvedVocabularyTheme(
+                "theme_user_1", 3, "Personal", "Purpose", "custom-markdown-v1", 1, "basic"));
+
+        service.regenerate(7L, "card_1", new RegenerateVocabularyCardRequest("theme_user_1", true, null));
+
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(themeService).resolve(7L, "theme_user_1", null);
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_user_1", job.getValue().getThemeUid());
+        assertEquals(3, job.getValue().getThemeVersion());
+        assertEquals("basic", job.getValue().getTemplateKey());
     }
 
     @Test

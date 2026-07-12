@@ -198,7 +198,7 @@ public class VocabularyController {
             return unauthorized();
         }
         return ResponseEntity.ok(ApiResponse.success(cardService.regenerate(
-                userId, cardUid, request == null ? null : request.templateKey())));
+                userId, cardUid, request)));
     }
 
     @PostMapping("/cards/{cardUid}/retry")

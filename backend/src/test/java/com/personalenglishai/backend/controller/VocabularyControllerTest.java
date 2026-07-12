@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
@@ -321,7 +322,10 @@ class VocabularyControllerTest {
                         .contentType("application/json")
                         .content("{\"templateKey\":\"exam\"}"))
                 .andExpect(status().isOk());
-        verify(cardService).regenerate(7L, "card_1", "exam");
+        verify(cardService).regenerate(eq(7L), eq("card_1"), argThat(request ->
+                "exam".equals(request.templateKey())
+                        && request.themeUid() == null
+                        && request.useLatestThemeVersion() == null));
 
         mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate")
                         .requestAttr("userId", 7L)

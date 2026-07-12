@@ -12,6 +12,7 @@ public record VocabularyCaptureRequest(
         @NotBlank @Size(max = 128) String clientRequestId,
         @NotEmpty @Size(max = 100) List<@NotBlank @Size(max = 255) String> terms,
         @Size(max = 16) String language,
+        String themeUid,
         @Pattern(regexp = "basic|exam|reading") String templateKey,
         @Valid Source source) {
 
@@ -33,6 +34,7 @@ public record VocabularyCaptureRequest(
                 requestId,
                 terms,
                 language,
+                null,
                 templateKey,
                 new Source("manual", null, "手动输入", null, null, Map.of()));
     }

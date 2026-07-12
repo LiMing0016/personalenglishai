@@ -11,6 +11,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
+import com.personalenglishai.backend.dto.vocabulary.RegenerateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyGenerationJobResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListResponse;
@@ -46,6 +47,7 @@ public class VocabularyCardService {
     private final VocabularyRevisionMapper revisions;
     private final VocabularyGenerationJobMapper jobs;
     private final UserVocabularyPreferenceMapper preferences;
+    private final VocabularyThemeService themeService;
     private final VocabularyTemplateRegistry templateRegistry;
     private final ObjectMapper objectMapper;
     private final VocabularyRevisionWriteService revisionWriter;
@@ -56,6 +58,7 @@ public class VocabularyCardService {
             VocabularyRevisionMapper revisions,
             VocabularyGenerationJobMapper jobs,
             UserVocabularyPreferenceMapper preferences,
+            VocabularyThemeService themeService,
             VocabularyTemplateRegistry templateRegistry,
             ObjectMapper objectMapper,
             VocabularyRevisionWriteService revisionWriter) {
@@ -64,6 +67,7 @@ public class VocabularyCardService {
         this.revisions = revisions;
         this.jobs = jobs;
         this.preferences = preferences;
+        this.themeService = themeService;
         this.templateRegistry = templateRegistry;
         this.objectMapper = objectMapper;
         this.revisionWriter = revisionWriter;
@@ -189,16 +193,19 @@ public class VocabularyCardService {
 
     @Transactional
     public VocabularyGenerationJobResponse regenerate(Long userId, String cardUid) {
-        return regenerate(userId, cardUid, null);
+        return regenerate(userId, cardUid, (RegenerateVocabularyCardRequest) null);
     }
 
     @Transactional
-    public VocabularyGenerationJobResponse regenerate(Long userId, String cardUid, String templateKey) {
+    public VocabularyGenerationJobResponse regenerate(
+            Long userId,
+            String cardUid,
+            RegenerateVocabularyCardRequest request) {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
-        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(
-                templateKey == null || templateKey.isBlank() ? card.getTemplateKey() : templateKey);
+        ResolvedVocabularyTheme theme = regenerationTheme(userId, card, request);
+        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(theme.legacyTemplateKey());
         jobs.cancelActiveForCard(cardUid);
-        VocabularyGenerationJob job = newGenerationJob(card, template, "regenerate");
+        VocabularyGenerationJob job = newGenerationJob(card, template, theme, "regenerate");
         jobs.insertJob(job);
         return new VocabularyGenerationJobResponse(job.getJobUid(), job.getStatus());
     }
@@ -529,6 +536,7 @@ public class VocabularyCardService {
     private VocabularyGenerationJob newGenerationJob(
             VocabularyCard card,
             VocabularyTemplateRegistry.TemplateDefinition template,
+            ResolvedVocabularyTheme theme,
             String action) {
         VocabularyGenerationJob job = new VocabularyGenerationJob();
         job.setJobUid(uid("job_"));
@@ -536,11 +544,35 @@ public class VocabularyCardService {
         job.setBaseRevisionUid(card.getActiveRevisionUid());
         job.setTemplateKey(template.key());
         job.setTemplateVersion(template.version());
+        job.setThemeUid(theme.themeUid());
+        job.setThemeVersion(theme.version());
         job.setStatus("pending");
         job.setAttemptCount(0);
         job.setRequestJson(writeJson(Map.of("action", action)));
         job.setAvailableAt(java.time.LocalDateTime.now());
         return job;
+    }
+
+    private ResolvedVocabularyTheme regenerationTheme(
+            Long userId,
+            VocabularyCard card,
+            RegenerateVocabularyCardRequest request) {
+        if (request != null && Boolean.TRUE.equals(request.useLatestThemeVersion())) {
+            return themeService.resolve(userId, request.themeUid(), request.templateKey());
+        }
+        if (request != null && request.templateKey() != null && !request.templateKey().isBlank()) {
+            return themeService.resolve(userId, null, request.templateKey());
+        }
+        if (card.getThemeUid() != null && !card.getThemeUid().isBlank() && card.getThemeVersion() != null) {
+            String templateKey = card.getTemplateKey() == null || card.getTemplateKey().isBlank()
+                    ? DEFAULT_TEMPLATE_KEY
+                    : card.getTemplateKey();
+            return new ResolvedVocabularyTheme(
+                    card.getThemeUid(), card.getThemeVersion(), "", "", "", 1, templateKey);
+        }
+        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
+        return new ResolvedVocabularyTheme(
+                "theme_system_" + template.key(), 1, template.name(), "", "", 1, template.key());
     }
 
     private String writeJson(JsonNode value) {

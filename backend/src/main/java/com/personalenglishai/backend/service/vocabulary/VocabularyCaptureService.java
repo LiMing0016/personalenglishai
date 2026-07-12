@@ -2,6 +2,7 @@ package com.personalenglishai.backend.service.vocabulary;
 
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,23 +24,30 @@ public class VocabularyCaptureService {
     private static final Set<String> SUPPORTED_SOURCE_TYPES = Set.of("manual", "dictionary");
 
     private final VocabularyCaptureItemService itemService;
+    private final VocabularyThemeService themeService;
+    private final VocabularyThemeMapper themeMapper;
     private final VocabularyTermNormalizer termNormalizer;
 
     public VocabularyCaptureService(
             VocabularyCaptureItemService itemService,
+            VocabularyThemeService themeService,
+            VocabularyThemeMapper themeMapper,
             VocabularyTermNormalizer termNormalizer) {
         this.itemService = itemService;
+        this.themeService = themeService;
+        this.themeMapper = themeMapper;
         this.termNormalizer = termNormalizer;
     }
 
     @Transactional
     public VocabularyCaptureResponse capture(Long userId, VocabularyCaptureRequest request) {
         validate(userId, request);
+        ResolvedVocabularyTheme theme = themeService.resolve(userId, request.themeUid(), request.templateKey());
 
         List<VocabularyCaptureResponse.Item> items = new ArrayList<>(request.terms().size());
         for (int index = 0; index < request.terms().size(); index++) {
             try {
-                items.add(itemService.captureOne(userId, request, index));
+                items.add(itemService.captureOne(userId, request, theme, index));
             } catch (VocabularyCaptureRejectedException exception) {
                 log.warn(
                         "Vocabulary capture item rejected requestId={} index={} errorType={}",
@@ -50,6 +58,7 @@ public class VocabularyCaptureService {
                         request.terms().get(index), null, "rejected", "failed"));
             }
         }
+        recordRecentUseAfterSuccess(userId, theme, items);
         return new VocabularyCaptureResponse(items);
     }
 
@@ -69,6 +78,7 @@ public class VocabularyCaptureService {
                 List.of(word),
                 canonicalLanguage(language),
                 null,
+                null,
                 new VocabularyCaptureRequest.Source(
                         "dictionary",
                         "dictionary:" + normalizedTerm,
@@ -77,7 +87,9 @@ public class VocabularyCaptureService {
                         contextText,
                         Map.of()));
         validate(userId, request);
-        VocabularyCaptureResponse.Item item = itemService.captureOneInCallerTransaction(userId, request, 0);
+        ResolvedVocabularyTheme theme = themeService.resolve(userId, request.themeUid(), request.templateKey());
+        VocabularyCaptureResponse.Item item = itemService.captureOneInCallerTransaction(userId, request, theme, 0);
+        recordRecentUseAfterSuccess(userId, theme, List.of(item));
         return new VocabularyCaptureResponse(List.of(item));
     }
 
@@ -113,6 +125,17 @@ public class VocabularyCaptureService {
             return "dictionary-favorite-" + userId + "-" + HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private void recordRecentUseAfterSuccess(
+            Long userId,
+            ResolvedVocabularyTheme theme,
+            List<VocabularyCaptureResponse.Item> items) {
+        boolean captured = items.stream().anyMatch(item ->
+                item.cardUid() != null && !"rejected".equals(item.action()));
+        if (captured) {
+            themeMapper.recordRecentUse(userId, theme.themeUid());
         }
     }
 }
