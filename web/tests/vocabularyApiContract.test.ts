@@ -45,6 +45,25 @@ test('keeps every vocabulary API function on its source-contract endpoint', () =
   }
 })
 
+test('adds theme selection and versioned card content without removing legacy fields', () => {
+  for (const requiredPattern of [
+    /interface VocabularyCoreContent/,
+    /schemaVersion:\s*1/,
+    /region:\s*'uk'\s*\|\s*'us'\s*\|\s*'other'/,
+    /themeUid\?:\s*string/,
+    /templateKey\?:\s*VocabularyTemplateKey/,
+    /theme:\s*VocabularyThemeSnapshot\s*\|\s*null/,
+    /themeVersion:\s*number\s*\|\s*null/,
+    /core:\s*VocabularyCoreContent\s*\|\s*null/,
+    /markdown:\s*string\s*\|\s*null/,
+    /contentFormatVersion:\s*number\s*\|\s*null/,
+    /content:\s*unknown/,
+    /useLatestThemeVersion\?:\s*boolean/,
+  ]) {
+    assert.match(vocabularyApiSource, requiredPattern)
+  }
+})
+
 test('regenerate sends the selected template in the request body', async () => {
   http.defaults.adapter = async (config) => {
     assert.equal(config.method, 'post')

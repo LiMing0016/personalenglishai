@@ -13,7 +13,7 @@ import {
   retryVocabularyCard,
   updateVocabularyCard,
   type VocabularyCardFilters,
-  type VocabularyTemplateKey,
+  type RegenerateVocabularyCardRequest,
   type ResolveVocabularyConflictRequest,
   type UpdateVocabularyCardRequest,
 } from '@/api/vocabulary'
@@ -69,7 +69,10 @@ export function useVocabularyCards(
   const captureMutation = useMutation({
     mutationFn: captureVocabulary,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['vocabulary', 'cards'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['vocabulary', 'cards'] }),
+        queryClient.invalidateQueries({ queryKey: ['vocabulary', 'themes'] }),
+      ])
     },
   })
 
@@ -88,8 +91,8 @@ export function useVocabularyCards(
   })
 
   const regenerateMutation = useMutation({
-    mutationFn: ({ cardUid, templateKey }: { cardUid: string, templateKey: VocabularyTemplateKey }) => (
-      regenerateVocabularyCard(cardUid, { templateKey })
+    mutationFn: ({ cardUid, ...payload }: { cardUid: string } & RegenerateVocabularyCardRequest) => (
+      regenerateVocabularyCard(cardUid, payload)
     ),
     onSuccess: async (_, variables) => invalidateCardQueries(variables.cardUid),
   })

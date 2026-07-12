@@ -19,6 +19,56 @@ export interface VocabularyTemplateCatalog {
   defaultTemplateKey: VocabularyTemplateKey
 }
 
+export interface VocabularyCoreContent {
+  schemaVersion: 1
+  term: string
+  phonetics: Array<{
+    region: 'uk' | 'us' | 'other'
+    text: string
+    audioUrl: string | null
+  }>
+  senses: Array<{
+    partOfSpeech: string
+    meanings: Array<{
+      definitionEn: string
+      definitionZh: string
+    }>
+  }>
+}
+
+export interface VocabularyTheme {
+  themeUid: string
+  ownerType: 'system' | 'user'
+  name: string
+  purpose: string
+  version: number
+  status: 'active' | 'disabled'
+  system: boolean
+  defaultTheme: boolean
+  recent: boolean
+  promptStrategyKey: string
+}
+
+export interface VocabularyThemeCatalog {
+  systemThemes: VocabularyTheme[]
+  userThemes: VocabularyTheme[]
+  defaultThemeUid: string
+  recentThemeUids: string[]
+}
+
+export interface VocabularyThemeSnapshot {
+  themeUid: string
+  name: string
+  purpose: string
+}
+
+export interface CreateVocabularyThemeRequest {
+  name: string
+  purpose: string
+}
+
+export type UpdateVocabularyThemeRequest = CreateVocabularyThemeRequest
+
 export interface VocabularyCaptureSource {
   type: 'manual'
   sourceRef?: string
@@ -32,7 +82,8 @@ export interface VocabularyCaptureRequest {
   clientRequestId: string
   terms: string[]
   language: 'en'
-  templateKey: VocabularyTemplateKey
+  themeUid?: string
+  templateKey?: VocabularyTemplateKey
   source: VocabularyCaptureSource
 }
 
@@ -83,6 +134,11 @@ export interface VocabularyCardDetail extends VocabularyCardSummary {
   language: string
   templateVersion: number | null
   content: unknown
+  theme: VocabularyThemeSnapshot | null
+  themeVersion: number | null
+  core: VocabularyCoreContent | null
+  markdown: string | null
+  contentFormatVersion: number | null
   sources: VocabularyCardSource[]
   createdAt: string | null
   candidateContent: unknown
@@ -111,6 +167,11 @@ export interface VocabularyRevision {
   templateKey: VocabularyTemplateKey
   templateVersion: number | null
   content: unknown
+  theme: VocabularyThemeSnapshot | null
+  themeVersion: number | null
+  core: VocabularyCoreContent | null
+  markdown: string | null
+  contentFormatVersion: number | null
   changeSummary: string | null
   active: boolean
   candidate: boolean
@@ -130,12 +191,16 @@ export interface VocabularyGenerationJobResponse {
 }
 
 export interface RegenerateVocabularyCardRequest {
-  templateKey: VocabularyTemplateKey
+  themeUid?: string
+  useLatestThemeVersion?: boolean
+  templateKey?: VocabularyTemplateKey
 }
 
 export interface UpdateVocabularyCardRequest {
   baseRevisionUid: string
-  content: unknown
+  core?: VocabularyCoreContent | null
+  markdown?: string | null
+  content?: unknown
   changeSummary?: string
 }
 
@@ -200,6 +265,37 @@ async function unwrap<T>(
 
 export const listVocabularyTemplates = () =>
   unwrap<VocabularyTemplateCatalog>(http.get('/vocabulary/templates'))
+
+export const listVocabularyThemes = () =>
+  unwrap<VocabularyThemeCatalog>(http.get('/vocabulary/themes'))
+
+export const createVocabularyTheme = (payload: CreateVocabularyThemeRequest) =>
+  unwrap<VocabularyTheme>(http.post('/vocabulary/themes', payload))
+
+export const updateVocabularyTheme = (themeUid: string, payload: UpdateVocabularyThemeRequest) =>
+  unwrap<VocabularyTheme>(
+    http.put(`/vocabulary/themes/${encodeURIComponent(themeUid)}`, payload),
+  )
+
+export const copyVocabularyTheme = (themeUid: string) =>
+  unwrap<VocabularyTheme>(
+    http.post(`/vocabulary/themes/${encodeURIComponent(themeUid)}/copy`),
+  )
+
+export const setDefaultVocabularyTheme = (themeUid: string) =>
+  unwrap<void>(
+    http.post(`/vocabulary/themes/${encodeURIComponent(themeUid)}/default`),
+    true,
+  )
+
+export const disableVocabularyTheme = (themeUid: string) =>
+  unwrap<void>(
+    http.post(`/vocabulary/themes/${encodeURIComponent(themeUid)}/disable`),
+    true,
+  )
+
+export const deleteVocabularyTheme = (themeUid: string) =>
+  unwrap<void>(http.delete(`/vocabulary/themes/${encodeURIComponent(themeUid)}`), true)
 
 export const captureVocabulary = (payload: VocabularyCaptureRequest) =>
   unwrap<VocabularyCaptureResponse>(http.post('/vocabulary/captures', payload))
