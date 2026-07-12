@@ -5,8 +5,6 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
-import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
-import com.personalenglishai.backend.mapper.vocabulary.UserVocabularyPreferenceMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
@@ -30,9 +28,9 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -47,13 +45,12 @@ class VocabularyCaptureItemServiceTest {
     @Mock VocabularyCardMapper cards;
     @Mock VocabularySourceMapper sources;
     @Mock VocabularyGenerationJobMapper jobs;
-    @Mock UserVocabularyPreferenceMapper preferences;
     VocabularyCaptureItemService service;
 
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        service = new VocabularyCaptureItemService(cards, sources, jobs, preferences,
+        service = new VocabularyCaptureItemService(cards, sources, jobs,
                 new VocabularyTermNormalizer(), new VocabularyTemplateRegistry(objectMapper), objectMapper);
     }
 
@@ -61,7 +58,7 @@ class VocabularyCaptureItemServiceTest {
     void createsCardSourceAndPendingJobBeforeReturning() {
         var request = VocabularyCaptureRequest.manual("req-1", List.of("In·nova·tive"), "en", "basic");
 
-        VocabularyCaptureResponse.Item result = service.captureOne(7L, request, 0);
+        VocabularyCaptureResponse.Item result = service.captureOne(7L, request, this::basicTheme, 0).response();
 
         assertEquals("created", result.action());
         assertEquals("generating", result.status());
@@ -71,7 +68,6 @@ class VocabularyCaptureItemServiceTest {
         order.verify(sources).insertSource(argThat(source -> source.getIdempotencyKey().equals("req-1:0")));
         order.verify(jobs).insertJob(argThat(job ->
                 job.getStatus().equals("pending") && job.getAttemptCount() == 0));
-        verify(preferences).upsertDefaultTemplate(7L, "basic");
     }
 
     @Test
@@ -85,7 +81,7 @@ class VocabularyCaptureItemServiceTest {
         ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob> job =
                 ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob.class);
 
-        service.captureOne(7L, request, theme, 0);
+        service.captureOne(7L, request, () -> theme, 0);
 
         verify(cards).insert(card.capture());
         verify(jobs).insertJob(job.capture());
@@ -102,7 +98,8 @@ class VocabularyCaptureItemServiceTest {
         ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob> job =
                 ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob.class);
 
-        service.captureOne(7L, VocabularyCaptureRequest.manual("req-legacy", List.of("innovative"), "en", "exam"), 0);
+        service.captureOne(7L, VocabularyCaptureRequest.manual("req-legacy", List.of("innovative"), "en", "exam"),
+                () -> systemTheme("exam"), 0);
 
         verify(jobs).insertJob(job.capture());
         assertEquals("theme_system_exam", job.getValue().getThemeUid());
@@ -116,7 +113,8 @@ class VocabularyCaptureItemServiceTest {
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(existing);
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-2", List.of("innovative"), "en", "exam"), 0);
+                VocabularyCaptureRequest.manual("req-2", List.of("innovative"), "en", "exam"),
+                this::basicTheme, 0).response();
 
         assertEquals("source_merged", result.action());
         verify(sources).insertSource(argThat(source -> source.getIdempotencyKey().equals("req-2:0")));
@@ -127,7 +125,8 @@ class VocabularyCaptureItemServiceTest {
     @Test
     void marksInvalidInputForReviewWithoutSchedulingAi() {
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-3", List.of("你好"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-3", List.of("你好"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("needs_review", result.action());
         assertEquals("needs_review", result.status());
@@ -143,7 +142,8 @@ class VocabularyCaptureItemServiceTest {
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(existing);
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-review-existing", List.of(malformed), "en", "exam"), 0);
+                VocabularyCaptureRequest.manual("req-review-existing", List.of(malformed), "en", "exam"),
+                this::basicTheme, 0).response();
 
         assertEquals("card_1", result.cardUid());
         assertEquals("needs_review", result.action());
@@ -163,7 +163,10 @@ class VocabularyCaptureItemServiceTest {
                 .thenReturn(VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user"));
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-4", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-4", List.of("innovative"), "en", "basic"),
+                () -> {
+                    throw new AssertionError("idempotent replay must not resolve a theme");
+                }, 0).response();
 
         assertEquals("source_merged", result.action());
         assertEquals("card_1", result.cardUid());
@@ -193,7 +196,7 @@ class VocabularyCaptureItemServiceTest {
                         null,
                         new VocabularyCaptureRequest.Source(
                                 "dictionary", "dictionary:innovative", "词典收藏", null, null, Map.of())),
-                0);
+                this::basicTheme, 0).response();
 
         assertEquals("card_1", result.cardUid());
         assertEquals("source_merged", result.action());
@@ -201,6 +204,29 @@ class VocabularyCaptureItemServiceTest {
         verify(cards).restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("ready"), any());
         verify(sources, never()).insertSource(any());
         verifyNoInteractions(jobs);
+    }
+
+    @Test
+    void idempotentRestoreUsesTheCardsFrozenThemeWithoutResolvingTheCurrentDefault() {
+        VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
+        VocabularyCard deleted = VocabularyTestFixtures.generating("card_1", null);
+        deleted.setDeletedAt(LocalDateTime.now());
+        deleted.setThemeUid("theme_user_1");
+        deleted.setThemeVersion(3);
+        when(sources.findSourceByIdempotencyKey(7L, "req-idempotent-restore:0")).thenReturn(source);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(deleted);
+        when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("generating"), any()))
+                .thenReturn(1);
+
+        var result = service.captureOne(7L,
+                VocabularyCaptureRequest.manual("req-idempotent-restore", List.of("innovative"), "en", null),
+                () -> {
+                    throw new AssertionError("idempotent restore must not resolve the current default");
+                }, 0).response();
+
+        assertEquals("source_merged", result.action());
+        verify(jobs).insertJob(argThat(job ->
+                job.getThemeUid().equals("theme_user_1") && job.getThemeVersion() == 3));
     }
 
     @Test
@@ -212,7 +238,8 @@ class VocabularyCaptureItemServiceTest {
                 .thenReturn(1);
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-5", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-5", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("card_1", result.cardUid());
         assertEquals("source_merged", result.action());
@@ -230,7 +257,8 @@ class VocabularyCaptureItemServiceTest {
                 .thenReturn(1);
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-restore", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-restore", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("source_merged", result.action());
         assertEquals("generating", result.status());
@@ -249,7 +277,8 @@ class VocabularyCaptureItemServiceTest {
                 .thenReturn(0);
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-restore-race", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-restore-race", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("card_1", result.cardUid());
         assertEquals("source_merged", result.action());
@@ -267,7 +296,8 @@ class VocabularyCaptureItemServiceTest {
         doThrow(new DuplicateKeyException("duplicate identity")).when(cards).insert(any());
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-race", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-race", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("card_winner", result.cardUid());
         assertEquals("source_merged", result.action());
@@ -287,7 +317,8 @@ class VocabularyCaptureItemServiceTest {
         doThrow(new DuplicateKeyException("duplicate source")).when(sources).insertSource(any());
 
         var result = service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-source-race", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-source-race", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0).response();
 
         assertEquals("card_1", result.cardUid());
         assertEquals("source_merged", result.action());
@@ -302,23 +333,18 @@ class VocabularyCaptureItemServiceTest {
                 new VocabularyCaptureRequest.Source("manual", null, "Manual", null, context, Map.of()));
         ArgumentCaptor<VocabularyCardSource> sourceCaptor = ArgumentCaptor.forClass(VocabularyCardSource.class);
 
-        service.captureOne(7L, request, 0);
+        service.captureOne(7L, request, this::basicTheme, 0);
 
         verify(sources).insertSource(sourceCaptor.capture());
         assertEquals(2_000, sourceCaptor.getValue().getContextText().length());
     }
 
     @Test
-    void usesStoredDefaultWhenRequestOmitsTemplate() {
-        UserVocabularyPreference preference = new UserVocabularyPreference();
-        preference.setUserId(7L);
-        preference.setDefaultTemplateKey("exam");
-        when(preferences.findPreferenceByUser(7L)).thenReturn(preference);
-
+    void usesResolvedThemeWhenRequestOmitsTemplate() {
         service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-default", List.of("innovative"), "en", null), 0);
+                VocabularyCaptureRequest.manual("req-default", List.of("innovative"), "en", null),
+                () -> systemTheme("exam"), 0);
 
-        verify(preferences).upsertDefaultTemplate(7L, "exam");
         verify(cards).insert(argThat(card ->
                 card.getTemplateKey().equals("exam") && card.getTemplateVersion() == 1));
         verify(jobs).insertJob(argThat(job -> job.getTemplateKey().equals("exam")));
@@ -327,7 +353,7 @@ class VocabularyCaptureItemServiceTest {
     @Test
     void captureOneUsesRequiresNewTransaction() throws NoSuchMethodException {
         Method method = VocabularyCaptureItemService.class.getMethod(
-                "captureOne", Long.class, VocabularyCaptureRequest.class, int.class);
+                "captureOne", Long.class, VocabularyCaptureRequest.class, java.util.function.Supplier.class, int.class);
 
         Transactional transactional = method.getAnnotation(Transactional.class);
 
@@ -339,7 +365,8 @@ class VocabularyCaptureItemServiceTest {
     @Test
     void captureOneInCallerTransactionUsesRequiredTransaction() throws NoSuchMethodException {
         Method method = VocabularyCaptureItemService.class.getMethod(
-                "captureOneInCallerTransaction", Long.class, VocabularyCaptureRequest.class, int.class);
+                "captureOneInCallerTransaction", Long.class, VocabularyCaptureRequest.class,
+                java.util.function.Supplier.class, int.class);
 
         Transactional transactional = method.getAnnotation(Transactional.class);
 
@@ -349,17 +376,35 @@ class VocabularyCaptureItemServiceTest {
     }
 
     @Test
+    void legacyCaptureOverloadsAreRemoved() {
+        assertThrows(NoSuchMethodException.class, () -> VocabularyCaptureItemService.class.getDeclaredMethod(
+                "captureOne", Long.class, VocabularyCaptureRequest.class, int.class));
+        assertThrows(NoSuchMethodException.class, () -> VocabularyCaptureItemService.class.getDeclaredMethod(
+                "captureOneInCallerTransaction", Long.class, VocabularyCaptureRequest.class, int.class));
+    }
+
+    @Test
     void generatedIdentifiersUseStablePrefixes() {
         ArgumentCaptor<VocabularyCard> cardCaptor = ArgumentCaptor.forClass(VocabularyCard.class);
         ArgumentCaptor<VocabularyCardSource> sourceCaptor = ArgumentCaptor.forClass(VocabularyCardSource.class);
 
         service.captureOne(7L,
-                VocabularyCaptureRequest.manual("req-uids", List.of("innovative"), "en", "basic"), 0);
+                VocabularyCaptureRequest.manual("req-uids", List.of("innovative"), "en", "basic"),
+                this::basicTheme, 0);
 
         verify(cards).insert(cardCaptor.capture());
         verify(sources).insertSource(sourceCaptor.capture());
         assertTrue(cardCaptor.getValue().getCardUid().matches("card_[0-9a-f]{32}"));
         assertTrue(sourceCaptor.getValue().getSourceUid().matches("src_[0-9a-f]{32}"));
         verify(jobs).insertJob(argThat(job -> job.getJobUid().matches("job_[0-9a-f]{32}")));
+    }
+
+    private ResolvedVocabularyTheme basicTheme() {
+        return systemTheme("basic");
+    }
+
+    private ResolvedVocabularyTheme systemTheme(String templateKey) {
+        return new ResolvedVocabularyTheme(
+                "theme_system_" + templateKey, 1, templateKey, "", "", 1, templateKey);
     }
 }

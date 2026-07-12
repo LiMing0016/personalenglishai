@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 @Service
 public class VocabularyCaptureService {
@@ -42,12 +43,16 @@ public class VocabularyCaptureService {
     @Transactional
     public VocabularyCaptureResponse capture(Long userId, VocabularyCaptureRequest request) {
         validate(userId, request);
-        ResolvedVocabularyTheme theme = themeService.resolve(userId, request.themeUid(), request.templateKey());
+        Supplier<ResolvedVocabularyTheme> themeResolver = batchThemeResolver(userId, request);
 
         List<VocabularyCaptureResponse.Item> items = new ArrayList<>(request.terms().size());
+        boolean mutated = false;
         for (int index = 0; index < request.terms().size(); index++) {
             try {
-                items.add(itemService.captureOne(userId, request, theme, index));
+                VocabularyCaptureItemService.CaptureOutcome outcome =
+                        itemService.captureOne(userId, request, themeResolver, index);
+                items.add(outcome.response());
+                mutated |= outcome.mutated();
             } catch (VocabularyCaptureRejectedException exception) {
                 log.warn(
                         "Vocabulary capture item rejected requestId={} index={} errorType={}",
@@ -58,7 +63,7 @@ public class VocabularyCaptureService {
                         request.terms().get(index), null, "rejected", "failed"));
             }
         }
-        recordRecentUseAfterSuccess(userId, theme, items);
+        recordRecentUseAfterMutation(userId, themeResolver, mutated);
         return new VocabularyCaptureResponse(items);
     }
 
@@ -87,10 +92,11 @@ public class VocabularyCaptureService {
                         contextText,
                         Map.of()));
         validate(userId, request);
-        ResolvedVocabularyTheme theme = themeService.resolve(userId, request.themeUid(), request.templateKey());
-        VocabularyCaptureResponse.Item item = itemService.captureOneInCallerTransaction(userId, request, theme, 0);
-        recordRecentUseAfterSuccess(userId, theme, List.of(item));
-        return new VocabularyCaptureResponse(List.of(item));
+        Supplier<ResolvedVocabularyTheme> themeResolver = batchThemeResolver(userId, request);
+        VocabularyCaptureItemService.CaptureOutcome outcome =
+                itemService.captureOneInCallerTransaction(userId, request, themeResolver, 0);
+        recordRecentUseAfterMutation(userId, themeResolver, outcome.mutated());
+        return new VocabularyCaptureResponse(List.of(outcome.response()));
     }
 
     private void validate(Long userId, VocabularyCaptureRequest request) {
@@ -128,14 +134,33 @@ public class VocabularyCaptureService {
         }
     }
 
-    private void recordRecentUseAfterSuccess(
+    private Supplier<ResolvedVocabularyTheme> batchThemeResolver(Long userId, VocabularyCaptureRequest request) {
+        return new MemoizedThemeResolver(() -> themeService.resolve(userId, request.themeUid(), request.templateKey()));
+    }
+
+    private void recordRecentUseAfterMutation(
             Long userId,
-            ResolvedVocabularyTheme theme,
-            List<VocabularyCaptureResponse.Item> items) {
-        boolean captured = items.stream().anyMatch(item ->
-                item.cardUid() != null && !"rejected".equals(item.action()));
-        if (captured) {
-            themeMapper.recordRecentUse(userId, theme.themeUid());
+            Supplier<ResolvedVocabularyTheme> themeResolver,
+            boolean mutated) {
+        if (mutated) {
+            themeMapper.recordRecentUse(userId, themeResolver.get().themeUid());
+        }
+    }
+
+    private static final class MemoizedThemeResolver implements Supplier<ResolvedVocabularyTheme> {
+        private final Supplier<ResolvedVocabularyTheme> delegate;
+        private ResolvedVocabularyTheme resolved;
+
+        private MemoizedThemeResolver(Supplier<ResolvedVocabularyTheme> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public ResolvedVocabularyTheme get() {
+            if (resolved == null) {
+                resolved = delegate.get();
+            }
+            return resolved;
         }
     }
 }

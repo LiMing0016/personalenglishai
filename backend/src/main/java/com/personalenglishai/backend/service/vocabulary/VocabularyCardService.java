@@ -558,7 +558,12 @@ public class VocabularyCardService {
             VocabularyCard card,
             RegenerateVocabularyCardRequest request) {
         if (request != null && Boolean.TRUE.equals(request.useLatestThemeVersion())) {
-            return themeService.resolve(userId, request.themeUid(), request.templateKey());
+            String themeUid = request.themeUid();
+            if ((themeUid == null || themeUid.isBlank())
+                    && card.getThemeUid() != null && !card.getThemeUid().isBlank()) {
+                themeUid = card.getThemeUid();
+            }
+            return themeService.resolve(userId, themeUid, request.templateKey());
         }
         if (request != null && request.templateKey() != null && !request.templateKey().isBlank()) {
             return themeService.resolve(userId, null, request.templateKey());

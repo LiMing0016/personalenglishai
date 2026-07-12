@@ -370,6 +370,25 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void regenerateLatestVersionWithoutThemeUidUsesTheCardsFrozenThemeUid() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        card.setThemeUid("theme_user_1");
+        card.setThemeVersion(2);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(themeService.resolve(7L, "theme_user_1", null)).thenReturn(new ResolvedVocabularyTheme(
+                "theme_user_1", 3, "Personal", "Purpose", "custom-markdown-v1", 1, "basic"));
+
+        service.regenerate(7L, "card_1", new RegenerateVocabularyCardRequest(null, true, null));
+
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(themeService).resolve(7L, "theme_user_1", null);
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_user_1", job.getValue().getThemeUid());
+        assertEquals(3, job.getValue().getThemeVersion());
+    }
+
+    @Test
     void retryRequeuesOnlyLatestFailedJob() {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
         VocabularyGenerationJob failed = VocabularyTestFixtures.pendingJob("job_1", "card_1", "rev_1", 3);
