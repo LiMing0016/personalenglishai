@@ -2,10 +2,14 @@
   <Teleport to="body">
     <div v-if="open" class="theme-dialog-backdrop" @click.self="closeDialog">
       <section
+        ref="dialogRef"
         class="theme-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="theme-dialog-title"
+        :aria-busy="pending"
+        tabindex="-1"
+        @keydown="handleDialogKeydown"
       >
         <header class="theme-dialog__header">
           <div>
@@ -28,6 +32,7 @@
           <label class="theme-dialog__field">
             <span>主题名称</span>
             <input
+              ref="nameInputRef"
               v-model="name"
               maxlength="80"
               autocomplete="off"
@@ -69,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue'
 
 import type { CreateVocabularyThemeRequest, VocabularyTheme } from '@/api/vocabulary'
 
@@ -91,9 +96,21 @@ const emit = defineEmits<{
 
 const name = ref('')
 const purpose = ref('')
+const dialogRef = ref<HTMLElement | null>(null)
+const nameInputRef = ref<HTMLInputElement | null>(null)
+const previouslyFocusedElement = ref<HTMLElement | null>(null)
 const errors = reactive({ name: '', purpose: '' })
 const requestError = ref('')
 const pending = computed(() => props.mutation.isPending.value)
+
+const FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'textarea:not([disabled])',
+  'select:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
 
 watch(
   () => [props.open, props.initialTheme] as const,
@@ -108,8 +125,59 @@ watch(
   { immediate: true },
 )
 
+watch(() => props.open, async (open) => {
+  if (open) {
+    previouslyFocusedElement.value = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null
+    await nextTick()
+    nameInputRef.value?.focus()
+    return
+  }
+
+  await nextTick()
+  restoreFocus()
+})
+
+onBeforeUnmount(restoreFocus)
+
 function closeDialog() {
   if (!pending.value) emit('close')
+}
+
+function restoreFocus() {
+  if (previouslyFocusedElement.value?.isConnected) {
+    previouslyFocusedElement.value.focus()
+  }
+  previouslyFocusedElement.value = null
+}
+
+function handleDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    if (pending.value) return
+    closeDialog()
+    return
+  }
+
+  if (event.key === 'Tab') {
+    const focusableElements = Array.from(
+      dialogRef.value?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
+    )
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (!firstElement || !lastElement) {
+      event.preventDefault()
+      dialogRef.value?.focus()
+    } else if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault()
+      lastElement.focus()
+    } else if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
 }
 
 function validate() {

@@ -6,7 +6,7 @@
         <h1>主题库</h1>
         <p>管理沉淀单词卡时使用的学习目标与内容侧重点。</p>
       </div>
-      <button type="button" class="theme-library__create" @click="openCreateDialog">
+      <button ref="createButtonRef" type="button" class="theme-library__create" :disabled="isThemeActionPending" @click="openCreateDialog">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         新建主题
       </button>
@@ -25,12 +25,13 @@
 
     <template v-else>
       <p v-if="actionError" class="theme-library__action-error" role="alert">{{ actionError }}</p>
+      <p v-if="isThemeActionPending" class="theme-library__sr-only" role="status" aria-live="polite">主题操作处理中</p>
 
       <section class="theme-library__section" aria-labelledby="system-theme-heading">
         <div class="theme-library__section-heading">
           <div>
             <h2 id="system-theme-heading">系统主题</h2>
-            <p>由系统维护，可直接使用或复制为自己的主题。</p>
+            <p>由系统维护，可复制为自己的主题。</p>
           </div>
           <span>{{ filteredSystemThemes.length }}</span>
         </div>
@@ -39,7 +40,7 @@
             v-for="theme in filteredSystemThemes"
             :key="theme.themeUid"
             class="theme-card"
-            :aria-busy="isThemePending(theme.themeUid)"
+            :aria-busy="isThemeActionPending"
           >
             <div class="theme-card__content">
               <div class="theme-card__title-row">
@@ -49,9 +50,8 @@
               </div>
               <p>{{ theme.purpose }}</p>
             </div>
-            <div class="theme-card__actions">
-              <button type="button" class="theme-card__use" :disabled="isThemePending(theme.themeUid)" @click="useTheme(theme)">使用</button>
-              <button type="button" title="复制" aria-label="复制" :disabled="isThemePending(theme.themeUid)" @click="copyTheme(theme)">
+            <div class="theme-card__actions" :aria-busy="isThemeActionPending">
+              <button type="button" title="复制" aria-label="复制" :disabled="isThemeActionPending" @click="copyTheme(theme)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" /></svg>
               </button>
             </div>
@@ -74,7 +74,7 @@
             :key="theme.themeUid"
             class="theme-card"
             :class="{ 'theme-card--disabled': theme.status === 'disabled' }"
-            :aria-busy="isThemePending(theme.themeUid)"
+            :aria-busy="isThemeActionPending"
           >
             <div class="theme-card__content">
               <div class="theme-card__title-row">
@@ -85,22 +85,21 @@
               </div>
               <p>{{ theme.purpose }}</p>
             </div>
-            <div class="theme-card__actions">
-              <button type="button" class="theme-card__use" :disabled="isThemePending(theme.themeUid) || theme.status === 'disabled'" @click="useTheme(theme)">使用</button>
-              <button type="button" title="复制" aria-label="复制" :disabled="isThemePending(theme.themeUid)" @click="copyTheme(theme)">
+            <div class="theme-card__actions" :aria-busy="isThemeActionPending">
+              <button type="button" title="复制" aria-label="复制" :disabled="isThemeActionPending" @click="copyTheme(theme)">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" /></svg>
               </button>
               <template v-if="theme.ownerType === 'user'">
-                <button type="button" title="编辑" aria-label="编辑" :disabled="isThemePending(theme.themeUid)" @click="openEditDialog(theme)">
+                <button type="button" title="编辑" aria-label="编辑" :disabled="isThemeActionPending" @click="openEditDialog(theme)">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>
                 </button>
-                <button type="button" title="设为默认" aria-label="设为默认" :disabled="isThemePending(theme.themeUid) || theme.defaultTheme || theme.status === 'disabled'" @click="setDefaultTheme(theme)">
+                <button type="button" title="设为默认" aria-label="设为默认" :disabled="isThemeActionPending || theme.defaultTheme || theme.status === 'disabled'" @click="setDefaultTheme(theme)">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" /></svg>
                 </button>
-                <button type="button" title="停用" aria-label="停用" :disabled="isThemePending(theme.themeUid) || theme.status === 'disabled'" @click="disableTheme(theme)">
+                <button type="button" title="停用" aria-label="停用" :disabled="isThemeActionPending || theme.status === 'disabled'" @click="disableTheme(theme)">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M10 9v6M14 9v6" /></svg>
                 </button>
-                <button type="button" class="theme-card__danger" title="删除" aria-label="删除" :disabled="isThemePending(theme.themeUid)" @click="requestDelete(theme)">
+                <button type="button" class="theme-card__danger" title="删除" aria-label="删除" :disabled="isThemeActionPending" @click="requestDelete(theme)">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" /></svg>
                 </button>
               </template>
@@ -123,12 +122,22 @@
 
     <Teleport to="body">
       <div v-if="deletingTheme" class="theme-delete-backdrop" @click.self="closeDeleteDialog">
-        <section class="theme-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-theme-title">
+        <section
+          ref="deleteDialogRef"
+          class="theme-delete-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="delete-theme-title"
+          aria-describedby="delete-theme-description"
+          :aria-busy="deleteMutation.isPending.value"
+          tabindex="-1"
+          @keydown="handleDeleteDialogKeydown"
+        >
           <h2 id="delete-theme-title">删除“{{ deletingTheme.name }}”？</h2>
-          <p>主题将不再出现在主题库中，但历史卡片仍会保留主题名称和已有内容。</p>
+          <p id="delete-theme-description">主题将不再出现在主题库中，但历史卡片仍会保留主题名称和已有内容。</p>
           <p v-if="actionError" class="theme-delete-dialog__error">{{ actionError }}</p>
           <div>
-            <button type="button" :disabled="deleteMutation.isPending.value" @click="closeDeleteDialog">取消</button>
+            <button ref="deleteCancelButtonRef" type="button" :disabled="deleteMutation.isPending.value" @click="closeDeleteDialog">取消</button>
             <button type="button" class="theme-delete-dialog__danger" :disabled="deleteMutation.isPending.value" @click="confirmDelete">
               {{ deleteMutation.isPending.value ? '删除中...' : '确认删除' }}
             </button>
@@ -140,8 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, ref } from 'vue'
 
 import type { CreateVocabularyThemeRequest, VocabularyTheme } from '@/api/vocabulary'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
@@ -152,7 +160,6 @@ const props = defineProps<{
   themeState: ReturnType<typeof useVocabularyThemes>
 }>()
 
-const router = useRouter()
 const {
   themesQuery,
   createMutation,
@@ -167,12 +174,17 @@ const search = ref('')
 const dialogOpen = ref(false)
 const editingTheme = ref<VocabularyTheme | null>(null)
 const deletingTheme = ref<VocabularyTheme | null>(null)
+const createButtonRef = ref<HTMLButtonElement | null>(null)
+const deleteDialogRef = ref<HTMLElement | null>(null)
+const deleteCancelButtonRef = ref<HTMLButtonElement | null>(null)
+const deleteTriggerElement = ref<HTMLElement | null>(null)
 const pendingThemeUid = ref('')
 const actionError = ref('')
 
 const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase())
 const filteredSystemThemes = computed(() => filterThemes(themesQuery.data.value?.systemThemes ?? []))
 const filteredUserThemes = computed(() => filterThemes(themesQuery.data.value?.userThemes ?? []))
+const isThemeActionPending = computed(() => Boolean(pendingThemeUid.value))
 const dialogMutation = computed(() => editingTheme.value
   ? {
       isPending: updateMutation.isPending,
@@ -224,10 +236,6 @@ async function runThemeMutation(theme: VocabularyTheme, action: () => Promise<un
   }
 }
 
-function useTheme(theme: VocabularyTheme) {
-  router.push({ path: '/app/vocabulary', query: { tab: 'collection', themeUid: theme.themeUid } })
-}
-
 function copyTheme(theme: VocabularyTheme) {
   return runThemeMutation(theme, () => copyMutation.mutateAsync(theme.themeUid), '主题副本已创建')
 }
@@ -240,13 +248,61 @@ function disableTheme(theme: VocabularyTheme) {
   return runThemeMutation(theme, () => disableMutation.mutateAsync(theme.themeUid), '主题已停用')
 }
 
-function requestDelete(theme: VocabularyTheme) {
+async function requestDelete(theme: VocabularyTheme) {
+  if (isThemeActionPending.value) return
   actionError.value = ''
+  deleteTriggerElement.value = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
   deletingTheme.value = theme
+  await nextTick()
+  deleteCancelButtonRef.value?.focus()
 }
 
 function closeDeleteDialog() {
-  if (!deleteMutation.isPending.value) deletingTheme.value = null
+  if (deleteMutation.isPending.value || isThemeActionPending.value) return
+  void dismissDeleteDialog()
+}
+
+async function dismissDeleteDialog() {
+  deletingTheme.value = null
+  await nextTick()
+  if (deleteTriggerElement.value?.isConnected) {
+    deleteTriggerElement.value.focus()
+  } else {
+    createButtonRef.value?.focus()
+  }
+  deleteTriggerElement.value = null
+}
+
+function handleDeleteDialogKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    if (deleteMutation.isPending.value || isThemeActionPending.value) return
+    closeDeleteDialog()
+    return
+  }
+
+  if (event.key === 'Tab') {
+    const focusableElements = Array.from(
+      deleteDialogRef.value?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    )
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    if (!firstElement || !lastElement) {
+      event.preventDefault()
+      deleteDialogRef.value?.focus()
+    } else if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault()
+      lastElement.focus()
+    } else if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault()
+      firstElement.focus()
+    }
+  }
 }
 
 async function confirmDelete() {
@@ -256,7 +312,8 @@ async function confirmDelete() {
   pendingThemeUid.value = theme.themeUid
   try {
     await deleteMutation.mutateAsync(theme.themeUid)
-    deletingTheme.value = null
+    pendingThemeUid.value = ''
+    await dismissDeleteDialog()
     showToast('主题已删除，历史卡片保持不变', 'success')
   } catch (error) {
     actionError.value = error instanceof Error ? error.message : '主题删除失败，请重试'
@@ -300,12 +357,12 @@ async function confirmDelete() {
 .theme-card__status--pending { min-width: 48px; background: #ecfeff; color: #0e7490; text-align: center; }
 .theme-card__actions { flex: 0 0 auto; justify-content: flex-end; gap: 6px; }
 .theme-card__actions button { display: inline-grid; place-items: center; box-sizing: border-box; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #475569; cursor: pointer; }
-.theme-card__actions .theme-card__use { display: inline-flex; flex-basis: auto; width: auto; min-width: 56px; padding: 0 12px; border-color: #a7f3d0; color: #047857; font: inherit; font-size: 13px; font-weight: 800; }
 .theme-card__actions svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .theme-card__actions button:hover:not(:disabled), .theme-card__actions button:focus-visible { border-color: #5eead4; background: #f0fdfa; color: #0f766e; }
 .theme-card__actions button:disabled { cursor: not-allowed; opacity: .45; }
 .theme-card__actions .theme-card__danger { border-color: #fecaca; color: #b91c1c; }
 .theme-library__empty { margin-top: 16px; }
+.theme-library__sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .theme-delete-backdrop { position: fixed; inset: 0; z-index: 10002; display: grid; place-items: center; box-sizing: border-box; padding: 16px; background: rgba(15, 23, 42, .46); }
 .theme-delete-dialog { box-sizing: border-box; width: min(100%, 460px); border-radius: 8px; background: #fff; color: #334155; padding: 22px; box-shadow: 0 20px 48px rgba(15, 23, 42, .24); }
 .theme-delete-dialog h2, .theme-delete-dialog p { margin: 0; }.theme-delete-dialog h2 { color: #0f172a; font-size: 20px; overflow-wrap: anywhere; }.theme-delete-dialog p { margin-top: 9px; color: #64748b; font-size: 14px; line-height: 1.55; }.theme-delete-dialog .theme-delete-dialog__error { color: #b91c1c; }
@@ -320,6 +377,5 @@ async function confirmDelete() {
 @media (max-width: 420px) {
   .theme-library__header h1 { font-size: 26px; }
   .theme-card { padding: 14px; }
-  .theme-card__actions .theme-card__use { flex: 1 1 100%; }
 }
 </style>

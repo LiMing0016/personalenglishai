@@ -37,13 +37,13 @@ test('exposes scannable system and user sections with complete async states', ()
 })
 
 test('keeps protected actions off system themes and confirms user-theme deletion semantics', () => {
-  for (const action of ['使用', '编辑', '复制', '设为默认', '停用', '删除']) {
+  for (const action of ['编辑', '复制', '设为默认', '停用', '删除']) {
     assert.ok(librarySource.includes(action), `theme library should include ${action}`)
   }
   assert.match(librarySource, /v-if="theme\.ownerType === 'user'"/)
   assert.match(librarySource, /历史卡片仍会保留/)
   assert.match(librarySource, /deleteMutation\.mutateAsync/)
-  assert.match(librarySource, /:disabled="isThemePending\(theme\.themeUid\)"/)
+  assert.match(librarySource, /:disabled="isThemeActionPending"/)
   assert.match(librarySource, /title="编辑"/)
   assert.match(librarySource, /aria-label="编辑"/)
   for (const label of ['复制', '设为默认', '停用', '删除']) {
@@ -52,12 +52,56 @@ test('keeps protected actions off system themes and confirms user-theme deletion
   }
 })
 
-test('exposes a perceivable pending state without resizing compact action controls', () => {
-  assert.match(librarySource, /:aria-busy="isThemePending\(theme\.themeUid\)"/)
+test('does not expose a cross-page use action that the vocabulary view cannot consume', () => {
+  assert.doesNotMatch(librarySource, />使用<\/button>/)
+  assert.doesNotMatch(librarySource, /useRouter/)
+  assert.doesNotMatch(librarySource, /function useTheme/)
+  assert.doesNotMatch(librarySource, /theme-card__use/)
+  assert.doesNotMatch(librarySource, /query:\s*{[^}]*themeUid/)
+})
+
+test('uses one global pending lock for every theme operation', () => {
+  assert.match(librarySource, /const isThemeActionPending = computed\(\(\) => Boolean\(pendingThemeUid\.value\)\)/)
+  assert.match(librarySource, /:aria-busy="isThemeActionPending"/)
+  assert.ok(
+    (librarySource.match(/:disabled="isThemeActionPending/g) ?? []).length >= 6,
+    'every theme action should use the global pending lock',
+  )
   assert.ok(librarySource.includes('处理中'), 'theme actions should announce pending work')
   assert.match(librarySource, /width:\s*36px/)
   assert.match(librarySource, /height:\s*36px/)
   assert.match(librarySource, /border-radius:\s*8px/)
+})
+
+test('traps focus in the theme form dialog and restores the opening trigger', () => {
+  assert.match(dialogSource, /ref="dialogRef"/)
+  assert.match(dialogSource, /ref="nameInputRef"/)
+  assert.match(dialogSource, /@keydown="handleDialogKeydown"/)
+  assert.match(dialogSource, /document\.activeElement/)
+  assert.match(dialogSource, /await nextTick\(\)/)
+  assert.match(dialogSource, /nameInputRef\.value\?\.focus\(\)/)
+  assert.match(dialogSource, /event\.key === 'Tab'/)
+  assert.match(dialogSource, /event\.shiftKey/)
+  assert.match(dialogSource, /event\.key === 'Escape'/)
+  assert.match(dialogSource, /if \(pending\.value\) return/)
+  assert.match(dialogSource, /previouslyFocusedElement\.value\?\.isConnected/)
+  assert.match(dialogSource, /previouslyFocusedElement\.value\.focus\(\)/)
+})
+
+test('traps focus in delete confirmation, guards pending escape, and restores focus', () => {
+  assert.match(librarySource, /ref="deleteDialogRef"/)
+  assert.match(librarySource, /ref="deleteCancelButtonRef"/)
+  assert.match(librarySource, /@keydown="handleDeleteDialogKeydown"/)
+  assert.match(librarySource, /aria-describedby="delete-theme-description"/)
+  assert.match(librarySource, /document\.activeElement/)
+  assert.match(librarySource, /deleteCancelButtonRef\.value\?\.focus\(\)/)
+  assert.match(librarySource, /event\.key === 'Tab'/)
+  assert.match(librarySource, /event\.shiftKey/)
+  assert.match(librarySource, /event\.key === 'Escape'/)
+  assert.match(librarySource, /deleteMutation\.isPending\.value \|\| isThemeActionPending\.value/)
+  assert.match(librarySource, /pendingThemeUid\.value = ''\s+await dismissDeleteDialog\(\)/)
+  assert.match(librarySource, /deleteTriggerElement\.value\?\.isConnected/)
+  assert.match(librarySource, /deleteTriggerElement\.value\.focus\(\)/)
 })
 
 test('validates the minimal dialog and closes it only after a successful mutation', () => {
