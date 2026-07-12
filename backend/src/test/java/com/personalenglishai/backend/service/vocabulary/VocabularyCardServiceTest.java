@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
@@ -307,6 +308,58 @@ class VocabularyCardServiceTest {
         assertEquals("/ˈrekɔːd/", result.core().path("phonetics").get(0).path("text").asText());
         assertNull(result.markdown());
         assertNull(result.contentFormatVersion());
+    }
+
+    @Test
+    void legacyClientEditRemainsLegacyForLaterFieldMerge() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_legacy");
+        var base = VocabularyTestFixtures.userRevision("rev_legacy");
+        ObjectNode editedContent = VocabularyTestFixtures.legacyVocabularyContent(objectMapper);
+        editedContent.put("notes", "legacy edit notes");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_legacy")).thenReturn(base);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(card), any()))
+                .thenReturn(VocabularyRevisionWriteService.WriteOutcome.ACTIVATED);
+
+        service.update(7L, "card_1", new UpdateVocabularyCardRequest(
+                "rev_legacy", null, null, editedContent, "Legacy edit"));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> edited =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisionWriter).appendAndActivate(eq(7L), eq(card), edited.capture());
+        var current = edited.getValue();
+        assertNull(current.getContentFormatVersion());
+        assertTrue(current.getCoreJson() != null && !current.getCoreJson().isBlank());
+
+        reset(cards, revisions);
+        VocabularyCard conflicted = VocabularyTestFixtures.ready(
+                "card_1", 7L, "record", current.getRevisionUid());
+        conflicted.setStatus("needs_review");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid(current.getRevisionUid());
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(conflicted);
+        when(revisions.findRevision(current.getRevisionUid())).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq(current.getRevisionUid()), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+        var mergedDefinitions = objectMapper.createArrayNode().add("merged legacy definition");
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "definitions", mergedDefinitions,
+                        "notes", objectMapper.getNodeFactory().textNode("merged legacy notes"))));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> merged =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(merged.capture());
+        JsonNode stored = objectMapper.readTree(merged.getValue().getContentJson());
+        assertEquals("merged legacy notes", stored.path("notes").asText());
+        assertEquals("merged legacy definition", stored.path("definitions").get(0).asText());
+        assertNull(merged.getValue().getContentFormatVersion());
     }
 
     @Test
@@ -640,6 +693,35 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void keepCurrentPreservesLegacyTemplateFieldsWhenProjectionCoreExists() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        ObjectNode legacy = VocabularyTestFixtures.legacyVocabularyContent(objectMapper);
+        legacy.put("notes", "historical legacy notes");
+        current.setContentJson(legacy.toString());
+        current.setCoreJson(new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", legacy).toString());
+        current.setContentFormatVersion(1);
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("keep_current", null));
+
+        var resolved = capturedInsertedRevision();
+        JsonNode stored = objectMapper.readTree(resolved.getContentJson());
+        assertEquals("historical legacy notes", stored.path("notes").asText());
+        assertEquals("The record was complete.", stored.path("examples").get(0).asText());
+        assertNull(resolved.getContentFormatVersion());
+    }
+
+    @Test
     void emptyMergeOnNewFormatCurrentAppendsFrozenRevisionWithoutChangingContent() throws Exception {
         ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
                 "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
@@ -687,6 +769,36 @@ class VocabularyCardServiceTest {
         assertEquals(currentCore, objectMapper.readTree(merged.getCoreJson()));
         assertEquals("## Merged notes", merged.getContentMarkdown());
         assertFrozenNewFormatResolution(merged);
+    }
+
+    @Test
+    void newFormatMergeAcceptsMarkdownAtTwentyThousandCharacters() {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current);
+        String markdown = "a".repeat(20_000);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "markdown", objectMapper.getNodeFactory().textNode(markdown))));
+
+        assertEquals(markdown, capturedInsertedRevision().getContentMarkdown());
+    }
+
+    @Test
+    void newFormatMergeRejectsMarkdownOverTwentyThousandCharacters() {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current, false);
+
+        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(
+                7L,
+                "card_1",
+                "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "markdown", objectMapper.getNodeFactory().textNode("a".repeat(20_001))))));
+
+        verify(revisions, never()).insertRevision(any());
     }
 
     @Test
