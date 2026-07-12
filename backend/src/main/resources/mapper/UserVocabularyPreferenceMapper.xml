@@ -7,12 +7,13 @@
         <id column="id" property="id"/>
         <result column="user_id" property="userId"/>
         <result column="default_template_key" property="defaultTemplateKey"/>
+        <result column="default_theme_uid" property="defaultThemeUid"/>
         <result column="created_at" property="createdAt"/>
         <result column="updated_at" property="updatedAt"/>
     </resultMap>
 
     <select id="findPreferenceByUser" resultMap="UserVocabularyPreferenceResultMap">
-        SELECT id, user_id, default_template_key, created_at, updated_at
+        SELECT id, user_id, default_template_key, default_theme_uid, created_at, updated_at
         FROM user_vocabulary_preference
         WHERE user_id = #{userId}
         LIMIT 1
@@ -23,6 +24,14 @@
         VALUES (#{userId}, #{templateKey})
         ON DUPLICATE KEY UPDATE
             default_template_key = VALUES(default_template_key),
+            updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <insert id="setDefaultTheme">
+        INSERT INTO user_vocabulary_preference (user_id, default_theme_uid)
+        VALUES (#{userId}, #{themeUid})
+        ON DUPLICATE KEY UPDATE
+            default_theme_uid = VALUES(default_theme_uid),
             updated_at = CURRENT_TIMESTAMP
     </insert>
 </mapper>

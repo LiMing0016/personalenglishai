@@ -11,24 +11,32 @@
         <result column="author_type" property="authorType"/>
         <result column="template_key" property="templateKey"/>
         <result column="template_version" property="templateVersion"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="theme_version" property="themeVersion"/>
         <result column="content_json" property="contentJson"/>
+        <result column="core_json" property="coreJson"/>
+        <result column="content_markdown" property="contentMarkdown"/>
+        <result column="content_format_version" property="contentFormatVersion"/>
         <result column="change_summary" property="changeSummary"/>
         <result column="created_at" property="createdAt"/>
     </resultMap>
 
     <sql id="VocabularyRevisionColumns">
         id, revision_uid, card_uid, base_revision_uid, author_type, template_key,
-        template_version, content_json, change_summary, created_at
+        template_version, theme_uid, theme_version, content_json, core_json, content_markdown,
+        content_format_version, change_summary, created_at
     </sql>
 
     <insert id="insertRevision" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO vocabulary_card_revision (
             revision_uid, card_uid, base_revision_uid, author_type, template_key,
-            template_version, content_json, change_summary
+            template_version, theme_uid, theme_version, content_json, core_json, content_markdown,
+            content_format_version, change_summary
         ) VALUES (
             #{revisionUid}, #{cardUid}, #{baseRevisionUid}, #{authorType}, #{templateKey},
-            #{templateVersion}, #{contentJson}, #{changeSummary}
+            #{templateVersion}, #{themeUid}, #{themeVersion}, #{contentJson}, #{coreJson}, #{contentMarkdown},
+            #{contentFormatVersion}, #{changeSummary}
         )
     </insert>
 

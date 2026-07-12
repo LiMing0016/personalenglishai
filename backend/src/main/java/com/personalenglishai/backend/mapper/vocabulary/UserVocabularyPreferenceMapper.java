@@ -9,4 +9,6 @@ public interface UserVocabularyPreferenceMapper {
     UserVocabularyPreference findPreferenceByUser(@Param("userId") Long userId);
 
     int upsertDefaultTemplate(@Param("userId") Long userId, @Param("templateKey") String templateKey);
+
+    int setDefaultTheme(@Param("userId") Long userId, @Param("themeUid") String themeUid);
 }

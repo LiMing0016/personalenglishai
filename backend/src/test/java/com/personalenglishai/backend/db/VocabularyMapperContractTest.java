@@ -22,6 +22,7 @@ class VocabularyMapperContractTest {
         String revisions = readMapper("VocabularyRevisionMapper.xml");
         String jobs = readMapper("VocabularyGenerationJobMapper.xml");
         String preferences = readMapper("UserVocabularyPreferenceMapper.xml");
+        String themes = readMapper("VocabularyThemeMapper.xml");
 
         assertAll(
                 () -> assertTrue(cards.contains("user_id = #{userId}")),
@@ -40,7 +41,13 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(jobs.contains("available_at &lt;= CURRENT_TIMESTAMP")),
                 () -> assertTrue(jobs.contains("attempt_count &lt; 3")),
                 () -> assertTrue(jobs.contains("lease_token = #{leaseToken}")),
-                () -> assertTrue(preferences.contains("ON DUPLICATE KEY UPDATE"))
+                () -> assertTrue(preferences.contains("ON DUPLICATE KEY UPDATE")),
+                () -> assertTrue(themes.contains("id=\"findVisibleThemes\"")),
+                () -> assertTrue(themes.contains("id=\"findCurrentRevision\"")),
+                () -> assertTrue(themes.contains("id=\"insertTheme\"")),
+                () -> assertTrue(themes.contains("id=\"insertRevision\"")),
+                () -> assertTrue(themes.contains("id=\"recordRecentUse\"")),
+                () -> assertTrue(preferences.contains("id=\"setDefaultTheme\""))
         );
     }
 
@@ -292,7 +299,12 @@ class VocabularyMapperContractTest {
                         "cancelActiveForCard", "retryFailed", "requeueStaleRunning", "failStaleRunning"
                 },
                 "UserVocabularyPreferenceMapper", new String[]{
-                        "findPreferenceByUser", "upsertDefaultTemplate"
+                        "findPreferenceByUser", "upsertDefaultTemplate", "setDefaultTheme"
+                },
+                "VocabularyThemeMapper", new String[]{
+                        "findVisibleThemes", "findOwnedByUid", "findCurrentRevision", "findRevision",
+                        "insertTheme", "insertRevision", "advanceVersion", "setStatus", "softDelete",
+                        "recordRecentUse", "findRecentThemeUids"
                 }
         );
 

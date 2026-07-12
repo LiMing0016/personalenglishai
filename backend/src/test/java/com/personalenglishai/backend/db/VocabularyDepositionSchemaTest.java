@@ -61,4 +61,19 @@ class VocabularyDepositionSchemaTest {
                 () -> assertTrue(migration.contains("AND lease_expires_at IS NULL"))
         );
     }
+
+    @Test
+    void themeAndMarkdownCardMigrationAddsAdditiveSchema() throws Exception {
+        String sql = Files.readString(Path.of(
+                "src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql"));
+
+        assertAll(
+                () -> assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS vocabulary_theme")),
+                () -> assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS vocabulary_theme_revision")),
+                () -> assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS user_vocabulary_theme_recent")),
+                () -> assertTrue(sql.contains("ADD COLUMN theme_uid VARCHAR(64) NULL")),
+                () -> assertTrue(sql.contains("ADD COLUMN core_json JSON NULL")),
+                () -> assertTrue(sql.contains("ADD COLUMN content_markdown MEDIUMTEXT NULL"))
+        );
+    }
 }

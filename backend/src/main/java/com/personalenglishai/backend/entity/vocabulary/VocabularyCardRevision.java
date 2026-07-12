@@ -10,7 +10,12 @@ public class VocabularyCardRevision {
     private String authorType;
     private String templateKey;
     private Integer templateVersion;
+    private String themeUid;
+    private Integer themeVersion;
     private String contentJson;
+    private String coreJson;
+    private String contentMarkdown;
+    private Integer contentFormatVersion;
     private String changeSummary;
     private LocalDateTime createdAt;
 
@@ -28,8 +33,18 @@ public class VocabularyCardRevision {
     public void setTemplateKey(String templateKey) { this.templateKey = templateKey; }
     public Integer getTemplateVersion() { return templateVersion; }
     public void setTemplateVersion(Integer templateVersion) { this.templateVersion = templateVersion; }
+    public String getThemeUid() { return themeUid; }
+    public void setThemeUid(String themeUid) { this.themeUid = themeUid; }
+    public Integer getThemeVersion() { return themeVersion; }
+    public void setThemeVersion(Integer themeVersion) { this.themeVersion = themeVersion; }
     public String getContentJson() { return contentJson; }
     public void setContentJson(String contentJson) { this.contentJson = contentJson; }
+    public String getCoreJson() { return coreJson; }
+    public void setCoreJson(String coreJson) { this.coreJson = coreJson; }
+    public String getContentMarkdown() { return contentMarkdown; }
+    public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
+    public Integer getContentFormatVersion() { return contentFormatVersion; }
+    public void setContentFormatVersion(Integer contentFormatVersion) { this.contentFormatVersion = contentFormatVersion; }
     public String getChangeSummary() { return changeSummary; }
     public void setChangeSummary(String changeSummary) { this.changeSummary = changeSummary; }
     public LocalDateTime getCreatedAt() { return createdAt; }

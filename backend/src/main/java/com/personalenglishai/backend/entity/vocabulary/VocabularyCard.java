@@ -12,6 +12,8 @@ public class VocabularyCard {
     private String displayTerm;
     private String templateKey;
     private Integer templateVersion;
+    private String themeUid;
+    private Integer themeVersion;
     private String status;
     private String activeRevisionUid;
     private LocalDateTime lastCapturedAt;
@@ -37,6 +39,10 @@ public class VocabularyCard {
     public void setTemplateKey(String templateKey) { this.templateKey = templateKey; }
     public Integer getTemplateVersion() { return templateVersion; }
     public void setTemplateVersion(Integer templateVersion) { this.templateVersion = templateVersion; }
+    public String getThemeUid() { return themeUid; }
+    public void setThemeUid(String themeUid) { this.themeUid = themeUid; }
+    public Integer getThemeVersion() { return themeVersion; }
+    public void setThemeVersion(Integer themeVersion) { this.themeVersion = themeVersion; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getActiveRevisionUid() { return activeRevisionUid; }

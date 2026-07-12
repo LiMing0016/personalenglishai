@@ -13,6 +13,8 @@
         <result column="display_term" property="displayTerm"/>
         <result column="template_key" property="templateKey"/>
         <result column="template_version" property="templateVersion"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="theme_version" property="themeVersion"/>
         <result column="status" property="status"/>
         <result column="active_revision_uid" property="activeRevisionUid"/>
         <result column="last_captured_at" property="lastCapturedAt"/>
@@ -23,7 +25,7 @@
 
     <sql id="VocabularyCardColumns">
         id, card_uid, user_id, language, original_term, normalized_term, display_term,
-        template_key, template_version, status, active_revision_uid, last_captured_at,
+        template_key, template_version, theme_uid, theme_version, status, active_revision_uid, last_captured_at,
         deleted_at, created_at, updated_at
     </sql>
 
@@ -69,10 +71,10 @@
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO vocabulary_card (
             card_uid, user_id, language, original_term, normalized_term, display_term,
-            template_key, template_version, status, active_revision_uid, last_captured_at, deleted_at
+            template_key, template_version, theme_uid, theme_version, status, active_revision_uid, last_captured_at, deleted_at
         ) VALUES (
             #{cardUid}, #{userId}, #{language}, #{originalTerm}, #{normalizedTerm}, #{displayTerm},
-            #{templateKey}, #{templateVersion}, #{status}, #{activeRevisionUid}, #{lastCapturedAt}, #{deletedAt}
+            #{templateKey}, #{templateVersion}, #{themeUid}, #{themeVersion}, #{status}, #{activeRevisionUid}, #{lastCapturedAt}, #{deletedAt}
         )
     </insert>
 

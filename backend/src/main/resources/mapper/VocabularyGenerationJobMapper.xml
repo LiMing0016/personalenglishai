@@ -10,6 +10,8 @@
         <result column="base_revision_uid" property="baseRevisionUid"/>
         <result column="template_key" property="templateKey"/>
         <result column="template_version" property="templateVersion"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="theme_version" property="themeVersion"/>
         <result column="status" property="status"/>
         <result column="attempt_count" property="attemptCount"/>
         <result column="request_json" property="requestJson"/>
@@ -26,7 +28,7 @@
     </resultMap>
 
     <sql id="VocabularyGenerationJobColumns">
-        id, job_uid, card_uid, base_revision_uid, template_key, template_version,
+        id, job_uid, card_uid, base_revision_uid, template_key, template_version, theme_uid, theme_version,
         status, attempt_count, request_json, result_revision_uid, error_code,
         error_message, available_at, started_at, lease_token, lease_expires_at,
         finished_at, created_at, updated_at
@@ -35,11 +37,11 @@
     <insert id="insertJob" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob"
             useGeneratedKeys="true" keyProperty="id">
         INSERT INTO vocabulary_generation_job (
-            job_uid, card_uid, base_revision_uid, template_key, template_version,
+            job_uid, card_uid, base_revision_uid, template_key, template_version, theme_uid, theme_version,
             status, attempt_count, request_json, result_revision_uid, error_code,
             error_message, available_at, started_at, lease_token, lease_expires_at, finished_at
         ) VALUES (
-            #{jobUid}, #{cardUid}, #{baseRevisionUid}, #{templateKey}, #{templateVersion},
+            #{jobUid}, #{cardUid}, #{baseRevisionUid}, #{templateKey}, #{templateVersion}, #{themeUid}, #{themeVersion},
             #{status}, #{attemptCount}, #{requestJson}, #{resultRevisionUid}, #{errorCode},
             #{errorMessage}, #{availableAt}, #{startedAt}, #{leaseToken}, #{leaseExpiresAt}, #{finishedAt}
         )
@@ -65,7 +67,7 @@
 
     <select id="listLatestByCardUids" resultMap="VocabularyGenerationJobResultMap">
         SELECT job.id, job.job_uid, job.card_uid, job.base_revision_uid, job.template_key,
-               job.template_version, job.status, job.attempt_count, job.request_json,
+               job.template_version, job.theme_uid, job.theme_version, job.status, job.attempt_count, job.request_json,
                job.result_revision_uid, job.error_code, job.error_message, job.available_at,
                job.started_at, job.lease_token, job.lease_expires_at, job.finished_at,
                job.created_at, job.updated_at
