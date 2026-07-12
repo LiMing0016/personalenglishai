@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
+import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
@@ -150,6 +151,39 @@ public final class VocabularyTestFixtures {
         response.setFavorite(false);
         response.setLookupCount(0);
         return response;
+    }
+
+    public static DictionaryLookupResponse dictionaryLookupWithCoreTruth() {
+        DictionaryEntryDto noun = new DictionaryEntryDto("noun");
+        noun.setDefinitions(List.of("a written account；记录", "a permanent record；档案"));
+        DictionaryEntryDto secondNoun = new DictionaryEntryDto("noun");
+        secondNoun.setDefinitions(List.of("a recording；录音"));
+        DictionaryEntryDto verb = new DictionaryEntryDto("verb");
+        verb.setDefinitions(List.of("to write down；记录"));
+
+        DictionaryLookupResponse response = new DictionaryLookupResponse();
+        response.setWord("record");
+        response.setLanguage("en-gb");
+        response.setSource("fixture");
+        response.setPhonetics(List.of(
+                new DictionaryPhoneticDto("UK /ˈrekɔːd/", "https://audio.example/record-uk.mp3"),
+                new DictionaryPhoneticDto("US /ˈrekərd/", "https://audio.example/record-us.mp3"),
+                new DictionaryPhoneticDto("/ˈrekɔːd/", null)));
+        response.setEntries(List.of(noun, secondNoun, verb));
+        return response;
+    }
+
+    public static ObjectNode legacyVocabularyContent(ObjectMapper objectMapper) {
+        ObjectNode legacy = objectMapper.createObjectNode();
+        legacy.put("term", "wrong-ai-term");
+        legacy.put("phonetic", "/ˈrekɔːd/");
+        legacy.put("partOfSpeech", "noun");
+        legacy.putArray("definitions")
+                .add("a written account；记录")
+                .add("evidence；证据");
+        legacy.putArray("examples").add("The record was complete.");
+        legacy.put("notes", "keep legacy fields");
+        return legacy;
     }
 
     private static VocabularyCard generatingCard(
