@@ -2,7 +2,7 @@
   <section class="card-inspector" aria-label="单词卡详情">
     <header class="card-inspector__header">
       <div>
-        <p>当前模板：{{ card.templateKey }}</p>
+        <p>{{ card.theme?.name || '兼容卡片' }}<template v-if="card.themeVersion"> · v{{ card.themeVersion }}</template></p>
         <h2>{{ card.displayTerm }}</h2>
         <span :class="`card-inspector__status card-inspector__status--${card.status}`">{{ statusLabel(card.status) }}</span>
       </div>
@@ -11,14 +11,18 @@
 
     <div class="card-inspector__actions" aria-label="单词卡操作">
       <button v-if="editing" type="button" @click="cancelEditing">取消编辑</button>
-      <button v-else type="button" @click="editing = true">编辑卡片</button>
-      <label class="card-inspector__regenerate-template">
-        <span>模板</span>
-        <select v-model="regenerateTemplateKey" aria-label="重新生成模板">
-          <option v-for="option in templates" :key="option.key" :value="option.key">{{ option.name }}</option>
+      <button v-else type="button" @click="editing = true">编辑 Markdown</button>
+      <label class="card-inspector__regenerate-theme">
+        <span>主题</span>
+        <select v-model="selectedThemeUid" aria-label="重新生成主题" :disabled="!activeThemes.length || themesQuery.isLoading.value">
+          <option v-for="theme in activeThemes" :key="theme.themeUid" :value="theme.themeUid">{{ theme.name }}</option>
         </select>
       </label>
-      <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">
+      <button
+        type="button"
+        :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
+        @click="requestRegenerate"
+      >
         {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
       </button>
       <button v-if="card.status === 'failed' || card.generationStatus === 'failed'" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
@@ -27,6 +31,12 @@
       <button type="button" class="card-inspector__danger" @click="deleteDialogOpen = true">删除</button>
     </div>
 
+    <div v-if="themesQuery.isLoading.value && !themesQuery.data.value" class="card-inspector__theme-state">主题加载中...</div>
+    <div v-else-if="themesBlockingError" class="card-inspector__theme-state card-inspector__theme-state--error" role="alert">
+      <span>主题加载失败</span>
+      <button type="button" :disabled="themesQuery.isFetching.value" @click="themesQuery.refetch()">重新加载</button>
+    </div>
+    <p v-else-if="!activeThemes.length" class="card-inspector__theme-state">暂无可用主题</p>
     <p v-if="card.generationError" class="card-inspector__error" role="alert">{{ card.generationError }}</p>
 
     <div class="card-inspector__tabs" role="tablist" aria-label="单词卡内容">
@@ -36,35 +46,10 @@
     </div>
 
     <form v-if="activeTab === 'details'" class="card-inspector__content" @submit.prevent="save">
-      <div v-for="field in fieldNames" :key="field" class="card-inspector__field">
-        <label :for="fieldId(field)">{{ fieldLabel(field) }}</label>
-        <input
-          v-if="field === 'term'"
-          :id="fieldId(field)"
-          :value="String(editContent[field] ?? card.displayTerm)"
-          type="text"
-          readonly
-          aria-readonly="true"
-        >
-        <template v-else-if="isArrayField(field)">
-          <div v-for="(_, index) in arrayValue(field)" :key="`${field}-${index}`" class="card-inspector__array-row">
-            <input :id="index === 0 ? fieldId(field) : undefined" v-model="arrayValue(field)[index]" type="text" :readonly="!editing">
-            <button v-if="editing" type="button" :aria-label="`删除${fieldLabel(field)}第${index + 1}项`" @click="removeArrayValue(field, index)">删除</button>
-          </div>
-          <button v-if="editing" type="button" class="card-inspector__add" @click="addArrayValue(field)">添加{{ fieldLabel(field) }}</button>
-        </template>
-        <textarea
-          v-else
-          :id="fieldId(field)"
-          :value="textValue(field)"
-          @input="updateTextValue(field, ($event.target as HTMLTextAreaElement).value)"
-          :readonly="!editing"
-          :aria-label="field === 'notes' ? '个人笔记' : fieldLabel(field)"
-          :rows="field === 'notes' ? 4 : 3"
-        ></textarea>
-      </div>
+      <VocabularyCoreSummary :core="displayCore" />
+      <VocabularyMarkdownEditor v-model="editMarkdown" :readonly="!editing" />
       <div v-if="editing" class="card-inspector__save-row">
-        <button type="submit" :disabled="!card.activeRevisionUid || updateMutation.isPending.value">
+        <button type="submit" :disabled="!card.activeRevisionUid || markdownTooLong || updateMutation.isPending.value">
           {{ updateMutation.isPending.value ? '保存中...' : '保存修改' }}
         </button>
       </div>
@@ -87,11 +72,22 @@
       </article>
     </section>
 
+    <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="regenerateConfirmationOpen = false">
+      <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title">
+        <h3 id="regenerate-card-title">使用最新主题版本？</h3>
+        <p>将使用主题最新版本重新生成，当前版本会保留在历史中。</p>
+        <div class="card-inspector__dialog-actions">
+          <button type="button" @click="regenerateConfirmationOpen = false">取消</button>
+          <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">确认重新生成</button>
+        </div>
+      </section>
+    </div>
+
     <div v-if="deleteDialogOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="deleteDialogOpen = false">
       <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="delete-card-title">
         <h3 id="delete-card-title">删除单词卡？</h3>
         <p>删除后会从单词卡列表移除；再次收藏或录入时可恢复，修订历史会保留。</p>
-        <div>
+        <div class="card-inspector__dialog-actions">
           <button type="button" @click="deleteDialogOpen = false">取消</button>
           <button type="button" class="card-inspector__danger" :disabled="deleteMutation.isPending.value" @click="removeCard">
             {{ deleteMutation.isPending.value ? '删除中...' : '确认删除' }}
@@ -103,19 +99,25 @@
     <div v-if="conflict" class="card-inspector__dialog-backdrop" role="presentation">
       <section class="card-inspector__dialog card-inspector__dialog--conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-card-title">
         <h3 id="conflict-card-title">发现版本冲突</h3>
-        <p>请决定保留当前内容、采用 AI 新版本，或逐字段合并。</p>
-        <div class="card-inspector__conflict-columns">
-          <section><h4>当前内容</h4><dl><template v-for="field in conflictFields" :key="`current-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.currentContent, field) }}</dd></template></dl></section>
-          <section><h4>AI 新版本</h4><dl><template v-for="field in conflictFields" :key="`candidate-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.candidateContent, field) }}</dd></template></dl></section>
+        <p>{{ v1Conflict ? '请整体比较 Markdown，并选择要保留的版本。' : '请决定保留当前内容、采用 AI 新版本，或逐字段合并。' }}</p>
+
+        <div v-if="v1Conflict" class="card-inspector__conflict-columns">
+          <section><h4>当前 Markdown</h4><pre>{{ currentConflictMarkdown || '暂无 Markdown 内容' }}</pre></section>
+          <section><h4>候选 Markdown</h4><pre>{{ candidateConflictMarkdown || '暂无 Markdown 内容' }}</pre></section>
         </div>
+        <div v-else class="card-inspector__conflict-columns">
+          <section><h4>当前内容</h4><dl><template v-for="field in legacyConflictFields" :key="`current-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.currentContent, field) }}</dd></template></dl></section>
+          <section><h4>AI 新版本</h4><dl><template v-for="field in legacyConflictFields" :key="`candidate-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.candidateContent, field) }}</dd></template></dl></section>
+        </div>
+
         <fieldset class="card-inspector__conflict-options">
           <legend>解决方式</legend>
           <label><input v-model="conflictChoice" type="radio" value="keep_current">保留当前内容</label>
           <label><input v-model="conflictChoice" type="radio" value="use_ai">使用 AI 新版本</label>
-          <label><input v-model="conflictChoice" type="radio" value="merge_fields">逐字段合并</label>
+          <label><input v-model="conflictChoice" type="radio" value="merge_fields">{{ v1Conflict ? '组合核心数据与 Markdown' : '逐字段合并' }}</label>
         </fieldset>
         <div v-if="conflictChoice === 'merge_fields'" class="card-inspector__merge-fields">
-          <label v-for="field in mergeableFields" :key="field">
+          <label v-for="field in mergeableConflictFields" :key="field">
             <span>{{ fieldLabel(field) }}</span>
             <select v-model="mergeChoice[field]" :aria-label="`合并${fieldLabel(field)}`">
               <option value="current">当前内容</option>
@@ -135,22 +137,28 @@
 <script setup lang="ts">
 import { computed, ref, watch, type Ref } from 'vue'
 
+import VocabularyCoreSummary from './VocabularyCoreSummary.vue'
+import VocabularyMarkdownEditor from './VocabularyMarkdownEditor.vue'
 import {
   VocabularyConflictError,
+  type RegenerateVocabularyCardRequest,
   type ResolveVocabularyConflictRequest,
   type UpdateVocabularyCardRequest,
   type VocabularyCardDetail,
   type VocabularyCardStatus,
   type VocabularyConflictResponse,
+  type VocabularyCoreContent,
+  type VocabularyRevision,
   type VocabularyRevisionListResponse,
   type VocabularyTemplate,
-  type VocabularyTemplateKey,
 } from '@/api/vocabulary'
-import { showToast } from '@/utils/toast'
+import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
+import { projectLegacyVocabularyCore } from '@/composables/useVocabularyCards'
 import { safeExternalUrl } from '@/features/vocabulary/safeExternalUrl'
+import { showToast } from '@/utils/toast'
 
 type MutationBridge<T> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<unknown> }
-type EditableContent = Record<string, string | string[]>
+type MergeChoice = Record<string, 'current' | 'candidate'>
 
 const props = defineProps<{
   card: VocabularyCardDetail
@@ -159,87 +167,130 @@ const props = defineProps<{
   listVocabularyRevisions?: VocabularyRevisionListResponse
   updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }>
   deleteMutation: MutationBridge<string>
-  regenerateMutation: MutationBridge<{ cardUid: string, templateKey: VocabularyTemplateKey }>
+  regenerateMutation: MutationBridge<{ cardUid: string } & RegenerateVocabularyCardRequest>
   retryVocabularyCard: MutationBridge<string>
   resolveConflictMutation: MutationBridge<{ cardUid: string, revisionUid: string, payload: ResolveVocabularyConflictRequest }>
 }>()
 
 const emit = defineEmits<{ back: [] }>()
+const { themesQuery } = useVocabularyThemes()
 const activeTab = ref<'details' | 'sources' | 'history'>('details')
 const editing = ref(false)
+const editMarkdown = ref('')
+const selectedThemeUid = ref('')
+const regenerateConfirmationOpen = ref(false)
 const deleteDialogOpen = ref(false)
 const conflict = ref<VocabularyConflictResponse | null>(null)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
-const mergeChoice = ref<Record<string, 'current' | 'candidate'>>({})
-const editContent = ref<EditableContent>({})
-const regenerateTemplateKey = ref<VocabularyTemplateKey>(props.card.templateKey)
-
-function cloneEditableContent(value: unknown): EditableContent {
-  const source = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-  const content: EditableContent = {}
-  for (const [field, fieldValue] of Object.entries(source)) {
-    content[field] = Array.isArray(fieldValue)
-      ? fieldValue.map((item) => String(item))
-      : fieldValue == null ? '' : String(fieldValue)
-  }
-  for (const field of props.template.fields) {
-    if (field in content) continue
-    const candidateValue = asRecord(props.card.candidateContent)[field]
-    content[field] = Array.isArray(candidateValue) ? [] : ''
-  }
-  if (!('term' in content)) content.term = props.card.displayTerm
-  if (!('notes' in content)) content.notes = ''
-  return content
-}
-
-const fieldNames = computed(() => {
-  const templateFields = props.template.fields.filter((field) => field !== 'term' && field !== 'notes')
-  return ['term', ...new Set(templateFields), 'notes']
-})
-const conflictFields = computed(() => fieldNames.value)
-const mergeableFields = computed(() => fieldNames.value.filter((field) => field !== 'term'))
+const mergeChoice = ref<MergeChoice>({})
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
-function fieldId(field: string) { return `vocabulary-card-${field}` }
+function minimalVocabularyCore(term: string): VocabularyCoreContent {
+  return { schemaVersion: 1, term, phonetics: [], senses: [] }
+}
+
+const displayCore = computed<VocabularyCoreContent>(() => {
+  const projected = props.card.core ?? projectLegacyVocabularyCore(props.card.normalizedTerm, props.card.content)
+  return projected
+    ? { ...projected, term: props.card.normalizedTerm }
+    : minimalVocabularyCore(props.card.normalizedTerm)
+})
+const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
+const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
+const activeThemes = computed(() => {
+  const catalog = themesQuery.data.value
+  if (!catalog) return []
+  return [...catalog.systemThemes, ...catalog.userThemes].filter((theme) => theme.status === 'active')
+})
+const selectedTheme = computed(() => activeThemes.value.find((theme) => theme.themeUid === selectedThemeUid.value))
+const regenerateNeedsConfirmation = computed(() => (
+  selectedTheme.value?.themeUid !== props.card.theme?.themeUid
+  || selectedTheme.value?.version !== props.card.themeVersion
+))
+
+function cardMarkdown(card: VocabularyCardDetail): string {
+  if (card.markdown != null) return card.markdown
+  const compatibleMarkdown = asRecord(card.content).markdown
+  return typeof compatibleMarkdown === 'string' ? compatibleMarkdown : ''
+}
+
+function revisionFor(revisionUid: string | null): VocabularyRevision | undefined {
+  return props.listVocabularyRevisions?.items.find((revision) => revision.revisionUid === revisionUid)
+}
+
+function isCoreContent(value: unknown): value is VocabularyCoreContent {
+  const record = asRecord(value)
+  return record.schemaVersion === 1 && Array.isArray(record.phonetics) && Array.isArray(record.senses)
+}
+
+const v1Conflict = computed(() => {
+  const currentRevision = revisionFor(conflict.value?.currentRevisionUid ?? null)
+  const candidateRevision = revisionFor(conflict.value?.candidateRevisionUid ?? null)
+  return currentRevision?.contentFormatVersion === 1
+    || candidateRevision?.contentFormatVersion === 1
+    || isCoreContent(conflict.value?.currentContent)
+    || isCoreContent(conflict.value?.candidateContent)
+})
+
+function conflictMarkdown(revisionUid: string | null, content: unknown): string {
+  const revisionMarkdown = revisionFor(revisionUid)?.markdown
+  if (revisionMarkdown != null) return revisionMarkdown
+  const markdown = asRecord(content).markdown
+  return typeof markdown === 'string' ? markdown : ''
+}
+
+const currentConflictMarkdown = computed(() => conflictMarkdown(conflict.value?.currentRevisionUid ?? null, conflict.value?.currentContent))
+const candidateConflictMarkdown = computed(() => conflictMarkdown(conflict.value?.candidateRevisionUid ?? null, conflict.value?.candidateContent))
+const legacyConflictFields = computed(() => {
+  const keys = new Set([
+    ...Object.keys(asRecord(conflict.value?.currentContent)),
+    ...Object.keys(asRecord(conflict.value?.candidateContent)),
+  ])
+  return [...keys].filter((field) => field !== 'markdown')
+})
+const legacyMergeableFields = computed(() => legacyConflictFields.value.filter((field) => field !== 'term'))
+const mergeableConflictFields = computed(() => v1Conflict.value ? ['core', 'markdown'] : legacyMergeableFields.value)
+
+function conflictCore(revisionUid: string | null, content: unknown): VocabularyCoreContent {
+  const revisionCore = revisionFor(revisionUid)?.core
+  const source = revisionCore ?? (isCoreContent(content) ? content : null)
+  return source
+    ? { ...source, term: props.card.normalizedTerm }
+    : displayCore.value
+}
+
 function fieldLabel(field: string) {
-  return ({ term: '单词', definitions: '释义', examples: '例句', notes: '个人笔记' } as Record<string, string>)[field] ?? field
+  return ({
+    term: '单词', definitions: '释义', examples: '例句', notes: '个人笔记',
+    core: '核心词典数据', markdown: 'Markdown',
+  } as Record<string, string>)[field] ?? field
 }
-function isArrayField(field: string) {
-  return Array.isArray(editContent.value[field])
-    || Array.isArray(asRecord(props.card.content)[field])
-    || Array.isArray(asRecord(props.card.candidateContent)[field])
-}
-function arrayValue(field: string): string[] {
-  const value = editContent.value[field]
-  if (!Array.isArray(value)) editContent.value[field] = []
-  return editContent.value[field] as string[]
-}
-function textValue(field: string): string {
-  const value = editContent.value[field]
-  if (Array.isArray(value)) return value.join('\n')
-  return value ?? ''
-}
-function updateTextValue(field: string, value: string) { editContent.value[field] = value }
-function addArrayValue(field: string) { arrayValue(field).push('') }
-function removeArrayValue(field: string, index: number) { arrayValue(field).splice(index, 1) }
+
 function displayValue(content: unknown, field: string) {
   const value = asRecord(content)[field]
   return Array.isArray(value) ? value.join('；') : value == null ? '未填写' : String(value)
 }
 
+function resetMergeChoice() {
+  mergeChoice.value = Object.fromEntries(mergeableConflictFields.value.map((field) => [field, 'current']))
+}
+
 function setConflict(nextConflict: VocabularyConflictResponse) {
   conflict.value = nextConflict
   conflictChoice.value = 'keep_current'
-  mergeChoice.value = Object.fromEntries(mergeableFields.value.map((field) => [field, 'current']))
+  resetMergeChoice()
 }
 
-watch(() => [props.card, props.template] as const, ([card]) => {
-  editContent.value = cloneEditableContent(card.content)
-  regenerateTemplateKey.value = card.templateKey
+watch(() => props.card, (card) => {
+  editMarkdown.value = cardMarkdown(card)
+  selectedThemeUid.value = card.theme?.themeUid ?? ''
   editing.value = false
+  regenerateConfirmationOpen.value = false
   if (card.status === 'needs_review' && card.candidateRevisionUid && card.candidateContent) {
     setConflict({
       currentRevisionUid: card.activeRevisionUid,
@@ -253,27 +304,30 @@ watch(() => [props.card, props.template] as const, ([card]) => {
   }
 }, { immediate: true, deep: true })
 
+watch(() => themesQuery.data.value, (catalog) => {
+  if (!catalog || activeThemes.value.some((theme) => theme.themeUid === selectedThemeUid.value)) return
+  selectedThemeUid.value = activeThemes.value.some((theme) => theme.themeUid === catalog.defaultThemeUid)
+    ? catalog.defaultThemeUid
+    : activeThemes.value[0]?.themeUid ?? ''
+}, { immediate: true })
+
+watch([v1Conflict, conflict], () => resetMergeChoice())
+
 function cancelEditing() {
-  editContent.value = cloneEditableContent(props.card.content)
+  editMarkdown.value = cardMarkdown(props.card)
   editing.value = false
 }
 
-function snapshotEditableContent(): EditableContent {
-  return Object.fromEntries(Object.entries(editContent.value).map(([field, value]) => [
-    field,
-    Array.isArray(value) ? [...value] : value,
-  ]))
-}
-
 async function save() {
-  if (!props.card.activeRevisionUid) return
+  if (!props.card.activeRevisionUid || markdownTooLong.value) return
   try {
     await props.updateMutation.mutateAsync({
       cardUid: props.card.cardUid,
       payload: {
         baseRevisionUid: props.card.activeRevisionUid,
-        content: snapshotEditableContent(),
-        changeSummary: '用户编辑卡片',
+        core: { ...displayCore.value, term: props.card.normalizedTerm },
+        markdown: editMarkdown.value,
+        changeSummary: '用户编辑 Markdown 卡片',
       },
     })
     editing.value = false
@@ -287,14 +341,28 @@ async function save() {
   }
 }
 
+function requestRegenerate() {
+  if (!selectedTheme.value) return
+  if (regenerateNeedsConfirmation.value) {
+    regenerateConfirmationOpen.value = true
+    return
+  }
+  void regenerate()
+}
+
 async function regenerate() {
+  if (!selectedTheme.value) return
   try {
     await props.regenerateMutation.mutateAsync({
       cardUid: props.card.cardUid,
-      templateKey: regenerateTemplateKey.value,
+      themeUid: selectedThemeUid.value,
+      useLatestThemeVersion: true,
     })
+    regenerateConfirmationOpen.value = false
     showToast('已提交重新生成任务', 'success')
-  } catch (error) { showToast(error instanceof Error ? error.message : '重新生成失败，请重试', 'error') }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '重新生成失败，请重试', 'error')
+  }
 }
 
 async function retry() {
@@ -313,12 +381,27 @@ async function removeCard() {
   } catch (error) { showToast(error instanceof Error ? error.message : '删除失败，请重试', 'error') }
 }
 
-async function resolveConflict() {
-  if (!conflict.value?.candidateRevisionUid) return
-  const mergeFields = Object.fromEntries(mergeableFields.value.map((field) => [
+function conflictMergeFields(): Record<string, unknown> {
+  if (!conflict.value) return {}
+  if (v1Conflict.value) {
+    const currentCore = conflictCore(conflict.value.currentRevisionUid, conflict.value.currentContent)
+    const candidateCore = conflictCore(conflict.value.candidateRevisionUid, conflict.value.candidateContent)
+    return {
+      core: mergeChoice.value.core === 'candidate' ? candidateCore : currentCore,
+      markdown: mergeChoice.value.markdown === 'candidate'
+        ? candidateConflictMarkdown.value
+        : currentConflictMarkdown.value,
+    }
+  }
+  return Object.fromEntries(legacyMergeableFields.value.map((field) => [
     field,
     asRecord(mergeChoice.value[field] === 'candidate' ? conflict.value?.candidateContent : conflict.value?.currentContent)[field] ?? null,
   ]))
+}
+
+async function resolveConflict() {
+  if (!conflict.value?.candidateRevisionUid) return
+  const mergeFields = conflictMergeFields()
   try {
     await props.resolveConflictMutation.mutateAsync({
       cardUid: props.card.cardUid,
@@ -340,13 +423,61 @@ function statusLabel(status: VocabularyCardStatus) {
 
 <style scoped>
 .card-inspector { min-width: 0; padding: 18px; border: 1px solid #dce7e1; border-radius: 8px; background: #fff; color: #334155; }
-.card-inspector__header, .card-inspector__actions, .card-inspector__dialog-actions { display: flex; align-items: start; justify-content: space-between; gap: 10px; }.card-inspector__header p, .card-inspector__header h2 { margin: 0; }.card-inspector__header p { color: #64748b; font-size: 12px; }.card-inspector__header h2 { margin-top: 5px; color: #0f172a; font-size: 22px; overflow-wrap: anywhere; }.card-inspector__status { display: inline-block; margin-top: 7px; color: #047857; font-size: 12px; font-weight: 800; }.card-inspector__status--failed { color: #b91c1c; }.card-inspector__status--needs_review { color: #b45309; }
-.card-inspector button { min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }.card-inspector button:disabled { cursor: not-allowed; opacity: .55; }.card-inspector__back { white-space: nowrap; }.card-inspector__actions { flex-wrap: wrap; margin-top: 16px; align-items: center; justify-content: flex-start; }.card-inspector__actions button:first-child, .card-inspector__save-row button, .card-inspector__dialog-actions button:last-child { border-color: #059669; background: #059669; color: #fff; }.card-inspector__danger { border-color: #fecaca !important; color: #b91c1c !important; }.card-inspector__error { margin: 12px 0 0; color: #b91c1c; font-size: 13px; }
-.card-inspector__regenerate-template { display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; }.card-inspector__regenerate-template select { width: auto; min-height: 34px; padding-block: 0; }
-.card-inspector__tabs { display: flex; gap: 4px; margin-top: 18px; border-bottom: 1px solid #dce7e1; }.card-inspector__tabs button { border: 0; border-radius: 0; background: transparent; padding: 0 8px 9px; }.card-inspector__tabs button[aria-selected="true"] { border-bottom: 2px solid #059669; color: #047857; }
-.card-inspector__content { display: grid; gap: 13px; margin-top: 16px; }.card-inspector__field { display: grid; gap: 6px; min-width: 0; }.card-inspector__field > label { color: #475569; font-size: 13px; font-weight: 800; }.card-inspector input, .card-inspector textarea, .card-inspector select { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font: inherit; padding: 8px 10px; }.card-inspector textarea { resize: vertical; }.card-inspector input[readonly], .card-inspector textarea[readonly] { background: #f8fafc; color: #64748b; }.card-inspector__array-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }.card-inspector__add { justify-self: start; }.card-inspector__save-row { display: flex; justify-content: flex-end; }
-.card-inspector__sources, .card-inspector__history { display: grid; gap: 10px; margin-top: 16px; }.card-inspector__sources article, .card-inspector__history article { display: grid; gap: 4px; padding: 11px; border: 1px solid #edf2f7; border-radius: 6px; }.card-inspector__sources span, .card-inspector__history span, .card-inspector__history small { color: #64748b; font-size: 13px; overflow-wrap: anywhere; }.card-inspector__sources a { color: #047857; font-size: 13px; }.card-inspector__history article div { display: flex; justify-content: space-between; gap: 8px; }.card-inspector__empty { color: #64748b; font-size: 13px; }
-.card-inspector__dialog-backdrop { position: fixed; inset: 0; z-index: 10001; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .42); }.card-inspector__dialog { width: min(100%, 460px); max-height: calc(100vh - 32px); overflow: auto; border-radius: 8px; background: #fff; padding: 20px; box-shadow: 0 18px 45px rgba(15, 23, 42, .25); }.card-inspector__dialog h3, .card-inspector__dialog p { margin: 0; }.card-inspector__dialog p { margin-top: 8px; color: #64748b; line-height: 1.5; }.card-inspector__dialog > div:last-child { margin-top: 18px; }.card-inspector__dialog-actions { justify-content: flex-end; align-items: center; }
-.card-inspector__dialog--conflict { width: min(100%, 840px); }.card-inspector__conflict-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }.card-inspector__conflict-columns section { min-width: 0; border: 1px solid #edf2f7; border-radius: 6px; padding: 10px; }.card-inspector__conflict-columns h4 { margin: 0 0 9px; color: #0f172a; font-size: 14px; }.card-inspector__conflict-columns dl { display: grid; gap: 4px; margin: 0; }.card-inspector__conflict-columns dt { color: #64748b; font-size: 12px; }.card-inspector__conflict-columns dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }.card-inspector__conflict-options { display: grid; gap: 8px; margin: 16px 0 0; border: 0; padding: 0; }.card-inspector__conflict-options legend { margin-bottom: 8px; font-weight: 800; }.card-inspector__conflict-options label { display: flex; gap: 8px; align-items: center; font-size: 13px; }.card-inspector__merge-fields { display: grid; gap: 8px; margin-top: 14px; }.card-inspector__merge-fields label { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); gap: 8px; align-items: center; font-size: 13px; }
-@media (max-width: 620px) { .card-inspector { padding: 14px; }.card-inspector__header { align-items: start; flex-direction: column; }.card-inspector__back { width: 100%; }.card-inspector__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.card-inspector__actions button { width: 100%; padding-inline: 6px; }.card-inspector__conflict-columns { grid-template-columns: 1fr; }.card-inspector__merge-fields label { grid-template-columns: 1fr; } }
+.card-inspector__header, .card-inspector__actions, .card-inspector__dialog-actions { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+.card-inspector__header p, .card-inspector__header h2 { margin: 0; }
+.card-inspector__header p { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.card-inspector__header h2 { margin-top: 5px; color: #0f172a; font-size: 22px; overflow-wrap: anywhere; }
+.card-inspector__status { display: inline-block; margin-top: 7px; color: #047857; font-size: 12px; font-weight: 800; }
+.card-inspector__status--failed { color: #b91c1c; }
+.card-inspector__status--needs_review { color: #b45309; }
+.card-inspector button { min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }
+.card-inspector button:disabled { cursor: not-allowed; opacity: .55; }
+.card-inspector__back { white-space: nowrap; }
+.card-inspector__actions { flex-wrap: wrap; margin-top: 16px; align-items: center; justify-content: flex-start; }
+.card-inspector__actions button:first-child, .card-inspector__save-row button, .card-inspector__dialog-actions button:last-child { border-color: #059669; background: #059669; color: #fff; }
+.card-inspector__danger { border-color: #fecaca !important; background: #fff !important; color: #b91c1c !important; }
+.card-inspector__regenerate-theme { min-width: 0; display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; }
+.card-inspector__regenerate-theme select { box-sizing: border-box; max-width: 220px; min-width: 0; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font: inherit; padding: 0 8px; }
+.card-inspector__theme-state { min-width: 0; display: flex; align-items: center; gap: 8px; margin: 9px 0 0; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.card-inspector__theme-state--error, .card-inspector__error { color: #b91c1c; }
+.card-inspector__error { margin: 12px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__tabs { display: flex; gap: 4px; margin-top: 18px; overflow-x: auto; border-bottom: 1px solid #dce7e1; }
+.card-inspector__tabs button { flex: none; border: 0; border-radius: 0; background: transparent; padding: 0 8px 9px; }
+.card-inspector__tabs button[aria-selected="true"] { border-bottom: 2px solid #059669; color: #047857; }
+.card-inspector__content { min-width: 0; display: grid; gap: 20px; margin-top: 16px; }
+.card-inspector__save-row { display: flex; justify-content: flex-end; }
+.card-inspector__sources, .card-inspector__history { min-width: 0; display: grid; gap: 10px; margin-top: 16px; }
+.card-inspector__sources article, .card-inspector__history article { min-width: 0; display: grid; gap: 4px; padding: 11px; border: 1px solid #edf2f7; border-radius: 6px; }
+.card-inspector__sources span, .card-inspector__history span, .card-inspector__history small { color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__sources a { color: #047857; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__history article div { min-width: 0; display: flex; justify-content: space-between; gap: 8px; }
+.card-inspector__empty { color: #64748b; font-size: 13px; }
+.card-inspector__dialog-backdrop { position: fixed; inset: 0; z-index: 10001; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .42); }
+.card-inspector__dialog { box-sizing: border-box; width: min(100%, 460px); max-height: calc(100vh - 32px); overflow: auto; border-radius: 8px; background: #fff; padding: 20px; box-shadow: 0 18px 45px rgba(15, 23, 42, .25); }
+.card-inspector__dialog h3, .card-inspector__dialog p { margin: 0; }
+.card-inspector__dialog > p { margin-top: 8px; color: #64748b; line-height: 1.5; }
+.card-inspector__dialog-actions { margin-top: 18px; justify-content: flex-end; align-items: center; }
+.card-inspector__dialog--conflict { width: min(100%, 840px); }
+.card-inspector__conflict-columns { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.card-inspector__conflict-columns section { min-width: 0; border: 1px solid #edf2f7; border-radius: 6px; padding: 10px; }
+.card-inspector__conflict-columns h4 { margin: 0 0 9px; color: #0f172a; font-size: 14px; }
+.card-inspector__conflict-columns pre { min-height: 120px; max-height: 280px; overflow: auto; margin: 0; color: #334155; font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-inspector__conflict-columns dl { display: grid; gap: 4px; margin: 0; }
+.card-inspector__conflict-columns dt { color: #64748b; font-size: 12px; }
+.card-inspector__conflict-columns dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+.card-inspector__conflict-options { display: grid; gap: 8px; margin: 16px 0 0; border: 0; padding: 0; }
+.card-inspector__conflict-options legend { margin-bottom: 8px; font-weight: 800; }
+.card-inspector__conflict-options label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.card-inspector__merge-fields { display: grid; gap: 8px; margin-top: 14px; }
+.card-inspector__merge-fields label { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); gap: 8px; align-items: center; font-size: 13px; }
+.card-inspector__merge-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; }
+@media (max-width: 620px) {
+  .card-inspector { padding: 14px; }
+  .card-inspector__header { align-items: start; flex-direction: column; }
+  .card-inspector__back { width: 100%; }
+  .card-inspector__actions { display: grid; grid-template-columns: 1fr; }
+  .card-inspector__actions button, .card-inspector__regenerate-theme, .card-inspector__regenerate-theme select { width: 100%; max-width: none; }
+  .card-inspector__conflict-columns, .card-inspector__merge-fields label { grid-template-columns: 1fr; }
+  .card-inspector__history article div { flex-direction: column; }
+}
 </style>

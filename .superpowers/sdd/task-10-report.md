@@ -1,61 +1,40 @@
 # Task 10 Report
 
-## RED
+## Scope
 
-- `cd web; npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts`
-  - Failed with exit code 1 because `src/features/vocabulary/captureTerms.ts` and `src/api/vocabulary.ts` did not exist.
-- After review found nullable conflict revision identifiers, the same command failed with exit code 1 because `VocabularyConflictResponse` did not allow `null` for `currentRevisionUid`.
+- Added `VocabularyCoreSummary` to render the typed v1 term, every regional phonetic, and senses grouped by part of speech with English and Chinese definitions. Empty collections use neutral states and the component does not read legacy content.
+- Added `VocabularyMarkdownEditor` as a plain textarea editor. It preserves the input value without trimming or newline normalization, enforces the 20,000-character HTML limit, reports the character count and invalid state, and does not render HTML or add a Markdown dependency.
+- Added one pure `projectLegacyVocabularyCore` adapter. The inspector reads `card.core`, then the legacy projection, then a minimal v1 core, and always restores the card's normalized term identity.
+- Reworked save to submit `baseRevisionUid`, identity-safe `core`, exact `markdown`, and `changeSummary`, with pending, success, conflict, length-error, and failure states.
+- Split conflict presentation by revision format. V1 compares Markdown as a whole and merges only whole `core`/`markdown` values; legacy revisions retain field-level merge behavior.
+- Replaced template regeneration controls with active theme selection backed by the existing `['vocabulary', 'themes']` TanStack Query cache. Blocking errors require no cached catalog, retry refetches the query, and loading/error/empty states disable regeneration.
+- Added the required latest-theme confirmation when the selected theme UID or catalog version differs from the frozen card revision, and sends `themeUid` with `useLatestThemeVersion: true`.
+- Kept fixed editor dimensions, narrow-screen single-column controls, wrapping text, and bounded conflict previews to avoid horizontal overflow.
 
-## GREEN
+## TDD
 
-- `cd web; npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts`
-  - Passed: 3 tests, 0 failures.
-- `cd web; npm run build`
-  - Passed: `vue-tsc && vite build` exited 0.
+- RED: `cd web; npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts`
+  - Failed with 8 contract failures because the core summary, Markdown editor, legacy projection, v1 save/conflict behavior, and themed regeneration did not exist.
+  - After adding a runtime projection assertion, failed at module load because `projectLegacyVocabularyCore` was not exported.
+- GREEN: the same focused command passed 10 tests with 0 failures after the minimal implementation.
+- Regression: the Task 7-9 API, theme cache, theme shelf, workspace, inspector, and core summary suite passed 30 tests with 0 failures.
 
-## Self Review
+## Validation
 
-- Matched the committed backend controller and DTOs: regenerate/retry return `VocabularyGenerationJobResponse`; revisions return `VocabularyRevisionListResponse`; detail and summary include `candidateRevisionUid` and `conflictStatus`.
-- Reused the existing authenticated Axios `http` client. The local envelope helper returns `data`, rejects missing data, and maps error code `409030` to `VocabularyConflictError` with typed conflict data.
-- Kept scope to the Task 10 data layer and tests. No project documentation update is required because no architecture, deployment, or external interface behavior changed.
+- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts` (10 tests).
+- Passed: `web\npx.cmd tsx --test tests/vocabularyApiContract.test.ts tests/vocabularyThemeApiContract.test.ts tests/vocabularyThemeShelf.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyCoreSummary.test.ts` (30 tests).
+- Passed: `web\npm.cmd run build` (`vue-tsc` and Vite; 3264 modules transformed).
+- Passed: `git diff --check` (only existing LF-to-CRLF conversion notices).
+- Not run: authenticated browser interaction or visual screenshot regression.
+- Existing build warning: unrelated application chunks exceed Vite's 500 kB warning threshold.
 
-## Changed Files
+## Documentation And Merge Assessment
 
-- `web/src/api/vocabulary.ts`
-- `web/src/features/vocabulary/captureTerms.ts`
-- `web/tests/vocabularyCaptureTerms.test.ts`
-- `web/tests/vocabularyApiContract.test.ts`
+- The existing vocabulary theme/Markdown design and implementation plan already document the core schema, Markdown limit, theme version confirmation, compatibility order, and conflict behavior. No additional architecture or API documentation update is required.
+- No dependency, API type, route, store, persistence key, or deployment behavior changed.
+- The implementation is suitable for merge review from `codex/vocabulary-deposition-core`; merge depends on the Task 7-9 theme/API work already present on the branch.
 
-## Fix Agent Addendum
+## Residual Risk
 
-### RED
-
-- `cd web; npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts`
-  - Failed as expected on the baseline: duplicate terms were retained, the one-hundred-term cap was applied before deduplication, and a successful delete envelope without `data` was rejected.
-- The `409030` conflict mapping test passed on the baseline, confirming its existing real envelope parsing behavior before retaining it as regression coverage.
-
-### GREEN
-
-- `cd web; npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts`
-  - Passed: 4 tests, 0 failures.
-
-### Files
-
-- `web/src/features/vocabulary/captureTerms.ts`
-- `web/tests/vocabularyCaptureTerms.test.ts`
-- `web/src/api/vocabulary.ts`
-- `web/tests/vocabularyApiContract.test.ts`
-
-### Self Review
-
-- `parseCaptureTerms` trims, removes blanks, deduplicates exact terms in first-seen order, then caps the unique result at one hundred.
-- Only `deleteVocabularyCard` accepts a success envelope with missing or `null` `data`; other vocabulary calls continue to reject missing data.
-- API contract tests call the actual API functions through the shared Axios instance and verify both `409030` payload preservation and void delete success.
-- No project documentation update is needed; this is a small client-contract correction and is suitable to merge into `main` after the required build and diff checks.
-
-## Source Contract Gap Closure
-
-- Added source-contract assertions to `web/tests/vocabularyApiContract.test.ts` for all ten vocabulary API functions and their exact endpoint expressions.
-- Added the required `baseRevisionUid` contract assertion.
-- Preserved the existing runtime Axios coverage for `409030` conflict mapping and successful void delete responses.
-- No production code, dependency, or project documentation was changed. The isolated test/report change is suitable for merge to `main` after verification.
+- Source-contract tests and `vue-tsc` cover data flow and component integration, but no authenticated browser session was available to exercise actual API conflict dialogs and responsive rendering.
+- Legacy projection intentionally handles the established `phonetic`, `partOfSpeech`, and `definitions` shapes. Unknown historical extension fields remain outside the v1 core instead of being guessed in the component.

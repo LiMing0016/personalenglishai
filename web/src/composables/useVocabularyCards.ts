@@ -13,6 +13,7 @@ import {
   retryVocabularyCard,
   updateVocabularyCard,
   type VocabularyCardFilters,
+  type VocabularyCoreContent,
   type RegenerateVocabularyCardRequest,
   type ResolveVocabularyConflictRequest,
   type UpdateVocabularyCardRequest,
@@ -20,6 +21,60 @@ import {
 import { isVocabularyGenerationActive } from '@/features/vocabulary/generationPolling'
 
 const POLL_INTERVAL_MS = 2000
+
+function asLegacyRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function legacyDefinitions(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((definition) => {
+        if (typeof definition === 'string') return definition
+        const record = asLegacyRecord(definition)
+        return record
+          ? String(record.definition ?? record.meaning ?? record.text ?? '')
+          : ''
+      })
+      .filter(Boolean)
+  }
+  return typeof value === 'string' && value ? [value] : []
+}
+
+function looksChinese(value: string): boolean {
+  return /[\u3400-\u9fff]/u.test(value)
+}
+
+export function projectLegacyVocabularyCore(
+  term: string,
+  value: unknown,
+): VocabularyCoreContent | null {
+  const content = asLegacyRecord(value)
+  if (!content) return null
+
+  const phonetic = typeof content.phonetic === 'string' ? content.phonetic : ''
+  const definitions = legacyDefinitions(content.definitions)
+  const partOfSpeech = typeof content.partOfSpeech === 'string' ? content.partOfSpeech : ''
+
+  return {
+    schemaVersion: 1,
+    term,
+    phonetics: phonetic
+      ? [{ region: 'other', text: phonetic, audioUrl: null }]
+      : [],
+    senses: definitions.length
+      ? [{
+          partOfSpeech,
+          meanings: definitions.map((definition) => ({
+            definitionEn: looksChinese(definition) ? '' : definition,
+            definitionZh: looksChinese(definition) ? definition : '',
+          })),
+        }]
+      : [],
+  }
+}
 
 export function useVocabularyCards(
   filters: Ref<VocabularyCardFilters>,

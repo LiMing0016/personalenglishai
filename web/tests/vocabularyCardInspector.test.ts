@@ -6,65 +6,59 @@ const inspector = fs.readFileSync(
   new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
   'utf8',
 )
-const view = fs.readFileSync(
-  new URL('../src/views/VocabularyView.vue', import.meta.url),
-  'utf8',
-)
 
-test('inspector exposes safe edit controls and all conflict choices', () => {
-  for (const token of [
-    'baseRevisionUid',
-    'keep_current',
-    'use_ai',
-    'merge_fields',
-    'retryVocabularyCard',
-    'listVocabularyRevisions',
-  ]) {
+test('inspector adapts core once and edits markdown without legacy field guesses', () => {
+  assert.match(inspector, /VocabularyCoreSummary/)
+  assert.match(inspector, /VocabularyMarkdownEditor/)
+  assert.match(inspector, /card\.core\s*\?\?\s*projectLegacyVocabularyCore/)
+  assert.match(inspector, /minimalVocabularyCore/)
+  assert.doesNotMatch(inspector, /props\.template\.fields|fieldNames|isArrayField/)
+})
+
+test('save preserves term identity and sends core markdown revision and summary', () => {
+  for (const token of ['baseRevisionUid', 'core:', 'markdown:', 'changeSummary:']) {
     assert.match(inspector, new RegExp(token))
   }
-
-  assert.match(inspector, /保留当前内容/)
-  assert.match(inspector, /使用 AI 新版本/)
-  assert.match(inspector, /逐字段合并/)
-  assert.match(inspector, /个人笔记/)
-  assert.match(inspector, /term.*readonly|readonly.*term/s)
+  assert.match(inspector, /term:\s*props\.card\.normalizedTerm/)
+  assert.match(inspector, /updateMutation\.isPending\.value/)
+  assert.match(inspector, /单词卡已保存/)
+  assert.match(inspector, /保存失败，请重试/)
 })
 
-test('inspector derives editable and merge fields from the selected template', () => {
-  assert.match(inspector, /template:\s*VocabularyTemplate/)
-  assert.match(inspector, /props\.template\.fields/)
-  assert.match(inspector, /field\s*!==\s*['"]term['"]/)
-  assert.match(inspector, /notes/)
-  assert.match(view, /:template="selectedVocabularyTemplate"/)
+test('new format conflicts compare markdown as a whole and legacy revisions keep field merge', () => {
+  assert.match(inspector, /contentFormatVersion\s*===\s*1/)
+  assert.match(inspector, /当前 Markdown/)
+  assert.match(inspector, /候选 Markdown/)
+  assert.match(inspector, /const mergeFields = conflictMergeFields\(\)/)
+  assert.match(inspector, /markdown:\s*mergeChoice\.value\.markdown/)
+  assert.match(inspector, /legacyMergeableFields/)
+  assert.match(inspector, /keep_current/)
+  assert.match(inspector, /use_ai/)
+  assert.match(inspector, /merge_fields/)
 })
 
-test('inspector provides a compact catalog-backed regenerate template selector', () => {
-  assert.match(inspector, /templates:\s*VocabularyTemplate\[\]/)
-  assert.match(inspector, /v-model="regenerateTemplateKey"/)
-  assert.match(inspector, /aria-label="重新生成模板"/)
-  assert.match(inspector, /templateKey:\s*regenerateTemplateKey\.value/)
-  assert.match(view, /:templates="templateQuery\.data\.value\?\.items\s*\?\?\s*\[\]"/)
+test('regenerate uses active cached themes and confirms switching to the latest revision', () => {
+  assert.match(inspector, /useVocabularyThemes/)
+  assert.match(inspector, /themesQuery\.isError\.value\s*&&\s*!themesQuery\.data\.value/)
+  assert.match(inspector, /themesQuery\.refetch/)
+  assert.match(inspector, /theme\.status\s*===\s*['"]active['"]/)
+  assert.match(inspector, /将使用主题最新版本重新生成，当前版本会保留在历史中。/)
+  assert.match(inspector, /themeUid:\s*selectedThemeUid\.value/)
+  assert.match(inspector, /useLatestThemeVersion:\s*true/)
+  assert.match(inspector, /暂无可用主题/)
 })
 
-test('inspector restores card content when editing is cancelled', () => {
-  assert.match(inspector, /function\s+cancelEditing/)
-  assert.match(inspector, /cloneEditableContent\(props\.card\.content\)/)
-  assert.match(inspector, /@click="cancelEditing"/)
-})
-
-test('inspector opens a persisted needs-review conflict without requiring a save', () => {
-  assert.match(inspector, /card\.status\s*===\s*['"]needs_review['"]/)
-  assert.match(inspector, /card\.candidateRevisionUid/)
-  assert.match(inspector, /card\.candidateContent/)
-  assert.match(inspector, /currentContent:\s*card\.content/)
-})
-
-test('inspector exposes retry when either card or generation status is failed', () => {
+test('inspector retains legacy retry conflict and soft-delete behavior', () => {
   assert.match(inspector, /card\.status\s*===\s*['"]failed['"]\s*\|\|\s*card\.generationStatus\s*===\s*['"]failed['"]/)
-})
-
-test('inspector describes soft deletion and uses a safe source URL guard', () => {
   assert.match(inspector, /safeExternalUrl\(source\.sourceUrl\)/)
   assert.match(inspector, /再次收藏或录入时可恢复/)
+  assert.match(inspector, /card\.candidateRevisionUid/)
   assert.doesNotMatch(inspector, /无法恢复这张单词卡|永久丢失/)
+})
+
+test('inspector styles stable editors and narrow screens without horizontal overflow', () => {
+  assert.match(inspector, /min-width:\s*0/)
+  assert.match(inspector, /overflow-wrap:\s*anywhere/)
+  assert.match(inspector, /@media \(max-width:\s*620px\)/)
+  assert.match(inspector, /grid-template-columns:\s*1fr/)
 })

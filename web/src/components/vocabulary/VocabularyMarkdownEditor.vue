@@ -1,0 +1,46 @@
+<template>
+  <div class="markdown-editor">
+    <div class="markdown-editor__label-row">
+      <label for="vocabulary-markdown">Markdown 内容</label>
+      <span :class="{ 'markdown-editor__count--error': tooLong }">{{ modelValue.length.toLocaleString() }} / 20,000</span>
+    </div>
+    <textarea
+      id="vocabulary-markdown"
+      :value="modelValue"
+      :readonly="readonly"
+      maxlength="20000"
+      rows="12"
+      :aria-invalid="tooLong"
+      aria-describedby="vocabulary-markdown-status"
+      @input="updateValue"
+    ></textarea>
+    <p id="vocabulary-markdown-status" :class="{ 'markdown-editor__error': tooLong }" aria-live="polite">
+      {{ tooLong ? '超过 20,000 字限制，请缩短内容后保存。' : '保留 Markdown 源码格式' }}
+    </p>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+
+const props = defineProps<{ modelValue: string, readonly?: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const tooLong = computed(() => props.modelValue.length > 20_000)
+
+function updateValue(event: Event) {
+  const input = event.target as HTMLTextAreaElement
+  emit('update:modelValue', input.value)
+}
+</script>
+
+<style scoped>
+.markdown-editor { min-width: 0; display: grid; gap: 6px; }
+.markdown-editor__label-row { min-width: 0; display: flex; justify-content: space-between; gap: 12px; color: #475569; font-size: 13px; }
+.markdown-editor__label-row label { font-weight: 800; }
+.markdown-editor__label-row span { flex: none; color: #64748b; font-variant-numeric: tabular-nums; }
+.markdown-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 220px; max-height: 560px; resize: vertical; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #0f172a; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-editor textarea[readonly] { background: #f8fafc; color: #475569; }
+.markdown-editor p { min-height: 18px; margin: 0; color: #64748b; font-size: 12px; }
+.markdown-editor__count--error, .markdown-editor__error { color: #b91c1c !important; }
+@media (max-width: 620px) { .markdown-editor textarea { min-height: 180px; } }
+</style>
