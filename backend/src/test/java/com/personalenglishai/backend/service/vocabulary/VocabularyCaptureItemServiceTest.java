@@ -218,13 +218,14 @@ class VocabularyCaptureItemServiceTest {
         when(cards.restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), eq("generating"), any()))
                 .thenReturn(1);
 
-        var result = service.captureOne(7L,
+        var outcome = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-idempotent-restore", List.of("innovative"), "en", null),
                 () -> {
                     throw new AssertionError("idempotent restore must not resolve the current default");
-                }, 0).response();
+                }, 0);
 
-        assertEquals("source_merged", result.action());
+        assertEquals("source_merged", outcome.response().action());
+        assertEquals("theme_user_1", outcome.effectiveThemeUid());
         verify(jobs).insertJob(argThat(job ->
                 job.getThemeUid().equals("theme_user_1") && job.getThemeVersion() == 3));
     }

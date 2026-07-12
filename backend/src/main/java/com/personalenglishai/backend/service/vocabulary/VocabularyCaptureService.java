@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,13 +47,15 @@ public class VocabularyCaptureService {
         Supplier<ResolvedVocabularyTheme> themeResolver = batchThemeResolver(userId, request);
 
         List<VocabularyCaptureResponse.Item> items = new ArrayList<>(request.terms().size());
-        boolean mutated = false;
+        Set<String> mutatedThemeUids = new LinkedHashSet<>();
         for (int index = 0; index < request.terms().size(); index++) {
             try {
                 VocabularyCaptureItemService.CaptureOutcome outcome =
                         itemService.captureOne(userId, request, themeResolver, index);
                 items.add(outcome.response());
-                mutated |= outcome.mutated();
+                if (outcome.mutated()) {
+                    mutatedThemeUids.add(outcome.effectiveThemeUid());
+                }
             } catch (VocabularyCaptureRejectedException exception) {
                 log.warn(
                         "Vocabulary capture item rejected requestId={} index={} errorType={}",
@@ -63,7 +66,7 @@ public class VocabularyCaptureService {
                         request.terms().get(index), null, "rejected", "failed"));
             }
         }
-        recordRecentUseAfterMutation(userId, themeResolver, mutated);
+        recordRecentUseAfterMutation(userId, mutatedThemeUids);
         return new VocabularyCaptureResponse(items);
     }
 
@@ -95,7 +98,9 @@ public class VocabularyCaptureService {
         Supplier<ResolvedVocabularyTheme> themeResolver = batchThemeResolver(userId, request);
         VocabularyCaptureItemService.CaptureOutcome outcome =
                 itemService.captureOneInCallerTransaction(userId, request, themeResolver, 0);
-        recordRecentUseAfterMutation(userId, themeResolver, outcome.mutated());
+        recordRecentUseAfterMutation(
+                userId,
+                outcome.mutated() ? Set.of(outcome.effectiveThemeUid()) : Set.of());
         return new VocabularyCaptureResponse(List.of(outcome.response()));
     }
 
@@ -140,10 +145,9 @@ public class VocabularyCaptureService {
 
     private void recordRecentUseAfterMutation(
             Long userId,
-            Supplier<ResolvedVocabularyTheme> themeResolver,
-            boolean mutated) {
-        if (mutated) {
-            themeMapper.recordRecentUse(userId, themeResolver.get().themeUid());
+            Set<String> mutatedThemeUids) {
+        for (String themeUid : mutatedThemeUids) {
+            themeMapper.recordRecentUse(userId, themeUid);
         }
     }
 

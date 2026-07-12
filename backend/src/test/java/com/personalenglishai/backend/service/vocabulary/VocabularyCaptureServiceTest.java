@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,10 +44,8 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void bulkCaptureKeepsSuccessfulItemsWhenOneItemHasKnownRejection() {
-        ResolvedVocabularyTheme theme = theme("theme_system_basic", 1, "basic");
-        when(themeService.resolve(7L, null, "basic")).thenReturn(theme);
         when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
-                .thenReturn(outcome("good", "card_1", "created", "generating", true));
+                .thenReturn(outcome("good", "card_1", "created", "generating", true, "theme_system_basic"));
         when(itemService.captureOne(eq(7L), any(), any(), eq(1)))
                 .thenThrow(new VocabularyCaptureRejectedException("invalid term"));
 
@@ -57,7 +54,6 @@ class VocabularyCaptureServiceTest {
 
         assertEquals(List.of("created", "rejected"),
                 result.items().stream().map(VocabularyCaptureResponse.Item::action).toList());
-        verify(themeService).resolve(7L, null, "basic");
         verify(themeMapper).recordRecentUse(7L, "theme_system_basic");
     }
 
@@ -69,7 +65,7 @@ class VocabularyCaptureServiceTest {
                 .thenAnswer(invocation -> {
                     Supplier<ResolvedVocabularyTheme> resolver = invocation.getArgument(2);
                     assertEquals(theme, resolver.get());
-                    return outcome("word", "card_1", "created", "generating", true);
+                    return outcome("word", "card_1", "created", "generating", true, "theme_user_1");
                 });
 
         service.capture(7L, new VocabularyCaptureRequest(
@@ -88,10 +84,8 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void recordsRecentThemeAfterReviewRequiredCaptureCreatesACard() {
-        ResolvedVocabularyTheme theme = theme("theme_user_1", 3, "basic");
-        when(themeService.resolve(7L, "theme_user_1", null)).thenReturn(theme);
         when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
-                .thenReturn(outcome("word", "card_1", "needs_review", "needs_review", true));
+                .thenReturn(outcome("word", "card_1", "needs_review", "needs_review", true, "theme_user_1"));
 
         service.capture(7L, new VocabularyCaptureRequest(
                 "req-review", List.of("word"), "en", "theme_user_1", null,
@@ -110,6 +104,19 @@ class VocabularyCaptureServiceTest {
 
         assertEquals("source_merged", response.items().get(0).action());
         verifyNoInteractions(themeService, themeMapper);
+    }
+
+    @Test
+    void recordsRestoredCardsFrozenThemeInsteadOfCurrentDefaultTheme() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome(
+                        "innovative", "card_1", "source_merged", "ready", true, "theme_user_1"));
+
+        service.capture(7L,
+                VocabularyCaptureRequest.manual("req-restore", List.of("innovative"), "en", null));
+
+        verify(themeMapper).recordRecentUse(7L, "theme_user_1");
+        verifyNoInteractions(themeService);
     }
 
     @Test
@@ -141,10 +148,8 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void dictionaryFavoriteUsesCanonicalLanguageAndStableSourceReference() {
-        ResolvedVocabularyTheme theme = theme("theme_system_basic", 1, "basic");
-        when(themeService.resolve(7L, null, null)).thenReturn(theme);
         when(itemService.captureOneInCallerTransaction(eq(7L), any(), any(), eq(0)))
-                .thenReturn(outcome("innovative", "card_1", "created", "generating", true));
+                .thenReturn(outcome("innovative", "card_1", "created", "generating", true, "theme_system_basic"));
         ArgumentCaptor<VocabularyCaptureRequest> requestCaptor = ArgumentCaptor.forClass(VocabularyCaptureRequest.class);
 
         service.captureDictionaryFavorite(7L, "In·nova·tive", "en-gb", "context");
@@ -160,10 +165,8 @@ class VocabularyCaptureServiceTest {
 
     @Test
     void repeatedDictionaryFavoritesUseOneBoundedIdempotencyPath() {
-        when(themeService.resolve(anyLong(), eq(null), eq(null)))
-                .thenReturn(theme("theme_system_basic", 1, "basic"));
         when(itemService.captureOneInCallerTransaction(any(), any(), any(), eq(0)))
-                .thenReturn(outcome("innovative", "card_1", "created", "generating", true));
+                .thenReturn(outcome("innovative", "card_1", "created", "generating", true, "theme_system_basic"));
         ArgumentCaptor<VocabularyCaptureRequest> repeatedCaptor =
                 ArgumentCaptor.forClass(VocabularyCaptureRequest.class);
         ArgumentCaptor<VocabularyCaptureRequest> otherUserCaptor =
@@ -211,6 +214,12 @@ class VocabularyCaptureServiceTest {
     private VocabularyCaptureItemService.CaptureOutcome outcome(
             String term, String cardUid, String action, String status, boolean mutated) {
         return new VocabularyCaptureItemService.CaptureOutcome(
-                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated);
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, null);
+    }
+
+    private VocabularyCaptureItemService.CaptureOutcome outcome(
+            String term, String cardUid, String action, String status, boolean mutated, String themeUid) {
+        return new VocabularyCaptureItemService.CaptureOutcome(
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, themeUid);
     }
 }
