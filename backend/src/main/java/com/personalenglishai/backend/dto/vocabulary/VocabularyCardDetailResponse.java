@@ -23,7 +23,12 @@ public record VocabularyCardDetailResponse(
         LocalDateTime updatedAt,
         String candidateRevisionUid,
         JsonNode candidateContent,
-        String conflictStatus) {
+        String conflictStatus,
+        VocabularyThemeSnapshot theme,
+        Integer themeVersion,
+        JsonNode core,
+        String markdown,
+        Integer contentFormatVersion) {
 
     public VocabularyCardDetailResponse(
             String cardUid,
@@ -44,7 +49,8 @@ public record VocabularyCardDetailResponse(
             LocalDateTime updatedAt) {
         this(cardUid, displayTerm, normalizedTerm, language, templateKey, templateVersion, status,
                 activeRevisionUid, sourceTypes, content, sources, generationStatus, generationError,
-                lastCapturedAt, createdAt, updatedAt, null, null, "none");
+                lastCapturedAt, createdAt, updatedAt, null, null, "none",
+                null, null, null, null, null);
     }
 
     public record SourceItem(

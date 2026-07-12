@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
@@ -92,7 +93,7 @@ public class VocabularyGenerationWorker {
             ResolvedVocabularyTheme theme = requireTheme(job);
             GeneratedVocabularyCard generated = generator.generate(
                     card, sources.listSources(card.getCardUid()), theme, job.getJobUid());
-            VocabularyCardRevision revision = newRevision(job, generated);
+            VocabularyCardRevision revision = newRevision(job, card, theme, generated);
             finalizer.finalizeSuccess(job, leaseToken, revision, generated.partial());
         } catch (VocabularyGenerationException exception) {
             recordFailure(job, leaseToken, exception);
@@ -139,12 +140,19 @@ public class VocabularyGenerationWorker {
 
     private VocabularyCardRevision newRevision(
             VocabularyGenerationJob job,
+            VocabularyCard card,
+            ResolvedVocabularyTheme theme,
             GeneratedVocabularyCard generated) {
         if (generated == null || generated.core() == null) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is missing");
         }
+        if (!generated.core().isObject()) {
+            throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
+        }
+        ObjectNode core = ((ObjectNode) generated.core()).deepCopy();
+        core.put("term", card.getNormalizedTerm());
         try {
-            coreCodec.validate(generated.core());
+            coreCodec.validate(card.getNormalizedTerm(), core);
         } catch (IllegalArgumentException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
         }
@@ -156,29 +164,29 @@ public class VocabularyGenerationWorker {
         revision.setAuthorType("ai");
         revision.setTemplateKey(job.getTemplateKey());
         revision.setTemplateVersion(job.getTemplateVersion());
-        revision.setThemeUid(job.getThemeUid());
-        revision.setThemeVersion(job.getThemeVersion());
-        revision.setContentJson(writeContent(generated));
-        revision.setCoreJson(writeCore(generated));
+        revision.setThemeUid(theme.themeUid());
+        revision.setThemeVersion(theme.version());
+        revision.setContentJson(writeContent(core, generated.markdown()));
+        revision.setCoreJson(writeCore(core));
         revision.setContentMarkdown(generated.markdown());
         revision.setContentFormatVersion(generated.contentFormatVersion());
         revision.setChangeSummary(limit(generated.changeSummary(), 255));
         return revision;
     }
 
-    private String writeContent(GeneratedVocabularyCard generated) {
+    private String writeContent(JsonNode core, String markdown) {
         try {
-            ObjectNode compatibility = (ObjectNode) generated.core().deepCopy();
-            compatibility.put("markdown", generated.markdown() == null ? "" : generated.markdown());
+            ObjectNode compatibility = (ObjectNode) core.deepCopy();
+            compatibility.put("markdown", markdown == null ? "" : markdown);
             return objectMapper.writeValueAsString(compatibility);
         } catch (JsonProcessingException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content cannot be stored");
         }
     }
 
-    private String writeCore(GeneratedVocabularyCard generated) {
+    private String writeCore(JsonNode core) {
         try {
-            return objectMapper.writeValueAsString(generated.core());
+            return objectMapper.writeValueAsString(core);
         } catch (JsonProcessingException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary core cannot be stored");
         }

@@ -12,11 +12,13 @@ import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision;
 import com.personalenglishai.backend.mapper.vocabulary.UserVocabularyPreferenceMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,6 +54,7 @@ class VocabularyCardServiceTest {
     @Mock UserVocabularyPreferenceMapper preferences;
     @Mock VocabularyRevisionWriteService revisionWriter;
     @Mock VocabularyThemeService themeService;
+    @Mock VocabularyThemeMapper themes;
 
     ObjectMapper objectMapper;
     VocabularyTemplateRegistry templateRegistry;
@@ -62,7 +65,8 @@ class VocabularyCardServiceTest {
         objectMapper = new ObjectMapper();
         templateRegistry = new VocabularyTemplateRegistry(objectMapper);
         service = new VocabularyCardService(
-                cards, sources, revisions, jobs, preferences, themeService, templateRegistry, objectMapper, revisionWriter);
+                cards, sources, revisions, jobs, preferences, themeService, themes,
+                templateRegistry, new VocabularyCoreContentCodec(objectMapper), objectMapper, revisionWriter);
     }
 
     @Test
@@ -245,7 +249,7 @@ class VocabularyCardServiceTest {
         when(revisionWriter.appendAndActivate(eq(7L), eq(card), any()))
                 .thenReturn(VocabularyRevisionWriteService.WriteOutcome.ACTIVATED);
 
-        service.update(7L, "card_1", new UpdateVocabularyCardRequest("rev_1", content, "Edited"));
+        service.update(7L, "card_1", new UpdateVocabularyCardRequest("rev_1", null, null, content, "Edited"));
 
         org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
                 org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
@@ -267,6 +271,7 @@ class VocabularyCardServiceTest {
             candidate.set(invocation.getArgument(2));
             return VocabularyRevisionWriteService.WriteOutcome.STALE;
         });
+        when(revisions.findRevision("rev_old")).thenReturn(VocabularyTestFixtures.userRevision("rev_old"));
         when(revisions.findRevision("rev_current")).thenReturn(VocabularyTestFixtures.userRevision("rev_current"));
         when(revisions.listRevisions("card_1")).thenAnswer(ignored -> List.of(candidate.get()));
         ObjectNode content = (ObjectNode) objectMapper.readTree("""
@@ -276,13 +281,138 @@ class VocabularyCardServiceTest {
         VocabularyRevisionConflictException error = assertThrows(
                 VocabularyRevisionConflictException.class,
                 () -> service.update(7L, "card_1", new UpdateVocabularyCardRequest(
-                        "rev_old", content, "Edited")));
+                        "rev_old", null, null, content, "Edited")));
 
         assertEquals(ErrorCode.VOCABULARY_REVISION_CONFLICT, error.getErrorCode());
         assertEquals("rev_current", error.getConflict().currentRevisionUid());
         assertEquals(candidate.get().getRevisionUid(), error.getConflict().candidateRevisionUid());
         assertEquals("user", candidate.get().getAuthorType());
         verify(revisions).listRevisions("card_1");
+    }
+
+    @Test
+    void legacyDetailProjectsCoreWhileRetainingLegacyContent() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_legacy");
+        var revision = VocabularyTestFixtures.userRevision("rev_legacy");
+        revision.setContentJson(VocabularyTestFixtures.legacyVocabularyContent(objectMapper).toString());
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_legacy")).thenReturn(revision);
+
+        var result = service.getDetail(7L, "card_1");
+
+        assertEquals("wrong-ai-term", result.content().path("term").asText());
+        assertEquals("record", result.core().path("term").asText());
+        assertEquals("/ˈrekɔːd/", result.core().path("phonetics").get(0).path("text").asText());
+        assertNull(result.markdown());
+        assertNull(result.contentFormatVersion());
+    }
+
+    @Test
+    void newClientEditStoresCoreMarkdownAndCompatibilityContentWithCardIdentity() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_1");
+        card.setThemeUid("theme_user_latest");
+        card.setThemeVersion(5);
+        var base = VocabularyTestFixtures.userRevision("rev_1");
+        base.setThemeUid("theme_user_1");
+        base.setThemeVersion(3);
+        base.setContentFormatVersion(2);
+        ObjectNode core = (ObjectNode) new VocabularyCoreContentCodec(objectMapper)
+                .fromLegacy("candidate override", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_1")).thenReturn(base);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(card), any()))
+                .thenReturn(VocabularyRevisionWriteService.WriteOutcome.ACTIVATED);
+
+        service.update(7L, "card_1", new UpdateVocabularyCardRequest(
+                "rev_1", core, "## Exam tips", null, "Edited"));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisionWriter).appendAndActivate(eq(7L), eq(card), revision.capture());
+        var stored = revision.getValue();
+        assertEquals("record", objectMapper.readTree(stored.getCoreJson()).path("term").asText());
+        assertEquals("record", objectMapper.readTree(stored.getContentJson()).path("term").asText());
+        assertEquals("## Exam tips", objectMapper.readTree(stored.getContentJson()).path("markdown").asText());
+        assertEquals("## Exam tips", stored.getContentMarkdown());
+        assertEquals("theme_user_1", stored.getThemeUid());
+        assertEquals(3, stored.getThemeVersion());
+        assertEquals(2, stored.getContentFormatVersion());
+    }
+
+    @Test
+    void newClientEditRejectsRawHtmlMarkdownBeforeAppending() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_1");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+
+        assertThrows(IllegalArgumentException.class, () -> service.update(
+                7L, "card_1", new UpdateVocabularyCardRequest(
+                        "rev_1", core, "## Tips\n<script>alert(1)</script>", null, "Edited")));
+
+        verifyNoInteractions(revisionWriter);
+    }
+
+    @Test
+    void staleNewClientEditRetainsCoreAndMarkdownOnConflictCandidate() throws Exception {
+        VocabularyCard stale = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_old");
+        VocabularyCard current = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        current.setStatus("needs_review");
+        AtomicReference<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> candidate =
+                new AtomicReference<>();
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(stale, current);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(stale), any())).thenAnswer(invocation -> {
+            candidate.set(invocation.getArgument(2));
+            return VocabularyRevisionWriteService.WriteOutcome.STALE;
+        });
+        when(revisions.findRevision("rev_old")).thenReturn(VocabularyTestFixtures.userRevision("rev_old"));
+        when(revisions.findRevision("rev_current")).thenReturn(VocabularyTestFixtures.userRevision("rev_current"));
+        when(revisions.listRevisions("card_1")).thenAnswer(ignored -> List.of(candidate.get()));
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy("wrong", null);
+
+        assertThrows(VocabularyRevisionConflictException.class, () -> service.update(
+                7L, "card_1", new UpdateVocabularyCardRequest(
+                        "rev_old", core, "## Candidate", null, "Edited")));
+
+        assertEquals("record", objectMapper.readTree(candidate.get().getCoreJson()).path("term").asText());
+        assertEquals("## Candidate", candidate.get().getContentMarkdown());
+        assertEquals("## Candidate", objectMapper.readTree(candidate.get().getContentJson()).path("markdown").asText());
+    }
+
+    @Test
+    void detailAndRevisionResponsesExposeFrozenThemeCoreAndMarkdown() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_1");
+        var revision = VocabularyTestFixtures.userRevision("rev_1");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        revision.setThemeUid("theme_user_1");
+        revision.setThemeVersion(3);
+        revision.setCoreJson(core.toString());
+        revision.setContentMarkdown("## Exam tips");
+        revision.setContentFormatVersion(2);
+        VocabularyThemeRevision theme = new VocabularyThemeRevision();
+        theme.setThemeUid("theme_user_1");
+        theme.setVersion(3);
+        theme.setNameSnapshot("My exam theme");
+        theme.setPurpose("Exam review");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_1")).thenReturn(revision);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(revision));
+        when(themes.findRevision("theme_user_1", 3)).thenReturn(theme);
+
+        var detail = service.getDetail(7L, "card_1");
+        var history = service.revisions(7L, "card_1").items().get(0);
+
+        assertEquals("theme_user_1", detail.theme().themeUid());
+        assertEquals("My exam theme", detail.theme().name());
+        assertEquals(3, detail.themeVersion());
+        assertEquals("record", detail.core().path("term").asText());
+        assertEquals("## Exam tips", detail.markdown());
+        assertEquals(2, detail.contentFormatVersion());
+        assertEquals("theme_user_1", history.theme().themeUid());
+        assertEquals("record", history.core().path("term").asText());
+        assertEquals("## Exam tips", history.markdown());
     }
 
     @Test
@@ -506,6 +636,42 @@ class VocabularyCardServiceTest {
         assertEquals("system_merge", revision.getValue().getAuthorType());
         assertEquals("rev_current", revision.getValue().getBaseRevisionUid());
         assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
+    }
+
+    @Test
+    void acceptingNewFormatCandidatePreservesCoreMarkdownAndFrozenTheme() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        card.setStatus("needs_review");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "candidate override", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_current");
+        candidate.setThemeUid("theme_user_1");
+        candidate.setThemeVersion(3);
+        candidate.setCoreJson(core.toString());
+        candidate.setContentMarkdown("## Candidate notes");
+        candidate.setContentFormatVersion(2);
+        candidate.setContentJson(core.deepCopy().put("markdown", "## Candidate notes").toString());
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("use_ai", null));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(revision.capture());
+        assertEquals("record", objectMapper.readTree(revision.getValue().getCoreJson()).path("term").asText());
+        assertEquals("## Candidate notes", revision.getValue().getContentMarkdown());
+        assertEquals("theme_user_1", revision.getValue().getThemeUid());
+        assertEquals(3, revision.getValue().getThemeVersion());
+        assertEquals(2, revision.getValue().getContentFormatVersion());
     }
 
     @Test

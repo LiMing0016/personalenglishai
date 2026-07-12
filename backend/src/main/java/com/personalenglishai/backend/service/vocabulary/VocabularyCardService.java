@@ -16,6 +16,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyGenerationJobResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeSnapshot;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
 import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
@@ -23,11 +24,13 @@ import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision;
 import com.personalenglishai.backend.mapper.vocabulary.UserVocabularyPreferenceMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -35,12 +38,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class VocabularyCardService {
     private static final String DEFAULT_TEMPLATE_KEY = "basic";
+    private static final int CONTENT_FORMAT_VERSION = 1;
+    private static final Pattern RAW_HTML = Pattern.compile(
+            "(?is)<\\s*(?:!|\\?|/?\\s*[a-z])[^>]*>");
 
     private final VocabularyCardMapper cards;
     private final VocabularySourceMapper sources;
@@ -48,7 +55,9 @@ public class VocabularyCardService {
     private final VocabularyGenerationJobMapper jobs;
     private final UserVocabularyPreferenceMapper preferences;
     private final VocabularyThemeService themeService;
+    private final VocabularyThemeMapper themes;
     private final VocabularyTemplateRegistry templateRegistry;
+    private final VocabularyCoreContentCodec coreCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyRevisionWriteService revisionWriter;
 
@@ -59,7 +68,9 @@ public class VocabularyCardService {
             VocabularyGenerationJobMapper jobs,
             UserVocabularyPreferenceMapper preferences,
             VocabularyThemeService themeService,
+            VocabularyThemeMapper themes,
             VocabularyTemplateRegistry templateRegistry,
+            VocabularyCoreContentCodec coreCodec,
             ObjectMapper objectMapper,
             VocabularyRevisionWriteService revisionWriter) {
         this.cards = cards;
@@ -68,7 +79,9 @@ public class VocabularyCardService {
         this.jobs = jobs;
         this.preferences = preferences;
         this.themeService = themeService;
+        this.themes = themes;
         this.templateRegistry = templateRegistry;
+        this.coreCodec = coreCodec;
         this.objectMapper = objectMapper;
         this.revisionWriter = revisionWriter;
     }
@@ -137,6 +150,8 @@ public class VocabularyCardService {
                 .toList();
         VocabularyGenerationJob latestJob = jobs.findLatestByCard(cardUid);
         VocabularyCardRevision candidate = candidateRevision(card, revisions.listRevisions(cardUid));
+        VocabularyCardRevision activeRevision = activeRevision(card);
+        RevisionProjection active = projection(card, activeRevision);
         return new VocabularyCardDetailResponse(
                 card.getCardUid(),
                 card.getDisplayTerm(),
@@ -147,7 +162,7 @@ public class VocabularyCardService {
                 card.getStatus(),
                 card.getActiveRevisionUid(),
                 sourceTypes(ownedSources),
-                activeContent(card),
+                active.content(),
                 sourceItems,
                 latestJob == null ? null : latestJob.getStatus(),
                 latestJob == null ? null : latestJob.getErrorMessage(),
@@ -156,14 +171,37 @@ public class VocabularyCardService {
                 card.getUpdatedAt(),
                 candidate == null ? null : candidate.getRevisionUid(),
                 candidate == null ? null : revisionContent(candidate),
-                conflictStatus(card, candidate));
+                conflictStatus(card, candidate),
+                active.theme(),
+                activeRevision == null ? null : activeRevision.getThemeVersion(),
+                active.core(),
+                active.markdown(),
+                active.contentFormatVersion());
     }
 
     public VocabularyCardDetailResponse update(Long userId, String cardUid, UpdateVocabularyCardRequest request) {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
         VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
-        ObjectNode content = editableContent(card, request.content());
-        templateRegistry.validate(template.key(), content);
+        ObjectNode core;
+        ObjectNode legacyContent = null;
+        if (request.core() != null) {
+            core = editableCore(card, request.core());
+        } else {
+            legacyContent = editableContent(card, request.content());
+            templateRegistry.validate(template.key(), legacyContent);
+            core = coreCodec.fromLegacy(card.getNormalizedTerm(), legacyContent);
+        }
+        validateMarkdown(request.markdown());
+        VocabularyCardRevision baseRevision = ownedRevision(card, request.baseRevisionUid());
+        String themeUid = baseRevision != null && baseRevision.getThemeUid() != null
+                ? baseRevision.getThemeUid()
+                : card.getThemeUid();
+        Integer themeVersion = baseRevision != null && baseRevision.getThemeVersion() != null
+                ? baseRevision.getThemeVersion()
+                : card.getThemeVersion();
+        Integer contentFormatVersion = baseRevision != null && baseRevision.getContentFormatVersion() != null
+                ? baseRevision.getContentFormatVersion()
+                : CONTENT_FORMAT_VERSION;
 
         VocabularyCardRevision revision = new VocabularyCardRevision();
         revision.setRevisionUid(uid("rev_"));
@@ -172,7 +210,14 @@ public class VocabularyCardService {
         revision.setAuthorType("user");
         revision.setTemplateKey(template.key());
         revision.setTemplateVersion(template.version());
-        revision.setContentJson(writeJson(content));
+        revision.setThemeUid(themeUid);
+        revision.setThemeVersion(themeVersion);
+        revision.setCoreJson(writeJson(core));
+        revision.setContentMarkdown(request.markdown());
+        revision.setContentFormatVersion(contentFormatVersion);
+        revision.setContentJson(legacyContent == null
+                ? writeCompatibilityJson(core, request.markdown())
+                : writeJson(legacyContent));
         revision.setChangeSummary(request.changeSummary());
         VocabularyRevisionWriteService.WriteOutcome outcome =
                 revisionWriter.appendAndActivate(userId, card, revision);
@@ -228,12 +273,17 @@ public class VocabularyCardService {
                 .toList();
         VocabularyCardRevision candidate = candidateRevision(card, history);
         List<VocabularyRevisionResponse> items = history.stream()
-                .map(revision -> new VocabularyRevisionResponse(
-                        revision.getRevisionUid(), revision.getBaseRevisionUid(), revision.getAuthorType(),
-                        revision.getTemplateKey(), revision.getTemplateVersion(), revisionContent(revision),
-                        revision.getChangeSummary(), Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()),
-                        candidate != null && Objects.equals(candidate.getRevisionUid(), revision.getRevisionUid()),
-                        revision.getCreatedAt()))
+                .map(revision -> {
+                    RevisionProjection projected = projection(card, revision);
+                    return new VocabularyRevisionResponse(
+                            revision.getRevisionUid(), revision.getBaseRevisionUid(), revision.getAuthorType(),
+                            revision.getTemplateKey(), revision.getTemplateVersion(), projected.content(),
+                            projected.theme(), revision.getThemeVersion(), projected.core(), projected.markdown(),
+                            projected.contentFormatVersion(), revision.getChangeSummary(),
+                            Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()),
+                            candidate != null && Objects.equals(candidate.getRevisionUid(), revision.getRevisionUid()),
+                            revision.getCreatedAt());
+                })
                 .toList();
         return new VocabularyRevisionListResponse(card.getActiveRevisionUid(),
                 candidate == null ? null : candidate.getRevisionUid(), conflictStatus(card, candidate), items);
@@ -275,7 +325,8 @@ public class VocabularyCardService {
             List<VocabularyCardRevision> history,
             VocabularyGenerationJob latestJob) {
         VocabularyCardRevision candidate = candidateRevision(card, history);
-        JsonNode content = activeContent(card, history);
+        VocabularyCardRevision activeRevision = activeRevision(card, history);
+        RevisionProjection active = projection(card, activeRevision);
         return new VocabularyCardSummaryResponse(
                 card.getCardUid(),
                 card.getDisplayTerm(),
@@ -290,8 +341,8 @@ public class VocabularyCardService {
                 conflictStatus(card, candidate),
                 latestJob == null ? null : latestJob.getStatus(),
                 latestJob == null ? null : latestJob.getErrorMessage(),
-                textField(content, "phonetic"),
-                coreDefinition(content),
+                coreCodec.summaryPhonetic(active.core()),
+                coreCodec.summaryDefinition(active.core()),
                 sources.count());
     }
 
@@ -353,7 +404,7 @@ public class VocabularyCardService {
                 .toList();
     }
 
-    private JsonNode activeContent(VocabularyCard card) {
+    private VocabularyCardRevision activeRevision(VocabularyCard card) {
         if (card.getActiveRevisionUid() == null) {
             return null;
         }
@@ -361,10 +412,12 @@ public class VocabularyCardService {
         if (revision == null || !Objects.equals(card.getCardUid(), revision.getCardUid())) {
             return null;
         }
-        return revisionContent(revision);
+        return revision;
     }
 
-    private JsonNode activeContent(VocabularyCard card, List<VocabularyCardRevision> history) {
+    private VocabularyCardRevision activeRevision(
+            VocabularyCard card,
+            List<VocabularyCardRevision> history) {
         if (card.getActiveRevisionUid() == null) {
             return null;
         }
@@ -372,28 +425,7 @@ public class VocabularyCardService {
                 .filter(revision -> Objects.equals(card.getCardUid(), revision.getCardUid()))
                 .filter(revision -> Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()))
                 .findFirst()
-                .map(this::revisionContent)
                 .orElse(null);
-    }
-
-    private String textField(JsonNode content, String field) {
-        if (content == null || !content.path(field).isTextual()) {
-            return null;
-        }
-        String value = content.path(field).asText().trim();
-        return value.isEmpty() ? null : value;
-    }
-
-    private String coreDefinition(JsonNode content) {
-        if (content == null || !content.path("definitions").isArray()) {
-            return null;
-        }
-        for (JsonNode definition : content.path("definitions")) {
-            if (definition.isTextual() && !definition.asText().isBlank()) {
-                return definition.asText();
-            }
-        }
-        return null;
     }
 
     private VocabularyCardDetailResponse.SourceItem toSourceItem(VocabularyCardSource source) {
@@ -438,6 +470,22 @@ public class VocabularyCardService {
         return content;
     }
 
+    private ObjectNode editableCore(VocabularyCard card, JsonNode requested) {
+        if (requested == null || !requested.isObject()) {
+            throw new IllegalArgumentException("vocabulary core must be an object");
+        }
+        ObjectNode core = ((ObjectNode) requested).deepCopy();
+        core.put("term", card.getNormalizedTerm());
+        coreCodec.validate(card.getNormalizedTerm(), core);
+        return core;
+    }
+
+    private void validateMarkdown(String markdown) {
+        if (markdown != null && RAW_HTML.matcher(markdown).find()) {
+            throw new IllegalArgumentException("vocabulary markdown must not contain raw HTML");
+        }
+    }
+
     private VocabularyCardRevision candidateRevision(
             VocabularyCard card,
             List<VocabularyCardRevision> history) {
@@ -458,6 +506,43 @@ public class VocabularyCardService {
 
     private JsonNode revisionContent(VocabularyCardRevision revision) {
         return parseJson(revision.getContentJson(), "content_json");
+    }
+
+    private RevisionProjection projection(VocabularyCard card, VocabularyCardRevision revision) {
+        if (revision == null) {
+            return RevisionProjection.EMPTY;
+        }
+        JsonNode content = revisionContent(revision);
+        ObjectNode core;
+        if (revision.getCoreJson() == null || revision.getCoreJson().isBlank()) {
+            core = coreCodec.fromLegacy(card.getNormalizedTerm(), content);
+        } else {
+            core = editableCore(card, parseJson(revision.getCoreJson(), "core_json"));
+        }
+        String markdown = revision.getContentMarkdown();
+        if (markdown == null && content != null && content.path("markdown").isTextual()) {
+            markdown = content.path("markdown").asText();
+        }
+        return new RevisionProjection(
+                content,
+                themeSnapshot(revision),
+                core,
+                markdown,
+                revision.getContentFormatVersion());
+    }
+
+    private VocabularyThemeSnapshot themeSnapshot(VocabularyCardRevision revision) {
+        if (revision.getThemeUid() == null || revision.getThemeUid().isBlank()
+                || revision.getThemeVersion() == null) {
+            return null;
+        }
+        VocabularyThemeRevision theme = themes.findRevision(
+                revision.getThemeUid(), revision.getThemeVersion());
+        if (theme == null) {
+            return new VocabularyThemeSnapshot(revision.getThemeUid(), null, null);
+        }
+        return new VocabularyThemeSnapshot(
+                revision.getThemeUid(), theme.getNameSnapshot(), theme.getPurpose());
     }
 
     private VocabularyRevisionConflictException conflictFor(Long userId, String cardUid) {
@@ -519,8 +604,20 @@ public class VocabularyCardService {
             String changeSummary) {
         VocabularyTemplateRegistry.TemplateDefinition template =
                 templateRegistry.require(contentRevision.getTemplateKey());
-        ObjectNode content = editableContent(card, selectedContent);
-        templateRegistry.validate(template.key(), content);
+        ObjectNode core;
+        ObjectNode legacy = null;
+        String markdown = contentRevision.getContentMarkdown();
+        if (contentRevision.getCoreJson() == null || contentRevision.getCoreJson().isBlank()) {
+            legacy = editableContent(card, selectedContent);
+            templateRegistry.validate(template.key(), legacy);
+            core = coreCodec.fromLegacy(card.getNormalizedTerm(), legacy);
+        } else {
+            core = editableCore(card, parseJson(contentRevision.getCoreJson(), "core_json"));
+            if (markdown == null && selectedContent != null && selectedContent.path("markdown").isTextual()) {
+                markdown = selectedContent.path("markdown").asText();
+            }
+            validateMarkdown(markdown);
+        }
         VocabularyCardRevision resolution = new VocabularyCardRevision();
         resolution.setRevisionUid(uid("rev_"));
         resolution.setCardUid(card.getCardUid());
@@ -528,7 +625,16 @@ public class VocabularyCardService {
         resolution.setAuthorType("system_merge");
         resolution.setTemplateKey(template.key());
         resolution.setTemplateVersion(template.version());
-        resolution.setContentJson(writeJson(content));
+        resolution.setThemeUid(contentRevision.getThemeUid());
+        resolution.setThemeVersion(contentRevision.getThemeVersion());
+        resolution.setContentJson(legacy == null
+                ? writeCompatibilityJson(core, markdown)
+                : writeJson(legacy));
+        resolution.setCoreJson(writeJson(core));
+        resolution.setContentMarkdown(markdown);
+        resolution.setContentFormatVersion(contentRevision.getContentFormatVersion() == null
+                ? CONTENT_FORMAT_VERSION
+                : contentRevision.getContentFormatVersion());
         resolution.setChangeSummary(changeSummary);
         return resolution;
     }
@@ -588,6 +694,16 @@ public class VocabularyCardService {
         }
     }
 
+    private String writeCompatibilityJson(JsonNode core, String markdown) {
+        ObjectNode compatibility = ((ObjectNode) core).deepCopy();
+        if (markdown == null) {
+            compatibility.putNull("markdown");
+        } else {
+            compatibility.put("markdown", markdown);
+        }
+        return writeJson(compatibility);
+    }
+
     private String writeJson(Map<String, String> value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -602,5 +718,15 @@ public class VocabularyCardService {
 
     private record SourceSummary(List<String> types, int count) {
         private static final SourceSummary EMPTY = new SourceSummary(List.of(), 0);
+    }
+
+    private record RevisionProjection(
+            JsonNode content,
+            VocabularyThemeSnapshot theme,
+            JsonNode core,
+            String markdown,
+            Integer contentFormatVersion) {
+        private static final RevisionProjection EMPTY =
+                new RevisionProjection(null, null, null, null, null);
     }
 }

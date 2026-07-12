@@ -197,6 +197,38 @@ class VocabularyGenerationWorkerTest {
     }
 
     @Test
+    void persistedRevisionFreezesThemeAndUsesCardTermIdentity() throws Exception {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_persist", "card_1", null, 0);
+        job.setThemeUid("theme_user_1");
+        job.setThemeVersion(3);
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        card.setNormalizedTerm("record");
+        VocabularyThemeRevision theme = themeRevision("theme_user_1", 3);
+        GeneratedVocabularyCard generated = VocabularyTestFixtures.basicGeneratedCard();
+        ObjectNode generatedCore = (ObjectNode) generated.core().deepCopy();
+        generatedCore.put("term", "candidate override");
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_persist"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
+        when(themes.findRevision("theme_user_1", 3)).thenReturn(theme);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(generator.generate(any(), anyList(), any(), eq("job_persist")))
+                .thenReturn(new GeneratedVocabularyCard(
+                        generatedCore, "## Exam tips", 2, "test-model", "Generated", false));
+
+        worker.processPendingJobs(10);
+
+        ArgumentCaptor<VocabularyCardRevision> revision = ArgumentCaptor.forClass(VocabularyCardRevision.class);
+        verify(finalizer).finalizeSuccess(eq(job), anyString(), revision.capture(), eq(false));
+        assertEquals("theme_user_1", revision.getValue().getThemeUid());
+        assertEquals(3, revision.getValue().getThemeVersion());
+        assertEquals("record", objectMapper.readTree(revision.getValue().getCoreJson()).path("term").asText());
+        assertEquals("record", objectMapper.readTree(revision.getValue().getContentJson()).path("term").asText());
+        assertEquals("## Exam tips", revision.getValue().getContentMarkdown());
+        assertEquals(2, revision.getValue().getContentFormatVersion());
+    }
+
+    @Test
     void unavailableFrozenThemeRevisionFailsPermanentlyWithoutGeneration() {
         VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_theme_missing", "card_1", null, 0);
         job.setThemeUid("theme_custom");
