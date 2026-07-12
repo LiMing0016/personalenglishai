@@ -580,6 +580,9 @@ public class VocabularyCardService {
             VocabularyCard card,
             VocabularyCardRevision current,
             Map<String, JsonNode> mergeFields) {
+        if (current.getCoreJson() != null && !current.getCoreJson().isBlank()) {
+            return mergedNewFormatRevision(card, current, mergeFields);
+        }
         ObjectNode content = editableContent(card, revisionContent(current));
         VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(current.getTemplateKey());
         Map<String, JsonNode> fields = mergeFields == null ? Map.of() : mergeFields;
@@ -594,6 +597,39 @@ public class VocabularyCardService {
 
         return resolutionRevision(
                 card, current, current, content, "Merged vocabulary conflict fields");
+    }
+
+    private VocabularyCardRevision mergedNewFormatRevision(
+            VocabularyCard card,
+            VocabularyCardRevision current,
+            Map<String, JsonNode> mergeFields) {
+        ObjectNode core = editableCore(card, parseJson(current.getCoreJson(), "core_json"));
+        String markdown = current.getContentMarkdown();
+        JsonNode compatibility = revisionContent(current);
+        if (markdown == null && compatibility != null && compatibility.path("markdown").isTextual()) {
+            markdown = compatibility.path("markdown").asText();
+        }
+        Map<String, JsonNode> fields = mergeFields == null ? Map.of() : mergeFields;
+        for (Map.Entry<String, JsonNode> field : fields.entrySet()) {
+            switch (field.getKey()) {
+                case "core" -> core = editableCore(card, field.getValue());
+                case "markdown" -> markdown = mergedMarkdown(field.getValue());
+                default -> throw new IllegalArgumentException("merge field is not allowed: " + field.getKey());
+            }
+        }
+        validateMarkdown(markdown);
+        return buildResolutionRevision(
+                card, current, current, core, null, markdown, "Merged vocabulary conflict fields");
+    }
+
+    private String mergedMarkdown(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isTextual()) {
+            throw new IllegalArgumentException("merged markdown must be text or null");
+        }
+        return value.textValue();
     }
 
     private VocabularyCardRevision resolutionRevision(
@@ -618,6 +654,20 @@ public class VocabularyCardService {
             }
             validateMarkdown(markdown);
         }
+        return buildResolutionRevision(
+                card, current, contentRevision, core, legacy, markdown, changeSummary);
+    }
+
+    private VocabularyCardRevision buildResolutionRevision(
+            VocabularyCard card,
+            VocabularyCardRevision current,
+            VocabularyCardRevision contentRevision,
+            ObjectNode core,
+            ObjectNode legacy,
+            String markdown,
+            String changeSummary) {
+        VocabularyTemplateRegistry.TemplateDefinition template =
+                templateRegistry.require(contentRevision.getTemplateKey());
         VocabularyCardRevision resolution = new VocabularyCardRevision();
         resolution.setRevisionUid(uid("rev_"));
         resolution.setCardUid(card.getCardUid());

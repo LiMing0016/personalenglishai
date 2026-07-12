@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -639,6 +640,81 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void emptyMergeOnNewFormatCurrentAppendsFrozenRevisionWithoutChangingContent() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of()));
+
+        var merged = capturedInsertedRevision();
+        assertEquals(currentCore, objectMapper.readTree(merged.getCoreJson()));
+        assertEquals("## Current notes", merged.getContentMarkdown());
+        assertFrozenNewFormatResolution(merged);
+    }
+
+    @Test
+    void newFormatMergeCanReplaceCoreWithoutChangingMarkdown() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current);
+        ObjectNode replacementCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of("core", replacementCore)));
+
+        var merged = capturedInsertedRevision();
+        assertEquals(replacementCore, objectMapper.readTree(merged.getCoreJson()));
+        assertEquals("## Current notes", merged.getContentMarkdown());
+        assertFrozenNewFormatResolution(merged);
+    }
+
+    @Test
+    void newFormatMergeCanReplaceMarkdownWithoutChangingCore() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "markdown", objectMapper.getNodeFactory().textNode("## Merged notes"))));
+
+        var merged = capturedInsertedRevision();
+        assertEquals(currentCore, objectMapper.readTree(merged.getCoreJson()));
+        assertEquals("## Merged notes", merged.getContentMarkdown());
+        assertFrozenNewFormatResolution(merged);
+    }
+
+    @Test
+    void newFormatMergeKeepsCardTermIdentityAndRejectsRawHtmlMarkdown() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
+        var current = newFormatConflictCurrent(currentCore, "## Current notes");
+        arrangeNewFormatConflict(current);
+        ObjectNode tamperedCore = currentCore.deepCopy();
+        tamperedCore.put("term", "tampered");
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of("core", tamperedCore)));
+
+        var merged = capturedInsertedRevision();
+        assertEquals("record", objectMapper.readTree(merged.getCoreJson()).path("term").asText());
+        assertFrozenNewFormatResolution(merged);
+
+        reset(revisions, cards);
+        arrangeNewFormatConflict(current, false);
+        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(
+                7L,
+                "card_1",
+                "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of(
+                        "markdown", objectMapper.getNodeFactory().textNode("<script>alert(1)</script>")))));
+    }
+
+    @Test
     void acceptingNewFormatCandidatePreservesCoreMarkdownAndFrozenTheme() throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
         card.setStatus("needs_review");
@@ -697,5 +773,58 @@ class VocabularyCardServiceTest {
         verify(revisions, never()).insertRevision(any());
         verify(cards, never()).updateActiveRevision(any(), anyString(), anyString(), anyString(),
                 anyString(), anyString(), any(Integer.class));
+    }
+
+    private com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision newFormatConflictCurrent(
+            ObjectNode core,
+            String markdown) {
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        current.setThemeUid("theme_user_1");
+        current.setThemeVersion(3);
+        current.setCoreJson(core.toString());
+        current.setContentMarkdown(markdown);
+        current.setContentFormatVersion(2);
+        current.setContentJson(core.deepCopy().put("markdown", markdown).toString());
+        return current;
+    }
+
+    private void arrangeNewFormatConflict(
+            com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision current) {
+        arrangeNewFormatConflict(current, true);
+    }
+
+    private void arrangeNewFormatConflict(
+            com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision current,
+            boolean expectActivation) {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        card.setStatus("needs_review");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_current");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        if (expectActivation) {
+            when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                    eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+        }
+    }
+
+    private com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision capturedInsertedRevision() {
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(
+                        com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisions).insertRevision(revision.capture());
+        return revision.getValue();
+    }
+
+    private void assertFrozenNewFormatResolution(
+            com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision revision) {
+        assertEquals("system_merge", revision.getAuthorType());
+        assertEquals("rev_current", revision.getBaseRevisionUid());
+        assertEquals("theme_user_1", revision.getThemeUid());
+        assertEquals(3, revision.getThemeVersion());
+        assertEquals(2, revision.getContentFormatVersion());
     }
 }
