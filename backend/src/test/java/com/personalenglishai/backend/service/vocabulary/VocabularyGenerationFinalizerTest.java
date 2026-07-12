@@ -54,7 +54,7 @@ class VocabularyGenerationFinalizerTest {
 
         assertEquals(
                 VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
-                finalizer.finalizeSuccess(job, "lease_new", revision));
+                finalizer.finalizeSuccess(job, "lease_new", revision, false));
 
         InOrder order = inOrder(cards, jobs, revisions);
         order.verify(cards).findByUidForUpdate("card_1");
@@ -74,7 +74,7 @@ class VocabularyGenerationFinalizerTest {
 
         assertThrows(
                 VocabularyGenerationFinalizer.LeaseLostException.class,
-                () -> finalizer.finalizeSuccess(job, "lease_old", revision));
+                () -> finalizer.finalizeSuccess(job, "lease_old", revision, false));
 
         verifyNoInteractions(revisions);
         verify(cards, never()).updateActiveRevision(
@@ -91,7 +91,7 @@ class VocabularyGenerationFinalizerTest {
 
         assertEquals(
                 VocabularyGenerationFinalizer.SuccessOutcome.CANCELLED,
-                finalizer.finalizeSuccess(job, "lease_1", aiRevision("rev_deleted", null)));
+                finalizer.finalizeSuccess(job, "lease_1", aiRevision("rev_deleted", null), false));
 
         verify(jobs).cancel("job_deleted", "lease_1");
         verify(jobs, never()).markSucceeded(anyString(), anyString(), anyString());
@@ -112,7 +112,7 @@ class VocabularyGenerationFinalizerTest {
 
         assertEquals(
                 VocabularyGenerationFinalizer.SuccessOutcome.NEEDS_REVIEW,
-                finalizer.finalizeSuccess(job, "lease_1", candidate));
+                finalizer.finalizeSuccess(job, "lease_1", candidate, false));
 
         verify(revisions).insertRevision(candidate);
         verify(cards).markConflictCandidate("card_1");
@@ -136,7 +136,7 @@ class VocabularyGenerationFinalizerTest {
 
         assertEquals(
                 VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
-                finalizer.finalizeSuccess(job, "lease_1", candidate));
+                finalizer.finalizeSuccess(job, "lease_1", candidate, false));
 
         verify(cards).updateActiveRevision(
                 7L, "card_1", "rev_ai_current", "rev_candidate", "ready", "basic", 1);
@@ -158,6 +158,29 @@ class VocabularyGenerationFinalizerTest {
     }
 
     @Test
+    void partialGenerationActivatesRevisionAsNeedsReviewWithLeaseAndBaseGuards() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_partial", "card_1", null, 0);
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_partial", null);
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_partial", "lease_partial", "rev_partial")).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_partial", "needs_review", "basic", 1))
+                .thenReturn(1);
+
+        assertEquals(
+                VocabularyGenerationFinalizer.SuccessOutcome.NEEDS_REVIEW,
+                finalizer.finalizeSuccess(job, "lease_partial", revision, true));
+
+        InOrder order = inOrder(cards, jobs, revisions);
+        order.verify(cards).findByUidForUpdate("card_1");
+        order.verify(jobs).markSucceeded("job_partial", "lease_partial", "rev_partial");
+        order.verify(revisions).insertRevision(revision);
+        order.verify(cards).updateActiveRevision(
+                7L, "card_1", null, "rev_partial", "needs_review", "basic", 1);
+    }
+
+    @Test
     void ownedFailureUpdatesOnlyStillGeneratingCardWithoutActiveRevision() {
         VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_fail", "card_1", null, 0);
         VocabularyCard generating = VocabularyTestFixtures.generating("card_1", null);
@@ -176,7 +199,8 @@ class VocabularyGenerationFinalizerTest {
     @Test
     void finalizerMethodsDeclareTransactionalBoundary() throws Exception {
         Method success = VocabularyGenerationFinalizer.class.getMethod(
-                "finalizeSuccess", VocabularyGenerationJob.class, String.class, VocabularyCardRevision.class);
+                "finalizeSuccess", VocabularyGenerationJob.class, String.class,
+                VocabularyCardRevision.class, boolean.class);
         Method failure = VocabularyGenerationFinalizer.class.getMethod(
                 "finalizeFailure", VocabularyGenerationJob.class, String.class,
                 String.class, String.class, LocalDateTime.class, boolean.class);

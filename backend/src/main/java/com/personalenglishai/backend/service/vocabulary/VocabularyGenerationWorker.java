@@ -93,7 +93,7 @@ public class VocabularyGenerationWorker {
             GeneratedVocabularyCard generated = generator.generate(
                     card, sources.listSources(card.getCardUid()), theme, job.getJobUid());
             VocabularyCardRevision revision = newRevision(job, generated);
-            finalizer.finalizeSuccess(job, leaseToken, revision);
+            finalizer.finalizeSuccess(job, leaseToken, revision, generated.partial());
         } catch (VocabularyGenerationException exception) {
             recordFailure(job, leaseToken, exception);
         } catch (VocabularyGenerationFinalizer.LeaseLostException exception) {

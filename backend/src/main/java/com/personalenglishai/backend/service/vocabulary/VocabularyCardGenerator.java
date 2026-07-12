@@ -23,7 +23,8 @@ public final class VocabularyCardGenerator {
     private static final double MARKDOWN_TEMPERATURE = 0.2;
     private static final int MAX_TOKENS = 1200;
     private static final int MAX_MARKDOWN_CHARS = 20_000;
-    private static final Pattern RAW_HTML = Pattern.compile("(?is)<\\s*/?\\s*[a-z][^>]*>");
+    private static final Pattern RAW_HTML = Pattern.compile(
+            "(?is)<\\s*(?:!|\\?|/?\\s*[a-z])[^>]*>");
 
     private final VocabularyDictionaryEnricher dictionaryEnricher;
     private final OpenAiClient openAiClient;
@@ -64,7 +65,7 @@ public final class VocabularyCardGenerator {
 
         String cacheKey = cache.key(theme.themeUid(), theme.version(), core, sourceContext);
         Optional<GeneratedVocabularyCard> cached = cachedCard(
-                cacheKey, expectedTerm, theme, traceId);
+                cacheKey, expectedTerm, core, theme, traceId);
         if (cached.isPresent()) {
             return cached.get();
         }
@@ -112,6 +113,7 @@ public final class VocabularyCardGenerator {
     private Optional<GeneratedVocabularyCard> cachedCard(
             String cacheKey,
             String expectedTerm,
+            JsonNode currentCore,
             ResolvedVocabularyTheme theme,
             String traceId) {
         Optional<VocabularyGenerationCache.CachedGeneration> cached = cache.get(cacheKey);
@@ -120,9 +122,12 @@ public final class VocabularyCardGenerator {
         }
         try {
             coreCodec.validate(expectedTerm, cached.get().core());
+            if (!currentCore.equals(cached.get().core())) {
+                throw new IllegalArgumentException("Cached core differs from current core");
+            }
             validateMarkdown(cached.get().markdown());
             return Optional.of(new GeneratedVocabularyCard(
-                    cached.get().core().deepCopy(), cached.get().markdown(),
+                    currentCore.deepCopy(), cached.get().markdown(),
                     theme.contentFormatVersion(), "cache", "Reused validated generated content", false));
         } catch (IllegalArgumentException exception) {
             log.warn("Vocabulary generation cache entry rejected traceId={} themeUid={}",

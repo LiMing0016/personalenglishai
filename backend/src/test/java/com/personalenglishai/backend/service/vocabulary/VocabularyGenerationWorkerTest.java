@@ -3,6 +3,7 @@ package com.personalenglishai.backend.service.vocabulary;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -17,6 +18,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
@@ -70,11 +72,12 @@ class VocabularyGenerationWorkerTest {
         ArgumentCaptor<String> claimToken = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> finalizationToken = ArgumentCaptor.forClass(String.class);
         verify(jobs).markRunning(eq("job_1"), claimToken.capture(), eq(300));
-        verify(finalizer).finalizeSuccess(eq(job), finalizationToken.capture(), any(VocabularyCardRevision.class));
+        verify(finalizer).finalizeSuccess(
+                eq(job), finalizationToken.capture(), any(VocabularyCardRevision.class), eq(false));
         assertEquals(claimToken.getValue(), finalizationToken.getValue());
         InOrder order = org.mockito.Mockito.inOrder(generator, finalizer);
         order.verify(generator).generate(any(), anyList(), any(), eq("job_1"));
-        order.verify(finalizer).finalizeSuccess(eq(job), eq(claimToken.getValue()), any());
+        order.verify(finalizer).finalizeSuccess(eq(job), eq(claimToken.getValue()), any(), eq(false));
     }
 
     @Test
@@ -162,8 +165,84 @@ class VocabularyGenerationWorkerTest {
 
         worker.processPendingJobs(10);
 
-        verify(finalizer, never()).finalizeSuccess(any(), anyString(), any());
+        verify(finalizer, never()).finalizeSuccess(any(), anyString(), any(), anyBoolean());
         verify(finalizer).finalizeFailure(
                 eq(job), anyString(), eq("INVALID_GENERATED_CONTENT"), anyString(), any(), eq(true));
+    }
+
+    @Test
+    void resolvesTheFrozenThemeUidAndVersionFromTheJob() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_theme", "card_1", null, 0);
+        job.setThemeUid("theme_custom");
+        job.setThemeVersion(4);
+        VocabularyThemeRevision revision = themeRevision("theme_custom", 4);
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_theme"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1"))
+                .thenReturn(VocabularyTestFixtures.generating("card_1", null));
+        when(themes.findRevision("theme_custom", 4)).thenReturn(revision);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(generator.generate(any(), anyList(), any(), eq("job_theme")))
+                .thenReturn(VocabularyTestFixtures.basicGeneratedCard());
+
+        worker.processPendingJobs(10);
+
+        ArgumentCaptor<ResolvedVocabularyTheme> resolved =
+                ArgumentCaptor.forClass(ResolvedVocabularyTheme.class);
+        verify(generator).generate(any(), anyList(), resolved.capture(), eq("job_theme"));
+        assertEquals("theme_custom", resolved.getValue().themeUid());
+        assertEquals(4, resolved.getValue().version());
+        assertEquals("frozen purpose", resolved.getValue().purpose());
+        assertEquals("custom-markdown-v1", resolved.getValue().promptStrategyKey());
+    }
+
+    @Test
+    void unavailableFrozenThemeRevisionFailsPermanentlyWithoutGeneration() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_theme_missing", "card_1", null, 0);
+        job.setThemeUid("theme_custom");
+        job.setThemeVersion(4);
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_theme_missing"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1"))
+                .thenReturn(VocabularyTestFixtures.generating("card_1", null));
+        when(themes.findRevision("theme_custom", 4)).thenReturn(null);
+
+        worker.processPendingJobs(10);
+
+        verifyNoInteractions(sources, generator);
+        verify(finalizer).finalizeFailure(
+                eq(job), anyString(), eq("INVALID_GENERATION_REQUEST"),
+                eq("Vocabulary theme version is no longer available"), any(), eq(true));
+    }
+
+    @Test
+    void partialGenerationIsPassedToLeaseGuardedFinalizer() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_partial", "card_1", null, 0);
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_partial"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1"))
+                .thenReturn(VocabularyTestFixtures.generating("card_1", null));
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        GeneratedVocabularyCard complete = VocabularyTestFixtures.basicGeneratedCard();
+        when(generator.generate(any(), anyList(), any(), eq("job_partial")))
+                .thenReturn(new GeneratedVocabularyCard(
+                        complete.core(), "", complete.contentFormatVersion(), complete.model(),
+                        "Markdown unavailable", true));
+
+        worker.processPendingJobs(10);
+
+        verify(finalizer).finalizeSuccess(
+                eq(job), anyString(), any(VocabularyCardRevision.class), eq(true));
+    }
+
+    private VocabularyThemeRevision themeRevision(String themeUid, int version) {
+        VocabularyThemeRevision revision = new VocabularyThemeRevision();
+        revision.setThemeUid(themeUid);
+        revision.setVersion(version);
+        revision.setNameSnapshot("Frozen theme");
+        revision.setPurpose("frozen purpose");
+        revision.setPromptStrategyKey("custom-markdown-v1");
+        revision.setContentFormatVersion(2);
+        return revision;
     }
 }

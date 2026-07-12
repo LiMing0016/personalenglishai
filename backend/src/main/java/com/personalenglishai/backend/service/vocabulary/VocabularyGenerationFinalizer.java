@@ -31,7 +31,8 @@ public class VocabularyGenerationFinalizer {
     public SuccessOutcome finalizeSuccess(
             VocabularyGenerationJob job,
             String leaseToken,
-            VocabularyCardRevision revision) {
+            VocabularyCardRevision revision,
+            boolean partial) {
         requireRevisionMatchesJob(job, revision);
         VocabularyCard card = cards.findByUidForUpdate(job.getCardUid());
         if (card == null || card.getDeletedAt() != null) {
@@ -45,8 +46,8 @@ public class VocabularyGenerationFinalizer {
         revisions.insertRevision(revision);
         String currentRevisionUid = card.getActiveRevisionUid();
         if (Objects.equals(job.getBaseRevisionUid(), currentRevisionUid)) {
-            activate(card, currentRevisionUid, job, revision);
-            return SuccessOutcome.ACTIVATED;
+            activate(card, currentRevisionUid, job, revision, activationStatus(partial));
+            return successOutcome(partial);
         }
 
         VocabularyCardRevision currentRevision = currentRevisionUid == null
@@ -56,8 +57,8 @@ public class VocabularyGenerationFinalizer {
                 && Objects.equals(card.getCardUid(), currentRevision.getCardUid())
                 && "ai".equals(currentRevision.getAuthorType());
         if (currentIsAi) {
-            activate(card, currentRevisionUid, job, revision);
-            return SuccessOutcome.ACTIVATED;
+            activate(card, currentRevisionUid, job, revision, activationStatus(partial));
+            return successOutcome(partial);
         }
         if (cards.markConflictCandidate(card.getCardUid()) != 1) {
             throw new FinalizationConflictException(job.getJobUid());
@@ -104,18 +105,27 @@ public class VocabularyGenerationFinalizer {
             VocabularyCard card,
             String expectedRevisionUid,
             VocabularyGenerationJob job,
-            VocabularyCardRevision revision) {
+            VocabularyCardRevision revision,
+            String status) {
         int updated = cards.updateActiveRevision(
                 card.getUserId(),
                 card.getCardUid(),
                 expectedRevisionUid,
                 revision.getRevisionUid(),
-                "ready",
+                status,
                 job.getTemplateKey(),
                 job.getTemplateVersion());
         if (updated != 1) {
             throw new FinalizationConflictException(job.getJobUid());
         }
+    }
+
+    private String activationStatus(boolean partial) {
+        return partial ? "needs_review" : "ready";
+    }
+
+    private SuccessOutcome successOutcome(boolean partial) {
+        return partial ? SuccessOutcome.NEEDS_REVIEW : SuccessOutcome.ACTIVATED;
     }
 
     private void requireRevisionMatchesJob(

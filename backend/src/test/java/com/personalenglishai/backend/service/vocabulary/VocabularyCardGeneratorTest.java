@@ -28,6 +28,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -133,6 +135,32 @@ class VocabularyCardGeneratorTest {
         verify(cache, never()).put(anyString(), any(), any());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "<!-- hidden -->",
+            "<!DOCTYPE html>",
+            "<!ENTITY example 'value'>",
+            "<?xml version='1.0'?>",
+            "<section>",
+            "</section>",
+            "<br />"
+    })
+    void everyRawHtmlFormIsRejectedAsPartial(String rawHtml) {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-html-forms"), eq(0.2), eq(1200)))
+                .thenReturn("## Usage\n\n" + rawHtml);
+
+        GeneratedVocabularyCard partial = generator.generate(
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""),
+                "trace-html-forms");
+
+        assertTrue(partial.partial());
+        assertEquals("", partial.markdown());
+        verify(cache, never()).put(anyString(), any(), any());
+    }
+
     @Test
     void unavailableFallbackCoreRaisesRetryableStableError() {
         when(dictionary.lookup("record", "en-gb")).thenReturn(null);
@@ -166,9 +194,9 @@ class VocabularyCardGeneratorTest {
 
     @Test
     void returnsValidatedCachedCoreAndMarkdownWithoutAiCalls() throws Exception {
-        ObjectNode core = objectMapper.readValue(validCore(), ObjectNode.class);
-        when(dictionary.lookup("record", "en-gb"))
-                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        DictionaryLookupResponse dictionaryTruth = VocabularyTestFixtures.dictionaryLookupWithCoreTruth();
+        ObjectNode core = codec.fromDictionary("record", dictionaryTruth);
+        when(dictionary.lookup("record", "en-gb")).thenReturn(dictionaryTruth);
         when(cache.get("cache-key")).thenReturn(Optional.of(
                 new VocabularyGenerationCache.CachedGeneration(core, "## Cached")));
 
@@ -179,6 +207,29 @@ class VocabularyCardGeneratorTest {
         assertEquals("## Cached", result.markdown());
         assertEquals("cache", result.model());
         verifyNoInteractions(ai, fallback);
+    }
+
+    @Test
+    void validButSemanticallyPoisonedCachedCoreIsEvictedAndCannotReplaceDictionaryTruth() throws Exception {
+        ObjectNode poisonedCore = objectMapper.readValue(validCore(), ObjectNode.class);
+        ((ObjectNode) poisonedCore.path("senses").get(0).path("meanings").get(0))
+                .put("definitionEn", "poisoned cached definition");
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(cache.get("cache-key")).thenReturn(Optional.of(
+                new VocabularyGenerationCache.CachedGeneration(poisonedCore, "## Cached")));
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-poisoned-cache"), eq(0.2), eq(1200)))
+                .thenReturn("## Fresh Markdown");
+
+        GeneratedVocabularyCard result = generator.generate(
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""),
+                "trace-poisoned-cache");
+
+        assertEquals("a written account", result.core().path("senses").get(0)
+                .path("meanings").get(0).path("definitionEn").asText());
+        assertEquals("## Fresh Markdown", result.markdown());
+        verify(cache).evict("cache-key");
     }
 
     private ResolvedVocabularyTheme theme(String uid, int version, String strategy, String purpose) {
