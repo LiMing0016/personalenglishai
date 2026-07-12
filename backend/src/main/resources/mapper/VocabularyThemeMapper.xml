@@ -56,6 +56,19 @@
         LIMIT 1
     </select>
 
+    <select id="lockOwnedByUidAtVersion" resultMap="VocabularyThemeResultMap">
+        SELECT <include refid="VocabularyThemeColumns"/>
+        FROM vocabulary_theme
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND status = 'active'
+          AND deleted_at IS NULL
+          AND current_version = #{expectedVersion}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
     <select id="findCurrentRevision" resultMap="VocabularyThemeRevisionResultMap">
         SELECT revision.id, revision.revision_uid, revision.theme_uid, revision.version,
                revision.name_snapshot, revision.purpose, revision.prompt_strategy_key,

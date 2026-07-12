@@ -13,6 +13,11 @@ public interface VocabularyThemeMapper {
 
     VocabularyTheme findOwnedByUid(@Param("userId") Long userId, @Param("themeUid") String themeUid);
 
+    VocabularyTheme lockOwnedByUidAtVersion(
+            @Param("userId") Long userId,
+            @Param("themeUid") String themeUid,
+            @Param("expectedVersion") int expectedVersion);
+
     VocabularyThemeRevision findCurrentRevision(@Param("themeUid") String themeUid);
 
     VocabularyThemeRevision findRevision(@Param("themeUid") String themeUid, @Param("version") int version);

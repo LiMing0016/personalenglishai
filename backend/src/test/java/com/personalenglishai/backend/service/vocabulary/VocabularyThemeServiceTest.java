@@ -102,11 +102,12 @@ class VocabularyThemeServiceTest {
     }
 
     @Test
-    void updatesByAppendingRevisionAndGuardingCurrentVersion() {
+    void locksExpectedVersionBeforeAppendingRevisionAndAdvancingPointer() {
         VocabularyTheme theme = userTheme("theme_user_1", "Original", 1, "active");
         VocabularyThemeRevision firstRevision = revision("theme_user_1", 1, "Original", "Original purpose");
         when(themes.findOwnedByUid(7L, "theme_user_1")).thenReturn(theme);
         when(themes.findCurrentRevision("theme_user_1")).thenReturn(firstRevision);
+        when(themes.lockOwnedByUidAtVersion(7L, "theme_user_1", 1)).thenReturn(theme);
         when(themes.advanceVersion(7L, "theme_user_1", 1, 2, "Updated")).thenReturn(1);
 
         var updated = service.update(7L, "theme_user_1", new UpdateVocabularyThemeRequest("Updated", "Updated purpose"));
@@ -119,8 +120,9 @@ class VocabularyThemeServiceTest {
         assertEquals("Updated", revisionCaptor.getValue().getNameSnapshot());
         assertEquals("custom-markdown-v1", revisionCaptor.getValue().getPromptStrategyKey());
         InOrder calls = inOrder(themes);
-        calls.verify(themes).advanceVersion(7L, "theme_user_1", 1, 2, "Updated");
+        calls.verify(themes).lockOwnedByUidAtVersion(7L, "theme_user_1", 1);
         calls.verify(themes).insertRevision(any(VocabularyThemeRevision.class));
+        calls.verify(themes).advanceVersion(7L, "theme_user_1", 1, 2, "Updated");
     }
 
     @Test
@@ -129,13 +131,14 @@ class VocabularyThemeServiceTest {
         when(themes.findOwnedByUid(7L, "theme_user_1")).thenReturn(theme);
         when(themes.findCurrentRevision("theme_user_1"))
                 .thenReturn(revision("theme_user_1", 1, "Original", "Original purpose"));
-        when(themes.advanceVersion(7L, "theme_user_1", 1, 2, "Updated")).thenReturn(0);
+        when(themes.lockOwnedByUidAtVersion(7L, "theme_user_1", 1)).thenReturn(null);
 
         BizException exception = assertThrows(BizException.class,
                 () -> service.update(7L, "theme_user_1", new UpdateVocabularyThemeRequest("Updated", "Updated purpose")));
 
         assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
         verify(themes, never()).insertRevision(any(VocabularyThemeRevision.class));
+        verify(themes, never()).advanceVersion(eq(7L), eq("theme_user_1"), eq(1), eq(2), eq("Updated"));
     }
 
     @Test
@@ -144,7 +147,7 @@ class VocabularyThemeServiceTest {
         when(themes.findOwnedByUid(7L, "theme_user_1")).thenReturn(theme);
         when(themes.findCurrentRevision("theme_user_1"))
                 .thenReturn(revision("theme_user_1", 1, "Original", "Original purpose"));
-        when(themes.advanceVersion(7L, "theme_user_1", 1, 2, "Updated")).thenReturn(1);
+        when(themes.lockOwnedByUidAtVersion(7L, "theme_user_1", 1)).thenReturn(theme);
         when(themes.insertRevision(any(VocabularyThemeRevision.class)))
                 .thenThrow(new DuplicateKeyException("duplicate revision"));
 
@@ -152,6 +155,7 @@ class VocabularyThemeServiceTest {
                 () -> service.update(7L, "theme_user_1", new UpdateVocabularyThemeRequest("Updated", "Updated purpose")));
 
         assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
+        verify(themes, never()).advanceVersion(eq(7L), eq("theme_user_1"), eq(1), eq(2), eq("Updated"));
     }
 
     @Test

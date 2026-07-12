@@ -98,13 +98,16 @@ public class VocabularyThemeService {
             throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
         }
         int nextVersion = theme.getCurrentVersion() + 1;
+        if (themes.lockOwnedByUidAtVersion(userId, themeUid, theme.getCurrentVersion()) == null) {
+            throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
+        }
         VocabularyThemeRevision revision = revision(
                 themeUid, nextVersion, request.name(), request.purpose(), CUSTOM_PROMPT_STRATEGY);
         try {
+            themes.insertRevision(revision);
             if (themes.advanceVersion(userId, themeUid, theme.getCurrentVersion(), nextVersion, request.name()) != 1) {
                 throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
             }
-            themes.insertRevision(revision);
         } catch (DuplicateKeyException exception) {
             throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
         }

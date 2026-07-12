@@ -44,6 +44,7 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(preferences.contains("ON DUPLICATE KEY UPDATE")),
                 () -> assertTrue(themes.contains("id=\"findVisibleThemes\"")),
                 () -> assertTrue(themes.contains("id=\"findCurrentRevision\"")),
+                () -> assertTrue(themes.contains("id=\"lockOwnedByUidAtVersion\"")),
                 () -> assertTrue(themes.contains("id=\"insertTheme\"")),
                 () -> assertTrue(themes.contains("id=\"insertRevision\"")),
                 () -> assertTrue(themes.contains("id=\"recordRecentUse\"")),
@@ -82,6 +83,25 @@ class VocabularyMapperContractTest {
                 () -> assertTrue(sql.contains("SET current_version = ?")),
                 () -> assertTrue(sql.contains("current_version = ?")),
                 () -> assertTrue(sql.contains("deleted_at IS NULL"))
+        );
+    }
+
+    @Test
+    void themeVersionLockConfirmsTheExpectedVersionBeforeWritingRevision() throws Exception {
+        String sql = statementSql("VocabularyThemeMapper", "lockOwnedByUidAtVersion", Map.of(
+                "userId", 7L,
+                "themeUid", "theme_user_1",
+                "expectedVersion", 1));
+
+        assertAll(
+                () -> assertTrue(sql.startsWith("SELECT")),
+                () -> assertTrue(sql.contains("user_id = ?")),
+                () -> assertTrue(sql.contains("theme_uid = ?")),
+                () -> assertTrue(sql.contains("owner_type = 'user'")),
+                () -> assertTrue(sql.contains("status = 'active'")),
+                () -> assertTrue(sql.contains("deleted_at IS NULL")),
+                () -> assertTrue(sql.contains("current_version = ?")),
+                () -> assertTrue(sql.endsWith("FOR UPDATE"))
         );
     }
 
@@ -318,7 +338,7 @@ class VocabularyMapperContractTest {
                         "findPreferenceByUser", "upsertDefaultTemplate", "setDefaultTheme"
                 },
                 "VocabularyThemeMapper", new String[]{
-                        "findVisibleThemes", "findOwnedByUid", "findCurrentRevision", "findRevision",
+                        "findVisibleThemes", "findOwnedByUid", "lockOwnedByUidAtVersion", "findCurrentRevision", "findRevision",
                         "insertTheme", "insertRevision", "advanceVersion", "setStatus", "softDelete",
                         "recordRecentUse", "findRecentThemeUids"
                 }
