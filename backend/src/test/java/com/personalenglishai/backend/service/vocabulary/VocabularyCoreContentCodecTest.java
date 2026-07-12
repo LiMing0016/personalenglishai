@@ -135,6 +135,16 @@ class VocabularyCoreContentCodecTest {
     }
 
     @Test
+    void legacyProjectionRejectsOversizedCallerTermForEmptyLegacyInputs() {
+        String oversizedTerm = "x".repeat(2001);
+
+        assertThrows(IllegalArgumentException.class, () -> codec.fromLegacy(oversizedTerm, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> codec.fromLegacy(oversizedTerm, objectMapper.getNodeFactory().textNode("legacy")));
+    }
+
+    @Test
     void validationRejectsUnknownFieldsNonTextValuesLimitsAndUnexpectedTerm() {
         ObjectNode unknownField = codec.fromLegacy("record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
         unknownField.put("unexpected", true);

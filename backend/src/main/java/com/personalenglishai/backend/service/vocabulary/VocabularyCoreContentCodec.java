@@ -100,6 +100,7 @@ public final class VocabularyCoreContentCodec {
     public ObjectNode fromLegacy(String term, JsonNode legacy) {
         ObjectNode core = emptyCore(term);
         if (legacy == null || !legacy.isObject()) {
+            validate(term, core);
             return core;
         }
 
