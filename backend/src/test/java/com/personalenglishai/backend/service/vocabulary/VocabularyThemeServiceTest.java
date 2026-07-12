@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.personalenglishai.backend.common.error.BizException;
+import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.dto.vocabulary.CreateVocabularyThemeRequest;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyThemeRequest;
 import com.personalenglishai.backend.entity.vocabulary.UserVocabularyPreference;
@@ -13,8 +14,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -23,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -114,7 +118,62 @@ class VocabularyThemeServiceTest {
         assertEquals(2, revisionCaptor.getValue().getVersion());
         assertEquals("Updated", revisionCaptor.getValue().getNameSnapshot());
         assertEquals("custom-markdown-v1", revisionCaptor.getValue().getPromptStrategyKey());
-        verify(themes).advanceVersion(7L, "theme_user_1", 1, 2, "Updated");
+        InOrder calls = inOrder(themes);
+        calls.verify(themes).advanceVersion(7L, "theme_user_1", 1, 2, "Updated");
+        calls.verify(themes).insertRevision(any(VocabularyThemeRevision.class));
+    }
+
+    @Test
+    void rejectsConcurrentUpdateBeforeWritingDuplicateRevision() {
+        VocabularyTheme theme = userTheme("theme_user_1", "Original", 1, "active");
+        when(themes.findOwnedByUid(7L, "theme_user_1")).thenReturn(theme);
+        when(themes.findCurrentRevision("theme_user_1"))
+                .thenReturn(revision("theme_user_1", 1, "Original", "Original purpose"));
+        when(themes.advanceVersion(7L, "theme_user_1", 1, 2, "Updated")).thenReturn(0);
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.update(7L, "theme_user_1", new UpdateVocabularyThemeRequest("Updated", "Updated purpose")));
+
+        assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
+        verify(themes, never()).insertRevision(any(VocabularyThemeRevision.class));
+    }
+
+    @Test
+    void translatesDuplicateRevisionRaceToThemeConflict() {
+        VocabularyTheme theme = userTheme("theme_user_1", "Original", 1, "active");
+        when(themes.findOwnedByUid(7L, "theme_user_1")).thenReturn(theme);
+        when(themes.findCurrentRevision("theme_user_1"))
+                .thenReturn(revision("theme_user_1", 1, "Original", "Original purpose"));
+        when(themes.advanceVersion(7L, "theme_user_1", 1, 2, "Updated")).thenReturn(1);
+        when(themes.insertRevision(any(VocabularyThemeRevision.class)))
+                .thenThrow(new DuplicateKeyException("duplicate revision"));
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.update(7L, "theme_user_1", new UpdateVocabularyThemeRequest("Updated", "Updated purpose")));
+
+        assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
+    }
+
+    @Test
+    void translatesCreateDuplicateKeyRaceToThemeConflict() {
+        when(themes.insertTheme(any(VocabularyTheme.class)))
+                .thenThrow(new DuplicateKeyException("duplicate theme name"));
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.create(7L, new CreateVocabularyThemeRequest("My study theme", "Focus on collocations")));
+
+        assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
+    }
+
+    @Test
+    void translatesCopyDuplicateKeyRaceToThemeConflict() {
+        when(themes.insertTheme(any(VocabularyTheme.class)))
+                .thenThrow(new DuplicateKeyException("duplicate theme name"));
+
+        BizException exception = assertThrows(BizException.class,
+                () -> service.copy(7L, "theme_system_exam"));
+
+        assertEquals(ErrorCode.VOCABULARY_THEME_CONFLICT, exception.getErrorCode());
     }
 
     @Test

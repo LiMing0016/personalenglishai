@@ -139,6 +139,53 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void rejectsAnonymousThemeRequests() throws Exception {
+        mockMvc.perform(get("/api/vocabulary/themes"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(post("/api/vocabulary/themes")
+                        .contentType("application/json")
+                        .content("{\"name\":\"My theme\",\"purpose\":\"Focus\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(put("/api/vocabulary/themes/theme_user_1")
+                        .contentType("application/json")
+                        .content("{\"name\":\"My theme\",\"purpose\":\"Focus\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(post("/api/vocabulary/themes/theme_system_basic/copy"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(post("/api/vocabulary/themes/theme_user_1/default"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(post("/api/vocabulary/themes/theme_user_1/disable"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+        mockMvc.perform(delete("/api/vocabulary/themes/theme_user_1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+    }
+
+    @Test
+    void rejectsInvalidThemeCreateAndUpdateBeforeCallingService() throws Exception {
+        mockMvc.perform(post("/api/vocabulary/themes")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"name\":\"\",\"purpose\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400001"));
+        mockMvc.perform(put("/api/vocabulary/themes/theme_user_1")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"name\":\"\",\"purpose\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400001"));
+
+        verifyNoInteractions(themeService);
+    }
+
+    @Test
     void listsOwnedCardsWithFilters() throws Exception {
         LocalDateTime now = LocalDateTime.of(2026, 7, 10, 12, 0);
         var item = new VocabularyCardSummaryResponse(

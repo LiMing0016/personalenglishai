@@ -70,6 +70,22 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void themeVersionAdvanceUsesTheExpectedVersionFence() throws Exception {
+        String sql = statementSql("VocabularyThemeMapper", "advanceVersion", Map.of(
+                "userId", 7L,
+                "themeUid", "theme_user_1",
+                "expectedVersion", 1,
+                "nextVersion", 2,
+                "name", "Updated"));
+
+        assertAll(
+                () -> assertTrue(sql.contains("SET current_version = ?")),
+                () -> assertTrue(sql.contains("current_version = ?")),
+                () -> assertTrue(sql.contains("deleted_at IS NULL"))
+        );
+    }
+
+    @Test
     void runningTransitionsRequireCurrentUnexpiredLeaseToken() throws Exception {
         String succeeded = statementSql("VocabularyGenerationJobMapper", "markSucceeded", Map.of(
                 "jobUid", "job_1", "leaseToken", "lease_1", "revisionUid", "rev_1"));
@@ -343,6 +359,7 @@ class VocabularyMapperContractTest {
                 "VocabularyRevisionMapper",
                 "VocabularyGenerationJobMapper",
                 "UserVocabularyPreferenceMapper"
+                , "VocabularyThemeMapper"
         }) {
             String resource = "mapper/" + mapperName + ".xml";
             try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {

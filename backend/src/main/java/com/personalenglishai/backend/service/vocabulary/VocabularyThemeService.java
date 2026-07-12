@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -77,11 +78,14 @@ public class VocabularyThemeService {
         theme.setName(request.name());
         theme.setStatus(ACTIVE_STATUS);
         theme.setCurrentVersion(1);
-        themes.insertTheme(theme);
-
         VocabularyThemeRevision revision = revision(
                 theme.getThemeUid(), 1, request.name(), request.purpose(), CUSTOM_PROMPT_STRATEGY);
-        themes.insertRevision(revision);
+        try {
+            themes.insertTheme(theme);
+            themes.insertRevision(revision);
+        } catch (DuplicateKeyException exception) {
+            throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT, "theme name already exists");
+        }
         return response(theme, revision, false, false);
     }
 
@@ -96,8 +100,12 @@ public class VocabularyThemeService {
         int nextVersion = theme.getCurrentVersion() + 1;
         VocabularyThemeRevision revision = revision(
                 themeUid, nextVersion, request.name(), request.purpose(), CUSTOM_PROMPT_STRATEGY);
-        themes.insertRevision(revision);
-        if (themes.advanceVersion(userId, themeUid, theme.getCurrentVersion(), nextVersion, request.name()) != 1) {
+        try {
+            if (themes.advanceVersion(userId, themeUid, theme.getCurrentVersion(), nextVersion, request.name()) != 1) {
+                throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
+            }
+            themes.insertRevision(revision);
+        } catch (DuplicateKeyException exception) {
             throw new BizException(ErrorCode.VOCABULARY_THEME_CONFLICT);
         }
         theme.setName(request.name());

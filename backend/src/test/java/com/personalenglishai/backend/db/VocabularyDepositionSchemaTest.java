@@ -76,4 +76,20 @@ class VocabularyDepositionSchemaTest {
                 () -> assertTrue(sql.contains("ADD COLUMN content_markdown MEDIUMTEXT NULL"))
         );
     }
+
+    @Test
+    void themeMigrationSeedsPhysicalSystemThemesAndEnforcesActiveUserNameUniqueness() throws Exception {
+        String sql = Files.readString(Path.of(
+                "src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql"));
+
+        assertAll(
+                () -> assertTrue(sql.contains("theme_system_basic")),
+                () -> assertTrue(sql.contains("theme_system_exam")),
+                () -> assertTrue(sql.contains("theme_system_reading")),
+                () -> assertTrue(sql.contains("ON DUPLICATE KEY UPDATE")),
+                () -> assertTrue(sql.contains("uk_vocabulary_theme_active_user_name")),
+                () -> assertTrue(sql.contains("active_user_id")),
+                () -> assertTrue(sql.contains("active_name"))
+        );
+    }
 }
