@@ -201,6 +201,63 @@ class OpenAiClientResponsesPayloadTest {
         assertThat(payload.toString()).doesNotContain("\"imageBase64\"");
     }
 
+    @Test
+    void structuredResponsesPayloadShouldUseStrictJsonSchemaFormat() throws Exception {
+        OpenAiClient client = client("responses");
+        JsonNode schema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"type\":\"object\",\"additionalProperties\":false}");
+        Method method = OpenAiClient.class.getDeclaredMethod(
+                "buildStructuredResponsesPayload",
+                String.class, String.class, String.class, String.class,
+                JsonNode.class, Double.class, Integer.class);
+        method.setAccessible(true);
+
+        JsonNode payload = (JsonNode) method.invoke(
+                client, "gpt-4o", "system", "user", "vocabulary_core_v1", schema, 0.0, 1200);
+
+        JsonNode format = payload.path("text").path("format");
+        assertThat(format.path("type").asText()).isEqualTo("json_schema");
+        assertThat(format.path("name").asText()).isEqualTo("vocabulary_core_v1");
+        assertThat(format.path("strict").asBoolean()).isTrue();
+        assertThat(format.path("schema")).isEqualTo(schema);
+        assertThat(payload.path("temperature").asDouble()).isEqualTo(0.0);
+        assertThat(payload.path("max_output_tokens").asInt()).isEqualTo(1200);
+    }
+
+    @Test
+    void structuredChatPayloadShouldUseEquivalentNestedJsonSchema() throws Exception {
+        OpenAiClient client = client("chat_completions");
+        JsonNode schema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"type\":\"object\",\"additionalProperties\":false}");
+        Method method = OpenAiClient.class.getDeclaredMethod(
+                "buildStructuredChatCompletionsPayload",
+                AiProviderSelection.SelectedProvider.class,
+                String.class, String.class, String.class, String.class,
+                JsonNode.class, Double.class, Integer.class);
+        method.setAccessible(true);
+        AiProviderSelection.SelectedProvider provider =
+                providerSelection("openai", "https://api.openai.com", "gpt-4o").resolve("openai");
+
+        JsonNode payload = (JsonNode) method.invoke(
+                client, provider, "gpt-4o", "system", "user",
+                "vocabulary_core_v1", schema, 0.0, 1200);
+
+        JsonNode format = payload.path("response_format");
+        assertThat(format.path("type").asText()).isEqualTo("json_schema");
+        assertThat(format.path("json_schema").path("name").asText())
+                .isEqualTo("vocabulary_core_v1");
+        assertThat(format.path("json_schema").path("strict").asBoolean()).isTrue();
+        assertThat(format.path("json_schema").path("schema")).isEqualTo(schema);
+        assertThat(payload.path("max_tokens").asInt()).isEqualTo(1200);
+    }
+
+    private OpenAiClient client(String endpointMode) {
+        return new OpenAiClient(
+                providerSelection("openai", "https://api.openai.com", "gpt-4o"),
+                "test", endpointMode, "gpt-4o", false, false, 12000,
+                new OpenAiClientConfig());
+    }
+
     private AiProviderSelection providerSelection(String provider, String baseUrl, String model) {
         return providerSelection(provider, baseUrl, model, null);
     }

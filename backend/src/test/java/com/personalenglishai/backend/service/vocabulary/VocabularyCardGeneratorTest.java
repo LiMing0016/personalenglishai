@@ -5,9 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -17,10 +16,9 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.ai.client.OpenAiClient;
-import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
-import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupException;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupService;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
@@ -30,7 +28,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -43,347 +40,156 @@ class VocabularyCardGeneratorTest {
     private OpenAiClient ai;
     @Mock
     private VocabularyGenerationCache cache;
+    @Mock
+    private VocabularyCoreFallbackGenerator fallback;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private VocabularyTemplateRegistry registry;
+    private VocabularyCoreContentCodec codec;
     private VocabularyCardGenerator generator;
 
     @BeforeEach
     void setUp() {
-        registry = new VocabularyTemplateRegistry(objectMapper);
+        codec = new VocabularyCoreContentCodec(objectMapper);
         generator = new VocabularyCardGenerator(
-                new VocabularyDictionaryEnricher(dictionary), ai, cache, registry, objectMapper);
-        lenient().when(cache.key(anyString(), anyString(), anyInt(), any(), anyString()))
+                new VocabularyDictionaryEnricher(dictionary), ai, cache, codec, fallback,
+                new VocabularyMarkdownPromptBuilder(objectMapper));
+        lenient().when(cache.key(anyString(), anyInt(), any(JsonNode.class), anyString()))
                 .thenReturn("cache-key");
         lenient().when(cache.get(anyString())).thenReturn(Optional.empty());
+        lenient().when(ai.getModel()).thenReturn("test-model");
     }
 
     @Test
-    void preservesAllAvailableDictionaryTruth() {
-        DictionaryLookupResponse dictionaryData = dictionaryLookupWithAllFields();
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(dictionaryData);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_1"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"invented","phonetic":"/wrong/","partOfSpeech":"noun",\
-                        "definitions":["wrong"],"examples":["Wrong example."],"notes":""}
-                        """);
+    void dictionaryBackedCardUsesOneMarkdownCallAndKeepsDictionaryCore() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-1"), eq(0.2), eq(1200)))
+                .thenReturn("## Usage\n\nKeep a record of your work.");
 
         GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"),
-                List.of(VocabularyTestFixtures.manualSource("The company is innovative.")),
-                registry.require("basic"),
-                "job_1");
+                VocabularyTestFixtures.generating("record"),
+                List.of(VocabularyTestFixtures.manualSource("The record was complete.")),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-1");
 
-        assertEquals("innovative", result.content().path("term").asText());
-        assertEquals("/ˈɪnəveɪtɪv/", result.content().path("phonetic").asText());
-        assertEquals("adjective", result.content().path("partOfSpeech").asText());
-        assertEquals("introducing new ideas", result.content().path("definitions").get(0).asText());
-        assertEquals("The company introduced an innovative product.",
-                result.content().path("examples").get(0).asText());
-        verify(dictionary).lookup("innovative", "en-gb");
-        verify(cache).put(anyString(), eq(result.content()), eq(Duration.ofDays(7)));
+        assertEquals("record", result.core().path("term").asText());
+        assertEquals("a written account", result.core().path("senses").get(0)
+                .path("meanings").get(0).path("definitionEn").asText());
+        assertEquals("## Usage\n\nKeep a record of your work.", result.markdown());
+        assertEquals(1, result.contentFormatVersion());
+        assertFalse(result.partial());
+        verifyNoInteractions(fallback);
+        verify(ai).callWithTraceId(anyString(), anyString(), eq("trace-1"), eq(0.2), eq(1200));
+        verify(cache).put(eq("cache-key"), any(VocabularyGenerationCache.CachedGeneration.class),
+                eq(Duration.ofDays(7)));
     }
 
     @Test
-    void copiesCapturedReadingContextInsteadOfAiContext() {
-        when(dictionary.lookup("innovative", "en-gb"))
-                .thenReturn(VocabularyTestFixtures.dictionaryLookup(
-                        "innovative", "adjective", "introducing new ideas"));
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_context"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","definitions":["wrong"],"sourceContext":"invented context",\
-                        "contextExplanation":"Used to describe novelty.","paraphrases":[],"notes":""}
-                        """);
+    void dictionaryMissingCardUsesOneFallbackAndOneMarkdownCall() throws Exception {
+        when(dictionary.lookup("record", "en-gb")).thenReturn(null);
+        ObjectNode fallbackCore = objectMapper.readValue(validCore(), ObjectNode.class);
+        when(fallback.generate("record", "", "trace-2")).thenReturn(fallbackCore);
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-2"), eq(0.2), eq(1200)))
+                .thenReturn("## Usage\n\nRecord the result.");
 
         GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"),
-                List.of(VocabularyTestFixtures.manualSource("The company is innovative.")),
-                registry.require("reading"),
-                "job_context");
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-2");
 
-        assertEquals("The company is innovative.", result.content().path("sourceContext").asText());
+        assertFalse(result.partial());
+        verify(fallback).generate("record", "", "trace-2");
+        verify(ai).callWithTraceId(anyString(), anyString(), eq("trace-2"), eq(0.2), eq(1200));
     }
 
     @Test
-    void keepsReadingContextEmptyWhenNothingWasCaptured() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_empty_context"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","definitions":[],"sourceContext":"invented context",\
-                        "contextExplanation":"","paraphrases":[],"notes":""}
-                        """);
+    void markdownFailureReturnsValidatedDictionaryCoreAsPartial() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-partial"), eq(0.2), eq(1200)))
+                .thenThrow(new RuntimeException("upstream unavailable"));
 
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"),
-                List.of(),
-                registry.require("reading"),
-                "job_empty_context");
+        GeneratedVocabularyCard partial = generator.generate(
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_custom", 4, "custom-markdown-v1", "exam focus"), "trace-partial");
 
-        assertEquals("", result.content().path("sourceContext").asText());
-    }
-
-    @Test
-    void rejectsMalformedStructuredOutputWithoutCachingIt() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn("not-json The company is innovative.");
-
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class,
-                () -> generator.generate(
-                        VocabularyTestFixtures.generating("innovative"),
-                        List.of(VocabularyTestFixtures.manualSource("The company is innovative.")),
-                        registry.require("basic"),
-                        "job_2"));
-
-        assertEquals("INVALID_AI_OUTPUT", exception.code());
-        assertTrue(exception.retryable());
-        assertFalse(exception.getMessage().contains("The company is innovative."));
+        assertTrue(partial.partial());
+        assertEquals("record", partial.core().path("term").asText());
+        assertEquals("", partial.markdown());
         verify(cache, never()).put(anyString(), any(), any());
     }
 
     @Test
-    void continuesAiGenerationWhenDictionaryDoesNotContainTerm() {
-        when(dictionary.lookup("innovative", "en-gb"))
-                .thenThrow(new DictionaryLookupException(DictionaryLookupException.Kind.NOT_FOUND));
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_not_found"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","phonetic":"/ai/","partOfSpeech":"adjective",\
-                        "definitions":["AI definition"],"examples":[],"notes":""}
-                        """);
+    void rawHtmlMarkdownIsRejectedAsPartial() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-html"), eq(0.2), eq(1200)))
+                .thenReturn("## Usage\n<script>alert('x')</script>");
 
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_not_found");
+        GeneratedVocabularyCard partial = generator.generate(
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-html");
 
-        assertEquals("AI definition", result.content().path("definitions").get(0).asText());
-        verify(ai).callWithTraceId(anyString(), anyString(), eq("job_not_found"), eq(0.2), eq(1200));
+        assertTrue(partial.partial());
+        assertEquals("", partial.markdown());
+        verify(cache, never()).put(anyString(), any(), any());
     }
 
     @Test
-    void reportsOperationalDictionaryErrorsAsRetryable() {
-        when(dictionary.lookup("innovative", "en-gb"))
+    void unavailableFallbackCoreRaisesRetryableStableError() {
+        when(dictionary.lookup("record", "en-gb")).thenReturn(null);
+        when(fallback.generate("record", "", "trace-core-fail"))
+                .thenThrow(new IllegalArgumentException("bad model output"));
+
+        VocabularyGenerationException exception = assertThrows(
+                VocabularyGenerationException.class,
+                () -> generator.generate(VocabularyTestFixtures.generating("record"), List.of(),
+                        theme("theme_system_basic", 1, "basic-markdown-v1", ""),
+                        "trace-core-fail"));
+
+        assertEquals("CORE_CONTENT_UNAVAILABLE", exception.code());
+        assertTrue(exception.retryable());
+        verifyNoInteractions(ai);
+    }
+
+    @Test
+    void operationalDictionaryFailureDoesNotCallAi() {
+        when(dictionary.lookup("record", "en-gb"))
                 .thenThrow(new DictionaryLookupException(DictionaryLookupException.Kind.TIMEOUT));
 
         VocabularyGenerationException exception = assertThrows(
                 VocabularyGenerationException.class,
-                () -> generator.generate(
-                        VocabularyTestFixtures.generating("innovative"), List.of(),
-                        registry.require("basic"), "job_dictionary_timeout"));
+                () -> generator.generate(VocabularyTestFixtures.generating("record"), List.of(),
+                        theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-dict"));
 
         assertEquals("DICTIONARY_LOOKUP_FAILED", exception.code());
-        assertTrue(exception.retryable());
-        verifyNoInteractions(ai);
+        verifyNoInteractions(ai, fallback);
     }
 
     @Test
-    void rejectsJsonThatIsNotAnObject() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn("[]");
-
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class,
-                () -> generator.generate(
-                        VocabularyTestFixtures.generating("innovative"), List.of(),
-                        registry.require("basic"), "job_array"));
-
-        assertEquals("INVALID_AI_OUTPUT", exception.code());
-        verify(cache, never()).put(anyString(), any(), any());
-    }
-
-    @Test
-    void rejectsOutputThatFailsTemplateValidation() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), anyString(), anyDouble(), anyInt()))
-                .thenReturn("{\"term\":\"innovative\",\"definitions\":[]}");
-
-        assertThrows(VocabularyGenerationException.class, () -> generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_template"));
-
-        verify(cache, never()).put(anyString(), any(), any());
-    }
-
-    @Test
-    void usesValidatedCacheBeforeCallingAi() throws Exception {
-        when(dictionary.lookup("innovative", "en-gb"))
-                .thenReturn(VocabularyTestFixtures.dictionaryLookup(
-                        "innovative", "adjective", "introducing new ideas"));
-        JsonNode cached = objectMapper.readTree("""
-                {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                "definitions":[],"examples":[],"notes":""}
-                """);
-        when(cache.get(anyString())).thenReturn(Optional.of(cached));
+    void returnsValidatedCachedCoreAndMarkdownWithoutAiCalls() throws Exception {
+        ObjectNode core = objectMapper.readValue(validCore(), ObjectNode.class);
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        when(cache.get("cache-key")).thenReturn(Optional.of(
+                new VocabularyGenerationCache.CachedGeneration(core, "## Cached")));
 
         GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_3");
+                VocabularyTestFixtures.generating("record"), List.of(),
+                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-cache");
 
-        assertEquals("introducing new ideas", result.content().path("definitions").get(0).asText());
-        assertTrue(cached.path("definitions").isEmpty());
+        assertEquals("## Cached", result.markdown());
         assertEquals("cache", result.model());
-        verifyNoInteractions(ai);
-        verify(cache, never()).put(anyString(), any(), any());
+        verifyNoInteractions(ai, fallback);
     }
 
-    @Test
-    void ignoresTemplateInvalidCacheAndReplacesItWithValidatedOutput() throws Exception {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        JsonNode invalidCached = objectMapper.readTree("{\"term\":\"innovative\"}");
-        when(cache.get(anyString())).thenReturn(Optional.of(invalidCached));
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_stale"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                        "definitions":[],"examples":[],"notes":""}
-                        """);
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_stale");
-
-        assertEquals("innovative", result.content().path("term").asText());
-        verify(ai).callWithTraceId(anyString(), anyString(), eq("job_stale"), eq(0.2), eq(1200));
-        verify(cache).put(anyString(), eq(result.content()), eq(Duration.ofDays(7)));
+    private ResolvedVocabularyTheme theme(String uid, int version, String strategy, String purpose) {
+        return new ResolvedVocabularyTheme(uid, version, "Theme", purpose, strategy, 1, "basic");
     }
 
-    @Test
-    void reappliesCapturedContextToCachedReadingCardWithoutMutatingCacheValue() throws Exception {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        JsonNode mismatchedCache = objectMapper.readTree("""
-                {"term":"innovative","definitions":[],"sourceContext":"invented context",\
-                "contextExplanation":"","paraphrases":[],"notes":""}
-                """);
-        when(cache.get(anyString())).thenReturn(Optional.of(mismatchedCache));
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"),
-                List.of(VocabularyTestFixtures.manualSource("Captured context.")),
-                registry.require("reading"),
-                "job_cache_context");
-
-        assertEquals("Captured context.", result.content().path("sourceContext").asText());
-        assertEquals("invented context", mismatchedCache.path("sourceContext").asText());
-        assertEquals("cache", result.model());
-        verifyNoInteractions(ai);
-    }
-
-    @Test
-    void reappliesCurrentDictionaryTruthToCachedCard() throws Exception {
-        DictionaryLookupResponse dictionaryData = dictionaryLookupWithAllFields();
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(dictionaryData);
-        JsonNode cached = objectMapper.readTree("""
-                {"term":"innovative","phonetic":"/stale/","partOfSpeech":"noun",\
-                "definitions":["stale definition"],"examples":["Stale example."],"notes":""}
-                """);
-        when(cache.get(anyString())).thenReturn(Optional.of(cached));
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_cache_dictionary");
-
-        assertEquals("/ˈɪnəveɪtɪv/", result.content().path("phonetic").asText());
-        assertEquals("adjective", result.content().path("partOfSpeech").asText());
-        assertEquals("introducing new ideas", result.content().path("definitions").get(0).asText());
-        assertEquals("The company introduced an innovative product.",
-                result.content().path("examples").get(0).asText());
-        assertEquals("/stale/", cached.path("phonetic").asText());
-        verifyNoInteractions(ai);
-    }
-
-    @Test
-    void evictsPoisonedCacheAndRegeneratesValidatedContent() throws Exception {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        JsonNode poisoned = objectMapper.readTree("""
-                {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                "definitions":[],"examples":[],"notes":"","unexpected":"poison"}
-                """);
-        when(cache.get(anyString())).thenReturn(Optional.of(poisoned));
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_poisoned"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                        "definitions":[],"examples":[],"notes":""}
-                        """);
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_poisoned");
-
-        assertFalse(result.content().has("unexpected"));
-        verify(cache).evict("cache-key");
-        verify(ai).callWithTraceId(anyString(), anyString(), eq("job_poisoned"), eq(0.2), eq(1200));
-        verify(cache).put("cache-key", result.content(), Duration.ofDays(7));
-    }
-
-    @Test
-    void acceptsJsonWrappedInMarkdownFence() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_fenced"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        ```json
-                        {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                        "definitions":[],"examples":[],"notes":""}
-                        ```
-                        """);
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_fenced");
-
-        assertEquals("innovative", result.content().path("term").asText());
-    }
-
-    @Test
-    void rejectsTrailingJsonTokensWithoutCaching() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_trailing"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                        "definitions":[],"examples":[],"notes":""} {}
-                        """);
-
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class,
-                () -> generator.generate(
-                        VocabularyTestFixtures.generating("innovative"), List.of(),
-                        registry.require("basic"), "job_trailing"));
-
-        assertEquals("INVALID_AI_OUTPUT", exception.code());
-        verify(cache, never()).put(anyString(), any(), any());
-    }
-
-    @Test
-    void promptNamesTheExactTemplateFields() {
-        when(dictionary.lookup("innovative", "en-gb")).thenReturn(null);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("job_prompt"), eq(0.2), eq(1200)))
-                .thenReturn("""
-                        {"term":"innovative","phonetic":"","partOfSpeech":"adjective",\
-                        "definitions":[],"examples":[],"notes":""}
-                        """);
-
-        generator.generate(VocabularyTestFixtures.generating("innovative"), List.of(),
-                registry.require("basic"), "job_prompt");
-
-        ArgumentCaptor<String> systemPrompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).callWithTraceId(systemPrompt.capture(), anyString(), eq("job_prompt"), eq(0.2), eq(1200));
-        assertTrue(systemPrompt.getValue().contains(
-                "term, phonetic, partOfSpeech, definitions, examples, notes"));
-        assertTrue(systemPrompt.getValue().contains("one JSON object"));
-    }
-
-    @Test
-    void basicFixtureHasConcreteGeneratedCardType() {
-        GeneratedVocabularyCard fixture = VocabularyTestFixtures.basicGeneratedCard();
-
-        assertEquals("test-model", fixture.model());
-    }
-
-    private DictionaryLookupResponse dictionaryLookupWithAllFields() {
-        DictionaryLookupResponse response = VocabularyTestFixtures.dictionaryLookup(
-                "innovative", "adjective", "introducing new ideas");
-        response.setPhonetics(List.of(new DictionaryPhoneticDto("/ˈɪnəveɪtɪv/", null)));
-        DictionaryEntryDto entry = response.getEntries().get(0);
-        entry.setExamples(List.of("The company introduced an innovative product."));
-        return response;
+    private String validCore() {
+        return """
+                {"schemaVersion":1,"term":"record","phonetics":[],"senses":[
+                  {"partOfSpeech":"noun","meanings":[
+                    {"definitionEn":"a written account","definitionZh":"记录"}]}]}
+                """;
     }
 }

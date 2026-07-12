@@ -126,13 +126,16 @@ public final class VocabularyTestFixtures {
 
     public static GeneratedVocabularyCard basicGeneratedCard() {
         ObjectNode content = OBJECT_MAPPER.createObjectNode();
+        content.put("schemaVersion", 1);
         content.put("term", "innovative");
-        content.put("phonetic", "");
-        content.put("partOfSpeech", "adjective");
-        content.putArray("definitions").add("introducing new ideas");
-        content.putArray("examples");
-        content.put("notes", "");
-        return new GeneratedVocabularyCard(content, "test-model", "Generated fixture");
+        content.putArray("phonetics");
+        content.putArray("senses").addObject()
+                .put("partOfSpeech", "adjective")
+                .putArray("meanings").addObject()
+                .put("definitionEn", "introducing new ideas")
+                .put("definitionZh", "");
+        return new GeneratedVocabularyCard(
+                content, "## Usage", 1, "test-model", "Generated fixture", false);
     }
 
     public static DictionaryLookupResponse dictionaryLookup(

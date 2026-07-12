@@ -1,13 +1,16 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -31,6 +34,8 @@ public class VocabularyGenerationWorker {
     private final VocabularySourceMapper sources;
     private final VocabularyCardGenerator generator;
     private final VocabularyTemplateRegistry templates;
+    private final VocabularyThemeMapper themes;
+    private final VocabularyCoreContentCodec coreCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyGenerationFinalizer finalizer;
     private final int leaseSeconds;
@@ -41,6 +46,8 @@ public class VocabularyGenerationWorker {
             VocabularySourceMapper sources,
             VocabularyCardGenerator generator,
             VocabularyTemplateRegistry templates,
+            VocabularyThemeMapper themes,
+            VocabularyCoreContentCodec coreCodec,
             ObjectMapper objectMapper,
             VocabularyGenerationFinalizer finalizer,
             @Value("${vocabulary.generation.scheduler.lease-ms:300000}") long leaseMs) {
@@ -49,6 +56,8 @@ public class VocabularyGenerationWorker {
         this.sources = sources;
         this.generator = generator;
         this.templates = templates;
+        this.themes = themes;
+        this.coreCodec = coreCodec;
         this.objectMapper = objectMapper;
         this.finalizer = finalizer;
         this.leaseSeconds = leaseSeconds(leaseMs);
@@ -80,13 +89,9 @@ public class VocabularyGenerationWorker {
         }
 
         try {
-            VocabularyTemplateRegistry.TemplateDefinition template = requireTemplate(job.getTemplateKey());
-            if (!Objects.equals(job.getTemplateVersion(), template.version())) {
-                throw permanentFailure(
-                        "INVALID_GENERATION_REQUEST", "Vocabulary template version is no longer available");
-            }
+            ResolvedVocabularyTheme theme = requireTheme(job);
             GeneratedVocabularyCard generated = generator.generate(
-                    card, sources.listSources(card.getCardUid()), template, job.getJobUid());
+                    card, sources.listSources(card.getCardUid()), theme, job.getJobUid());
             VocabularyCardRevision revision = newRevision(job, generated);
             finalizer.finalizeSuccess(job, leaseToken, revision);
         } catch (VocabularyGenerationException exception) {
@@ -107,14 +112,39 @@ public class VocabularyGenerationWorker {
         }
     }
 
+    private ResolvedVocabularyTheme requireTheme(VocabularyGenerationJob job) {
+        if (job.getThemeUid() != null && !job.getThemeUid().isBlank() && job.getThemeVersion() != null) {
+            VocabularyThemeRevision revision = themes.findRevision(job.getThemeUid(), job.getThemeVersion());
+            if (revision == null
+                    || revision.getVersion() == null
+                    || revision.getContentFormatVersion() == null) {
+                throw permanentFailure(
+                        "INVALID_GENERATION_REQUEST", "Vocabulary theme version is no longer available");
+            }
+            return new ResolvedVocabularyTheme(
+                    revision.getThemeUid(), revision.getVersion(), revision.getNameSnapshot(),
+                    revision.getPurpose(), revision.getPromptStrategyKey(),
+                    revision.getContentFormatVersion(), job.getTemplateKey());
+        }
+
+        VocabularyTemplateRegistry.TemplateDefinition template = requireTemplate(job.getTemplateKey());
+        if (!Objects.equals(job.getTemplateVersion(), template.version())) {
+            throw permanentFailure(
+                    "INVALID_GENERATION_REQUEST", "Vocabulary template version is no longer available");
+        }
+        return new ResolvedVocabularyTheme(
+                "theme_system_" + template.key(), template.version(), template.name(), "",
+                template.key() + "-markdown-v1", 1, template.key());
+    }
+
     private VocabularyCardRevision newRevision(
             VocabularyGenerationJob job,
             GeneratedVocabularyCard generated) {
-        if (generated == null || generated.content() == null) {
+        if (generated == null || generated.core() == null) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is missing");
         }
         try {
-            templates.validate(job.getTemplateKey(), generated.content());
+            coreCodec.validate(generated.core());
         } catch (IllegalArgumentException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
         }
@@ -126,16 +156,31 @@ public class VocabularyGenerationWorker {
         revision.setAuthorType("ai");
         revision.setTemplateKey(job.getTemplateKey());
         revision.setTemplateVersion(job.getTemplateVersion());
+        revision.setThemeUid(job.getThemeUid());
+        revision.setThemeVersion(job.getThemeVersion());
         revision.setContentJson(writeContent(generated));
+        revision.setCoreJson(writeCore(generated));
+        revision.setContentMarkdown(generated.markdown());
+        revision.setContentFormatVersion(generated.contentFormatVersion());
         revision.setChangeSummary(limit(generated.changeSummary(), 255));
         return revision;
     }
 
     private String writeContent(GeneratedVocabularyCard generated) {
         try {
-            return objectMapper.writeValueAsString(generated.content());
+            ObjectNode compatibility = (ObjectNode) generated.core().deepCopy();
+            compatibility.put("markdown", generated.markdown() == null ? "" : generated.markdown());
+            return objectMapper.writeValueAsString(compatibility);
         } catch (JsonProcessingException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content cannot be stored");
+        }
+    }
+
+    private String writeCore(GeneratedVocabularyCard generated) {
+        try {
+            return objectMapper.writeValueAsString(generated.core());
+        } catch (JsonProcessingException exception) {
+            throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary core cannot be stored");
         }
     }
 

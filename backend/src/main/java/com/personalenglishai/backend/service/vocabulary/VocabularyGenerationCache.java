@@ -3,11 +3,7 @@ package com.personalenglishai.backend.service.vocabulary;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
-import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
-import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,7 +18,7 @@ import org.springframework.stereotype.Component;
 public final class VocabularyGenerationCache {
 
     private static final Logger log = LoggerFactory.getLogger(VocabularyGenerationCache.class);
-    private static final String KEY_PREFIX = "vocabulary:generation:v1:";
+    private static final String KEY_PREFIX = "vocabulary:generation:v2:";
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -32,37 +28,33 @@ public final class VocabularyGenerationCache {
         this.objectMapper = objectMapper;
     }
 
-    public String key(
-            String normalizedTerm,
-            String templateKey,
-            int templateVersion,
-            DictionaryLookupResponse dictionaryData,
-            String capturedContext) {
-        ObjectNode material = objectMapper.createObjectNode();
-        material.put("normalizedTerm", valueOrEmpty(normalizedTerm));
-        material.put("templateKey", valueOrEmpty(templateKey));
-        material.put("templateVersion", templateVersion);
-        material.set("dictionary", dictionaryContent(dictionaryData));
-        material.put("capturedContext", valueOrEmpty(capturedContext));
-        try {
-            return KEY_PREFIX + sha256(objectMapper.writeValueAsBytes(material));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Unable to build vocabulary generation cache key");
+    public String key(String themeUid, int themeVersion, JsonNode core, String sourceContext) {
+        if (core == null || !core.isObject()) {
+            throw new IllegalArgumentException("Vocabulary generation cache core must be an object");
         }
+        ObjectNode material = objectMapper.createObjectNode();
+        material.put("themeUid", valueOrEmpty(themeUid));
+        material.put("themeVersion", themeVersion);
+        material.put("coreHash", sha256(canonicalBytes(core)));
+        material.put("sourceContext", valueOrEmpty(sourceContext));
+        return KEY_PREFIX + sha256(canonicalBytes(material));
     }
 
-    public Optional<JsonNode> get(String key) {
+    public Optional<CachedGeneration> get(String key) {
         try {
             String value = redisTemplate.opsForValue().get(key);
             if (value == null || value.isBlank()) {
                 return Optional.empty();
             }
             try {
-                JsonNode content = objectMapper.readTree(value);
-                if (content != null && content.isObject()) {
-                    return Optional.of(content);
+                JsonNode stored = objectMapper.readTree(value);
+                JsonNode core = stored == null ? null : stored.get("core");
+                JsonNode markdown = stored == null ? null : stored.get("markdown");
+                if (stored != null && stored.isObject() && core != null && core.isObject()
+                        && markdown != null && markdown.isTextual()) {
+                    return Optional.of(new CachedGeneration(core, markdown.textValue()));
                 }
-                log.warn("Vocabulary generation cache content rejected key={} reasonType=NonObjectJson", key);
+                log.warn("Vocabulary generation cache content rejected key={} reasonType=InvalidShape", key);
             } catch (JsonProcessingException exception) {
                 log.warn("Vocabulary generation cache content rejected key={} reasonType={}",
                         key, exception.getClass().getSimpleName());
@@ -76,15 +68,18 @@ public final class VocabularyGenerationCache {
         }
     }
 
-    public void put(String key, JsonNode content, Duration ttl) {
-        if (content == null || !content.isObject()) {
-            throw new IllegalArgumentException("Vocabulary generation cache content must be an object");
+    public void put(String key, CachedGeneration value, Duration ttl) {
+        if (value == null || value.core() == null || !value.core().isObject() || value.markdown() == null) {
+            throw new IllegalArgumentException("Vocabulary generation cache value is invalid");
         }
         if (ttl == null || ttl.isZero() || ttl.isNegative()) {
             throw new IllegalArgumentException("Vocabulary generation cache TTL must be positive");
         }
+        ObjectNode stored = objectMapper.createObjectNode();
+        stored.set("core", value.core());
+        stored.put("markdown", value.markdown());
         try {
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(content), ttl);
+            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(stored), ttl);
         } catch (RuntimeException | JsonProcessingException exception) {
             log.warn("Vocabulary generation cache write failed key={} reasonType={}",
                     key, exception.getClass().getSimpleName());
@@ -100,44 +95,11 @@ public final class VocabularyGenerationCache {
         }
     }
 
-    private ObjectNode dictionaryContent(DictionaryLookupResponse response) {
-        ObjectNode content = objectMapper.createObjectNode();
-        if (response == null) {
-            return content;
-        }
-        content.put("word", valueOrEmpty(response.getWord()));
-        content.put("language", valueOrEmpty(response.getLanguage()));
-        content.put("source", valueOrEmpty(response.getSource()));
-
-        ArrayNode phonetics = content.putArray("phonetics");
-        for (DictionaryPhoneticDto phonetic : response.getPhonetics()) {
-            if (phonetic == null) {
-                continue;
-            }
-            ObjectNode item = phonetics.addObject();
-            item.put("text", valueOrEmpty(phonetic.getText()));
-            item.put("audioUrl", valueOrEmpty(phonetic.getAudioUrl()));
-        }
-
-        ArrayNode entries = content.putArray("entries");
-        for (DictionaryEntryDto entry : response.getEntries()) {
-            if (entry == null) {
-                continue;
-            }
-            ObjectNode item = entries.addObject();
-            item.put("partOfSpeech", valueOrEmpty(entry.getPartOfSpeech()));
-            addStrings(item.putArray("definitions"), entry.getDefinitions());
-            addStrings(item.putArray("examples"), entry.getExamples());
-        }
-        return content;
-    }
-
-    private void addStrings(ArrayNode target, Iterable<String> values) {
-        if (values == null) {
-            return;
-        }
-        for (String value : values) {
-            target.add(valueOrEmpty(value));
+    private byte[] canonicalBytes(JsonNode value) {
+        try {
+            return objectMapper.writeValueAsBytes(value);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Unable to serialize vocabulary generation cache material");
         }
     }
 
@@ -157,4 +119,6 @@ public final class VocabularyGenerationCache {
     private String valueOrEmpty(String value) {
         return value == null ? "" : value;
     }
+
+    public record CachedGeneration(JsonNode core, String markdown) {}
 }

@@ -396,7 +396,33 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return callInternal(null, systemPrompt, userPrompt, traceId, xDebugFail);
     }
 
+    public String callStructuredWithTraceId(
+            String systemPrompt,
+            String userPrompt,
+            String traceId,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        if (isBlank(schemaName) || schema == null || !schema.isObject()) {
+            throw new IllegalArgumentException("Structured output schema is required");
+        }
+        return callInternal(
+                null, systemPrompt, userPrompt, traceId, null,
+                new StructuredOutputConfig(schemaName.trim(), schema.deepCopy(), temperature, maxTokens));
+    }
+
     private String callInternal(String provider, String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
+        return callInternal(provider, systemPrompt, userPrompt, traceId, xDebugFail, null);
+    }
+
+    private String callInternal(
+            String provider,
+            String systemPrompt,
+            String userPrompt,
+            String traceId,
+            String xDebugFail,
+            StructuredOutputConfig structuredOutput) {
         long startTime = System.currentTimeMillis();
         int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         AtomicInteger attemptCounter = new AtomicInteger(1);
@@ -428,7 +454,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
 
             OpenAiCallResult callResult;
             try {
-                callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel,
+                        systemPrompt, userPrompt, traceId, retrySpec, structuredOutput);
             } catch (Exception e) {
                 if (shouldFallbackFromResponses(effectiveEndpoint, e)) {
                     fallbackUsed = true;
@@ -444,7 +471,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
                             safeMsg(e),
                             extractOpenAiErrorCode(e),
                             extractHttpStatus(e));
-                    callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                    callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel,
+                            systemPrompt, userPrompt, traceId, retrySpec, structuredOutput);
                 } else {
                     throw e;
                 }
@@ -734,11 +762,14 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                         String systemPrompt,
                                         String userPrompt,
                                         String traceId,
-                                        Retry retrySpec) {
+                                        Retry retrySpec,
+                                        StructuredOutputConfig structuredOutput) {
         if (ENDPOINT_MODE_RESPONSES.equals(endpointMode) && supportsResponses(selectedProvider.provider())) {
-            return callResponses(targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
+            return callResponses(targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec,
+                    structuredOutput);
         }
-        return callChatCompletions(selectedProvider, targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
+        return callChatCompletions(selectedProvider, targetWebClient, model, systemPrompt, userPrompt,
+                traceId, retrySpec, structuredOutput);
     }
 
     private OpenAiCallResult callChatCompletions(AiProviderSelection.SelectedProvider selectedProvider,
@@ -747,20 +778,34 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                                  String systemPrompt,
                                                  String userPrompt,
                                                  String traceId,
-                                                 Retry retrySpec) {
-        ChatRequest request = new ChatRequest(model, List.of(
-                new Message("system", systemPrompt == null ? "" : systemPrompt),
-                new Message("user", userPrompt == null ? "" : userPrompt)
-        ));
-        request.setTemperature(normalizeChatCompletionsTemperature(
-                selectedProvider,
-                overrideTemperature != null ? overrideTemperature : request.getTemperature()
-        ));
-        if (overrideMaxTokens != null) request.setMaxTokens(overrideMaxTokens);
+                                                 Retry retrySpec,
+                                                 StructuredOutputConfig structuredOutput) {
+        Object request;
+        if (structuredOutput == null) {
+            ChatRequest chatRequest = new ChatRequest(model, List.of(
+                    new Message("system", systemPrompt == null ? "" : systemPrompt),
+                    new Message("user", userPrompt == null ? "" : userPrompt)
+            ));
+            chatRequest.setTemperature(normalizeChatCompletionsTemperature(
+                    selectedProvider,
+                    overrideTemperature != null ? overrideTemperature : chatRequest.getTemperature()
+            ));
+            if (overrideMaxTokens != null) chatRequest.setMaxTokens(overrideMaxTokens);
+            request = chatRequest;
+        } else {
+            request = buildStructuredChatCompletionsPayload(
+                    selectedProvider, model, systemPrompt, userPrompt,
+                    structuredOutput.schemaName(), structuredOutput.schema(),
+                    structuredOutput.temperature(), structuredOutput.maxTokens());
+        }
         int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_CHAT_COMPLETIONS, model, request, inputChars, draftChars);
-        logPromptPayload(traceId, request, ENDPOINT_MODE_CHAT_COMPLETIONS);
+        ChatRequest promptLogRequest = new ChatRequest(model, List.of(
+                new Message("system", systemPrompt == null ? "" : systemPrompt),
+                new Message("user", userPrompt == null ? "" : userPrompt)
+        ));
+        logPromptPayload(traceId, promptLogRequest, ENDPOINT_MODE_CHAT_COMPLETIONS);
 
         ChatResponse response = targetWebClient.post()
                 .uri("/v1/chat/completions")
@@ -832,11 +877,18 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                            String systemPrompt,
                                            String userPrompt,
                                            String traceId,
-                                           Retry retrySpec) {
-        ResponsesRequest request = new ResponsesRequest(model, List.of(
-                new ResponseInputItem("system", List.of(new ResponseContentItem("input_text", systemPrompt == null ? "" : systemPrompt))),
-                new ResponseInputItem("user", List.of(new ResponseContentItem("input_text", userPrompt == null ? "" : userPrompt)))
-        ));
+                                           Retry retrySpec,
+                                           StructuredOutputConfig structuredOutput) {
+        Object request = structuredOutput == null
+                ? new ResponsesRequest(model, List.of(
+                        new ResponseInputItem("system", List.of(new ResponseContentItem(
+                                "input_text", systemPrompt == null ? "" : systemPrompt))),
+                        new ResponseInputItem("user", List.of(new ResponseContentItem(
+                                "input_text", userPrompt == null ? "" : userPrompt)))))
+                : buildStructuredResponsesPayload(
+                        model, systemPrompt, userPrompt,
+                        structuredOutput.schemaName(), structuredOutput.schema(),
+                        structuredOutput.temperature(), structuredOutput.maxTokens());
         int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_RESPONSES, model, request, inputChars, draftChars);
@@ -889,6 +941,75 @@ public class OpenAiClient implements AssistantOpenAiClient {
         ObjectNode text = payload.putObject("text");
         text.putObject("format").put("type", "text");
         return payload;
+    }
+
+    private ObjectNode buildStructuredResponsesPayload(
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        ArrayNode input = payload.putArray("input");
+        addResponsesMessage(input, "system", systemPrompt);
+        addResponsesMessage(input, "user", userPrompt);
+        if (temperature != null) {
+            payload.put("temperature", temperature);
+        }
+        if (maxTokens != null) {
+            payload.put("max_output_tokens", maxTokens);
+        }
+        ObjectNode format = payload.putObject("text").putObject("format");
+        format.put("type", "json_schema");
+        format.put("name", schemaName);
+        format.put("strict", true);
+        format.set("schema", schema);
+        return payload;
+    }
+
+    private ObjectNode buildStructuredChatCompletionsPayload(
+            AiProviderSelection.SelectedProvider selectedProvider,
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        ArrayNode messages = payload.putArray("messages");
+        addChatMessage(messages, "system", systemPrompt);
+        addChatMessage(messages, "user", userPrompt);
+        payload.put("temperature", normalizeChatCompletionsTemperature(
+                selectedProvider, temperature == null ? 0.2d : temperature));
+        if (maxTokens != null) {
+            payload.put("max_tokens", maxTokens);
+        }
+        ObjectNode responseFormat = payload.putObject("response_format");
+        responseFormat.put("type", "json_schema");
+        ObjectNode jsonSchema = responseFormat.putObject("json_schema");
+        jsonSchema.put("name", schemaName);
+        jsonSchema.put("strict", true);
+        jsonSchema.set("schema", schema);
+        return payload;
+    }
+
+    private void addResponsesMessage(ArrayNode input, String role, String value) {
+        ObjectNode message = input.addObject();
+        message.put("role", role);
+        ObjectNode content = message.putArray("content").addObject();
+        content.put("type", "input_text");
+        content.put("text", value == null ? "" : value);
+    }
+
+    private void addChatMessage(ArrayNode messages, String role, String value) {
+        ObjectNode message = messages.addObject();
+        message.put("role", role);
+        message.put("content", value == null ? "" : value);
     }
 
     private ObjectNode buildVisionChatCompletionsPayload(AiProviderSelection.SelectedProvider selectedProvider,
@@ -1944,6 +2065,13 @@ public class OpenAiClient implements AssistantOpenAiClient {
     }
 
     private record OpenAiCallResult(String content, int payloadBytes, boolean parseSuccess) {
+    }
+
+    private record StructuredOutputConfig(
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
     }
 
     private record ImageResponsePayload(MediaType contentType, byte[] body) {

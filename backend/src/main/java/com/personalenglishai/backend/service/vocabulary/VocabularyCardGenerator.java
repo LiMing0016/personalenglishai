@@ -1,23 +1,15 @@
 package com.personalenglishai.backend.service.vocabulary;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.ai.client.OpenAiClient;
-import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
-import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
-import com.personalenglishai.backend.service.vocabulary.VocabularyTemplateRegistry.TemplateDefinition;
 import java.time.Duration;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -28,59 +20,66 @@ public final class VocabularyCardGenerator {
     private static final Logger log = LoggerFactory.getLogger(VocabularyCardGenerator.class);
     private static final String DICTIONARY_LANGUAGE = "en-gb";
     private static final Duration CACHE_TTL = Duration.ofDays(7);
-    private static final double TEMPERATURE = 0.2;
+    private static final double MARKDOWN_TEMPERATURE = 0.2;
     private static final int MAX_TOKENS = 1200;
+    private static final int MAX_MARKDOWN_CHARS = 20_000;
+    private static final Pattern RAW_HTML = Pattern.compile("(?is)<\\s*/?\\s*[a-z][^>]*>");
 
     private final VocabularyDictionaryEnricher dictionaryEnricher;
     private final OpenAiClient openAiClient;
     private final VocabularyGenerationCache cache;
-    private final VocabularyTemplateRegistry templateRegistry;
-    private final ObjectMapper objectMapper;
+    private final VocabularyCoreContentCodec coreCodec;
+    private final VocabularyCoreFallbackGenerator fallbackGenerator;
+    private final VocabularyMarkdownPromptBuilder promptBuilder;
 
     public VocabularyCardGenerator(
             VocabularyDictionaryEnricher dictionaryEnricher,
             OpenAiClient openAiClient,
             VocabularyGenerationCache cache,
-            VocabularyTemplateRegistry templateRegistry,
-            ObjectMapper objectMapper) {
+            VocabularyCoreContentCodec coreCodec,
+            VocabularyCoreFallbackGenerator fallbackGenerator,
+            VocabularyMarkdownPromptBuilder promptBuilder) {
         this.dictionaryEnricher = dictionaryEnricher;
         this.openAiClient = openAiClient;
         this.cache = cache;
-        this.templateRegistry = templateRegistry;
-        this.objectMapper = objectMapper;
+        this.coreCodec = coreCodec;
+        this.fallbackGenerator = fallbackGenerator;
+        this.promptBuilder = promptBuilder;
     }
 
     public GeneratedVocabularyCard generate(
             VocabularyCard card,
             List<VocabularyCardSource> sources,
-            TemplateDefinition template,
+            ResolvedVocabularyTheme theme,
             String traceId) {
-        requireInputs(card, template);
-        DictionaryLookupResponse dictionaryData = lookupDictionary(card, traceId);
-        String capturedContext = firstCapturedContext(sources);
-        String cacheKey = cache.key(
-                card.getNormalizedTerm(), template.key(), template.version(), dictionaryData, capturedContext);
+        requireInputs(card, theme);
+        String expectedTerm = valueOrEmpty(card.getDisplayTerm());
+        String sourceContext = firstCapturedContext(sources);
+        DictionaryLookupResponse dictionary = lookupDictionary(card, traceId);
+        ObjectNode core = coreCodec.fromDictionary(expectedTerm, dictionary);
+        if (!hasPhoneticOrSense(core)) {
+            core = fallbackCore(expectedTerm, sourceContext, traceId);
+        }
+        coreCodec.validate(expectedTerm, core);
 
-        Optional<ObjectNode> cached = cache.get(cacheKey)
-                .flatMap(content -> prepareCachedContent(
-                        cacheKey, card, template, content, dictionaryData, capturedContext, traceId));
+        String cacheKey = cache.key(theme.themeUid(), theme.version(), core, sourceContext);
+        Optional<GeneratedVocabularyCard> cached = cachedCard(
+                cacheKey, expectedTerm, theme, traceId);
         if (cached.isPresent()) {
-            return new GeneratedVocabularyCard(cached.get(), "cache", "Reused validated generated content");
+            return cached.get();
         }
 
-        String rawOutput = callAi(card, dictionaryData, capturedContext, template, traceId);
-        ObjectNode generated = parseObject(rawOutput);
-        ObjectNode merged = mergeDictionaryTruth(generated, dictionaryData, template);
-        merged.put("term", valueOrEmpty(card.getDisplayTerm()));
-        if ("reading".equals(template.key())) {
-            merged.put("sourceContext", capturedContext);
-        } else {
-            merged.remove("sourceContext");
+        String markdown = generateMarkdown(theme, core, sourceContext, traceId);
+        if (markdown == null) {
+            return new GeneratedVocabularyCard(
+                    core, "", theme.contentFormatVersion(), valueOrEmpty(openAiClient.getModel()),
+                    "Generated validated core; Markdown unavailable", true);
         }
-        validateGeneratedContent(template, merged);
-        cache.put(cacheKey, merged, CACHE_TTL);
+
+        cache.put(cacheKey, new VocabularyGenerationCache.CachedGeneration(core, markdown), CACHE_TTL);
         return new GeneratedVocabularyCard(
-                merged, valueOrEmpty(openAiClient.getModel()), "AI generated with " + template.name());
+                core, markdown, theme.contentFormatVersion(), valueOrEmpty(openAiClient.getModel()),
+                "AI generated with " + valueOrEmpty(theme.name()), false);
     }
 
     private DictionaryLookupResponse lookupDictionary(VocabularyCard card, String traceId) {
@@ -94,177 +93,77 @@ public final class VocabularyCardGenerator {
         }
     }
 
-    private String callAi(
-            VocabularyCard card,
-            DictionaryLookupResponse dictionaryData,
-            String capturedContext,
-            TemplateDefinition template,
-            String traceId) {
+    private ObjectNode fallbackCore(String expectedTerm, String sourceContext, String traceId) {
         try {
-            return openAiClient.callWithTraceId(
-                    systemPrompt(template),
-                    userPrompt(card, dictionaryData, capturedContext),
-                    traceId,
-                    TEMPERATURE,
-                    MAX_TOKENS);
+            ObjectNode generated = fallbackGenerator.generate(expectedTerm, sourceContext, traceId);
+            if (!hasPhoneticOrSense(generated)) {
+                throw new IllegalArgumentException("Generated core contains no phonetic or sense");
+            }
+            coreCodec.validate(expectedTerm, generated);
+            return generated;
         } catch (RuntimeException exception) {
-            log.warn("Vocabulary AI generation failed traceId={} reasonType={}",
+            log.warn("Vocabulary core fallback failed traceId={} reasonType={}",
                     safeTraceId(traceId), exception.getClass().getSimpleName());
-            throw new VocabularyGenerationException("AI_CALL_FAILED", true, "AI generation failed");
+            throw new VocabularyGenerationException(
+                    "CORE_CONTENT_UNAVAILABLE", true, "Vocabulary core content is unavailable");
         }
     }
 
-    private Optional<ObjectNode> prepareCachedContent(
+    private Optional<GeneratedVocabularyCard> cachedCard(
             String cacheKey,
-            VocabularyCard card,
-            TemplateDefinition template,
-            JsonNode content,
-            DictionaryLookupResponse dictionaryData,
-            String capturedContext,
+            String expectedTerm,
+            ResolvedVocabularyTheme theme,
             String traceId) {
+        Optional<VocabularyGenerationCache.CachedGeneration> cached = cache.get(cacheKey);
+        if (cached.isEmpty()) {
+            return Optional.empty();
+        }
         try {
-            if (!content.isObject()) {
-                throw new IllegalArgumentException("cached content is not an object");
-            }
-            ObjectNode rebuilt = mergeDictionaryTruth((ObjectNode) content.deepCopy(), dictionaryData, template);
-            rebuilt.put("term", valueOrEmpty(card.getDisplayTerm()));
-            if ("reading".equals(template.key())) {
-                rebuilt.put("sourceContext", capturedContext);
-            }
-            templateRegistry.validate(template.key(), rebuilt);
-            return Optional.of(rebuilt);
+            coreCodec.validate(expectedTerm, cached.get().core());
+            validateMarkdown(cached.get().markdown());
+            return Optional.of(new GeneratedVocabularyCard(
+                    cached.get().core().deepCopy(), cached.get().markdown(),
+                    theme.contentFormatVersion(), "cache", "Reused validated generated content", false));
         } catch (IllegalArgumentException exception) {
-            log.warn("Vocabulary generation cache entry rejected traceId={} template={}",
-                    safeTraceId(traceId), template.key());
+            log.warn("Vocabulary generation cache entry rejected traceId={} themeUid={}",
+                    safeTraceId(traceId), valueOrEmpty(theme.themeUid()));
             cache.evict(cacheKey);
             return Optional.empty();
         }
     }
 
-    private ObjectNode parseObject(String rawOutput) {
+    private String generateMarkdown(
+            ResolvedVocabularyTheme theme,
+            JsonNode core,
+            String sourceContext,
+            String traceId) {
         try {
-            JsonNode parsed = objectMapper.reader()
-                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                    .readTree(stripCodeFences(rawOutput));
-            if (parsed == null || !parsed.isObject()) {
-                throw invalidOutput();
-            }
-            return (ObjectNode) parsed;
-        } catch (JsonProcessingException | IllegalArgumentException exception) {
-            throw invalidOutput();
+            String markdown = openAiClient.callWithTraceId(
+                    promptBuilder.systemPrompt(theme),
+                    promptBuilder.userPrompt(theme, core, sourceContext),
+                    traceId,
+                    MARKDOWN_TEMPERATURE,
+                    MAX_TOKENS);
+            validateMarkdown(markdown);
+            return markdown.trim();
+        } catch (RuntimeException exception) {
+            log.warn("Vocabulary Markdown generation degraded traceId={} reasonType={}",
+                    safeTraceId(traceId), exception.getClass().getSimpleName());
+            return null;
         }
     }
 
-    private ObjectNode mergeDictionaryTruth(
-            ObjectNode aiContent,
-            DictionaryLookupResponse dictionaryData,
-            TemplateDefinition template) {
-        ObjectNode merged = aiContent.deepCopy();
-        if (dictionaryData == null) {
-            return merged;
-        }
-
-        if (template.requiredFields().contains("phonetic")) {
-            firstPhonetic(dictionaryData).ifPresent(value -> merged.put("phonetic", value));
-        }
-        if (template.requiredFields().contains("partOfSpeech")) {
-            firstPartOfSpeech(dictionaryData).ifPresent(value -> merged.put("partOfSpeech", value));
-        }
-        if (template.requiredFields().contains("definitions")) {
-            overwriteArrayWhenPresent(merged, "definitions", dictionaryDefinitions(dictionaryData));
-        }
-        if (template.requiredFields().contains("examples")) {
-            overwriteArrayWhenPresent(merged, "examples", dictionaryExamples(dictionaryData));
-        }
-        return merged;
-    }
-
-    private Optional<String> firstPhonetic(DictionaryLookupResponse response) {
-        return response.getPhonetics().stream()
-                .filter(value -> value != null && value.getText() != null && !value.getText().isBlank())
-                .map(DictionaryPhoneticDto::getText)
-                .findFirst();
-    }
-
-    private Optional<String> firstPartOfSpeech(DictionaryLookupResponse response) {
-        return response.getEntries().stream()
-                .filter(value -> value != null
-                        && value.getPartOfSpeech() != null
-                        && !value.getPartOfSpeech().isBlank())
-                .map(DictionaryEntryDto::getPartOfSpeech)
-                .findFirst();
-    }
-
-    private List<String> dictionaryDefinitions(DictionaryLookupResponse response) {
-        Set<String> values = new LinkedHashSet<>();
-        for (DictionaryEntryDto entry : response.getEntries()) {
-            if (entry != null) {
-                addNonBlank(values, entry.getDefinitions());
-            }
-        }
-        return List.copyOf(values);
-    }
-
-    private List<String> dictionaryExamples(DictionaryLookupResponse response) {
-        Set<String> values = new LinkedHashSet<>();
-        for (DictionaryEntryDto entry : response.getEntries()) {
-            if (entry != null) {
-                addNonBlank(values, entry.getExamples());
-            }
-        }
-        return List.copyOf(values);
-    }
-
-    private void addNonBlank(Set<String> target, List<String> values) {
-        if (values == null) {
-            return;
-        }
-        values.stream()
-                .filter(value -> value != null && !value.isBlank())
-                .forEach(target::add);
-    }
-
-    private void overwriteArrayWhenPresent(ObjectNode target, String field, List<String> values) {
-        if (values.isEmpty()) {
-            return;
-        }
-        ArrayNode array = target.putArray(field);
-        values.forEach(array::add);
-    }
-
-    private void validateGeneratedContent(TemplateDefinition template, ObjectNode content) {
-        try {
-            templateRegistry.validate(template.key(), content);
-        } catch (IllegalArgumentException exception) {
-            throw invalidOutput();
+    private void validateMarkdown(String markdown) {
+        if (markdown == null || markdown.isBlank() || markdown.length() > MAX_MARKDOWN_CHARS
+                || RAW_HTML.matcher(markdown).find()) {
+            throw new IllegalArgumentException("Vocabulary Markdown is invalid");
         }
     }
 
-    private String systemPrompt(TemplateDefinition template) {
-        return "Generate a vocabulary card. Return one JSON object without Markdown. "
-                + "Required fields in this exact order: "
-                + String.join(", ", template.requiredFields())
-                + ". Do not add source context that was not provided.";
-    }
-
-    private String userPrompt(
-            VocabularyCard card,
-            DictionaryLookupResponse dictionaryData,
-            String capturedContext) {
-        ObjectNode input = objectMapper.createObjectNode();
-        input.put("term", valueOrEmpty(card.getDisplayTerm()));
-        input.set("dictionary", dictionaryPromptContent(dictionaryData));
-        input.put("capturedSourceContext", capturedContext);
-        return input.toString();
-    }
-
-    private JsonNode dictionaryPromptContent(DictionaryLookupResponse dictionaryData) {
-        if (dictionaryData == null) {
-            return objectMapper.createObjectNode();
-        }
-        ObjectNode content = objectMapper.valueToTree(dictionaryData);
-        content.remove(List.of("favorite", "lookupCount"));
-        return content;
+    private boolean hasPhoneticOrSense(JsonNode core) {
+        return core != null
+                && ((core.path("phonetics").isArray() && !core.path("phonetics").isEmpty())
+                || (core.path("senses").isArray() && !core.path("senses").isEmpty()));
     }
 
     private String firstCapturedContext(List<VocabularyCardSource> sources) {
@@ -280,31 +179,13 @@ public final class VocabularyCardGenerator {
                 .orElse("");
     }
 
-    private String stripCodeFences(String rawOutput) {
-        if (rawOutput == null) {
-            return "";
-        }
-        String value = rawOutput.trim();
-        if (!value.startsWith("```") || !value.endsWith("```")) {
-            return value;
-        }
-        int firstLineEnd = value.indexOf('\n');
-        if (firstLineEnd < 0) {
-            return value;
-        }
-        return value.substring(firstLineEnd + 1, value.length() - 3).trim();
-    }
-
-    private void requireInputs(VocabularyCard card, TemplateDefinition template) {
-        if (card == null || template == null) {
+    private void requireInputs(VocabularyCard card, ResolvedVocabularyTheme theme) {
+        if (card == null || theme == null || card.getDisplayTerm() == null
+                || card.getDisplayTerm().isBlank()) {
             throw new VocabularyGenerationException(
-                    "INVALID_GENERATION_REQUEST", false, "Vocabulary generation request is incomplete");
+                    "INVALID_GENERATION_REQUEST", false,
+                    "Vocabulary generation request is incomplete");
         }
-    }
-
-    private VocabularyGenerationException invalidOutput() {
-        return new VocabularyGenerationException(
-                "INVALID_AI_OUTPUT", true, "AI output failed structured validation");
     }
 
     private String safeTraceId(String traceId) {

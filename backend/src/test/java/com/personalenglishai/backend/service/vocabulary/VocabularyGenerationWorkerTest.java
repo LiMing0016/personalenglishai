@@ -20,6 +20,7 @@ import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -39,6 +40,7 @@ class VocabularyGenerationWorkerTest {
     @Mock private VocabularySourceMapper sources;
     @Mock private VocabularyCardGenerator generator;
     @Mock private VocabularyGenerationFinalizer finalizer;
+    @Mock private VocabularyThemeMapper themes;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private VocabularyTemplateRegistry templates;
@@ -48,7 +50,8 @@ class VocabularyGenerationWorkerTest {
     void setUp() {
         templates = new VocabularyTemplateRegistry(objectMapper);
         worker = new VocabularyGenerationWorker(
-                jobs, cards, sources, generator, templates, objectMapper, finalizer, 300_000L);
+                jobs, cards, sources, generator, templates, themes,
+                new VocabularyCoreContentCodec(objectMapper), objectMapper, finalizer, 300_000L);
     }
 
     @Test
@@ -154,7 +157,8 @@ class VocabularyGenerationWorkerTest {
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
         when(generator.generate(any(), anyList(), any(), eq("job_invalid")))
-                .thenReturn(new GeneratedVocabularyCard(invalid, "test-model", "invalid fixture"));
+                .thenReturn(new GeneratedVocabularyCard(
+                        invalid, "", 1, "test-model", "invalid fixture", true));
 
         worker.processPendingJobs(10);
 
