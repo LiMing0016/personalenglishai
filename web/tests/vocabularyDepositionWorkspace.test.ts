@@ -14,10 +14,11 @@ test('vocabulary view composes durable capture and list components', () => {
   assert.doesNotMatch(view, /const\s+savedWords\s*=\s*ref/)
 })
 
-test('capture panel exposes template choice and bulk submission states', () => {
-  assert.match(capture, /basic/)
-  assert.match(capture, /exam/)
-  assert.match(capture, /reading/)
+test('capture panel exposes theme choice and bulk submission states', () => {
+  assert.match(capture, /VocabularyThemeShelf/)
+  assert.match(capture, /selectedThemeUid/)
+  assert.match(capture, /themeUid/)
+  assert.doesNotMatch(capture, /template-control/)
   assert.match(capture, /captureMutation/)
   assert.match(capture, /已存在，已追加来源/)
 })

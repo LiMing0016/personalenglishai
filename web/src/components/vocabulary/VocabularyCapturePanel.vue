@@ -9,6 +9,14 @@
     </header>
 
     <form @submit.prevent="submitCapture">
+      <VocabularyThemeShelf
+        :catalog="themeCatalog"
+        :selected-theme-uid="selectedThemeUid"
+        :loading="themesLoading"
+        :error="themesError"
+        @select="selectTheme"
+      />
+
       <textarea
         v-model="rawTerms"
         rows="5"
@@ -22,19 +30,9 @@
       </label>
 
       <div class="capture-controls">
-        <div class="template-control" aria-label="卡片模板">
-          <button
-            v-for="option in templateOptions"
-            :key="option.key"
-            type="button"
-            :class="{ active: templateKey === option.key }"
-            @click="selectTemplate(option.key)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-        <button type="submit" class="capture-submit" :disabled="!terms.length || captureMutation.isPending.value">
-          {{ captureMutation.isPending.value ? '录入中...' : `沉淀 ${terms.length || ''} 个单词` }}
+        <span class="capture-controls__hint">所选主题仅用于本次沉淀</span>
+        <button type="submit" class="capture-submit" :disabled="submitDisabled">
+          {{ submitLabel }}
         </button>
       </div>
     </form>
@@ -55,11 +53,11 @@ import { computed, ref, watch, type Ref } from 'vue'
 import {
   type VocabularyCaptureRequest,
   type VocabularyCaptureResponse,
-  type VocabularyTemplateCatalog,
-  type VocabularyTemplateKey,
+  type VocabularyThemeCatalog,
 } from '@/api/vocabulary'
 import { createClientRequestId, parseCaptureTerms } from '@/features/vocabulary/captureTerms'
 import { isVocabularyCaptureComplete } from '@/features/vocabulary/captureCompletion'
+import VocabularyThemeShelf from './VocabularyThemeShelf.vue'
 
 type CaptureMutation = {
   isPending: Ref<boolean>
@@ -67,7 +65,9 @@ type CaptureMutation = {
 }
 
 const props = defineProps<{
-  templateCatalog?: VocabularyTemplateCatalog
+  themeCatalog?: VocabularyThemeCatalog
+  themesLoading?: boolean
+  themesError?: boolean
   captureMutation: CaptureMutation
 }>()
 
@@ -75,36 +75,61 @@ const emit = defineEmits<{
   captured: [response: VocabularyCaptureResponse]
 }>()
 
-const templateOptions: Array<{ key: VocabularyTemplateKey; label: string }> = [
-  { key: 'basic', label: '基础' },
-  { key: 'exam', label: '考试' },
-  { key: 'reading', label: '阅读' },
-]
 const rawTerms = ref('')
 const sourceContext = ref('')
-const templateKey = ref<VocabularyTemplateKey>('basic')
+const selectedThemeUid = ref('')
 const requestId = ref(createClientRequestId())
 const outcomes = ref<VocabularyCaptureResponse['items']>([])
 const requestError = ref('')
-const selectedTemplate = ref(false)
 
 const terms = computed(() => parseCaptureTerms(rawTerms.value))
+const activeThemes = computed(() => {
+  const catalog = props.themeCatalog
+  return catalog
+    ? [...catalog.systemThemes, ...catalog.userThemes].filter((theme) => theme.status === 'active')
+    : []
+})
+const selectedTheme = computed(() => activeThemes.value.find(
+  (theme) => theme.themeUid === selectedThemeUid.value,
+))
+const submitDisabled = computed(() => (
+  !terms.value.length
+  || !selectedTheme.value
+  || props.themesLoading
+  || props.themesError
+  || props.captureMutation.isPending.value
+))
+const submitLabel = computed(() => {
+  if (props.captureMutation.isPending.value) return '生成中...'
+  if (props.themesLoading) return '主题加载中...'
+  if (props.themesError) return '主题加载失败'
+  if (!selectedTheme.value) return '暂无可用主题'
+  return `按「${selectedTheme.value.name}」生成 ${terms.value.length || 0} 张卡片`
+})
 
 watch(
-  () => props.templateCatalog?.defaultTemplateKey,
-  (defaultTemplateKey) => {
-    if (defaultTemplateKey && !selectedTemplate.value) templateKey.value = defaultTemplateKey
+  () => props.themeCatalog,
+  (catalog) => {
+    if (!catalog) {
+      selectedThemeUid.value = ''
+      return
+    }
+    const selectedThemeIsActive = [...catalog.systemThemes, ...catalog.userThemes].some(
+      (theme) => theme.themeUid === selectedThemeUid.value && theme.status === 'active',
+    )
+    if (!selectedThemeIsActive) selectedThemeUid.value = catalog.defaultThemeUid
   },
   { immediate: true },
 )
 
-function selectTemplate(key: VocabularyTemplateKey) {
-  selectedTemplate.value = true
-  templateKey.value = key
+function selectTheme(themeUid: string) {
+  if (activeThemes.value.some((theme) => theme.themeUid === themeUid)) {
+    selectedThemeUid.value = themeUid
+  }
 }
 
 async function submitCapture() {
-  if (!terms.value.length || props.captureMutation.isPending.value) return
+  if (submitDisabled.value) return
 
   requestError.value = ''
   outcomes.value = []
@@ -113,7 +138,7 @@ async function submitCapture() {
       clientRequestId: requestId.value,
       terms: terms.value,
       language: 'en',
-      templateKey: templateKey.value,
+      themeUid: selectedThemeUid.value,
       source: {
         type: 'manual',
         sourceTitle: '手动录入',
@@ -156,10 +181,7 @@ textarea, input { box-sizing: border-box; width: 100%; border: 1px solid #dce7e1
 textarea { resize: vertical; line-height: 1.55; }
 textarea:focus, input:focus { border-color: #14b8a6; outline: none; box-shadow: 0 0 0 3px rgba(20, 184, 166, .12); }
 .context-field { display: grid; gap: 6px; color: #475569; font-size: 13px; font-weight: 700; }
-.template-control { display: flex; min-width: 0; overflow: hidden; border: 1px solid #dce7e1; border-radius: 8px; }
-.template-control button { flex: 1; min-height: 34px; border: 0; border-right: 1px solid #dce7e1; background: #fff; color: #475569; font: inherit; font-size: 13px; cursor: pointer; }
-.template-control button:last-child { border-right: 0; }
-.template-control button.active { background: #dcfce7; color: #047857; font-weight: 800; }
+.capture-controls__hint { min-width: 0; color: #64748b; font-size: 12px; }
 .capture-submit { min-height: 36px; border: 0; border-radius: 6px; background: #059669; color: #fff; font: inherit; font-size: 13px; font-weight: 800; padding: 0 14px; cursor: pointer; white-space: nowrap; }
 .capture-submit:disabled { cursor: not-allowed; opacity: .55; }
 .capture-message { margin: 12px 0 0; font-size: 13px; }.capture-message--error { color: #b91c1c; }

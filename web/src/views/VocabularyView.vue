@@ -201,7 +201,9 @@
           </section>
         </header>
         <VocabularyCapturePanel
-          :template-catalog="templateQuery.data.value"
+          :theme-catalog="themesQuery.data.value"
+          :themes-loading="themesQuery.isLoading.value"
+          :themes-error="themesQuery.isError.value"
           :capture-mutation="captureMutation"
           @captured="handleVocabularyCaptured"
         />
@@ -319,6 +321,7 @@ import VocabularyCapturePanel from '@/components/vocabulary/VocabularyCapturePan
 import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspector.vue'
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
+import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
@@ -399,6 +402,7 @@ const {
   retryMutation,
   resolveConflictMutation,
 } = useVocabularyCards(vocabularyFilters, selectedCardUid)
+const { themesQuery } = useVocabularyThemes()
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
