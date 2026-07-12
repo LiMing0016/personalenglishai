@@ -48,6 +48,9 @@ public final class VocabularyCoreContentCodec {
             if (phonetic == null || (!hasText(phonetic.getText()) && !hasText(phonetic.getAudioUrl()))) {
                 continue;
             }
+            if (phonetics.size() >= MAX_PHONETICS) {
+                break;
+            }
             ObjectNode item = phonetics.addObject();
             item.put("region", phoneticRegion(phonetic, dictionary, hasExplicitRegion));
             item.put("text", valueOrEmpty(phonetic.getText()));
@@ -67,14 +70,22 @@ public final class VocabularyCoreContentCodec {
                 continue;
             }
             String partOfSpeech = normalizePartOfSpeech(entry.getPartOfSpeech());
-            ObjectNode sense = sensesByPartOfSpeech.computeIfAbsent(
-                    partOfSpeech,
-                    key -> newSense(key));
+            ObjectNode sense = sensesByPartOfSpeech.get(partOfSpeech);
+            if (sense == null) {
+                if (sensesByPartOfSpeech.size() >= MAX_SENSES) {
+                    continue;
+                }
+                sense = newSense(partOfSpeech);
+                sensesByPartOfSpeech.put(partOfSpeech, sense);
+            }
             ArrayNode meanings = (ArrayNode) sense.get("meanings");
             if (entry.getDefinitions() == null) {
                 continue;
             }
             for (String definition : entry.getDefinitions()) {
+                if (meanings.size() >= MAX_MEANINGS) {
+                    break;
+                }
                 if (hasText(definition)) {
                     meanings.add(splitMeaning(definition));
                 }
@@ -82,6 +93,7 @@ public final class VocabularyCoreContentCodec {
         }
         ArrayNode senses = (ArrayNode) core.get("senses");
         sensesByPartOfSpeech.values().forEach(senses::add);
+        validate(term, core);
         return core;
     }
 
@@ -101,18 +113,29 @@ public final class VocabularyCoreContentCodec {
 
         JsonNode partOfSpeech = legacy.get("partOfSpeech");
         JsonNode definitions = legacy.get("definitions");
-        if (partOfSpeech != null && partOfSpeech.isTextual() && !partOfSpeech.textValue().isBlank()) {
-            ObjectNode sense = newSense(normalizePartOfSpeech(partOfSpeech.textValue()));
+        boolean hasPartOfSpeech = partOfSpeech != null
+                && partOfSpeech.isTextual()
+                && !partOfSpeech.textValue().isBlank();
+        if (hasPartOfSpeech || (definitions != null && definitions.isArray())) {
+            String partOfSpeechValue = partOfSpeech == null ? null : partOfSpeech.textValue();
+            ObjectNode sense = newSense(normalizePartOfSpeech(partOfSpeechValue));
             ArrayNode meanings = (ArrayNode) sense.get("meanings");
             if (definitions != null && definitions.isArray()) {
                 for (JsonNode definition : definitions) {
+                    if (meanings.size() >= MAX_MEANINGS) {
+                        break;
+                    }
                     if (definition.isTextual() && !definition.textValue().isBlank()) {
                         meanings.add(splitMeaning(definition.textValue()));
                     }
                 }
             }
-            ((ArrayNode) core.get("senses")).add(sense);
+            ArrayNode senses = (ArrayNode) core.get("senses");
+            if (senses.size() < MAX_SENSES) {
+                senses.add(sense);
+            }
         }
+        validate(term, core);
         return core;
     }
 

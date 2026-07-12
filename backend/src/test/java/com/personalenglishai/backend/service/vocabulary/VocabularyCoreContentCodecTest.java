@@ -9,8 +9,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.personalenglishai.backend.dto.dictionary.DictionaryEntryDto;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
+import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -59,6 +62,43 @@ class VocabularyCoreContentCodecTest {
     }
 
     @Test
+    void dictionaryProjectionBoundsPhoneticsSensesAndMeaningsToCodecLimits() {
+        DictionaryLookupResponse dictionary = new DictionaryLookupResponse();
+        dictionary.setLanguage("en");
+        dictionary.setPhonetics(IntStream.range(0, 11)
+                .mapToObj(i -> new DictionaryPhoneticDto("/p" + i + "/", null))
+                .collect(Collectors.toList()));
+        dictionary.setEntries(IntStream.range(0, 21)
+                .mapToObj(i -> {
+                    DictionaryEntryDto entry = new DictionaryEntryDto("pos-" + i);
+                    entry.setDefinitions(List.of("definition-" + i));
+                    return entry;
+                })
+                .collect(Collectors.toList()));
+        DictionaryEntryDto manyMeanings = new DictionaryEntryDto("many-meanings");
+        manyMeanings.setDefinitions(IntStream.range(0, 31)
+                .mapToObj(i -> "meaning-" + i)
+                .collect(Collectors.toList()));
+        dictionary.setEntries(new ArrayList<>(dictionary.getEntries()));
+        dictionary.getEntries().set(19, manyMeanings);
+
+        ObjectNode core = codec.fromDictionary("bounded", dictionary);
+
+        assertEquals(10, core.path("phonetics").size());
+        assertEquals(20, core.path("senses").size());
+        assertEquals(30, core.path("senses").get(19).path("meanings").size());
+        codec.validate("bounded", core);
+    }
+
+    @Test
+    void dictionaryProjectionRejectsScalarValuesOverTwoThousandCharacters() {
+        DictionaryLookupResponse dictionary = VocabularyTestFixtures.dictionaryLookup(
+                "bounded", "noun", "x".repeat(2001));
+
+        assertThrows(IllegalArgumentException.class, () -> codec.fromDictionary("bounded", dictionary));
+    }
+
+    @Test
     void legacyProjectionMapsScalarFieldsWithoutMutatingLegacyContent() {
         ObjectNode legacy = VocabularyTestFixtures.legacyVocabularyContent(objectMapper);
         JsonNode snapshot = legacy.deepCopy();
@@ -72,6 +112,26 @@ class VocabularyCoreContentCodecTest {
         assertEquals("记录", core.path("senses").get(0).path("meanings").get(0).path("definitionZh").asText());
         assertEquals(snapshot, legacy);
         assertFalse(core.has("definitions"));
+    }
+
+    @Test
+    void legacyProjectionRetainsDefinitionsUnderUnknownPartOfSpeech() {
+        ObjectNode legacy = objectMapper.createObjectNode();
+        legacy.putArray("definitions").add("a saved entry；一条保存的记录");
+
+        ObjectNode core = codec.fromLegacy("record", legacy);
+
+        assertEquals("unknown", core.path("senses").get(0).path("partOfSpeech").asText());
+        assertEquals("a saved entry", core.path("senses").get(0).path("meanings").get(0).path("definitionEn").asText());
+        codec.validate("record", core);
+    }
+
+    @Test
+    void legacyProjectionRejectsScalarValuesOverTwoThousandCharacters() {
+        ObjectNode legacy = objectMapper.createObjectNode();
+        legacy.put("phonetic", "x".repeat(2001));
+
+        assertThrows(IllegalArgumentException.class, () -> codec.fromLegacy("record", legacy));
     }
 
     @Test
