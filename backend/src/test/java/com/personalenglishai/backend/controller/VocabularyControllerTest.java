@@ -11,10 +11,13 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryRespons
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
 import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyTemplateRegistry;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
@@ -45,6 +48,7 @@ class VocabularyControllerTest {
     @Resource MockMvc mockMvc;
     @MockBean VocabularyCaptureService captureService;
     @MockBean VocabularyCardService cardService;
+    @MockBean VocabularyThemeService themeService;
     @MockBean VocabularyTemplateRegistry templateRegistry;
     @MockBean JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean JwtInterceptor jwtInterceptor;
@@ -89,6 +93,49 @@ class VocabularyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.defaultTemplateKey").value("basic"))
                 .andExpect(jsonPath("$.data.items[0].key").value("basic"));
+    }
+
+    @Test
+    void exposesThemeCatalogAndCrudEndpoints() throws Exception {
+        var theme = new VocabularyThemeResponse(
+                "theme_user_1", "user", "My theme", "Focus", 1, "active",
+                false, true, false, "custom-markdown-v1");
+        when(themeService.catalog(7L)).thenReturn(new VocabularyThemeCatalogResponse(
+                List.of(new VocabularyThemeResponse("theme_system_basic", "system", "Basic", "", 1,
+                        "active", true, true, false, "basic-markdown-v1")),
+                List.of(theme), "theme_system_basic", List.of()));
+        when(themeService.create(eq(7L), any())).thenReturn(theme);
+        when(themeService.update(eq(7L), eq("theme_user_1"), any())).thenReturn(theme);
+        when(themeService.copy(7L, "theme_system_basic")).thenReturn(theme);
+
+        mockMvc.perform(get("/api/vocabulary/themes").requestAttr("userId", 7L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.systemThemes[0].themeUid").value("theme_system_basic"));
+
+        mockMvc.perform(post("/api/vocabulary/themes")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"name\":\"My theme\",\"purpose\":\"Focus\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.promptStrategyKey").value("custom-markdown-v1"));
+
+        mockMvc.perform(put("/api/vocabulary/themes/theme_user_1")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("{\"name\":\"My theme\",\"purpose\":\"Focus\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/vocabulary/themes/theme_system_basic/copy").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/vocabulary/themes/theme_user_1/default").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/vocabulary/themes/theme_user_1/disable").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/vocabulary/themes/theme_user_1").requestAttr("userId", 7L))
+                .andExpect(status().isOk());
+
+        verify(themeService).setDefault(7L, "theme_user_1");
+        verify(themeService).disable(7L, "theme_user_1");
+        verify(themeService).delete(7L, "theme_user_1");
     }
 
     @Test

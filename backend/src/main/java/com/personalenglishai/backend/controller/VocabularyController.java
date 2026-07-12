@@ -12,8 +12,13 @@ import com.personalenglishai.backend.dto.vocabulary.RegenerateVocabularyCardRequ
 import com.personalenglishai.backend.dto.vocabulary.VocabularyGenerationJobResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
+import com.personalenglishai.backend.dto.vocabulary.CreateVocabularyThemeRequest;
+import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyThemeRequest;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,12 +38,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class VocabularyController {
     private final VocabularyCaptureService captureService;
     private final VocabularyCardService cardService;
+    private final VocabularyThemeService themeService;
 
     public VocabularyController(
             VocabularyCaptureService captureService,
-            VocabularyCardService cardService) {
+            VocabularyCardService cardService,
+            VocabularyThemeService themeService) {
         this.captureService = captureService;
         this.cardService = cardService;
+        this.themeService = themeService;
     }
 
     @PostMapping("/captures")
@@ -58,6 +66,79 @@ public class VocabularyController {
             return unauthorized();
         }
         return ResponseEntity.ok(ApiResponse.success(cardService.templateCatalog(userId)));
+    }
+
+    @GetMapping("/themes")
+    public ResponseEntity<ApiResponse<VocabularyThemeCatalogResponse>> themes(
+            @RequestAttribute(value = "userId", required = false) Long userId) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(themeService.catalog(userId)));
+    }
+
+    @PostMapping("/themes")
+    public ResponseEntity<ApiResponse<VocabularyThemeResponse>> createTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @Valid @RequestBody CreateVocabularyThemeRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(themeService.create(userId, request)));
+    }
+
+    @PutMapping("/themes/{themeUid}")
+    public ResponseEntity<ApiResponse<VocabularyThemeResponse>> updateTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String themeUid,
+            @Valid @RequestBody UpdateVocabularyThemeRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(themeService.update(userId, themeUid, request)));
+    }
+
+    @PostMapping("/themes/{themeUid}/copy")
+    public ResponseEntity<ApiResponse<VocabularyThemeResponse>> copyTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String themeUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(themeService.copy(userId, themeUid)));
+    }
+
+    @PostMapping("/themes/{themeUid}/default")
+    public ResponseEntity<ApiResponse<Void>> defaultTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String themeUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        themeService.setDefault(userId, themeUid);
+        return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    @PostMapping("/themes/{themeUid}/disable")
+    public ResponseEntity<ApiResponse<Void>> disableTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String themeUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        themeService.disable(userId, themeUid);
+        return ResponseEntity.ok(ApiResponse.success());
+    }
+
+    @DeleteMapping("/themes/{themeUid}")
+    public ResponseEntity<ApiResponse<Void>> deleteTheme(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @PathVariable String themeUid) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        themeService.delete(userId, themeUid);
+        return ResponseEntity.ok(ApiResponse.success());
     }
 
     @GetMapping("/cards")
