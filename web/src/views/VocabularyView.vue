@@ -203,7 +203,7 @@
         <VocabularyCapturePanel
           :theme-catalog="themesQuery.data.value"
           :themes-loading="themesQuery.isLoading.value"
-          :themes-error="themesQuery.isError.value"
+          :themes-error="themesBlockingError"
           :capture-mutation="captureMutation"
           @captured="handleVocabularyCaptured"
         />
@@ -403,6 +403,7 @@ const {
   resolveConflictMutation,
 } = useVocabularyCards(vocabularyFilters, selectedCardUid)
 const { themesQuery } = useVocabularyThemes()
+const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },

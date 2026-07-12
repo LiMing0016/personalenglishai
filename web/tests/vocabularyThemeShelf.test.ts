@@ -63,5 +63,13 @@ test('vocabulary view owns the server theme query and passes its states to captu
   assert.match(viewSource, /useVocabularyThemes/)
   assert.match(viewSource, /:theme-catalog="themesQuery\.data\.value"/)
   assert.match(viewSource, /:themes-loading="themesQuery\.isLoading\.value"/)
-  assert.match(viewSource, /:themes-error="themesQuery\.isError\.value"/)
+  assert.match(viewSource, /:themes-error="themesBlockingError"/)
+})
+
+test('blocks only a theme query error without cached catalog data', () => {
+  assert.match(
+    viewSource,
+    /const themesBlockingError = computed\(\(\) => themesQuery\.isError\.value && !themesQuery\.data\.value\)/,
+  )
+  assert.doesNotMatch(viewSource, /:themes-error="themesQuery\.isError\.value"/)
 })
