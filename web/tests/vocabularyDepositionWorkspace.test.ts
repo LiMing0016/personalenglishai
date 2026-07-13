@@ -57,6 +57,12 @@ test('collection and persistent card routes render mutually exclusive page state
   assert.match(view, /detailQuery\.refetch/)
 })
 
+test('collection page does not inherit the obsolete mode two-column grid', () => {
+  assert.match(view, /\.mode-page\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+380px;/)
+  assert.doesNotMatch(view, /\.mode-page,\s*\.collection-page\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+380px;/)
+  assert.doesNotMatch(view, /\.collection-page\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);\s*\}/)
+})
+
 test('vocabulary card queries no longer load legacy templates', () => {
   assert.doesNotMatch(vocabularyCards, /listVocabularyTemplates/)
   assert.doesNotMatch(vocabularyCards, /templateQuery/)

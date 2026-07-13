@@ -1373,13 +1373,8 @@ function normalizeError(err: unknown) {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.mode-page,
-.collection-page {
+.mode-page {
   grid-template-columns: minmax(0, 1fr) 380px;
-}
-
-.collection-page {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .search-main,
