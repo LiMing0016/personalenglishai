@@ -56,6 +56,15 @@ assert.ok(
 assert.ok(pageSource.includes("route.name === 'vocabulary-card'"), 'canonical and legacy card URLs should be interpreted by the view')
 assert.ok(pageSource.includes("cardUid.startsWith('card_')"), 'persisted card IDs should open the inspector')
 assert.ok(pageSource.includes('legacyVocabularyCardKeyword'), 'legacy words should remain collection search filters')
+assert.ok(pageSource.includes('isPersistentVocabularyCardRoute'), 'persistent card routes should have an explicit discriminator')
+assert.ok(pageSource.includes('vocabulary-card-page'), 'persistent cards should render a dedicated full-page branch')
+assert.ok(!pageSource.includes('<aside class="vocabulary-card-detail"'), 'collection should not render a right-side inspector')
+assert.ok(!pageSource.includes('selectedVocabularyTemplate'), 'card details should not depend on a legacy template gate')
+assert.ok(!pageSource.includes(':template='), 'card details should not pass legacy template props')
+assert.ok(pageSource.includes('vocabulary-card-page__skeleton'), 'card loading should preserve a stable full-page layout')
+assert.ok(pageSource.includes('单词卡不存在或已被删除'), 'missing cards should have a distinct unavailable state')
+assert.ok(pageSource.includes('无权查看这张单词卡'), 'forbidden cards should have a distinct unavailable state')
+assert.ok(pageSource.includes('detailQuery.refetch'), 'generic card failures should expose a retry action')
 
 assert.ok(
   !composedSource.includes('从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里'),

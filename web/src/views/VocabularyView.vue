@@ -191,53 +191,73 @@
       </aside>
     </section>
 
-    <section v-else-if="activeView === 'collection'" class="vocabulary-page collection-page vocabulary-workspace-page" aria-label="单词沉淀">
-      <div class="vocabulary-workspace-main">
-        <header class="collection-header">
-          <section class="page-heading">
-            <p>Word Cards</p>
-            <h1>单词卡中心</h1>
-            <span>手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入</span>
-          </section>
-        </header>
-        <VocabularyCapturePanel
-          :theme-catalog="themesQuery.data.value"
-          :themes-loading="themesQuery.isLoading.value"
-          :themes-error="themesBlockingError"
-          :capture-mutation="captureMutation"
-          @captured="handleVocabularyCaptured"
-        />
-        <VocabularyCardList
-          :filters="vocabularyFilters"
-          :items="listQuery.data.value?.items ?? []"
-          :total="listQuery.data.value?.total ?? 0"
-          :page="listQuery.data.value?.page ?? vocabularyFilters.page ?? 1"
-          :size="listQuery.data.value?.size ?? vocabularyFilters.size ?? 20"
-          :loading="listQuery.isLoading.value"
-          :error="listQuery.error.value instanceof Error ? listQuery.error.value.message : ''"
-          :selected-card-uid="selectedCardUid"
-          @select="selectVocabularyCard"
-          @update:filters="updateVocabularyFilters"
-        />
+    <section
+      v-else-if="activeView === 'collection' && !isPersistentVocabularyCardRoute"
+      class="vocabulary-page collection-page"
+      aria-label="单词沉淀"
+    >
+      <header class="collection-header">
+        <section class="page-heading">
+          <p>Word Cards</p>
+          <h1>单词卡中心</h1>
+          <span>手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入</span>
+        </section>
+      </header>
+      <VocabularyCapturePanel
+        :theme-catalog="themesQuery.data.value"
+        :themes-loading="themesQuery.isLoading.value"
+        :themes-error="themesBlockingError"
+        :capture-mutation="captureMutation"
+        @captured="handleVocabularyCaptured"
+      />
+      <VocabularyCardList
+        :filters="vocabularyFilters"
+        :items="listQuery.data.value?.items ?? []"
+        :total="listQuery.data.value?.total ?? 0"
+        :page="listQuery.data.value?.page ?? vocabularyFilters.page ?? 1"
+        :size="listQuery.data.value?.size ?? vocabularyFilters.size ?? 20"
+        :loading="listQuery.isLoading.value"
+        :error="listQuery.error.value instanceof Error ? listQuery.error.value.message : ''"
+        :selected-card-uid="selectedCardUid"
+        @select="selectVocabularyCard"
+        @update:filters="updateVocabularyFilters"
+      />
+    </section>
+
+    <section
+      v-else-if="activeView === 'collection'"
+      class="vocabulary-page vocabulary-card-page"
+      aria-label="单词卡详情"
+    >
+      <div v-if="detailQuery.isLoading.value" class="vocabulary-card-page__skeleton" role="status" aria-label="正在加载单词卡">
+        <span>正在加载单词卡...</span>
+        <div class="vocabulary-card-page__skeleton-title"></div>
+        <div class="vocabulary-card-page__skeleton-toolbar"></div>
+        <div class="vocabulary-card-page__skeleton-body"></div>
       </div>
-      <aside class="vocabulary-card-detail" aria-label="当前单词卡详情">
-        <div v-if="!selectedCardUid" class="vocabulary-card-detail__empty">选择一张单词卡查看详情</div>
-        <div v-else-if="detailQuery.isLoading.value" class="vocabulary-card-detail__empty">正在加载单词卡...</div>
-        <div v-else-if="detailQuery.error.value" class="vocabulary-card-detail__empty vocabulary-card-detail__empty--error">单词卡详情加载失败</div>
-        <VocabularyCardInspector
-          v-else-if="detailQuery.data.value && selectedVocabularyTemplate"
-          :card="detailQuery.data.value"
-          :template="selectedVocabularyTemplate"
-          :templates="templateQuery.data.value?.items ?? []"
-          :list-vocabulary-revisions="revisionsQuery.data.value"
-          :update-mutation="updateMutation"
-          :delete-mutation="deleteMutation"
-          :regenerate-mutation="regenerateMutation"
-          :retry-vocabulary-card="retryMutation"
-          :resolve-conflict-mutation="resolveConflictMutation"
-          @back="returnToVocabularyCollection"
-        />
-      </aside>
+      <section v-else-if="detailQuery.error.value" class="vocabulary-card-page__state" role="alert">
+        <div>
+          <h1 v-if="detailErrorKind === 'not-found'">单词卡不存在或已被删除</h1>
+          <h1 v-else-if="detailErrorKind === 'forbidden'">无权查看这张单词卡</h1>
+          <h1 v-else>单词卡详情加载失败</h1>
+          <p>返回单词库后可以继续浏览和沉淀词条。</p>
+          <div class="vocabulary-card-page__state-actions">
+            <button type="button" @click="returnToVocabularyCollection">返回单词库</button>
+            <button v-if="detailErrorKind === 'generic'" type="button" @click="detailQuery.refetch()">重试</button>
+          </div>
+        </div>
+      </section>
+      <VocabularyCardInspector
+        v-else-if="detailQuery.data.value"
+        :card="detailQuery.data.value"
+        :list-vocabulary-revisions="revisionsQuery.data.value"
+        :update-mutation="updateMutation"
+        :delete-mutation="deleteMutation"
+        :regenerate-mutation="regenerateMutation"
+        :retry-vocabulary-card="retryMutation"
+        :resolve-conflict-mutation="resolveConflictMutation"
+        @back="returnToVocabularyCollection"
+      />
     </section>
 
     <section v-else class="vocabulary-page stats-page" aria-label="学习统计">
@@ -314,6 +334,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { AxiosError } from 'axios'
 import { lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
 import type { DictionaryEntry, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
 import type { VocabularyCardFilters, VocabularyCaptureResponse } from '@/api/vocabulary'
@@ -371,6 +392,10 @@ function legacyVocabularyCardKeyword() {
   return persistentVocabularyCardUid() ? undefined : vocabularyCardRouteParam() ?? undefined
 }
 
+const isPersistentVocabularyCardRoute = computed(() => (
+  isVocabularyCardRoute() && Boolean(persistentVocabularyCardUid())
+))
+
 const cachedLookup = readCachedLookup()
 const activeView = ref<VocabularyViewKey>(
   isVocabularyCardRoute() ? 'collection' : parseVocabularyView(route.query.tab) ?? 'search',
@@ -391,7 +416,6 @@ const vocabularyFilters = ref<VocabularyCardFilters>({
 })
 const selectedCardUid = ref<string | null>(persistentVocabularyCardUid())
 const {
-  templateQuery,
   listQuery,
   detailQuery,
   revisionsQuery,
@@ -412,10 +436,16 @@ const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'stats', label: '学习统计', icon: '◷' },
 ]
 
-const selectedVocabularyTemplate = computed(() => {
-  const templateKey = detailQuery.data.value?.templateKey
-  return templateQuery.data.value?.items.find((template) => template.key === templateKey)
-})
+type VocabularyDetailErrorKind = 'not-found' | 'forbidden' | 'generic'
+
+function vocabularyDetailErrorKind(error: unknown): VocabularyDetailErrorKind {
+  const status = (error as AxiosError | null | undefined)?.response?.status
+  if (status === 404) return 'not-found'
+  if (status === 403) return 'forbidden'
+  return 'generic'
+}
+
+const detailErrorKind = computed(() => vocabularyDetailErrorKind(detailQuery.error.value))
 
 const words = ref<LearningWord[]>([
   {
@@ -1346,6 +1376,10 @@ function normalizeError(err: unknown) {
 .mode-page,
 .collection-page {
   grid-template-columns: minmax(0, 1fr) 380px;
+}
+
+.collection-page {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .search-main,
@@ -4428,66 +4462,108 @@ function normalizeError(err: unknown) {
   }
 }
 
-.vocabulary-workspace-page {
-  grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+.vocabulary-card-page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
-.vocabulary-workspace-main {
+.vocabulary-card-page > * {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.vocabulary-card-page__skeleton,
+.vocabulary-card-page__state {
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+.vocabulary-card-page__skeleton {
   display: grid;
+  min-height: 620px;
   align-content: start;
-  gap: 16px;
-  min-width: 0;
+  gap: 22px;
+  padding: 28px;
 }
 
-.vocabulary-card-detail {
-  min-width: 0;
-  align-self: start;
+.vocabulary-card-page__skeleton > span {
+  color: #64748b;
+  font-size: 13px;
 }
 
-.vocabulary-card-detail p {
+.vocabulary-card-page__skeleton-title,
+.vocabulary-card-page__skeleton-toolbar,
+.vocabulary-card-page__skeleton-body {
+  border-radius: 6px;
+  background: #edf5f1;
+}
+
+.vocabulary-card-page__skeleton-title {
+  width: min(46%, 360px);
+  height: 42px;
+}
+
+.vocabulary-card-page__skeleton-toolbar {
+  width: min(70%, 620px);
+  height: 36px;
+}
+
+.vocabulary-card-page__skeleton-body {
+  width: 100%;
+  height: 410px;
+}
+
+.vocabulary-card-page__state {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  text-align: center;
+}
+
+.vocabulary-card-page__state h1,
+.vocabulary-card-page__state p {
   margin: 0;
-  color: #059669;
-  font-size: 12px;
-  font-weight: 800;
 }
 
-.vocabulary-card-detail h2 {
-  margin: 10px 0 4px;
+.vocabulary-card-page__state h1 {
   color: #0f172a;
   font-size: 22px;
 }
 
-.vocabulary-card-detail > span {
+.vocabulary-card-page__state p {
+  margin-top: 8px;
   color: #64748b;
   font-size: 13px;
 }
 
-.vocabulary-card-detail .vocabulary-card-detail__sources {
-  margin-top: 18px;
-  color: #64748b;
-  font-size: 13px;
+.vocabulary-card-page__state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
 }
 
-.vocabulary-card-detail__empty {
-  display: grid;
-  min-height: 184px;
-  place-items: center;
-  border: 1px solid #dce7e1;
-  border-radius: 8px;
+.vocabulary-card-page__state-actions button {
+  min-height: 36px;
+  border: 1px solid #059669;
+  border-radius: 6px;
   background: #ffffff;
-  padding: 18px;
-  color: #64748b;
+  color: #047857;
+  padding: 0 14px;
+  font: inherit;
   font-size: 13px;
-  text-align: center;
+  font-weight: 800;
+  cursor: pointer;
 }
 
-.vocabulary-card-detail__empty--error {
-  color: #b91c1c;
-}
-
-@media (max-width: 1180px) {
-  .vocabulary-workspace-page {
-    grid-template-columns: 1fr;
-  }
+.vocabulary-card-page__state-actions button:last-child {
+  background: #059669;
+  color: #ffffff;
 }
 </style>

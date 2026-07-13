@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import test from 'node:test'
 
 const view = fs.readFileSync(new URL('../src/views/VocabularyView.vue', import.meta.url), 'utf8')
+const vocabularyCards = fs.readFileSync(new URL('../src/composables/useVocabularyCards.ts', import.meta.url), 'utf8')
 const router = fs.readFileSync(new URL('../src/router/index.ts', import.meta.url), 'utf8')
 const capture = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCapturePanel.vue', import.meta.url), 'utf8')
 const list = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCardList.vue', import.meta.url), 'utf8')
@@ -40,4 +41,23 @@ test('single card route opens persistent cards and maps legacy words into collec
   assert.match(view, /keyword:\s*legacyVocabularyCardKeyword\(\)/)
   assert.match(view, /selectedCardUid\.value\s*=\s*null/)
   assert.match(view, /watch\(\(\)\s*=>\s*\[route\.name,\s*route\.params\.cardUid,\s*route\.query\.tab\]/)
+})
+
+test('collection and persistent card routes render mutually exclusive page states', () => {
+  assert.match(view, /isPersistentVocabularyCardRoute/)
+  assert.match(view, /vocabulary-card-page/)
+  assert.doesNotMatch(view, /<aside class="vocabulary-card-detail"/)
+  assert.match(view, /legacyVocabularyCardKeyword/)
+  assert.match(view, /cardUid\.startsWith\(['"]card_['"]\)/)
+  assert.doesNotMatch(view, /selectedVocabularyTemplate/)
+  assert.doesNotMatch(view, /:template=/)
+  assert.match(view, /vocabulary-card-page__skeleton/)
+  assert.match(view, /单词卡不存在或已被删除/)
+  assert.match(view, /无权查看这张单词卡/)
+  assert.match(view, /detailQuery\.refetch/)
+})
+
+test('vocabulary card queries no longer load legacy templates', () => {
+  assert.doesNotMatch(vocabularyCards, /listVocabularyTemplates/)
+  assert.doesNotMatch(vocabularyCards, /templateQuery/)
 })

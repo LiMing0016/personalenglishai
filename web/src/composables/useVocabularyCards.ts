@@ -7,7 +7,6 @@ import {
   getVocabularyCard,
   listVocabularyCards,
   listVocabularyRevisions,
-  listVocabularyTemplates,
   regenerateVocabularyCard,
   resolveVocabularyConflict,
   retryVocabularyCard,
@@ -137,12 +136,6 @@ export function useVocabularyCards(
 ) {
   const queryClient = useQueryClient()
 
-  const templateQuery = useQuery({
-    queryKey: ['vocabulary', 'templates'],
-    queryFn: listVocabularyTemplates,
-    staleTime: 300_000,
-  })
-
   const listQuery = useQuery({
     queryKey: computed(() => ['vocabulary', 'cards', filters.value]),
     queryFn: () => listVocabularyCards(filters.value),
@@ -218,7 +211,6 @@ export function useVocabularyCards(
   })
 
   return {
-    templateQuery,
     listQuery,
     detailQuery,
     revisionsQuery,

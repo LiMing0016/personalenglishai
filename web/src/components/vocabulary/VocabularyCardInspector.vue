@@ -150,7 +150,6 @@ import {
   type VocabularyCoreContent,
   type VocabularyRevision,
   type VocabularyRevisionListResponse,
-  type VocabularyTemplate,
 } from '@/api/vocabulary'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
 import {
@@ -168,8 +167,6 @@ type MergeChoice = Record<string, 'current' | 'candidate'>
 
 const props = defineProps<{
   card: VocabularyCardDetail
-  template: VocabularyTemplate
-  templates: VocabularyTemplate[]
   listVocabularyRevisions?: VocabularyRevisionListResponse
   updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }, VocabularyCardDetail>
   deleteMutation: MutationBridge<string>
