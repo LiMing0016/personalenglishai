@@ -119,7 +119,7 @@ npm run build
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
 ```
 
-只有历史旧表已执行过初始迁移、但缺少生成任务租约字段时，才执行租约迁移；新库不得再执行该迁移：
+历史旧表升级或上次迁移中断时执行租约迁移；新库的初始迁移已经包含完整租约结构，无需额外执行：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
@@ -131,7 +131,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocabulary_identity_exact.sql
 ```
 
-租约迁移成功执行后不得重复执行。
+租约迁移会通过 `information_schema` 分别检查两列和恢复索引，可重复执行。中断后直接重跑即可；已有结构不会重复创建，仍为 `running` 且租约到期时间为空的历史任务会完成回填。
 
 启动后端时保持 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`（对应 `vocabulary.generation.scheduler.enabled`），以处理单词卡生成任务。
 

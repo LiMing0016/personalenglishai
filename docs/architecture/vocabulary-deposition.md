@@ -7,6 +7,7 @@ review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/
   - backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
+  - backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyThemeService.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCardGenerator.java
@@ -46,7 +47,7 @@ related_docs:
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
 ```
 
-只有历史旧表中的 `vocabulary_generation_job` 尚未具备租约字段时，才执行已有库租约迁移：
+历史旧表升级或租约迁移中断后，执行已有库租约迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
@@ -68,7 +69,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 
 迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version` 共 5 列。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
 
-初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引。针对租约结构，新库只执行初始迁移，不得再执行租约迁移；租约迁移只用于历史旧表，成功执行后不得重复执行。新库仍需继续执行后续主题迁移。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
+初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引，因此新库无需额外执行租约迁移；租约迁移只用于历史旧表或恢复中断升级。该脚本通过 `information_schema` 独立检查两列和 `idx_vocabulary_job_lease`，可重复执行；已存在的结构不会重复创建，缺失动作会继续完成，最后对租约到期时间为空的 `running` 任务执行幂等回填。新库仍需继续执行后续主题迁移。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
 
 ## 主题所有权与版本
 

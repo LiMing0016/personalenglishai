@@ -50,11 +50,16 @@ class VocabularyDepositionSchemaTest {
     void leaseUpgradeMigrationAddsFieldsAndRecoveryIndexForExistingVocabularyJobs() throws Exception {
         String migration = Files.readString(Path.of(
                 "src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql"));
+        String normalized = migration.toLowerCase();
 
         assertAll(
                 () -> assertTrue(migration.contains("ALTER TABLE vocabulary_generation_job")),
-                () -> assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS lease_token VARCHAR(64) NULL")),
-                () -> assertTrue(migration.contains("ADD COLUMN IF NOT EXISTS lease_expires_at DATETIME NULL")),
+                () -> assertTrue(migration.contains("FROM information_schema.COLUMNS")),
+                () -> assertTrue(migration.contains("FROM information_schema.STATISTICS")),
+                () -> assertTrue(migration.contains("TABLE_SCHEMA = DATABASE()")),
+                () -> assertTrue(migration.contains("PREPARE vocabulary_lease_migration_stmt")),
+                () -> assertTrue(normalized.contains("add column lease_token varchar(64) null")),
+                () -> assertTrue(normalized.contains("add column lease_expires_at datetime null")),
                 () -> assertTrue(migration.contains("ADD KEY idx_vocabulary_job_lease")),
                 () -> assertTrue(migration.contains("SET lease_expires_at = COALESCE(started_at, available_at, created_at, CURRENT_TIMESTAMP)")),
                 () -> assertTrue(migration.contains("WHERE status = 'running'")),
