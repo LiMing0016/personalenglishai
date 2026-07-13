@@ -19,10 +19,25 @@
 - GREEN: the same focused command passed 10 tests with 0 failures after the minimal implementation.
 - Regression: the Task 7-9 API, theme cache, theme shelf, workspace, inspector, and core summary suite passed 30 tests with 0 failures.
 
+## Review Findings Fix
+
+- Draft identity:
+  - RED: added tests proving a same-card refetch must not reset editing or Markdown, while a real `cardUid` or `activeRevisionUid` change must reset the draft. The tests failed because the inspector deep-watched the complete card and did not synchronize the saved server card.
+  - GREEN: draft reset now depends only on `{ cardUid, activeRevisionUid }`. Same-card polling/refocus data preserves the draft, and a successful save synchronizes Markdown and the new active revision returned by the server.
+- Theme fallback:
+  - RED: added a pure selection-policy test covering preferred theme, default theme, first active theme, and an empty catalog. It failed because selection fallback only ran when the catalog changed.
+  - GREEN: switching cards immediately resolves the active theme from the cached catalog, while a valid manual selection survives same-card refetches.
+- Conflict format authority:
+  - RED: added cases for current legacy content with a v1 candidate and for legacy content carrying a misleading format marker. They failed because candidate metadata and shape could force the v1 conflict path.
+  - GREEN: v1 conflict detection now follows backend semantics using only the current revision's format marker and real compatibility content shape. Candidate and historical metadata cannot select the v1 payload.
+- Canonical legacy projection:
+  - RED: added boundary and shape tests for 30 total meanings, 2,000-character scalar limits, `unknown` part of speech, bilingual delimiter splitting, empty definition arrays, and ignored object definitions. The tests exposed unbounded values, heuristic language detection, and guessed extension fields.
+  - GREEN: the pure projection helper now mirrors backend canonical handling for the supported `phonetic`, `partOfSpeech`, and string-array `definitions` fields, producing a saveable v1 core without guessing unknown fields.
+
 ## Validation
 
-- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts` (10 tests).
-- Passed: `web\npx.cmd tsx --test tests/vocabularyApiContract.test.ts tests/vocabularyThemeApiContract.test.ts tests/vocabularyThemeShelf.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyCoreSummary.test.ts` (30 tests).
+- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts` (16 tests).
+- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyApiContract.test.ts tests/vocabularyThemeApiContract.test.ts tests/vocabularyThemeLibrary.test.ts tests/vocabularyThemeShelf.test.ts tests/vocabularyDepositionWorkspace.test.ts` (44 tests).
 - Passed: `web\npm.cmd run build` (`vue-tsc` and Vite; 3264 modules transformed).
 - Passed: `git diff --check` (only existing LF-to-CRLF conversion notices).
 - Not run: authenticated browser interaction or visual screenshot regression.

@@ -7,6 +7,59 @@ const inspector = fs.readFileSync(
   'utf8',
 )
 
+test('draft reset depends only on card and active revision identity', async () => {
+  const cards = await import('../src/composables/useVocabularyCards.ts')
+  const shouldReset = (cards as Record<string, unknown>).shouldResetVocabularyCardDraft
+  assert.equal(typeof shouldReset, 'function')
+  const decide = shouldReset as (
+    previous: { cardUid: string, activeRevisionUid: string | null } | undefined,
+    next: { cardUid: string, activeRevisionUid: string | null },
+  ) => boolean
+
+  assert.equal(decide(undefined, { cardUid: 'card_1', activeRevisionUid: 'rev_1' }), true)
+  assert.equal(decide(
+    { cardUid: 'card_1', activeRevisionUid: 'rev_1' },
+    { cardUid: 'card_1', activeRevisionUid: 'rev_1' },
+  ), false)
+  assert.equal(decide(
+    { cardUid: 'card_1', activeRevisionUid: 'rev_1' },
+    { cardUid: 'card_2', activeRevisionUid: 'rev_1' },
+  ), true)
+  assert.equal(decide(
+    { cardUid: 'card_1', activeRevisionUid: 'rev_1' },
+    { cardUid: 'card_1', activeRevisionUid: 'rev_2' },
+  ), true)
+
+  assert.doesNotMatch(inspector, /watch\(\(\) => props\.card,[\s\S]*?deep:\s*true/)
+  assert.match(inspector, /shouldResetVocabularyCardDraft/)
+})
+
+test('save success immediately adopts the server revision markdown', () => {
+  assert.match(inspector, /const savedCard = await props\.updateMutation\.mutateAsync/)
+  assert.match(inspector, /editMarkdown\.value = cardMarkdown\(savedCard\)/)
+  assert.match(inspector, /savedCard\.activeRevisionUid/)
+})
+
+test('theme fallback runs on card changes and preserves an active manual choice', async () => {
+  const cards = await import('../src/composables/useVocabularyCards.ts')
+  const selectTheme = (cards as Record<string, unknown>).selectVocabularyThemeUid
+  assert.equal(typeof selectTheme, 'function')
+  const select = selectTheme as (
+    themes: Array<{ themeUid: string }>,
+    defaultThemeUid: string,
+    preferredThemeUid: string | null | undefined,
+  ) => string
+  const active = [{ themeUid: 'theme_first' }, { themeUid: 'theme_default' }, { themeUid: 'theme_manual' }]
+
+  assert.equal(select(active, 'theme_default', null), 'theme_default')
+  assert.equal(select(active, 'theme_missing', null), 'theme_first')
+  assert.equal(select(active, 'theme_default', 'theme_manual'), 'theme_manual')
+  assert.equal(select([], 'theme_default', 'theme_manual'), '')
+
+  assert.match(inspector, /cardChanged[\s\S]*selectVocabularyThemeUid/)
+  assert.match(inspector, /some\(\(theme\) => theme\.themeUid === selectedThemeUid\.value\)\) return/)
+})
+
 test('inspector adapts core once and edits markdown without legacy field guesses', () => {
   assert.match(inspector, /VocabularyCoreSummary/)
   assert.match(inspector, /VocabularyMarkdownEditor/)
@@ -26,7 +79,7 @@ test('save preserves term identity and sends core markdown revision and summary'
 })
 
 test('new format conflicts compare markdown as a whole and legacy revisions keep field merge', () => {
-  assert.match(inspector, /contentFormatVersion\s*===\s*1/)
+  assert.match(inspector, /isVocabularyV1Revision/)
   assert.match(inspector, /当前 Markdown/)
   assert.match(inspector, /候选 Markdown/)
   assert.match(inspector, /const mergeFields = conflictMergeFields\(\)/)
@@ -35,6 +88,26 @@ test('new format conflicts compare markdown as a whole and legacy revisions keep
   assert.match(inspector, /keep_current/)
   assert.match(inspector, /use_ai/)
   assert.match(inspector, /merge_fields/)
+})
+
+test('conflict format follows the backend current revision shape check', async () => {
+  const cards = await import('../src/composables/useVocabularyCards.ts')
+  const classifyRevision = (cards as Record<string, unknown>).isVocabularyV1Revision
+  assert.equal(typeof classifyRevision, 'function')
+  const isV1 = classifyRevision as (formatVersion: number | null, content: unknown) => boolean
+  const legacy = { term: 'record', definitions: ['entry'] }
+  const v1 = { schemaVersion: 1, term: 'record', phonetics: [], senses: [], markdown: '# Card' }
+
+  assert.equal(isV1(1, v1), true)
+  assert.equal(isV1(null, legacy), false, 'current legacy stays legacy even when a candidate is v1')
+  assert.equal(isV1(1, legacy), false, 'a mislabeled legacy current revision stays legacy')
+  assert.equal(isV1(null, v1), false, 'shape alone cannot override the current revision format')
+
+  const block = inspector.match(/const v1Conflict = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
+  assert.doesNotMatch(block, /candidateRevision|candidateContent/)
+  assert.match(block, /conflict\.value\?\.currentContent/)
+  assert.doesNotMatch(block, /currentRevision\?\.contentFormatVersion\s*\?\?/, 'an explicit null revision format remains authoritative')
+  assert.match(block, /currentRevision\s*\?\s*currentRevision\.contentFormatVersion\s*:/)
 })
 
 test('regenerate uses active cached themes and confirms switching to the latest revision', () => {

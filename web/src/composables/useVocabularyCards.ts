@@ -21,6 +21,47 @@ import {
 import { isVocabularyGenerationActive } from '@/features/vocabulary/generationPolling'
 
 const POLL_INTERVAL_MS = 2000
+const VOCABULARY_CORE_MAX_SCALAR_LENGTH = 2_000
+const VOCABULARY_CORE_MAX_MEANINGS = 30
+
+export interface VocabularyCardDraftIdentity {
+  cardUid: string
+  activeRevisionUid: string | null
+}
+
+export function shouldResetVocabularyCardDraft(
+  previous: VocabularyCardDraftIdentity | undefined,
+  next: VocabularyCardDraftIdentity,
+): boolean {
+  return !previous
+    || previous.cardUid !== next.cardUid
+    || previous.activeRevisionUid !== next.activeRevisionUid
+}
+
+export function selectVocabularyThemeUid(
+  activeThemes: Array<{ themeUid: string }>,
+  defaultThemeUid: string,
+  preferredThemeUid?: string | null,
+): string {
+  if (preferredThemeUid && activeThemes.some((theme) => theme.themeUid === preferredThemeUid)) {
+    return preferredThemeUid
+  }
+  if (activeThemes.some((theme) => theme.themeUid === defaultThemeUid)) {
+    return defaultThemeUid
+  }
+  return activeThemes[0]?.themeUid ?? ''
+}
+
+export function isVocabularyV1Revision(
+  contentFormatVersion: number | null | undefined,
+  compatibilityContent: unknown,
+): boolean {
+  const content = asLegacyRecord(compatibilityContent)
+  return contentFormatVersion != null
+    && Number.isInteger(content?.schemaVersion)
+    && Array.isArray(content?.phonetics)
+    && Array.isArray(content?.senses)
+}
 
 function asLegacyRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -28,23 +69,36 @@ function asLegacyRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-function legacyDefinitions(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((definition) => {
-        if (typeof definition === 'string') return definition
-        const record = asLegacyRecord(definition)
-        return record
-          ? String(record.definition ?? record.meaning ?? record.text ?? '')
-          : ''
-      })
-      .filter(Boolean)
-  }
-  return typeof value === 'string' && value ? [value] : []
+function boundedVocabularyScalar(value: string): string {
+  return value.slice(0, VOCABULARY_CORE_MAX_SCALAR_LENGTH)
 }
 
-function looksChinese(value: string): boolean {
-  return /[\u3400-\u9fff]/u.test(value)
+function normalizedLegacyPartOfSpeech(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return 'unknown'
+  return boundedVocabularyScalar(value.trim().toLowerCase())
+}
+
+function splitLegacyMeaning(definition: string) {
+  const value = definition.trim()
+  const fullWidth = value.indexOf('；')
+  const ascii = value.indexOf(';')
+  const delimiter = fullWidth < 0
+    ? ascii
+    : ascii < 0 ? fullWidth : Math.min(fullWidth, ascii)
+  return delimiter < 0
+    ? { definitionEn: boundedVocabularyScalar(value), definitionZh: '' }
+    : {
+        definitionEn: boundedVocabularyScalar(value.slice(0, delimiter).trim()),
+        definitionZh: boundedVocabularyScalar(value.slice(delimiter + 1).trim()),
+      }
+}
+
+function legacyMeanings(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((definition): definition is string => typeof definition === 'string' && Boolean(definition.trim()))
+    .slice(0, VOCABULARY_CORE_MAX_MEANINGS)
+    .map(splitLegacyMeaning)
 }
 
 export function projectLegacyVocabularyCore(
@@ -54,9 +108,12 @@ export function projectLegacyVocabularyCore(
   const content = asLegacyRecord(value)
   if (!content) return null
 
-  const phonetic = typeof content.phonetic === 'string' ? content.phonetic : ''
-  const definitions = legacyDefinitions(content.definitions)
-  const partOfSpeech = typeof content.partOfSpeech === 'string' ? content.partOfSpeech : ''
+  const phonetic = typeof content.phonetic === 'string' && content.phonetic.trim()
+    ? boundedVocabularyScalar(content.phonetic)
+    : ''
+  const hasPartOfSpeech = typeof content.partOfSpeech === 'string' && Boolean(content.partOfSpeech.trim())
+  const hasDefinitionArray = Array.isArray(content.definitions)
+  const meanings = legacyMeanings(content.definitions)
 
   return {
     schemaVersion: 1,
@@ -64,13 +121,10 @@ export function projectLegacyVocabularyCore(
     phonetics: phonetic
       ? [{ region: 'other', text: phonetic, audioUrl: null }]
       : [],
-    senses: definitions.length
+    senses: hasPartOfSpeech || hasDefinitionArray
       ? [{
-          partOfSpeech,
-          meanings: definitions.map((definition) => ({
-            definitionEn: looksChinese(definition) ? '' : definition,
-            definitionZh: looksChinese(definition) ? definition : '',
-          })),
+          partOfSpeech: normalizedLegacyPartOfSpeech(content.partOfSpeech),
+          meanings,
         }]
       : [],
   }

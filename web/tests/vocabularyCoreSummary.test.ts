@@ -54,7 +54,7 @@ test('legacy content is projected through one pure typed core adapter', () => {
     term: 'changed-by-ai',
     phonetic: '/rekord/',
     partOfSpeech: 'verb',
-    definitions: ['记录', 'to store information'],
+    definitions: ['a written account；记录', 'to store information'],
   }), {
     schemaVersion: 1,
     term: 'record',
@@ -62,11 +62,52 @@ test('legacy content is projected through one pure typed core adapter', () => {
     senses: [{
       partOfSpeech: 'verb',
       meanings: [
-        { definitionEn: '', definitionZh: '记录' },
+        { definitionEn: 'a written account', definitionZh: '记录' },
         { definitionEn: 'to store information', definitionZh: '' },
       ],
     }],
   })
 
   assert.equal(projectLegacyVocabularyCore('record', null), null)
+})
+
+test('legacy projection matches backend bounds and ignores unknown definition shapes', () => {
+  const definitions = [
+    'english；中文',
+    ...Array.from({ length: 34 }, (_, index) => `definition ${index}`),
+    { definition: 'must not be guessed' },
+    '   ',
+  ]
+  const projected = projectLegacyVocabularyCore('record', {
+    phonetic: 'p'.repeat(2_100),
+    partOfSpeech: `  ${'N'.repeat(2_100)}  `,
+    definitions,
+  })!
+
+  assert.equal(projected.phonetics[0]?.text.length, 2_000)
+  assert.equal(projected.senses[0]?.partOfSpeech.length, 2_000)
+  assert.equal(projected.senses[0]?.partOfSpeech, 'n'.repeat(2_000))
+  assert.equal(projected.senses[0]?.meanings.length, 30)
+  assert.deepEqual(projected.senses[0]?.meanings[0], {
+    definitionEn: 'english',
+    definitionZh: '中文',
+  })
+  assert.ok(projected.senses[0]?.meanings.every((meaning) => (
+    meaning.definitionEn.length <= 2_000 && meaning.definitionZh.length <= 2_000
+  )))
+})
+
+test('legacy projection uses unknown part of speech and does not accept scalar definitions', () => {
+  assert.deepEqual(projectLegacyVocabularyCore('record', { definitions: [] })?.senses, [{
+    partOfSpeech: 'unknown',
+    meanings: [],
+  }])
+  assert.deepEqual(projectLegacyVocabularyCore('record', {
+    definitions: ['definition'],
+    partOfSpeech: '   ',
+  })?.senses[0], {
+    partOfSpeech: 'unknown',
+    meanings: [{ definitionEn: 'definition', definitionZh: '' }],
+  })
+  assert.deepEqual(projectLegacyVocabularyCore('record', { definitions: 'not-an-array' })?.senses, [])
 })

@@ -153,11 +153,17 @@ import {
   type VocabularyTemplate,
 } from '@/api/vocabulary'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
-import { projectLegacyVocabularyCore } from '@/composables/useVocabularyCards'
+import {
+  projectLegacyVocabularyCore,
+  isVocabularyV1Revision,
+  selectVocabularyThemeUid,
+  shouldResetVocabularyCardDraft,
+  type VocabularyCardDraftIdentity,
+} from '@/composables/useVocabularyCards'
 import { safeExternalUrl } from '@/features/vocabulary/safeExternalUrl'
 import { showToast } from '@/utils/toast'
 
-type MutationBridge<T> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<unknown> }
+type MutationBridge<T, TResult = unknown> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<TResult> }
 type MergeChoice = Record<string, 'current' | 'candidate'>
 
 const props = defineProps<{
@@ -165,7 +171,7 @@ const props = defineProps<{
   template: VocabularyTemplate
   templates: VocabularyTemplate[]
   listVocabularyRevisions?: VocabularyRevisionListResponse
-  updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }>
+  updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }, VocabularyCardDetail>
   deleteMutation: MutationBridge<string>
   regenerateMutation: MutationBridge<{ cardUid: string } & RegenerateVocabularyCardRequest>
   retryVocabularyCard: MutationBridge<string>
@@ -183,6 +189,7 @@ const deleteDialogOpen = ref(false)
 const conflict = ref<VocabularyConflictResponse | null>(null)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
 const mergeChoice = ref<MergeChoice>({})
+const draftIdentity = ref<VocabularyCardDraftIdentity>()
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -230,11 +237,12 @@ function isCoreContent(value: unknown): value is VocabularyCoreContent {
 
 const v1Conflict = computed(() => {
   const currentRevision = revisionFor(conflict.value?.currentRevisionUid ?? null)
-  const candidateRevision = revisionFor(conflict.value?.candidateRevisionUid ?? null)
-  return currentRevision?.contentFormatVersion === 1
-    || candidateRevision?.contentFormatVersion === 1
-    || isCoreContent(conflict.value?.currentContent)
-    || isCoreContent(conflict.value?.candidateContent)
+  const currentFormatVersion = currentRevision
+    ? currentRevision.contentFormatVersion
+    : (conflict.value?.currentRevisionUid === props.card.activeRevisionUid
+      ? props.card.contentFormatVersion
+      : null)
+  return isVocabularyV1Revision(currentFormatVersion, conflict.value?.currentContent)
 })
 
 function conflictMarkdown(revisionUid: string | null, content: unknown): string {
@@ -286,29 +294,58 @@ function setConflict(nextConflict: VocabularyConflictResponse) {
   resetMergeChoice()
 }
 
-watch(() => props.card, (card) => {
-  editMarkdown.value = cardMarkdown(card)
-  selectedThemeUid.value = card.theme?.themeUid ?? ''
-  editing.value = false
-  regenerateConfirmationOpen.value = false
-  if (card.status === 'needs_review' && card.candidateRevisionUid && card.candidateContent) {
-    setConflict({
-      currentRevisionUid: card.activeRevisionUid,
-      candidateRevisionUid: card.candidateRevisionUid,
-      currentContent: card.content,
-      candidateContent: card.candidateContent,
-      conflictStatus: 'needs_review',
-    })
-  } else {
-    conflict.value = null
-  }
-}, { immediate: true, deep: true })
+watch(
+  () => [props.card.cardUid, props.card.activeRevisionUid] as const,
+  ([cardUid, activeRevisionUid]) => {
+    const nextIdentity = { cardUid, activeRevisionUid }
+    if (!shouldResetVocabularyCardDraft(draftIdentity.value, nextIdentity)) return
+    const cardChanged = draftIdentity.value?.cardUid !== cardUid
+    draftIdentity.value = nextIdentity
+    editMarkdown.value = cardMarkdown(props.card)
+    if (cardChanged) {
+      selectedThemeUid.value = selectVocabularyThemeUid(
+        activeThemes.value,
+        themesQuery.data.value?.defaultThemeUid ?? '',
+        props.card.theme?.themeUid,
+      )
+    }
+    editing.value = false
+    regenerateConfirmationOpen.value = false
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [
+    props.card.status,
+    props.card.activeRevisionUid,
+    props.card.candidateRevisionUid,
+    props.card.content,
+    props.card.candidateContent,
+  ] as const,
+  ([status, activeRevisionUid, candidateRevisionUid, content, candidateContent]) => {
+    if (status === 'needs_review' && candidateRevisionUid && candidateContent) {
+      setConflict({
+        currentRevisionUid: activeRevisionUid,
+        candidateRevisionUid,
+        currentContent: content,
+        candidateContent,
+        conflictStatus: 'needs_review',
+      })
+    } else {
+      conflict.value = null
+    }
+  },
+  { immediate: true, deep: true },
+)
 
 watch(() => themesQuery.data.value, (catalog) => {
   if (!catalog || activeThemes.value.some((theme) => theme.themeUid === selectedThemeUid.value)) return
-  selectedThemeUid.value = activeThemes.value.some((theme) => theme.themeUid === catalog.defaultThemeUid)
-    ? catalog.defaultThemeUid
-    : activeThemes.value[0]?.themeUid ?? ''
+  selectedThemeUid.value = selectVocabularyThemeUid(
+    activeThemes.value,
+    catalog.defaultThemeUid,
+    props.card.theme?.themeUid,
+  )
 }, { immediate: true })
 
 watch([v1Conflict, conflict], () => resetMergeChoice())
@@ -321,7 +358,7 @@ function cancelEditing() {
 async function save() {
   if (!props.card.activeRevisionUid || markdownTooLong.value) return
   try {
-    await props.updateMutation.mutateAsync({
+    const savedCard = await props.updateMutation.mutateAsync({
       cardUid: props.card.cardUid,
       payload: {
         baseRevisionUid: props.card.activeRevisionUid,
@@ -330,6 +367,11 @@ async function save() {
         changeSummary: '用户编辑 Markdown 卡片',
       },
     })
+    editMarkdown.value = cardMarkdown(savedCard)
+    draftIdentity.value = {
+      cardUid: savedCard.cardUid,
+      activeRevisionUid: savedCard.activeRevisionUid,
+    }
     editing.value = false
     showToast('单词卡已保存', 'success')
   } catch (error) {
