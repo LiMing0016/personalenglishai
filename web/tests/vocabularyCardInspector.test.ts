@@ -6,6 +6,10 @@ const inspector = fs.readFileSync(
   new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
   'utf8',
 )
+const vocabularyArchitecture = fs.readFileSync(
+  new URL('../../docs/architecture/vocabulary-deposition.md', import.meta.url),
+  'utf8',
+)
 
 test('draft reset depends only on card and active revision identity', async () => {
   const cards = await import('../src/composables/useVocabularyCards.ts')
@@ -110,8 +114,8 @@ test('inspector provides read and edit modes with polite save announcements', ()
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]单词卡已保存['"]/)
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]保存失败，请重试['"]/)
   assert.match(inspector, /<template v-if="editing">[\s\S]*?<template v-else>/)
-  const saveCatch = inspector.match(/\}\s*catch \(error\) \{[\s\S]*?\n  \}\n\}/)?.[0] ?? ''
-  assert.ok(saveCatch.indexOf("saveAnnouncement.value = '保存失败，请重试'") < saveCatch.indexOf('error instanceof VocabularyConflictError'))
+  const saveBlock = inspector.match(/async function save\([\s\S]*?\n\}\n\nfunction requestRegenerate/)?.[0] ?? ''
+  assert.ok(saveBlock.indexOf("saveAnnouncement.value = '保存失败，请重试'") < saveBlock.indexOf('error instanceof VocabularyConflictError'))
 })
 
 test('inspector exposes the stable generation state matrix', () => {
@@ -158,6 +162,44 @@ test('save preserves term identity and sends core markdown revision and summary'
   assert.match(inspector, /updateMutation\.isPending\.value/)
   assert.match(inspector, /单词卡已保存/)
   assert.match(inspector, /保存失败，请重试/)
+})
+
+test('inspector serializes every card mutation through one operation lock', () => {
+  const lock = inspector.match(/const cardOperationPending = computed\(\(\) => \([\s\S]*?\n\)\)/)?.[0] ?? ''
+  for (const mutation of [
+    'updateMutation',
+    'regenerateMutation',
+    'retryVocabularyCard',
+    'resolveConflictMutation',
+    'deleteMutation',
+  ]) {
+    assert.match(lock, new RegExp(`${mutation}\\.isPending\\.value`))
+  }
+  assert.match(inspector, /async function runCardOperation/)
+  for (const handler of ['save', 'regenerate', 'retry', 'removeCard', 'resolveConflict']) {
+    const block = inspector.match(new RegExp(`async function ${handler}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0] ?? ''
+    assert.match(block, /cardOperationPending\.value|runCardOperation/)
+  }
+  assert.match(inspector, /disabled:[^\n]*cardOperationPending\.value/)
+})
+
+test('inspector dialogs share focus trapping inert background and conflict guidance', () => {
+  assert.match(inspector, /class="card-inspector__content"[^>]*:inert="Boolean\(activeDialog\)"/)
+  assert.match(inspector, /aria-describedby="conflict-card-guidance"/)
+  assert.match(inspector, /id="conflict-card-guidance"/)
+  assert.match(inspector, /function trapDialogFocus/)
+  assert.match(inspector, /event\.shiftKey/)
+  assert.match(inspector, /restoreDialogFocus/)
+  assert.match(inspector, /regenerateDialog/)
+  assert.match(inspector, /deleteDialog/)
+  assert.match(inspector, /conflictDialog/)
+  assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]保存失败，请重试['"]/)
+})
+
+test('documented web verification retains capture and API contract suites', () => {
+  const command = vocabularyArchitecture.match(/npx tsx --test[^\n]+/)?.[0] ?? ''
+  assert.match(command, /tests\/vocabularyCaptureTerms\.test\.ts/)
+  assert.match(command, /tests\/vocabularyApiContract\.test\.ts/)
 })
 
 test('new format conflicts compare markdown as a whole and legacy revisions keep field merge', () => {
@@ -228,7 +270,7 @@ test('partial generation warning uses stable outcome fields instead of cleared e
   assert.match(warningBlock, /主题内容待完善/)
   assert.doesNotMatch(warningBlock, /!props\.card\.generationError/)
   const partialSection = inspector.match(/<section v-if="isPartialMarkdown"[\s\S]*?<\/section>/)?.[0] ?? ''
-  assert.match(partialSection, /!selectedTheme\s*\|\|\s*regenerateMutation\.isPending\.value\s*\|\|\s*themesBlockingError/)
+  assert.match(partialSection, /!selectedTheme\s*\|\|\s*cardOperationPending\s*\|\|\s*themesBlockingError/)
 })
 
 test('inspector styles stable editors and narrow screens without horizontal overflow', () => {

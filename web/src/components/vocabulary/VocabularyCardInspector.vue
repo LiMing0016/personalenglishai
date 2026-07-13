@@ -1,7 +1,12 @@
 <template>
   <section class="card-inspector" aria-label="单词卡详情">
+    <div
+      class="card-inspector__content"
+      :inert="Boolean(activeDialog)"
+      :aria-hidden="activeDialog ? 'true' : undefined"
+    >
     <header class="card-inspector__header">
-      <button type="button" class="card-inspector__back" @click="emit('back')">返回单词库</button>
+      <button ref="backButton" type="button" class="card-inspector__back" :disabled="cardOperationPending" @click="emit('back')">返回单词库</button>
       <div class="card-inspector__heading">
         <h2>{{ card.displayTerm }}</h2>
         <p v-if="headerSummary" class="card-inspector__summary">{{ headerSummary }}</p>
@@ -14,15 +19,15 @@
 
     <div class="card-inspector__toolbar" aria-label="单词卡操作">
       <div class="card-inspector__mode" aria-label="阅读模式">
-        <button type="button" :aria-pressed="!editing" @click="cancelEditing">阅读</button>
-        <button type="button" :aria-pressed="editing" :disabled="!hasReadableRevision" @click="startEditing">编辑</button>
+        <button type="button" :aria-pressed="!editing" :disabled="cardOperationPending" @click="cancelEditing">阅读</button>
+        <button type="button" :aria-pressed="editing" :disabled="!hasReadableRevision || cardOperationPending" @click="startEditing">编辑</button>
       </div>
       <template v-if="editing">
-        <button type="button" @click="cancelEditing">取消</button>
+        <button type="button" :disabled="cardOperationPending" @click="cancelEditing">取消</button>
         <button
           type="button"
           class="card-inspector__primary"
-          :disabled="!card.activeRevisionUid || markdownTooLong || updateMutation.isPending.value"
+          :disabled="!card.activeRevisionUid || markdownTooLong || cardOperationPending"
           @click="save"
         >
           {{ updateMutation.isPending.value ? '保存中...' : '保存修改' }}
@@ -32,19 +37,19 @@
         <button
           v-if="!isPartialMarkdown"
           type="button"
-          :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
+          :disabled="!selectedTheme || cardOperationPending || themesBlockingError"
           @click="requestRegenerate"
         >
           {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
         </button>
-        <button v-if="showRetry" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
+        <button v-if="showRetry" type="button" :disabled="cardOperationPending" @click="retry">
           {{ retryVocabularyCard.isPending.value ? '重试中...' : '重试生成' }}
         </button>
       </template>
 
       <template v-if="!isNarrow">
         <ThemeSelector @selected="closeMoreMenu" />
-        <button type="button" class="card-inspector__danger" @click="deleteDialogOpen = true">删除</button>
+        <button type="button" class="card-inspector__danger" :disabled="cardOperationPending" @click="openDeleteDialog">删除</button>
       </template>
       <div v-else class="card-inspector__more">
         <button
@@ -53,13 +58,14 @@
           aria-label="更多单词卡操作"
           :aria-expanded="moreMenuOpen"
           aria-controls="vocabulary-card-more-menu"
-          @click="moreMenuOpen = !moreMenuOpen"
+          :disabled="cardOperationPending"
+          @click="toggleMoreMenu"
         >
           更多
         </button>
         <div v-if="moreMenuOpen" id="vocabulary-card-more-menu" class="card-inspector__more-menu">
           <ThemeSelector @selected="closeMoreMenu" />
-          <button type="button" class="card-inspector__danger" @click="openDeleteDialog">删除</button>
+          <button type="button" class="card-inspector__danger" :disabled="cardOperationPending" @click="openDeleteDialog">删除</button>
         </div>
       </div>
     </div>
@@ -102,7 +108,7 @@
           <p>核心信息已保留，可以重新生成主题内容。</p>
           <button
             type="button"
-            :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
+            :disabled="!selectedTheme || cardOperationPending || themesBlockingError"
             @click="requestRegenerate"
           >
             重新生成
@@ -133,25 +139,26 @@
       </main>
     </div>
     <div v-else class="card-inspector__placeholder" aria-hidden="true"></div>
+    </div>
 
-    <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="regenerateConfirmationOpen = false">
-      <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title">
+    <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="closeRegenerateDialog">
+      <section ref="regenerateDialog" class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title" aria-describedby="regenerate-card-guidance">
         <h3 id="regenerate-card-title">使用最新主题版本？</h3>
-        <p>将使用主题最新版本重新生成，当前版本会保留在历史中。</p>
+        <p id="regenerate-card-guidance">将使用主题最新版本重新生成，当前版本会保留在历史中。</p>
         <div class="card-inspector__dialog-actions">
-          <button type="button" @click="regenerateConfirmationOpen = false">取消</button>
-          <button type="button" :disabled="regenerateMutation.isPending.value" @click="regenerate">确认重新生成</button>
+          <button ref="regenerateInitialControl" type="button" :disabled="cardOperationPending" @click="closeRegenerateDialog">取消</button>
+          <button type="button" :disabled="cardOperationPending" @click="regenerate">确认重新生成</button>
         </div>
       </section>
     </div>
 
-    <div v-if="deleteDialogOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="deleteDialogOpen = false">
-      <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="delete-card-title">
+    <div v-if="deleteDialogOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="closeDeleteDialog">
+      <section ref="deleteDialog" class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="delete-card-title" aria-describedby="delete-card-guidance">
         <h3 id="delete-card-title">删除单词卡？</h3>
-        <p>删除后会从单词卡列表移除；再次收藏或录入时可恢复，修订历史会保留。</p>
+        <p id="delete-card-guidance">删除后会从单词卡列表移除；再次收藏或录入时可恢复，修订历史会保留。</p>
         <div class="card-inspector__dialog-actions">
-          <button type="button" @click="deleteDialogOpen = false">取消</button>
-          <button type="button" class="card-inspector__danger" :disabled="deleteMutation.isPending.value" @click="removeCard">
+          <button ref="deleteInitialControl" type="button" :disabled="cardOperationPending" @click="closeDeleteDialog">取消</button>
+          <button type="button" class="card-inspector__danger" :disabled="cardOperationPending" @click="removeCard">
             {{ deleteMutation.isPending.value ? '删除中...' : '确认删除' }}
           </button>
         </div>
@@ -159,9 +166,9 @@
     </div>
 
     <div v-if="conflict" class="card-inspector__dialog-backdrop" role="presentation">
-      <section class="card-inspector__dialog card-inspector__dialog--conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-card-title">
+      <section ref="conflictDialog" class="card-inspector__dialog card-inspector__dialog--conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-card-title" aria-describedby="conflict-card-guidance">
         <h3 id="conflict-card-title">发现版本冲突</h3>
-        <p>{{ v1Conflict ? '请整体比较 Markdown，并选择要保留的版本。' : '请决定保留当前内容、采用 AI 新版本，或逐字段合并。' }}</p>
+        <p id="conflict-card-guidance">{{ v1Conflict ? '请先整体比较当前与候选 Markdown，再选择保留当前内容、使用 AI 新版本或组合内容，然后确认处理。' : '请先比较当前内容与 AI 新版本，再选择保留当前内容、使用 AI 新版本或逐字段合并，然后确认处理。' }}</p>
 
         <div v-if="v1Conflict" class="card-inspector__conflict-columns">
           <section><h4>当前 Markdown</h4><pre>{{ currentConflictMarkdown || '暂无 Markdown 内容' }}</pre></section>
@@ -172,24 +179,24 @@
           <section><h4>AI 新版本</h4><dl><template v-for="field in legacyConflictFields" :key="`candidate-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.candidateContent, field) }}</dd></template></dl></section>
         </div>
 
-        <fieldset class="card-inspector__conflict-options">
+        <fieldset class="card-inspector__conflict-options" :disabled="cardOperationPending">
           <legend>解决方式</legend>
-          <label><input v-model="conflictChoice" type="radio" value="keep_current">保留当前内容</label>
+          <label><input ref="conflictInitialControl" v-model="conflictChoice" type="radio" value="keep_current">保留当前内容</label>
           <label><input v-model="conflictChoice" type="radio" value="use_ai">使用 AI 新版本</label>
           <label><input v-model="conflictChoice" type="radio" value="merge_fields">{{ v1Conflict ? '组合核心数据与 Markdown' : '逐字段合并' }}</label>
         </fieldset>
         <div v-if="conflictChoice === 'merge_fields'" class="card-inspector__merge-fields">
           <label v-for="field in mergeableConflictFields" :key="field">
             <span>{{ fieldLabel(field) }}</span>
-            <select v-model="mergeChoice[field]" :aria-label="`合并${fieldLabel(field)}`">
+            <select v-model="mergeChoice[field]" :aria-label="`合并${fieldLabel(field)}`" :disabled="cardOperationPending">
               <option value="current">当前内容</option>
               <option value="candidate">AI 新版本</option>
             </select>
           </label>
         </div>
         <div class="card-inspector__dialog-actions">
-          <button type="button" @click="conflict = null">取消</button>
-          <button type="button" :disabled="resolveConflictMutation.isPending.value" @click="resolveConflict">确认处理</button>
+          <button type="button" :disabled="cardOperationPending" @click="closeConflictDialog">取消</button>
+          <button type="button" :disabled="cardOperationPending" @click="resolveConflict">确认处理</button>
         </div>
       </section>
     </div>
@@ -230,6 +237,7 @@ import { showToast } from '@/utils/toast'
 
 type MutationBridge<T, TResult = unknown> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<TResult> }
 type MergeChoice = Record<string, 'current' | 'candidate'>
+type InspectorDialog = 'regenerate' | 'delete' | 'conflict'
 
 const props = defineProps<{
   card: VocabularyCardDetail
@@ -251,6 +259,13 @@ const regenerateConfirmationOpen = ref(false)
 const deleteDialogOpen = ref(false)
 const moreMenuOpen = ref(false)
 const moreButton = ref<HTMLButtonElement | null>(null)
+const backButton = ref<HTMLButtonElement | null>(null)
+const regenerateDialog = ref<HTMLElement | null>(null)
+const regenerateInitialControl = ref<HTMLButtonElement | null>(null)
+const deleteDialog = ref<HTMLElement | null>(null)
+const deleteInitialControl = ref<HTMLButtonElement | null>(null)
+const conflictDialog = ref<HTMLElement | null>(null)
+const conflictInitialControl = ref<HTMLInputElement | null>(null)
 const saveAnnouncement = ref('')
 const conflict = ref<VocabularyConflictResponse | null>(null)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
@@ -258,7 +273,9 @@ const mergeChoice = ref<MergeChoice>({})
 const draftIdentity = ref<VocabularyCardDraftIdentity>()
 const markdownSections = ref<MarkdownSection[]>([])
 const activeSectionId = ref('core-information')
+const operationInFlight = ref(false)
 let observer: IntersectionObserver | undefined
+let dialogReturnTarget: HTMLElement | null = null
 const intersectingSectionIds = new Set<string>()
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -284,6 +301,20 @@ const headerSummary = computed(() => {
 })
 const hasReadableRevision = computed(() => Boolean(props.card.activeRevisionUid))
 const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
+const cardOperationPending = computed(() => (
+  operationInFlight.value
+  || props.updateMutation.isPending.value
+  || props.regenerateMutation.isPending.value
+  || props.retryVocabularyCard.isPending.value
+  || props.resolveConflictMutation.isPending.value
+  || props.deleteMutation.isPending.value
+))
+const activeDialog = computed<InspectorDialog | null>(() => {
+  if (conflict.value) return 'conflict'
+  if (regenerateConfirmationOpen.value) return 'regenerate'
+  if (deleteDialogOpen.value) return 'delete'
+  return null
+})
 const isPartialMarkdown = computed(() => (
   props.card.generationOutcome === 'partial' && props.card.warning === 'markdown_unavailable'
 ))
@@ -349,8 +380,9 @@ const ThemeSelector = defineComponent({
       h('select', {
         value: selectedThemeUid.value,
         'aria-label': '重新生成主题',
-        disabled: !activeThemes.value.length || themesQuery.isLoading.value,
+        disabled: !activeThemes.value.length || themesQuery.isLoading.value || cardOperationPending.value,
         onChange: (event: Event) => {
+          if (cardOperationPending.value) return
           selectedThemeUid.value = (event.target as HTMLSelectElement).value
           emitSelection('selected')
         },
@@ -401,19 +433,110 @@ function closeMoreMenu() {
   moreMenuOpen.value = false
 }
 
-function openDeleteDialog() {
+function toggleMoreMenu() {
+  if (cardOperationPending.value || activeDialog.value) return
+  moreMenuOpen.value = !moreMenuOpen.value
+}
+
+function eventCurrentTarget(event?: Event): HTMLElement | null {
+  return event?.currentTarget instanceof HTMLElement ? event.currentTarget : null
+}
+
+function openDeleteDialog(event?: Event) {
+  if (cardOperationPending.value || activeDialog.value) return
   closeMoreMenu()
+  dialogReturnTarget = eventCurrentTarget(event) ?? backButton.value
   deleteDialogOpen.value = true
 }
 
+function closeRegenerateDialog() {
+  if (cardOperationPending.value) return
+  regenerateConfirmationOpen.value = false
+}
+
+function closeDeleteDialog() {
+  if (cardOperationPending.value) return
+  deleteDialogOpen.value = false
+}
+
+function closeConflictDialog() {
+  if (cardOperationPending.value) return
+  conflict.value = null
+}
+
+function closeActiveDialog() {
+  if (cardOperationPending.value) return
+  if (activeDialog.value === 'regenerate') closeRegenerateDialog()
+  else if (activeDialog.value === 'delete') closeDeleteDialog()
+  else if (activeDialog.value === 'conflict') closeConflictDialog()
+}
+
+function activeDialogElement(): HTMLElement | null {
+  if (activeDialog.value === 'regenerate') return regenerateDialog.value
+  if (activeDialog.value === 'delete') return deleteDialog.value
+  if (activeDialog.value === 'conflict') return conflictDialog.value
+  return null
+}
+
+function activeDialogInitialControl(): HTMLElement | null {
+  if (activeDialog.value === 'regenerate') return regenerateInitialControl.value
+  if (activeDialog.value === 'delete') return deleteInitialControl.value
+  if (activeDialog.value === 'conflict') return conflictInitialControl.value
+  return null
+}
+
+async function focusActiveDialog() {
+  await nextTick()
+  activeDialogInitialControl()?.focus()
+}
+
+async function restoreDialogFocus() {
+  await nextTick()
+  const target = dialogReturnTarget?.isConnected ? dialogReturnTarget : backButton.value
+  dialogReturnTarget = null
+  if (target?.isConnected && !target.hasAttribute('disabled')) target.focus()
+}
+
+function trapDialogFocus(event: KeyboardEvent) {
+  const dialog = activeDialogElement()
+  if (!dialog) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeActiveDialog()
+    return
+  }
+  if (event.key !== 'Tab') return
+  const focusable = [...dialog.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+  )].filter((element) => element.getClientRects().length > 0)
+  if (!focusable.length) {
+    event.preventDefault()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const current = document.activeElement
+  if (event.shiftKey && (current === first || !dialog.contains(current))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (current === last || !dialog.contains(current))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 function handleKeydown(event: KeyboardEvent) {
+  if (activeDialog.value) {
+    trapDialogFocus(event)
+    return
+  }
   if (event.key !== 'Escape' || !moreMenuOpen.value) return
   closeMoreMenu()
   void nextTick(() => moreButton.value?.focus())
 }
 
 function startEditing() {
-  if (!hasReadableRevision.value) return
+  if (!hasReadableRevision.value || cardOperationPending.value) return
   editMarkdown.value = cardMarkdown(props.card)
   editing.value = true
   closeMoreMenu()
@@ -485,7 +608,11 @@ function resetMergeChoice() {
   mergeChoice.value = Object.fromEntries(mergeableConflictFields.value.map((field) => [field, 'current']))
 }
 
-function setConflict(nextConflict: VocabularyConflictResponse) {
+function setConflict(nextConflict: VocabularyConflictResponse, returnTarget?: HTMLElement | null) {
+  regenerateConfirmationOpen.value = false
+  deleteDialogOpen.value = false
+  closeMoreMenu()
+  dialogReturnTarget = returnTarget ?? backButton.value
   conflict.value = nextConflict
   conflictChoice.value = 'keep_current'
   resetMergeChoice()
@@ -511,6 +638,7 @@ watch(
     }
     editing.value = false
     regenerateConfirmationOpen.value = false
+    deleteDialogOpen.value = false
   },
   { immediate: true },
 )
@@ -552,6 +680,14 @@ watch(() => themesQuery.data.value, (catalog) => {
 
 watch([v1Conflict, conflict], () => resetMergeChoice())
 watch(isNarrow, (narrow) => { if (!narrow) closeMoreMenu() })
+watch(activeDialog, (nextDialog, previousDialog) => {
+  if (nextDialog) {
+    dialogReturnTarget ??= backButton.value
+    void focusActiveDialog()
+  } else if (previousDialog) {
+    void restoreDialogFocus()
+  }
+}, { flush: 'post' })
 watch(
   () => renderedSectionIds.value.join('|'),
   async () => {
@@ -564,53 +700,72 @@ watch(
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
   rebuildObserver()
+  if (activeDialog.value) void focusActiveDialog()
 })
 
 onBeforeUnmount(() => {
   disconnectObserver()
   window.removeEventListener('keydown', handleKeydown)
+  dialogReturnTarget = null
 })
 
 function cancelEditing() {
+  if (cardOperationPending.value) return
   editMarkdown.value = cardMarkdown(props.card)
   editing.value = false
 }
 
-async function save() {
-  if (!props.card.activeRevisionUid || markdownTooLong.value) return
-  saveAnnouncement.value = ''
+async function runCardOperation(operation: () => Promise<void>): Promise<boolean> {
+  if (cardOperationPending.value) return false
+  operationInFlight.value = true
   try {
-    const savedCard = await props.updateMutation.mutateAsync({
-      cardUid: props.card.cardUid,
-      payload: {
-        baseRevisionUid: props.card.activeRevisionUid,
-        core: { ...displayCore.value, term: props.card.normalizedTerm },
-        markdown: editMarkdown.value,
-        changeSummary: '用户编辑 Markdown 卡片',
-      },
-    })
-    editMarkdown.value = cardMarkdown(savedCard)
-    draftIdentity.value = {
-      cardUid: savedCard.cardUid,
-      activeRevisionUid: savedCard.activeRevisionUid,
-    }
-    editing.value = false
-    saveAnnouncement.value = '单词卡已保存'
-    showToast('单词卡已保存', 'success')
-  } catch (error) {
-    saveAnnouncement.value = '保存失败，请重试'
-    if (error instanceof VocabularyConflictError) {
-      setConflict(error.conflict)
-      return
-    }
-    showToast(error instanceof Error ? error.message : '保存失败，请重试', 'error')
+    await operation()
+    return true
+  } finally {
+    operationInFlight.value = false
   }
 }
 
-function requestRegenerate() {
+async function save(event?: Event) {
+  if (!props.card.activeRevisionUid || markdownTooLong.value || cardOperationPending.value) return
+  const conflictReturnTarget = eventCurrentTarget(event)
+  saveAnnouncement.value = ''
+  await runCardOperation(async () => {
+    try {
+      const savedCard = await props.updateMutation.mutateAsync({
+        cardUid: props.card.cardUid,
+        payload: {
+          baseRevisionUid: props.card.activeRevisionUid!,
+          core: { ...displayCore.value, term: props.card.normalizedTerm },
+          markdown: editMarkdown.value,
+          changeSummary: '用户编辑 Markdown 卡片',
+        },
+      })
+      editMarkdown.value = cardMarkdown(savedCard)
+      draftIdentity.value = {
+        cardUid: savedCard.cardUid,
+        activeRevisionUid: savedCard.activeRevisionUid,
+      }
+      editing.value = false
+      saveAnnouncement.value = '单词卡已保存'
+      showToast('单词卡已保存', 'success')
+    } catch (error) {
+      saveAnnouncement.value = '保存失败，请重试'
+      if (error instanceof VocabularyConflictError) {
+        setConflict(error.conflict, conflictReturnTarget)
+        return
+      }
+      showToast(error instanceof Error ? error.message : '保存失败，请重试', 'error')
+    }
+  })
+}
+
+function requestRegenerate(event?: Event) {
+  if (cardOperationPending.value || activeDialog.value) return
   closeMoreMenu()
   if (!selectedTheme.value) return
   if (regenerateNeedsConfirmation.value) {
+    dialogReturnTarget = eventCurrentTarget(event) ?? backButton.value
     regenerateConfirmationOpen.value = true
     return
   }
@@ -618,34 +773,42 @@ function requestRegenerate() {
 }
 
 async function regenerate() {
-  if (!selectedTheme.value) return
-  try {
-    await props.regenerateMutation.mutateAsync({
-      cardUid: props.card.cardUid,
-      themeUid: selectedThemeUid.value,
-      useLatestThemeVersion: true,
-    })
-    regenerateConfirmationOpen.value = false
-    showToast('已提交重新生成任务', 'success')
-  } catch (error) {
-    showToast(error instanceof Error ? error.message : '重新生成失败，请重试', 'error')
-  }
+  if (!selectedTheme.value || cardOperationPending.value) return
+  await runCardOperation(async () => {
+    try {
+      await props.regenerateMutation.mutateAsync({
+        cardUid: props.card.cardUid,
+        themeUid: selectedThemeUid.value,
+        useLatestThemeVersion: true,
+      })
+      regenerateConfirmationOpen.value = false
+      showToast('已提交重新生成任务', 'success')
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '重新生成失败，请重试', 'error')
+    }
+  })
 }
 
 async function retry() {
-  try {
-    await props.retryVocabularyCard.mutateAsync(props.card.cardUid)
-    showToast('已提交重试任务', 'success')
-  } catch (error) { showToast(error instanceof Error ? error.message : '重试失败，请重试', 'error') }
+  if (cardOperationPending.value) return
+  await runCardOperation(async () => {
+    try {
+      await props.retryVocabularyCard.mutateAsync(props.card.cardUid)
+      showToast('已提交重试任务', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : '重试失败，请重试', 'error') }
+  })
 }
 
 async function removeCard() {
-  try {
-    await props.deleteMutation.mutateAsync(props.card.cardUid)
-    deleteDialogOpen.value = false
-    emit('back')
-    showToast('单词卡已删除', 'success')
-  } catch (error) { showToast(error instanceof Error ? error.message : '删除失败，请重试', 'error') }
+  if (cardOperationPending.value) return
+  await runCardOperation(async () => {
+    try {
+      await props.deleteMutation.mutateAsync(props.card.cardUid)
+      deleteDialogOpen.value = false
+      emit('back')
+      showToast('单词卡已删除', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : '删除失败，请重试', 'error') }
+  })
 }
 
 function conflictMergeFields(): Record<string, unknown> {
@@ -667,20 +830,23 @@ function conflictMergeFields(): Record<string, unknown> {
 }
 
 async function resolveConflict() {
-  if (!conflict.value?.candidateRevisionUid) return
+  if (!conflict.value?.candidateRevisionUid || cardOperationPending.value) return
   const mergeFields = conflictMergeFields()
-  try {
-    await props.resolveConflictMutation.mutateAsync({
-      cardUid: props.card.cardUid,
-      revisionUid: conflict.value.candidateRevisionUid,
-      payload: conflictChoice.value === 'merge_fields'
-        ? { choice: 'merge_fields', mergeFields }
-        : { choice: conflictChoice.value },
-    })
-    conflict.value = null
-    editing.value = false
-    showToast('冲突已处理', 'success')
-  } catch (error) { showToast(error instanceof Error ? error.message : '冲突处理失败，请重试', 'error') }
+  const revisionUid = conflict.value.candidateRevisionUid
+  await runCardOperation(async () => {
+    try {
+      await props.resolveConflictMutation.mutateAsync({
+        cardUid: props.card.cardUid,
+        revisionUid,
+        payload: conflictChoice.value === 'merge_fields'
+          ? { choice: 'merge_fields', mergeFields }
+          : { choice: conflictChoice.value },
+      })
+      conflict.value = null
+      editing.value = false
+      showToast('冲突已处理', 'success')
+    } catch (error) { showToast(error instanceof Error ? error.message : '冲突处理失败，请重试', 'error') }
+  })
 }
 
 function statusLabel(status: VocabularyCardStatus) {

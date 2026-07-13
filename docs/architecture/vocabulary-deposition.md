@@ -203,7 +203,7 @@ cd backend
 .\mvnw.cmd -q test
 
 cd ..\web
-npx tsx --test src/components/assistant/markdown.test.ts tests/vocabularyMarkdownRenderer.test.ts tests/vocabularyCardSections.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyLearningPage.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyCoreSummary.test.ts
+npx tsx --test src/components/assistant/markdown.test.ts tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts tests/vocabularyMarkdownRenderer.test.ts tests/vocabularyCardSections.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyLearningPage.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyCoreSummary.test.ts
 npm run build
 $env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:5177'
 $env:E2E_MOCK_AUTH='1'

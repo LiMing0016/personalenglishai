@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -35,6 +35,7 @@ type ConflictPayload = {
 }
 type DetailStatusSequences = Record<string, number[]>
 type DetailCardSequences = Record<string, Card[]>
+type BlockedCardOperation = 'regenerate'
 type Card = {
   cardUid: string
   displayTerm: string
@@ -144,6 +145,7 @@ async function installApiMocks(
   initialUserThemes: Theme[] = [],
   detailStatusSequences: DetailStatusSequences = {},
   detailCardSequences: DetailCardSequences = {},
+  blockedCardOperation?: BlockedCardOperation,
 ) {
   const cards = initialCards.map((card) => structuredClone(card))
   const systemThemes: Theme[] = [{
@@ -156,6 +158,8 @@ async function installApiMocks(
   let recentThemeUids = userThemes.filter((theme) => theme.recent).map((theme) => theme.themeUid)
   const requests: Array<{ method: string, path: string, body: unknown }> = []
   const detailAttempts = new Map<string, number>()
+  let releaseBlockedOperation = () => {}
+  const blockedOperation = new Promise<void>((resolve) => { releaseBlockedOperation = resolve })
 
   await page.addInitScript(() => localStorage.setItem('auth_token', 'vocabulary-e2e-token'))
   await page.route('**/users/me/profile', (route) => route.fulfill({ json: { code: '0', data: { studyStage: 'college' } } }))
@@ -294,6 +298,7 @@ async function installApiMocks(
       return route.fulfill({ json: { code: '0', data: null } })
     }
     if (suffix === 'retry' || suffix === 'regenerate') {
+      if (suffix === blockedCardOperation) await blockedOperation
       return route.fulfill({ json: { code: '0', data: { jobUid: `job_${suffix}`, status: 'queued' } } })
     }
     if (suffix.startsWith('conflicts/')) {
@@ -310,7 +315,7 @@ async function installApiMocks(
     request.method === method && request.path.endsWith(pathSuffix)
   )).length
 
-  return { cards, requests, requestCount, systemThemes, userThemes }
+  return { cards, requests, requestCount, releaseBlockedOperation, systemThemes, userThemes }
 }
 
 function makeUserTheme(overrides: Partial<Theme> = {}): Theme {
@@ -387,6 +392,118 @@ async function expectNoHorizontalOverflow(page: Page) {
     body: document.body.scrollWidth <= window.innerWidth,
   }))).toEqual({ document: true, body: true })
 }
+
+async function expectDialogKeyboardContract(
+  page: Page,
+  dialog: Locator,
+  initialControl: Locator,
+  lastControl: Locator,
+  returnTarget: Locator,
+) {
+  const background = page.locator('.card-inspector__content')
+  await expect(background).toHaveAttribute('inert', '')
+  await expect(initialControl).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(lastControl).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(initialControl).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(background).not.toHaveAttribute('inert')
+  await expect(returnTarget).toBeFocused()
+}
+
+test('one pending card operation locks every competing action and prevents a second request', async ({ page }) => {
+  const lockedCard = makeCard({
+    cardUid: 'card_operation_lock',
+    status: 'failed',
+    generationStatus: 'failed',
+    generationOutcome: 'failed',
+    generationError: 'temporary generation failure',
+  })
+  const { requestCount, releaseBlockedOperation } = await installApiMocks(
+    page,
+    [lockedCard],
+    {},
+    [],
+    {},
+    {},
+    'regenerate',
+  )
+  await page.goto('/app/vocabulary/cards/card_operation_lock')
+
+  const regenerate = page.locator('.card-inspector__toolbar > button').filter({ hasText: /重新生成|生成中/ })
+  const retry = page.getByRole('button', { name: '重试生成' })
+  const edit = page.getByRole('button', { name: '编辑', exact: true })
+  const theme = page.getByLabel('重新生成主题')
+  const remove = page.getByRole('button', { name: '删除', exact: true })
+  await expect(regenerate).toBeEnabled()
+  await regenerate.click()
+  await expect.poll(() => requestCount('POST', '/regenerate')).toBe(1)
+
+  for (const control of [regenerate, retry, edit, theme, remove]) await expect(control).toBeDisabled()
+  await expect(page.getByRole('button', { name: '保存修改' })).toHaveCount(0)
+  await regenerate.evaluate((button: HTMLButtonElement) => button.click())
+  await retry.evaluate((button: HTMLButtonElement) => button.click())
+  await remove.evaluate((button: HTMLButtonElement) => button.click())
+  await page.waitForTimeout(100)
+  expect(requestCount('POST', '/regenerate')).toBe(1)
+  expect(requestCount('POST', '/retry')).toBe(0)
+  expect(requestCount('DELETE', '/cards/card_operation_lock')).toBe(0)
+
+  releaseBlockedOperation()
+  await expect(regenerate).toBeEnabled()
+})
+
+test('all Inspector dialogs provide keyboard focus trap inert background Escape and focus restoration', async ({ page }) => {
+  const regularCard = makeCard({ cardUid: 'card_dialogs', themeVersion: 0 })
+  const conflictCard = makeCard({
+    cardUid: 'card_dialog_conflict',
+    status: 'needs_review',
+    conflictStatus: 'needs_review',
+    candidateRevisionUid: 'rev_dialog_candidate',
+    candidateContent: { term: 'innovative', definitions: ['candidate definition'] },
+  })
+  await installApiMocks(page, [regularCard, conflictCard])
+  await page.goto('/app/vocabulary/cards/card_dialogs')
+
+  const regenerateTrigger = page.getByRole('button', { name: '重新生成', exact: true })
+  await expect(regenerateTrigger).toBeEnabled()
+  await regenerateTrigger.focus()
+  await page.keyboard.press('Enter')
+  const regenerateDialog = page.getByRole('dialog', { name: '使用最新主题版本？' })
+  await expectDialogKeyboardContract(
+    page,
+    regenerateDialog,
+    regenerateDialog.getByRole('button', { name: '取消' }),
+    regenerateDialog.getByRole('button', { name: '确认重新生成' }),
+    regenerateTrigger,
+  )
+
+  const deleteTrigger = page.getByRole('button', { name: '删除', exact: true })
+  await deleteTrigger.focus()
+  await page.keyboard.press('Enter')
+  const deleteDialog = page.getByRole('dialog', { name: '删除单词卡？' })
+  await expectDialogKeyboardContract(
+    page,
+    deleteDialog,
+    deleteDialog.getByRole('button', { name: '取消' }),
+    deleteDialog.getByRole('button', { name: '确认删除' }),
+    deleteTrigger,
+  )
+
+  await page.goto('/app/vocabulary/cards/card_dialog_conflict')
+  const conflictDialog = page.getByRole('dialog', { name: '发现版本冲突' })
+  await expect(conflictDialog).toHaveAttribute('aria-describedby', 'conflict-card-guidance')
+  await expect(page.locator('#conflict-card-guidance')).toContainText('先比较')
+  await expectDialogKeyboardContract(
+    page,
+    conflictDialog,
+    conflictDialog.getByRole('radio', { name: '保留当前内容' }),
+    conflictDialog.getByRole('button', { name: '确认处理' }),
+    page.getByRole('button', { name: '返回单词库' }),
+  )
+})
 
 test('creates a custom default theme, selects it from the shelf, and captures two words', async ({ page }) => {
   const errors = collectRuntimeErrors(page)

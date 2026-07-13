@@ -353,9 +353,10 @@ export function renderMarkdownDocument(
       const level = heading[1].length
       const headingText = heading[2].trim()
       if (level === 2 && resolvedOptions.headingAnchors) {
+        const sectionTitle = plainTextFromInlineMarkdown(headingText).trim() || '未命名章节'
         const section: MarkdownSection = {
           id: `markdown-section-${sections.length + 1}`,
-          title: plainTextFromInlineMarkdown(headingText),
+          title: sectionTitle,
           level: 2,
         }
         sections.push(section)

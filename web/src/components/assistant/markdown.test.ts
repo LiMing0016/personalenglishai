@@ -27,6 +27,17 @@ test('markdown document extracts ordered h2 sections with unique ids', () => {
   assert.match(document.html, /id="markdown-section-2"/)
 })
 
+test('markdown document gives image-only h2 sections a stable fallback title', () => {
+  const document = renderMarkdownDocument('## ![](https://example.com/card.png)', {
+    headingAnchors: true,
+  })
+
+  assert.deepEqual(document.sections, [
+    { id: 'markdown-section-1', title: '未命名章节', level: 2 },
+  ])
+  assert.match(document.html, /<h2 id="markdown-section-1">/)
+})
+
 test('renderAssistantMarkdown renders GFM tables as table elements', () => {
   const html = renderAssistantMarkdown(
     [
