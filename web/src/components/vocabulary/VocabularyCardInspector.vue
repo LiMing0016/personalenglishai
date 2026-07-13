@@ -37,7 +37,7 @@
       <button type="button" :disabled="themesQuery.isFetching.value" @click="themesQuery.refetch()">重新加载</button>
     </div>
     <p v-else-if="!activeThemes.length" class="card-inspector__theme-state">暂无可用主题</p>
-    <p v-if="card.generationError" class="card-inspector__error" role="alert">{{ card.generationError }}</p>
+    <p v-if="generationErrorMessage" class="card-inspector__error" role="alert">{{ generationErrorMessage }}</p>
 
     <div class="card-inspector__tabs" role="tablist" aria-label="单词卡内容">
       <button type="button" role="tab" :aria-selected="activeTab === 'details'" @click="activeTab = 'details'">卡片内容</button>
@@ -208,6 +208,12 @@ const displayCore = computed<VocabularyCoreContent>(() => {
     : minimalVocabularyCore(props.card.normalizedTerm)
 })
 const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
+const generationErrorMessage = computed(() => {
+  if (!props.card.generationError) return ''
+  return props.card.status === 'needs_review'
+    ? '主题内容待完善，可重新生成。'
+    : '生成未完成，请重试。'
+})
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
 const activeThemes = computed(() => {
   const catalog = themesQuery.data.value
