@@ -209,10 +209,16 @@ const displayCore = computed<VocabularyCoreContent>(() => {
 })
 const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
 const generationErrorMessage = computed(() => {
-  if (!props.card.generationError) return ''
-  return props.card.status === 'needs_review'
-    ? '主题内容待完善，可重新生成。'
-    : '生成未完成，请重试。'
+  if (props.card.generationOutcome === 'partial'
+      && props.card.warning === 'markdown_unavailable') {
+    return '主题内容待完善，可重新生成。'
+  }
+  if (props.card.generationOutcome === 'failed'
+      || props.card.generationStatus === 'failed'
+      || props.card.generationError) {
+    return '生成未完成，请重试。'
+  }
+  return ''
 })
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
 const activeThemes = computed(() => {

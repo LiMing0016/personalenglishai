@@ -73,11 +73,13 @@ class VocabularyGenerationWorkerTest {
         ArgumentCaptor<String> finalizationToken = ArgumentCaptor.forClass(String.class);
         verify(jobs).markRunning(eq("job_1"), claimToken.capture(), eq(300));
         verify(finalizer).finalizeSuccess(
-                eq(job), finalizationToken.capture(), any(VocabularyCardRevision.class), eq(false));
+                eq(job), finalizationToken.capture(), any(VocabularyCardRevision.class),
+                eq("complete"), eq(null));
         assertEquals(claimToken.getValue(), finalizationToken.getValue());
         InOrder order = org.mockito.Mockito.inOrder(generator, finalizer);
         order.verify(generator).generate(any(), anyList(), any(), eq("job_1"));
-        order.verify(finalizer).finalizeSuccess(eq(job), eq(claimToken.getValue()), any(), eq(false));
+        order.verify(finalizer).finalizeSuccess(
+                eq(job), eq(claimToken.getValue()), any(), eq("complete"), eq(null));
     }
 
     @Test
@@ -165,7 +167,8 @@ class VocabularyGenerationWorkerTest {
 
         worker.processPendingJobs(10);
 
-        verify(finalizer, never()).finalizeSuccess(any(), anyString(), any(), anyBoolean());
+        verify(finalizer, never()).finalizeSuccess(
+                any(), anyString(), any(), anyString(), any());
         verify(finalizer).finalizeFailure(
                 eq(job), anyString(), eq("INVALID_GENERATED_CONTENT"), anyString(), any(), eq(true));
     }
@@ -219,7 +222,8 @@ class VocabularyGenerationWorkerTest {
         worker.processPendingJobs(10);
 
         ArgumentCaptor<VocabularyCardRevision> revision = ArgumentCaptor.forClass(VocabularyCardRevision.class);
-        verify(finalizer).finalizeSuccess(eq(job), anyString(), revision.capture(), eq(false));
+        verify(finalizer).finalizeSuccess(
+                eq(job), anyString(), revision.capture(), eq("complete"), eq(null));
         assertEquals("theme_user_1", revision.getValue().getThemeUid());
         assertEquals(3, revision.getValue().getThemeVersion());
         assertEquals("record", objectMapper.readTree(revision.getValue().getCoreJson()).path("term").asText());
@@ -259,12 +263,13 @@ class VocabularyGenerationWorkerTest {
         when(generator.generate(any(), anyList(), any(), eq("job_partial")))
                 .thenReturn(new GeneratedVocabularyCard(
                         complete.core(), "", complete.contentFormatVersion(), complete.model(),
-                        "Markdown unavailable", true));
+                        "Markdown unavailable", true, "partial", "markdown_unavailable"));
 
         worker.processPendingJobs(10);
 
         verify(finalizer).finalizeSuccess(
-                eq(job), anyString(), any(VocabularyCardRevision.class), eq(true));
+                eq(job), anyString(), any(VocabularyCardRevision.class),
+                eq("partial"), eq("markdown_unavailable"));
     }
 
     private VocabularyThemeRevision themeRevision(String themeUid, int version) {

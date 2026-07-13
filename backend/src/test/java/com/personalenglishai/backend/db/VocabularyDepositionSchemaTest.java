@@ -97,4 +97,18 @@ class VocabularyDepositionSchemaTest {
                 () -> assertTrue(sql.contains("active_name"))
         );
     }
+
+    @Test
+    void reviewSemanticsMigrationAddsExplicitCandidateAndStableGenerationOutcome() throws Exception {
+        String sql = Files.readString(Path.of(
+                "src/main/resources/db/migrate_add_vocabulary_review_semantics.sql"));
+
+        assertAll(
+                () -> assertTrue(sql.contains("conflict_candidate_revision_uid VARCHAR(64) NULL")),
+                () -> assertTrue(sql.contains("generation_outcome VARCHAR(24) NULL")),
+                () -> assertTrue(sql.contains("warning VARCHAR(64) NULL")),
+                () -> assertTrue(sql.contains("information_schema.columns")),
+                () -> assertTrue(sql.contains("table_schema = DATABASE()"))
+        );
+    }
 }

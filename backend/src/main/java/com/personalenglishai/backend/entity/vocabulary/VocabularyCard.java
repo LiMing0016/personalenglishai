@@ -16,6 +16,7 @@ public class VocabularyCard {
     private Integer themeVersion;
     private String status;
     private String activeRevisionUid;
+    private String conflictCandidateRevisionUid;
     private LocalDateTime lastCapturedAt;
     private LocalDateTime deletedAt;
     private LocalDateTime createdAt;
@@ -47,6 +48,8 @@ public class VocabularyCard {
     public void setStatus(String status) { this.status = status; }
     public String getActiveRevisionUid() { return activeRevisionUid; }
     public void setActiveRevisionUid(String activeRevisionUid) { this.activeRevisionUid = activeRevisionUid; }
+    public String getConflictCandidateRevisionUid() { return conflictCandidateRevisionUid; }
+    public void setConflictCandidateRevisionUid(String conflictCandidateRevisionUid) { this.conflictCandidateRevisionUid = conflictCandidateRevisionUid; }
     public LocalDateTime getLastCapturedAt() { return lastCapturedAt; }
     public void setLastCapturedAt(LocalDateTime lastCapturedAt) { this.lastCapturedAt = lastCapturedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }

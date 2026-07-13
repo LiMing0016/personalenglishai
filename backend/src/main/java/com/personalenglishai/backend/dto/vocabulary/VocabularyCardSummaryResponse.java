@@ -17,6 +17,8 @@ public record VocabularyCardSummaryResponse(
         String conflictStatus,
         String generationStatus,
         String generationError,
+        String generationOutcome,
+        String warning,
         String phonetic,
         String coreDefinition,
         int sourceCount) {
@@ -35,7 +37,7 @@ public record VocabularyCardSummaryResponse(
             String conflictStatus) {
         this(cardUid, displayTerm, normalizedTerm, templateKey, status, activeRevisionUid,
                 sourceTypes, lastCapturedAt, updatedAt, candidateRevisionUid, conflictStatus,
-                null, null, null, null, 0);
+                null, null, null, null, null, null, 0);
     }
 
     public VocabularyCardSummaryResponse(
@@ -50,6 +52,6 @@ public record VocabularyCardSummaryResponse(
             LocalDateTime updatedAt) {
         this(cardUid, displayTerm, normalizedTerm, templateKey, status, activeRevisionUid,
                 sourceTypes, lastCapturedAt, updatedAt, null, "none",
-                null, null, null, null, 0);
+                null, null, null, null, null, null, 0);
     }
 }

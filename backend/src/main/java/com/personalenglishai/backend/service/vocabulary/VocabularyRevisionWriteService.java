@@ -32,11 +32,13 @@ public class VocabularyRevisionWriteService {
                 revision.getRevisionUid(),
                 "ready",
                 revision.getTemplateKey(),
-                revision.getTemplateVersion());
+                revision.getTemplateVersion(),
+                revision.getThemeUid(),
+                revision.getThemeVersion());
         if (activated == 1) {
             return WriteOutcome.ACTIVATED;
         }
-        if (cards.markConflictCandidate(card.getCardUid()) != 1) {
+        if (cards.markConflictCandidate(card.getCardUid(), revision.getRevisionUid()) != 1) {
             throw new IllegalStateException("stale vocabulary revision candidate could not be recorded");
         }
         return WriteOutcome.STALE;

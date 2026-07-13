@@ -60,9 +60,13 @@ public interface VocabularyCardMapper {
             @Param("revisionUid") String revisionUid,
             @Param("status") String status,
             @Param("templateKey") String templateKey,
-            @Param("templateVersion") int templateVersion);
+            @Param("templateVersion") int templateVersion,
+            @Param("themeUid") String themeUid,
+            @Param("themeVersion") Integer themeVersion);
 
-    int markConflictCandidate(@Param("cardUid") String cardUid);
+    int markConflictCandidate(
+            @Param("cardUid") String cardUid,
+            @Param("candidateRevisionUid") String candidateRevisionUid);
 
     int markGenerationFailed(@Param("cardUid") String cardUid, @Param("terminal") boolean terminal);
 

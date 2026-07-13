@@ -18,6 +18,8 @@ public record VocabularyCardDetailResponse(
         List<SourceItem> sources,
         String generationStatus,
         String generationError,
+        String generationOutcome,
+        String warning,
         LocalDateTime lastCapturedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
@@ -49,6 +51,7 @@ public record VocabularyCardDetailResponse(
             LocalDateTime updatedAt) {
         this(cardUid, displayTerm, normalizedTerm, language, templateKey, templateVersion, status,
                 activeRevisionUid, sourceTypes, content, sources, generationStatus, generationError,
+                null, null,
                 lastCapturedAt, createdAt, updatedAt, null, null, "none",
                 null, null, null, null, null);
     }

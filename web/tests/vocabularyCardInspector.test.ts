@@ -139,6 +139,14 @@ test('inspector retains legacy retry conflict and soft-delete behavior', () => {
   assert.doesNotMatch(inspector, /无法恢复这张单词卡|永久丢失/)
 })
 
+test('partial generation warning uses stable outcome fields instead of cleared errors', () => {
+  const warningBlock = inspector.match(/const generationErrorMessage = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
+  assert.match(warningBlock, /generationOutcome\s*===\s*['"]partial['"]/)
+  assert.match(warningBlock, /warning\s*===\s*['"]markdown_unavailable['"]/)
+  assert.match(warningBlock, /主题内容待完善，可重新生成。/)
+  assert.doesNotMatch(warningBlock, /!props\.card\.generationError/)
+})
+
 test('inspector styles stable editors and narrow screens without horizontal overflow', () => {
   assert.match(inspector, /min-width:\s*0/)
   assert.match(inspector, /overflow-wrap:\s*anywhere/)

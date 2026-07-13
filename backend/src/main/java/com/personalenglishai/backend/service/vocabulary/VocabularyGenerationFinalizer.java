@@ -32,14 +32,20 @@ public class VocabularyGenerationFinalizer {
             VocabularyGenerationJob job,
             String leaseToken,
             VocabularyCardRevision revision,
-            boolean partial) {
+            String generationOutcome,
+            String warning) {
         requireRevisionMatchesJob(job, revision);
+        boolean partial = "partial".equals(generationOutcome);
+        if (!partial && !"complete".equals(generationOutcome)) {
+            throw new IllegalArgumentException("generation outcome must be complete or partial");
+        }
         VocabularyCard card = cards.findByUidForUpdate(job.getCardUid());
         if (card == null || card.getDeletedAt() != null) {
             cancelOwned(job, leaseToken);
             return SuccessOutcome.CANCELLED;
         }
-        if (jobs.markSucceeded(job.getJobUid(), leaseToken, revision.getRevisionUid()) != 1) {
+        if (jobs.markSucceeded(
+                job.getJobUid(), leaseToken, revision.getRevisionUid(), generationOutcome, warning) != 1) {
             throw new LeaseLostException(job.getJobUid());
         }
 
@@ -60,7 +66,7 @@ public class VocabularyGenerationFinalizer {
             activate(card, currentRevisionUid, job, revision, activationStatus(partial));
             return successOutcome(partial);
         }
-        if (cards.markConflictCandidate(card.getCardUid()) != 1) {
+        if (cards.markConflictCandidate(card.getCardUid(), revision.getRevisionUid()) != 1) {
             throw new FinalizationConflictException(job.getJobUid());
         }
         return SuccessOutcome.NEEDS_REVIEW;
@@ -113,8 +119,10 @@ public class VocabularyGenerationFinalizer {
                 expectedRevisionUid,
                 revision.getRevisionUid(),
                 status,
-                job.getTemplateKey(),
-                job.getTemplateVersion());
+                revision.getTemplateKey(),
+                revision.getTemplateVersion(),
+                revision.getThemeUid(),
+                revision.getThemeVersion());
         if (updated != 1) {
             throw new FinalizationConflictException(job.getJobUid());
         }

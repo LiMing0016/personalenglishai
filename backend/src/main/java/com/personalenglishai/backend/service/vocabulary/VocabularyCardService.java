@@ -167,6 +167,8 @@ public class VocabularyCardService {
                 sourceItems,
                 latestJob == null ? null : latestJob.getStatus(),
                 latestJob == null ? null : latestJob.getErrorMessage(),
+                latestJob == null ? null : latestJob.getGenerationOutcome(),
+                latestJob == null ? null : latestJob.getWarning(),
                 card.getLastCapturedAt(),
                 card.getCreatedAt(),
                 card.getUpdatedAt(),
@@ -344,6 +346,8 @@ public class VocabularyCardService {
                 conflictStatus(card, candidate),
                 latestJob == null ? null : latestJob.getStatus(),
                 latestJob == null ? null : latestJob.getErrorMessage(),
+                latestJob == null ? null : latestJob.getGenerationOutcome(),
+                latestJob == null ? null : latestJob.getWarning(),
                 coreCodec.summaryPhonetic(active.core()),
                 coreCodec.summaryDefinition(active.core()),
                 sources.count());
@@ -498,10 +502,13 @@ public class VocabularyCardService {
         if (!"needs_review".equals(card.getStatus())) {
             return null;
         }
+        String candidateRevisionUid = card.getConflictCandidateRevisionUid();
+        if (candidateRevisionUid == null || candidateRevisionUid.isBlank()) {
+            return null;
+        }
         return history.stream()
                 .filter(revision -> Objects.equals(card.getCardUid(), revision.getCardUid()))
-                .filter(revision -> !Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()))
-                .filter(revision -> "ai".equals(revision.getAuthorType()) || "user".equals(revision.getAuthorType()))
+                .filter(revision -> Objects.equals(candidateRevisionUid, revision.getRevisionUid()))
                 .findFirst()
                 .orElse(null);
     }
@@ -579,7 +586,8 @@ public class VocabularyCardService {
             VocabularyCardRevision current,
             VocabularyCardRevision next) {
         if (cards.updateActiveRevision(userId, card.getCardUid(), current.getRevisionUid(), next.getRevisionUid(),
-                "ready", next.getTemplateKey(), next.getTemplateVersion()) != 1) {
+                "ready", next.getTemplateKey(), next.getTemplateVersion(),
+                next.getThemeUid(), next.getThemeVersion()) != 1) {
             throw conflictFor(userId, card.getCardUid());
         }
     }
@@ -751,14 +759,26 @@ public class VocabularyCardService {
         if (request != null && request.templateKey() != null && !request.templateKey().isBlank()) {
             return themeService.resolve(userId, null, request.templateKey());
         }
-        if (card.getThemeUid() != null && !card.getThemeUid().isBlank() && card.getThemeVersion() != null) {
-            String templateKey = card.getTemplateKey() == null || card.getTemplateKey().isBlank()
+        VocabularyCardRevision activeRevision = activeRevision(card);
+        String frozenThemeUid = activeRevision != null && activeRevision.getThemeUid() != null
+                ? activeRevision.getThemeUid()
+                : card.getThemeUid();
+        Integer frozenThemeVersion = activeRevision != null && activeRevision.getThemeVersion() != null
+                ? activeRevision.getThemeVersion()
+                : card.getThemeVersion();
+        String frozenTemplateKey = activeRevision != null
+                && activeRevision.getTemplateKey() != null
+                && !activeRevision.getTemplateKey().isBlank()
+                ? activeRevision.getTemplateKey()
+                : card.getTemplateKey();
+        if (frozenThemeUid != null && !frozenThemeUid.isBlank() && frozenThemeVersion != null) {
+            String templateKey = frozenTemplateKey == null || frozenTemplateKey.isBlank()
                     ? DEFAULT_TEMPLATE_KEY
-                    : card.getTemplateKey();
+                    : frozenTemplateKey;
             return new ResolvedVocabularyTheme(
-                    card.getThemeUid(), card.getThemeVersion(), "", "", "", 1, templateKey);
+                    frozenThemeUid, frozenThemeVersion, "", "", "", 1, templateKey);
         }
-        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
+        VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(frozenTemplateKey);
         return new ResolvedVocabularyTheme(
                 "theme_system_" + template.key(), 1, template.name(), "", "", 1, template.key());
     }

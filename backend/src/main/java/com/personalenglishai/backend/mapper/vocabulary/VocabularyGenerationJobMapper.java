@@ -27,7 +27,9 @@ public interface VocabularyGenerationJobMapper {
     int markSucceeded(
             @Param("jobUid") String jobUid,
             @Param("leaseToken") String leaseToken,
-            @Param("revisionUid") String revisionUid);
+            @Param("revisionUid") String revisionUid,
+            @Param("generationOutcome") String generationOutcome,
+            @Param("warning") String warning);
 
     int markFailed(
             @Param("jobUid") String jobUid,

@@ -93,6 +93,8 @@ class VocabularyCardServiceTest {
         VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_1", "card_1", null, 1);
         job.setStatus("failed");
         job.setErrorMessage("upstream timeout");
+        job.setGenerationOutcome("failed");
+        job.setWarning("generation_failed");
 
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of(ownedSource, foreignSource));
@@ -109,7 +111,59 @@ class VocabularyCardServiceTest {
         assertEquals("innovative", result.sources().get(0).metadata().get("selection").asText());
         assertEquals("failed", result.generationStatus());
         assertEquals("upstream timeout", result.generationError());
+        assertEquals("failed", result.generationOutcome());
+        assertEquals("generation_failed", result.warning());
         assertEquals(card.getCreatedAt(), result.createdAt());
+    }
+
+    @Test
+    void partialDetailDoesNotGuessAConflictCandidateFromRevisionHistory() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_partial");
+        card.setStatus("needs_review");
+        var partial = VocabularyTestFixtures.userRevision("rev_partial");
+        partial.setAuthorType("ai");
+        var unrelated = VocabularyTestFixtures.userRevision("rev_unrelated");
+        unrelated.setAuthorType("ai");
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_partial", "card_1", null, 1);
+        job.setStatus("succeeded");
+        job.setGenerationOutcome("partial");
+        job.setWarning("markdown_unavailable");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_partial")).thenReturn(partial);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(unrelated, partial));
+        when(jobs.findLatestByCard("card_1")).thenReturn(job);
+
+        var detail = service.getDetail(7L, "card_1");
+
+        assertNull(detail.candidateRevisionUid());
+        assertNull(detail.candidateContent());
+        assertEquals("none", detail.conflictStatus());
+        assertEquals("partial", detail.generationOutcome());
+        assertEquals("markdown_unavailable", detail.warning());
+    }
+
+    @Test
+    void detailUsesTheExplicitConflictCandidateEvenWhenHistoryOrderDiffers() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_exact");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var decoy = VocabularyTestFixtures.userRevision("rev_decoy");
+        decoy.setAuthorType("ai");
+        var exact = VocabularyTestFixtures.userRevision("rev_exact");
+        exact.setAuthorType("ai");
+        exact.setContentJson("{\"term\":\"record\",\"definitions\":[\"exact\"]}");
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(decoy, exact, current));
+
+        var detail = service.getDetail(7L, "card_1");
+
+        assertEquals("rev_exact", detail.candidateRevisionUid());
+        assertEquals("exact", detail.candidateContent().path("definitions").get(0).asText());
+        assertEquals("needs_review", detail.conflictStatus());
     }
 
     @Test
@@ -271,6 +325,7 @@ class VocabularyCardServiceTest {
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(staleSnapshot, currentCard);
         when(revisionWriter.appendAndActivate(eq(7L), eq(staleSnapshot), any())).thenAnswer(invocation -> {
             candidate.set(invocation.getArgument(2));
+            currentCard.setConflictCandidateRevisionUid(candidate.get().getRevisionUid());
             return VocabularyRevisionWriteService.WriteOutcome.STALE;
         });
         when(revisions.findRevision("rev_old")).thenReturn(VocabularyTestFixtures.userRevision("rev_old"));
@@ -340,6 +395,7 @@ class VocabularyCardServiceTest {
         VocabularyCard conflicted = VocabularyTestFixtures.ready(
                 "card_1", 7L, "record", current.getRevisionUid());
         conflicted.setStatus("needs_review");
+        conflicted.setConflictCandidateRevisionUid("rev_candidate");
         var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
         candidate.setAuthorType("ai");
         candidate.setBaseRevisionUid(current.getRevisionUid());
@@ -348,7 +404,7 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq(current.getRevisionUid()), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
         var mergedDefinitions = objectMapper.createArrayNode().add("merged legacy definition");
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
@@ -421,6 +477,7 @@ class VocabularyCardServiceTest {
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(stale, current);
         when(revisionWriter.appendAndActivate(eq(7L), eq(stale), any())).thenAnswer(invocation -> {
             candidate.set(invocation.getArgument(2));
+            current.setConflictCandidateRevisionUid(candidate.get().getRevisionUid());
             return VocabularyRevisionWriteService.WriteOutcome.STALE;
         });
         when(revisions.findRevision("rev_old")).thenReturn(VocabularyTestFixtures.userRevision("rev_old"));
@@ -497,6 +554,29 @@ class VocabularyCardServiceTest {
         verify(jobs).cancelActiveForCard("card_1");
         verify(jobs).insertJob(job.capture());
         assertEquals("rev_1", job.getValue().getBaseRevisionUid());
+    }
+
+    @Test
+    void regenerateWithoutBodyQueuesTheThemeFrozenOnTheActiveRevision() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_1");
+        card.setThemeUid("theme_stale_card");
+        card.setThemeVersion(1);
+        var active = VocabularyTestFixtures.userRevision("rev_1");
+        active.setTemplateKey("exam");
+        active.setTemplateVersion(1);
+        active.setThemeUid("theme_frozen_revision");
+        active.setThemeVersion(6);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_1")).thenReturn(active);
+
+        service.regenerate(7L, "card_1");
+
+        org.mockito.ArgumentCaptor<VocabularyGenerationJob> job =
+                org.mockito.ArgumentCaptor.forClass(VocabularyGenerationJob.class);
+        verify(jobs).insertJob(job.capture());
+        assertEquals("theme_frozen_revision", job.getValue().getThemeUid());
+        assertEquals(6, job.getValue().getThemeVersion());
+        assertEquals("exam", job.getValue().getTemplateKey());
     }
 
     @Test
@@ -595,6 +675,7 @@ class VocabularyCardServiceTest {
     void revisionsExposeCandidateContentAndConflictState() {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
         candidate.setAuthorType("ai");
@@ -615,6 +696,7 @@ class VocabularyCardServiceTest {
     void mergeConflictOnlyAcceptsTemplateFieldsAndCreatesSystemMergeRevision() throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
         candidate.setAuthorType("ai");
@@ -634,6 +716,7 @@ class VocabularyCardServiceTest {
     void mergeConflictAppendsSystemMergeRevisionAndUsesCurrentRevisionGuard() throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         current.setContentJson("""
                 {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"current"}
@@ -646,7 +729,7 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("merge_fields", Map.of(
@@ -665,6 +748,7 @@ class VocabularyCardServiceTest {
     void everyConflictChoiceAppendsGuardedSystemMergeRevision(String choice) throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         current.setContentJson("""
                 {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":["current"],"examples":[],"notes":"current"}
@@ -680,7 +764,7 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
         ResolveVocabularyConflictRequest request = "merge_fields".equals(choice)
                 ? new ResolveVocabularyConflictRequest(choice, Map.of(
                         "notes", objectMapper.getNodeFactory().textNode("merged")))
@@ -700,6 +784,7 @@ class VocabularyCardServiceTest {
     void keepCurrentPreservesLegacyTemplateFieldsWhenProjectionCoreExists() throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         ObjectNode legacy = VocabularyTestFixtures.legacyVocabularyContent(objectMapper);
         legacy.put("notes", "historical legacy notes");
@@ -713,7 +798,7 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("keep_current", null));
@@ -834,6 +919,7 @@ class VocabularyCardServiceTest {
     void acceptingNewFormatCandidatePreservesCoreMarkdownAndFrozenTheme() throws Exception {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
         ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
@@ -851,7 +937,7 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("use_ai", null));
@@ -866,10 +952,47 @@ class VocabularyCardServiceTest {
         assertEquals(2, revision.getValue().getContentFormatVersion());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"keep_current", "use_ai", "merge_fields"})
+    void everyConflictResolutionSynchronizesTheThemeOfItsActivatedRevision(String choice) {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
+        card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        current.setThemeUid("theme_current");
+        current.setThemeVersion(2);
+        current.setContentJson("""
+                {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"current"}
+                """);
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        candidate.setAuthorType("ai");
+        candidate.setThemeUid("theme_ai");
+        candidate.setThemeVersion(5);
+        candidate.setContentJson("""
+                {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"candidate"}
+                """);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        String expectedThemeUid = "use_ai".equals(choice) ? "theme_ai" : "theme_current";
+        int expectedThemeVersion = "use_ai".equals(choice) ? 5 : 2;
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion)))
+                .thenReturn(1);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest(choice, Map.of()));
+
+        verify(cards).updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion));
+    }
+
     @Test
     void conflictResolutionRejectsAnOlderNonCurrentCandidate() {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate_latest");
         var current = VocabularyTestFixtures.userRevision("rev_current");
         var latestCandidate = VocabularyTestFixtures.userRevision("rev_candidate_latest");
         latestCandidate.setAuthorType("ai");
@@ -888,7 +1011,7 @@ class VocabularyCardServiceTest {
 
         verify(revisions, never()).insertRevision(any());
         verify(cards, never()).updateActiveRevision(any(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), any(Integer.class));
+                anyString(), anyString(), any(Integer.class), any(), any());
     }
 
     private com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision newFormatConflictCurrent(
@@ -914,6 +1037,7 @@ class VocabularyCardServiceTest {
             boolean expectActivation) {
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
         card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
         var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
         candidate.setAuthorType("ai");
         candidate.setBaseRevisionUid("rev_current");
@@ -923,7 +1047,7 @@ class VocabularyCardServiceTest {
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         if (expectActivation) {
             when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                    eq("ready"), eq("basic"), eq(1))).thenReturn(1);
+                    eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3))).thenReturn(1);
         }
     }
 

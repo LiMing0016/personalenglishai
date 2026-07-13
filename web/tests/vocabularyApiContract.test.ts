@@ -59,6 +59,9 @@ test('adds theme selection and versioned card content without removing legacy fi
     /contentFormatVersion:\s*number\s*\|\s*null/,
     /currentContentFormatVersion\?:\s*number\s*\|\s*null/,
     /candidateContentFormatVersion\?:\s*number\s*\|\s*null/,
+    /type VocabularyGenerationOutcome = 'complete' \| 'partial' \| 'failed'/,
+    /generationOutcome:\s*VocabularyGenerationOutcome\s*\|\s*null/,
+    /warning:\s*string\s*\|\s*null/,
     /content:\s*unknown/,
     /useLatestThemeVersion\?:\s*boolean/,
   ]) {

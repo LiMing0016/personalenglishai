@@ -17,6 +17,8 @@ public class VocabularyGenerationJob {
     private String resultRevisionUid;
     private String errorCode;
     private String errorMessage;
+    private String generationOutcome;
+    private String warning;
     private LocalDateTime availableAt;
     private LocalDateTime startedAt;
     private String leaseToken;
@@ -53,6 +55,10 @@ public class VocabularyGenerationJob {
     public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+    public String getGenerationOutcome() { return generationOutcome; }
+    public void setGenerationOutcome(String generationOutcome) { this.generationOutcome = generationOutcome; }
+    public String getWarning() { return warning; }
+    public void setWarning(String warning) { this.warning = warning; }
     public LocalDateTime getAvailableAt() { return availableAt; }
     public void setAvailableAt(LocalDateTime availableAt) { this.availableAt = availableAt; }
     public LocalDateTime getStartedAt() { return startedAt; }

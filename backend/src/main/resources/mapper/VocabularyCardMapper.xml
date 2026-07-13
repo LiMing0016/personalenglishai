@@ -17,6 +17,7 @@
         <result column="theme_version" property="themeVersion"/>
         <result column="status" property="status"/>
         <result column="active_revision_uid" property="activeRevisionUid"/>
+        <result column="conflict_candidate_revision_uid" property="conflictCandidateRevisionUid"/>
         <result column="last_captured_at" property="lastCapturedAt"/>
         <result column="deleted_at" property="deletedAt"/>
         <result column="created_at" property="createdAt"/>
@@ -25,7 +26,8 @@
 
     <sql id="VocabularyCardColumns">
         id, card_uid, user_id, language, original_term, normalized_term, display_term,
-        template_key, template_version, theme_uid, theme_version, status, active_revision_uid, last_captured_at,
+        template_key, template_version, theme_uid, theme_version, status, active_revision_uid,
+        conflict_candidate_revision_uid, last_captured_at,
         deleted_at, created_at, updated_at
     </sql>
 
@@ -40,8 +42,15 @@
                     SELECT 1
                     FROM vocabulary_card_revision revision
                     WHERE revision.revision_uid = vocabulary_card.active_revision_uid
-                      AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(revision.content_json, '$.definitions')))
-                          LIKE CONCAT('%', LOWER(#{keyword}), '%')
+                      AND (JSON_SEARCH(
+                              revision.core_json,
+                              'one',
+                              CONCAT('%', CONVERT(#{keyword} USING utf8mb4) COLLATE utf8mb4_unicode_ci, '%'),
+                              NULL,
+                              '$.senses[*].meanings[*].definitionEn',
+                              '$.senses[*].meanings[*].definitionZh') IS NOT NULL
+                           OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(revision.content_json, '$.definitions')))
+                              LIKE CONCAT('%', LOWER(#{keyword}), '%'))
                  ))
         </if>
         <if test="status != null and status != ''">
@@ -155,6 +164,9 @@
             status = #{status},
             template_key = #{templateKey},
             template_version = #{templateVersion},
+            theme_uid = #{themeUid},
+            theme_version = #{themeVersion},
+            conflict_candidate_revision_uid = NULL,
             deleted_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE user_id = #{userId}
@@ -169,6 +181,7 @@
     <update id="markConflictCandidate">
         UPDATE vocabulary_card
         SET status = 'needs_review',
+            conflict_candidate_revision_uid = #{candidateRevisionUid},
             updated_at = CURRENT_TIMESTAMP
         WHERE card_uid = #{cardUid}
           AND deleted_at IS NULL

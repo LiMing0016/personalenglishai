@@ -6,6 +6,7 @@ import { http } from './http'
 export type VocabularyCardStatus = 'captured' | 'generating' | 'ready' | 'needs_review' | 'failed'
 export type VocabularyTemplateKey = 'basic' | 'exam' | 'reading'
 export type VocabularyConflictStatus = 'none' | 'needs_review'
+export type VocabularyGenerationOutcome = 'complete' | 'partial' | 'failed'
 
 export interface VocabularyTemplate {
   key: VocabularyTemplateKey
@@ -112,6 +113,8 @@ export interface VocabularyCardSummary {
   conflictStatus: VocabularyConflictStatus
   generationStatus: string | null
   generationError: string | null
+  generationOutcome: VocabularyGenerationOutcome | null
+  warning: string | null
   phonetic: string | null
   coreDefinition: string | null
   sourceCount: number

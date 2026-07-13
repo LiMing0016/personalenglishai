@@ -59,6 +59,8 @@ type Card = {
   sources: Array<Record<string, unknown>>
   generationStatus: string
   generationError: string | null
+  generationOutcome: 'complete' | 'partial' | 'failed' | null
+  warning: string | null
   createdAt: string
   candidateContent: CardContent | null
 }
@@ -114,6 +116,8 @@ function makeCard(overrides: Partial<Card> = {}): Card {
     }],
     generationStatus: 'ready',
     generationError: null,
+    generationOutcome: 'complete',
+    warning: null,
     createdAt: '2026-07-11T00:00:00Z',
     candidateContent: null,
     ...overrides,
@@ -453,7 +457,9 @@ test('Markdown generation failure keeps core content and a reviewable user-facin
     normalizedTerm: 'pragmatic',
     status: 'needs_review',
     generationStatus: 'succeeded',
-    generationError: 'AI output failed structured validation: markdown was empty',
+    generationError: null,
+    generationOutcome: 'partial',
+    warning: 'markdown_unavailable',
     core: {
       schemaVersion: 1,
       term: 'pragmatic',

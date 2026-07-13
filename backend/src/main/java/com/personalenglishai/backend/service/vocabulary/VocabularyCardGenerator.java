@@ -74,13 +74,15 @@ public final class VocabularyCardGenerator {
         if (markdown == null) {
             return new GeneratedVocabularyCard(
                     core, "", theme.contentFormatVersion(), valueOrEmpty(openAiClient.getModel()),
-                    "Generated validated core; Markdown unavailable", true);
+                    "Generated validated core; Markdown unavailable", true,
+                    "partial", "markdown_unavailable");
         }
 
         cache.put(cacheKey, new VocabularyGenerationCache.CachedGeneration(core, markdown), CACHE_TTL);
         return new GeneratedVocabularyCard(
                 core, markdown, theme.contentFormatVersion(), valueOrEmpty(openAiClient.getModel()),
-                "AI generated with " + valueOrEmpty(theme.name()), false);
+                "AI generated with " + valueOrEmpty(theme.name()), false,
+                "complete", null);
     }
 
     private DictionaryLookupResponse lookupDictionary(VocabularyCard card, String traceId) {
