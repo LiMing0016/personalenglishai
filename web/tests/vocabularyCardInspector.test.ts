@@ -116,6 +116,11 @@ test('inspector provides read and edit modes with polite save announcements', ()
   assert.match(inspector, /<template v-if="editing">[\s\S]*?<template v-else>/)
   const saveBlock = inspector.match(/async function save\([\s\S]*?\n\}\n\nfunction requestRegenerate/)?.[0] ?? ''
   assert.ok(saveBlock.indexOf("saveAnnouncement.value = '保存失败，请重试'") < saveBlock.indexOf('error instanceof VocabularyConflictError'))
+
+  const contentClose = inspector.indexOf('\n    </div>\n\n    <p class="card-inspector__save-announcement sr-only"')
+  const saveLiveRegion = inspector.indexOf('class="card-inspector__save-announcement sr-only"')
+  assert.ok(contentClose >= 0, 'the inert content wrapper has a stable closing boundary')
+  assert.ok(saveLiveRegion > contentClose, 'the save live region stays outside inert dialog background content')
 })
 
 test('inspector exposes the stable generation state matrix', () => {
@@ -194,6 +199,23 @@ test('inspector dialogs share focus trapping inert background and conflict guida
   assert.match(inspector, /deleteDialog/)
   assert.match(inspector, /conflictDialog/)
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]保存失败，请重试['"]/)
+  assert.match(inspector, /const conflictDialogOpen = ref\(false\)/)
+  assert.match(inspector, /v-if="conflict && conflictDialogOpen"/)
+  assert.match(inspector, /v-show="conflict && !conflictDialogOpen"[\s\S]*?>处理冲突</)
+
+  const closeConflictBlock = inspector.match(/function closeConflictDialog\([\s\S]*?\n\}/)?.[0] ?? ''
+  assert.match(closeConflictBlock, /conflictDialogOpen\.value\s*=\s*false/)
+  assert.doesNotMatch(closeConflictBlock, /conflict\.value\s*=\s*null/)
+
+  assert.match(inspector, /watch\(\s*\[activeDialog, cardOperationPending\]/)
+  const focusBlock = inspector.match(/async function focusActiveDialog\([\s\S]*?\n\}/)?.[0] ?? ''
+  assert.match(focusBlock, /cardOperationPending\.value/)
+  const restoreBlock = inspector.match(/async function restoreDialogFocus\([\s\S]*?\n\}/)?.[0] ?? ''
+  assert.match(restoreBlock, /cardOperationPending\.value/)
+  assert.ok(
+    restoreBlock.indexOf('target.focus()') < restoreBlock.indexOf('dialogReturnTarget = null'),
+    'the return target remains pending until focus restoration succeeds',
+  )
 })
 
 test('documented web verification retains capture and API contract suites', () => {

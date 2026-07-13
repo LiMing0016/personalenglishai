@@ -362,10 +362,43 @@ test('stale v1 conflict uses the 409 current format when the revision cache miss
 
   const dialog = page.getByRole('dialog', { name: '发现版本冲突' })
   await expect(dialog).toBeVisible()
-  await expect(page.locator('.card-inspector__save-announcement')).toHaveText('保存失败，请重试')
+  const saveAnnouncement = page.locator('.card-inspector__save-announcement')
+  await expect(saveAnnouncement).toHaveText('保存失败，请重试')
+  expect(await saveAnnouncement.evaluate((element) => (
+    element.closest('[inert], [aria-hidden="true"]') === null
+  ))).toBe(true)
   await expect(dialog.getByText('当前 Markdown')).toBeVisible()
+
+  const initialRadio = dialog.getByRole('radio', { name: '保留当前内容' })
+  const confirmConflict = dialog.getByRole('button', { name: '确认处理' })
+  await expect(initialRadio).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(confirmConflict).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(initialRadio).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '保存修改' })).toBeFocused()
+  const reopenConflict = page.getByRole('button', { name: '处理冲突' })
+  await expect(reopenConflict).toBeVisible()
+  await reopenConflict.focus()
+  await page.keyboard.press('Enter')
+  await expect(initialRadio).toBeFocused()
+  await expect(dialog.getByText('# Current')).toBeVisible()
+  await expect(dialog.getByText('# Candidate')).toBeVisible()
+
+  const cancelConflict = dialog.getByRole('button', { name: '取消' })
+  await cancelConflict.focus()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(reopenConflict).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(initialRadio).toBeFocused()
   await dialog.getByRole('radio', { name: '组合核心数据与 Markdown' }).check()
-  await dialog.getByRole('button', { name: '确认处理' }).click()
+  await confirmConflict.click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '返回单词库' })).toBeFocused()
 
   const resolveRequest = requests.find((request) => request.path.includes('/conflicts/rev_stale_candidate/'))
   expect(resolveRequest?.body).toMatchObject({

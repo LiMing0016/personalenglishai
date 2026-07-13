@@ -80,7 +80,9 @@
     <div v-if="generationState" class="card-inspector__generation" role="status" aria-live="polite">
       <span>{{ generationState.text }}</span>
     </div>
-    <p class="card-inspector__save-announcement sr-only" aria-live="polite">{{ saveAnnouncement }}</p>
+    <div v-show="conflict && !conflictDialogOpen" class="card-inspector__conflict-action">
+      <button type="button" :disabled="cardOperationPending" @click="openConflictDialog">处理冲突</button>
+    </div>
 
     <div v-if="editing" class="card-inspector__editor-document">
       <VocabularyMarkdownEditor v-model="editMarkdown" />
@@ -141,6 +143,8 @@
     <div v-else class="card-inspector__placeholder" aria-hidden="true"></div>
     </div>
 
+    <p class="card-inspector__save-announcement sr-only" aria-live="polite">{{ saveAnnouncement }}</p>
+
     <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="closeRegenerateDialog">
       <section ref="regenerateDialog" class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title" aria-describedby="regenerate-card-guidance">
         <h3 id="regenerate-card-title">使用最新主题版本？</h3>
@@ -165,7 +169,7 @@
       </section>
     </div>
 
-    <div v-if="conflict" class="card-inspector__dialog-backdrop" role="presentation">
+    <div v-if="conflict && conflictDialogOpen" class="card-inspector__dialog-backdrop" role="presentation">
       <section ref="conflictDialog" class="card-inspector__dialog card-inspector__dialog--conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-card-title" aria-describedby="conflict-card-guidance">
         <h3 id="conflict-card-title">发现版本冲突</h3>
         <p id="conflict-card-guidance">{{ v1Conflict ? '请先整体比较当前与候选 Markdown，再选择保留当前内容、使用 AI 新版本或组合内容，然后确认处理。' : '请先比较当前内容与 AI 新版本，再选择保留当前内容、使用 AI 新版本或逐字段合并，然后确认处理。' }}</p>
@@ -268,6 +272,7 @@ const conflictDialog = ref<HTMLElement | null>(null)
 const conflictInitialControl = ref<HTMLInputElement | null>(null)
 const saveAnnouncement = ref('')
 const conflict = ref<VocabularyConflictResponse | null>(null)
+const conflictDialogOpen = ref(false)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
 const mergeChoice = ref<MergeChoice>({})
 const draftIdentity = ref<VocabularyCardDraftIdentity>()
@@ -276,6 +281,8 @@ const activeSectionId = ref('core-information')
 const operationInFlight = ref(false)
 let observer: IntersectionObserver | undefined
 let dialogReturnTarget: HTMLElement | null = null
+let focusLifecycleToken = 0
+let componentMounted = false
 const intersectingSectionIds = new Set<string>()
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -310,7 +317,7 @@ const cardOperationPending = computed(() => (
   || props.deleteMutation.isPending.value
 ))
 const activeDialog = computed<InspectorDialog | null>(() => {
-  if (conflict.value) return 'conflict'
+  if (conflict.value && conflictDialogOpen.value) return 'conflict'
   if (regenerateConfirmationOpen.value) return 'regenerate'
   if (deleteDialogOpen.value) return 'delete'
   return null
@@ -461,7 +468,13 @@ function closeDeleteDialog() {
 
 function closeConflictDialog() {
   if (cardOperationPending.value) return
-  conflict.value = null
+  conflictDialogOpen.value = false
+}
+
+function openConflictDialog(event?: Event) {
+  if (!conflict.value || cardOperationPending.value || activeDialog.value) return
+  dialogReturnTarget = eventCurrentTarget(event) ?? backButton.value
+  conflictDialogOpen.value = true
 }
 
 function closeActiveDialog() {
@@ -485,16 +498,40 @@ function activeDialogInitialControl(): HTMLElement | null {
   return null
 }
 
+function canReceiveFocus(target: HTMLElement | null): target is HTMLElement {
+  return Boolean(target?.isConnected
+    && !target.hasAttribute('disabled')
+    && target.getClientRects().length > 0)
+}
+
 async function focusActiveDialog() {
+  const lifecycleToken = ++focusLifecycleToken
+  if (!componentMounted || cardOperationPending.value || !activeDialog.value) return
   await nextTick()
-  activeDialogInitialControl()?.focus()
+  if (!componentMounted
+      || lifecycleToken !== focusLifecycleToken
+      || cardOperationPending.value
+      || !activeDialog.value) return
+  const initialControl = activeDialogInitialControl()
+  if (canReceiveFocus(initialControl)) initialControl.focus()
 }
 
 async function restoreDialogFocus() {
+  const lifecycleToken = ++focusLifecycleToken
+  if (!componentMounted || activeDialog.value || cardOperationPending.value || !dialogReturnTarget) return
   await nextTick()
-  const target = dialogReturnTarget?.isConnected ? dialogReturnTarget : backButton.value
-  dialogReturnTarget = null
-  if (target?.isConnected && !target.hasAttribute('disabled')) target.focus()
+  if (!componentMounted
+      || lifecycleToken !== focusLifecycleToken
+      || activeDialog.value
+      || cardOperationPending.value
+      || !dialogReturnTarget) return
+  const preferredTarget = dialogReturnTarget
+  const target = canReceiveFocus(preferredTarget)
+    ? preferredTarget
+    : backButton.value
+  if (!canReceiveFocus(target)) return
+  target.focus()
+  if (document.activeElement === target) dialogReturnTarget = null
 }
 
 function trapDialogFocus(event: KeyboardEvent) {
@@ -614,8 +651,10 @@ function setConflict(nextConflict: VocabularyConflictResponse, returnTarget?: HT
   closeMoreMenu()
   dialogReturnTarget = returnTarget ?? backButton.value
   conflict.value = nextConflict
+  conflictDialogOpen.value = true
   conflictChoice.value = 'keep_current'
   resetMergeChoice()
+  void focusActiveDialog()
 }
 
 watch(
@@ -625,6 +664,12 @@ watch(
     const nextIdentity = { cardUid, activeRevisionUid }
     if (!shouldResetVocabularyCardDraft(draftIdentity.value, nextIdentity)) return
     const cardChanged = draftIdentity.value?.cardUid !== cardUid
+    if (cardChanged) {
+      focusLifecycleToken += 1
+      dialogReturnTarget = null
+      conflict.value = null
+      conflictDialogOpen.value = false
+    }
     draftIdentity.value = nextIdentity
     editMarkdown.value = cardMarkdown(props.card)
     markdownSections.value = []
@@ -664,6 +709,7 @@ watch(
       })
     } else {
       conflict.value = null
+      conflictDialogOpen.value = false
     }
   },
   { immediate: true, deep: true },
@@ -680,11 +726,12 @@ watch(() => themesQuery.data.value, (catalog) => {
 
 watch([v1Conflict, conflict], () => resetMergeChoice())
 watch(isNarrow, (narrow) => { if (!narrow) closeMoreMenu() })
-watch(activeDialog, (nextDialog, previousDialog) => {
+watch([activeDialog, cardOperationPending], ([nextDialog, operationPending], [previousDialog]) => {
   if (nextDialog) {
     dialogReturnTarget ??= backButton.value
-    void focusActiveDialog()
-  } else if (previousDialog) {
+    if (!operationPending) void focusActiveDialog()
+  } else if (previousDialog || dialogReturnTarget) {
+    if (operationPending) return
     void restoreDialogFocus()
   }
 }, { flush: 'post' })
@@ -698,12 +745,18 @@ watch(
 )
 
 onMounted(() => {
+  componentMounted = true
   window.addEventListener('keydown', handleKeydown)
   rebuildObserver()
-  if (activeDialog.value) void focusActiveDialog()
+  if (activeDialog.value) {
+    dialogReturnTarget ??= backButton.value
+    if (!cardOperationPending.value) void focusActiveDialog()
+  }
 })
 
 onBeforeUnmount(() => {
+  componentMounted = false
+  focusLifecycleToken += 1
   disconnectObserver()
   window.removeEventListener('keydown', handleKeydown)
   dialogReturnTarget = null
@@ -843,6 +896,7 @@ async function resolveConflict() {
           : { choice: conflictChoice.value },
       })
       conflict.value = null
+      conflictDialogOpen.value = false
       editing.value = false
       showToast('冲突已处理', 'success')
     } catch (error) { showToast(error instanceof Error ? error.message : '冲突处理失败，请重试', 'error') }
@@ -881,6 +935,7 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__more-menu .card-inspector__regenerate-theme { display: grid; }
 .card-inspector__more-menu select, .card-inspector__more-menu button { width: 100%; max-width: none; }
 .card-inspector__theme-state, .card-inspector__generation { min-width: 0; max-width: 1060px; display: flex; align-items: center; gap: 8px; margin: 10px auto 0; color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__conflict-action { min-width: 0; max-width: 1060px; margin: 10px auto 0; }
 .card-inspector__theme-state--error { color: #b91c1c; }
 .card-inspector__generation { padding: 10px 12px; border-left: 3px solid #34d399; background: #f0fdf4; color: #065f46; }
 .card-inspector__notebook { min-width: 0; max-width: 1060px; margin: 28px auto 0; }
