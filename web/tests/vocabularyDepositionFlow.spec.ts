@@ -3,6 +3,27 @@ import { expect, test, type Page } from '@playwright/test'
 test.use({ storageState: { cookies: [], origins: [] } })
 
 type CardContent = Record<string, unknown>
+type VocabularyCore = {
+  schemaVersion: 1
+  term: string
+  phonetics: Array<{ region: 'uk' | 'us' | 'other', text: string, audioUrl: string | null }>
+  senses: Array<{
+    partOfSpeech: string
+    meanings: Array<{ definitionEn: string, definitionZh: string }>
+  }>
+}
+type Theme = {
+  themeUid: string
+  ownerType: 'system' | 'user'
+  name: string
+  purpose: string
+  version: number
+  status: 'active' | 'disabled'
+  system: boolean
+  defaultTheme: boolean
+  recent: boolean
+  promptStrategyKey: string
+}
 type ConflictPayload = {
   currentRevisionUid: string
   candidateRevisionUid: string
@@ -30,6 +51,11 @@ type Card = {
   language: string
   templateVersion: number
   content: CardContent
+  theme: { themeUid: string, name: string, purpose: string } | null
+  themeVersion: number | null
+  core: VocabularyCore | null
+  markdown: string | null
+  contentFormatVersion: number | null
   sources: Array<Record<string, unknown>>
   generationStatus: string
   generationError: string | null
@@ -61,6 +87,19 @@ function makeCard(overrides: Partial<Card> = {}): Card {
       examples: ['The team proposed an innovative solution.'],
       notes: 'Original personal note.',
     },
+    theme: { themeUid: 'theme_system_general', name: '通用积累', purpose: '通用词汇积累' },
+    themeVersion: 1,
+    core: {
+      schemaVersion: 1,
+      term: 'innovative',
+      phonetics: [{ region: 'uk', text: '/ˈɪnəveɪtɪv/', audioUrl: null }],
+      senses: [{
+        partOfSpeech: 'adjective',
+        meanings: [{ definitionEn: 'using new ideas or methods', definitionZh: '创新的' }],
+      }],
+    },
+    markdown: '## 学习提示\n\nUse it for products, methods, and solutions.',
+    contentFormatVersion: 1,
     sources: [{
       sourceUid: 'source_1',
       sourceType: 'manual',
@@ -96,8 +135,17 @@ async function installApiMocks(
   page: Page,
   initialCards: Card[],
   updateConflicts: Record<string, ConflictPayload> = {},
+  initialUserThemes: Theme[] = [],
 ) {
   const cards = initialCards.map((card) => structuredClone(card))
+  const systemThemes: Theme[] = [{
+    themeUid: 'theme_system_general', ownerType: 'system', name: '通用积累', purpose: '通用词汇积累',
+    version: 1, status: 'active', system: true, defaultTheme: initialUserThemes.every((theme) => !theme.defaultTheme),
+    recent: false, promptStrategyKey: 'general-markdown-v1',
+  }]
+  const userThemes = initialUserThemes.map((theme) => structuredClone(theme))
+  let defaultThemeUid = userThemes.find((theme) => theme.defaultTheme)?.themeUid ?? 'theme_system_general'
+  let recentThemeUids = userThemes.filter((theme) => theme.recent).map((theme) => theme.themeUid)
   const requests: Array<{ method: string, path: string, body: unknown }> = []
 
   await page.addInitScript(() => localStorage.setItem('auth_token', 'vocabulary-e2e-token'))
@@ -117,17 +165,76 @@ async function installApiMocks(
         { key: 'reading', version: 1, name: '阅读卡片', fields: ['term', 'definitions', 'sourceContext'] },
       ], defaultTemplateKey: 'basic' } } })
     }
-    if (path.endsWith('/themes')) {
+    if (path.endsWith('/themes') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: {
-        systemThemes: [{
-          themeUid: 'theme_system_general', ownerType: 'system', name: '通用积累', purpose: '通用词汇积累',
-          version: 1, status: 'active', system: true, defaultTheme: true, recent: false,
-          promptStrategyKey: 'general',
-        }],
-        userThemes: [],
-        defaultThemeUid: 'theme_system_general',
-        recentThemeUids: [],
+        systemThemes,
+        userThemes,
+        defaultThemeUid,
+        recentThemeUids,
       } } })
+    }
+    if (path.endsWith('/themes') && method === 'POST') {
+      const payload = body as { name: string, purpose: string }
+      const theme: Theme = {
+        themeUid: `theme_user_${userThemes.length + 1}`,
+        ownerType: 'user',
+        name: payload.name,
+        purpose: payload.purpose,
+        version: 1,
+        status: 'active',
+        system: false,
+        defaultTheme: false,
+        recent: false,
+        promptStrategyKey: 'custom-markdown-v1',
+      }
+      userThemes.push(theme)
+      return route.fulfill({ json: { code: '0', data: theme } })
+    }
+    const themeMatch = path.match(/\/themes\/([^/]+)(?:\/(.*))?$/)
+    if (themeMatch) {
+      const theme = userThemes.find((item) => item.themeUid === themeMatch[1])
+      if (!theme) return route.fulfill({ status: 404, json: { code: '404', message: 'theme not found', data: null } })
+      const suffix = themeMatch[2] ?? ''
+      if (!suffix && method === 'PUT') {
+        const payload = body as { name: string, purpose: string }
+        theme.name = payload.name
+        theme.purpose = payload.purpose
+        theme.version += 1
+        return route.fulfill({ json: { code: '0', data: theme } })
+      }
+      if (suffix === 'default' && method === 'POST') {
+        for (const item of [...systemThemes, ...userThemes]) item.defaultTheme = item.themeUid === theme.themeUid
+        defaultThemeUid = theme.themeUid
+        recentThemeUids = [theme.themeUid, ...recentThemeUids.filter((uid) => uid !== theme.themeUid)]
+        theme.recent = true
+        return route.fulfill({ json: { code: '0', data: null } })
+      }
+    }
+    if (path.endsWith('/captures') && method === 'POST') {
+      const payload = body as { terms: string[], themeUid: string }
+      const selectedTheme = [...systemThemes, ...userThemes].find((theme) => theme.themeUid === payload.themeUid)!
+      const items = payload.terms.map((term, index) => {
+        const cardUid = `card_capture_${index + 1}`
+        cards.push(makeCard({
+          cardUid,
+          displayTerm: term,
+          normalizedTerm: term,
+          status: 'generating',
+          activeRevisionUid: '',
+          theme: {
+            themeUid: selectedTheme.themeUid,
+            name: selectedTheme.name,
+            purpose: selectedTheme.purpose,
+          },
+          themeVersion: selectedTheme.version,
+          core: null,
+          markdown: null,
+          contentFormatVersion: null,
+          generationStatus: 'pending',
+        }))
+        return { term, cardUid, action: 'created', status: 'generating' }
+      })
+      return route.fulfill({ json: { code: '0', data: { items } } })
     }
     if (path.endsWith('/cards') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: { items: cards, total: cards.length, page: 1, size: 20 } } })
@@ -144,7 +251,13 @@ async function installApiMocks(
         currentRevisionUid: card.activeRevisionUid,
         candidateRevisionUid: card.candidateRevisionUid,
         conflictStatus: card.conflictStatus,
-        items: [{ revisionUid: card.activeRevisionUid, baseRevisionUid: null, authorType: 'user', templateKey: 'basic', templateVersion: 1, content: card.content, changeSummary: '创建卡片', active: true, candidate: false, createdAt: card.createdAt }],
+        items: [{
+          revisionUid: card.activeRevisionUid, baseRevisionUid: null, authorType: 'user',
+          templateKey: 'basic', templateVersion: 1, content: card.content,
+          theme: card.theme, themeVersion: card.themeVersion, core: card.core, markdown: card.markdown,
+          contentFormatVersion: card.contentFormatVersion, changeSummary: '创建卡片', active: true,
+          candidate: false, createdAt: card.createdAt,
+        }],
       } } })
     }
     if (!suffix && method === 'PUT') {
@@ -155,7 +268,10 @@ async function installApiMocks(
           json: { code: '409030', message: 'revision conflict', data: updateConflict },
         })
       }
-      card.content = (body as { content: CardContent }).content
+      const payload = body as { content?: CardContent, core?: VocabularyCore, markdown?: string }
+      if (payload.content) card.content = payload.content
+      if (payload.core) card.core = payload.core
+      if (payload.markdown != null) card.markdown = payload.markdown
       return route.fulfill({ json: { code: '0', data: card } })
     }
     if (!suffix && method === 'DELETE') {
@@ -175,7 +291,23 @@ async function installApiMocks(
     return route.fulfill({ status: 404, json: { code: '404', message: `unmocked ${method} ${path}`, data: null } })
   })
 
-  return { cards, requests }
+  return { cards, requests, systemThemes, userThemes }
+}
+
+function makeUserTheme(overrides: Partial<Theme> = {}): Theme {
+  return {
+    themeUid: 'theme_user_product',
+    ownerType: 'user',
+    name: '产品英语',
+    purpose: '为产品方案积累准确、自然的表达。',
+    version: 1,
+    status: 'active',
+    system: false,
+    defaultTheme: false,
+    recent: true,
+    promptStrategyKey: 'custom-markdown-v1',
+    ...overrides,
+  }
 }
 
 test('stale v1 conflict uses the 409 current format when the revision cache misses it', async ({ page }) => {
@@ -225,8 +357,158 @@ async function expectCleanRuntime(page: Page, errors: string[]) {
   expect(errorToastCount).toBe(0)
   const redToasts = page.locator('#toast-container > div').filter({ hasText: /失败|错误|异常/ })
   await expect(redToasts).toHaveCount(0)
+  await expect(page.getByText(/AI output failed structured validation|stack trace|java\.lang\.|AxiosError/i)).toHaveCount(0)
   expect(errors).toEqual([])
 }
+
+async function expectNoHorizontalOverflow(page: Page) {
+  await expect.poll(() => page.evaluate(() => ({
+    document: document.documentElement.scrollWidth <= window.innerWidth,
+    body: document.body.scrollWidth <= window.innerWidth,
+  }))).toEqual({ document: true, body: true })
+}
+
+test('creates a custom default theme, selects it from the shelf, and captures two words', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const { requests } = await installApiMocks(page, [])
+
+  await page.goto('/app/vocabulary/themes')
+  await page.getByRole('button', { name: '新建主题' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建主题' })
+  await dialog.getByText('主题名称').locator('..').getByRole('textbox').fill('产品英语')
+  await dialog.getByText('用途说明').locator('..').getByRole('textbox').fill('为产品方案积累准确、自然的表达。')
+  await dialog.getByRole('button', { name: '保存主题' }).click()
+
+  const themeCard = page.getByRole('article').filter({ hasText: '产品英语' })
+  await expect(themeCard).toContainText('为产品方案积累准确、自然的表达。')
+  await themeCard.getByRole('button', { name: '设为默认' }).click()
+  await expect(themeCard.getByText('默认')).toBeVisible()
+
+  await page.goto('/app/vocabulary?tab=collection')
+  const shelfTheme = page.getByRole('button', { name: /产品英语.*默认主题/ })
+  await expect(shelfTheme).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('textbox', { name: '批量录入单词' }).fill('resilient\npragmatic')
+  await page.getByRole('button', { name: '按「产品英语」生成 2 张卡片' }).click()
+  await expect(page.getByRole('list', { name: '录入结果' })).toContainText('resilient')
+  await expect(page.getByRole('list', { name: '录入结果' })).toContainText('pragmatic')
+
+  const captureRequest = requests.find((request) => request.path.endsWith('/captures'))
+  expect(captureRequest?.body).toMatchObject({
+    terms: ['resilient', 'pragmatic'],
+    themeUid: 'theme_user_1',
+  })
+  await expectNoHorizontalOverflow(page)
+  await expectCleanRuntime(page, errors)
+})
+
+test('editing a theme freezes the old card version and regeneration uses the latest version', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const oldTheme = makeUserTheme()
+  const oldCard = makeCard({
+    cardUid: 'card_theme_v1',
+    displayTerm: 'resilient',
+    normalizedTerm: 'resilient',
+    theme: { themeUid: oldTheme.themeUid, name: oldTheme.name, purpose: oldTheme.purpose },
+    themeVersion: 1,
+    core: {
+      schemaVersion: 1,
+      term: 'resilient',
+      phonetics: [],
+      senses: [{ partOfSpeech: 'adjective', meanings: [{ definitionEn: 'able to recover quickly', definitionZh: '有韧性的' }] }],
+    },
+    markdown: '## v1 学习提示\n\nUse the original product-writing guidance.',
+  })
+  const { requests } = await installApiMocks(page, [oldCard], {}, [oldTheme])
+
+  await page.goto('/app/vocabulary/themes')
+  const themeCard = page.getByRole('article').filter({ hasText: '产品英语' })
+  await themeCard.getByRole('button', { name: '编辑' }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑主题' })
+  await dialog.getByText('用途说明').locator('..').getByRole('textbox').fill('聚焦产品发布、用户研究和路线图表达。')
+  await dialog.getByRole('button', { name: '保存主题' }).click()
+  await expect(themeCard).toContainText('聚焦产品发布、用户研究和路线图表达。')
+
+  await page.goto('/app/vocabulary/cards/card_theme_v1')
+  await expect(page.getByText('产品英语 · v1')).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveValue(/v1 学习提示/)
+  await page.getByRole('button', { name: '重新生成', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '使用最新主题版本？' })
+  await expect(confirmation).toContainText('当前版本会保留在历史中')
+  await confirmation.getByRole('button', { name: '确认重新生成' }).click()
+
+  expect(requests.find((request) => request.path.endsWith('/regenerate'))?.body).toEqual({
+    themeUid: oldTheme.themeUid,
+    useLatestThemeVersion: true,
+  })
+  await expect(page.getByText('产品英语 · v1')).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveValue(/v1 学习提示/)
+  await expectCleanRuntime(page, errors)
+})
+
+test('Markdown generation failure keeps core content and a reviewable user-facing state', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const partialCard = makeCard({
+    cardUid: 'card_partial_markdown',
+    displayTerm: 'pragmatic',
+    normalizedTerm: 'pragmatic',
+    status: 'needs_review',
+    generationStatus: 'succeeded',
+    generationError: 'AI output failed structured validation: markdown was empty',
+    core: {
+      schemaVersion: 1,
+      term: 'pragmatic',
+      phonetics: [{ region: 'uk', text: '/præɡˈmætɪk/', audioUrl: null }],
+      senses: [{ partOfSpeech: 'adjective', meanings: [{ definitionEn: 'dealing with problems practically', definitionZh: '务实的' }] }],
+    },
+    markdown: null,
+  })
+  await installApiMocks(page, [partialCard])
+
+  await page.goto('/app/vocabulary/cards/card_partial_markdown')
+  await expect(page.getByLabel('当前单词卡详情').getByText('待确认')).toBeVisible()
+  await expect(page.getByText('dealing with problems practically')).toBeVisible()
+  await expect(page.getByText('务实的')).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveValue('')
+  await expect(page.getByText('主题内容待完善')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expectCleanRuntime(page, errors)
+})
+
+test('legacy basic card remains readable and regenerates into the themed format', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const legacyCard = makeCard({
+    cardUid: 'card_legacy_basic',
+    displayTerm: 'legacy',
+    normalizedTerm: 'legacy',
+    theme: null,
+    themeVersion: null,
+    core: null,
+    markdown: null,
+    contentFormatVersion: null,
+    content: {
+      term: 'legacy',
+      phonetic: '/ˈleɡəsi/',
+      partOfSpeech: 'noun',
+      definitions: ['something handed down from the past'],
+      examples: ['The system preserves its legacy cards.'],
+    },
+  })
+  const { requests } = await installApiMocks(page, [legacyCard])
+
+  await page.goto('/app/vocabulary/cards/card_legacy_basic')
+  await expect(page.getByText('兼容卡片')).toBeVisible()
+  await expect(page.getByRole('region', { name: '单词卡详情' }).locator('h2')).toHaveText('legacy')
+  await expect(page.getByText('something handed down from the past')).toBeVisible()
+  await page.getByRole('button', { name: '重新生成', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '使用最新主题版本？' })
+  await confirmation.getByRole('button', { name: '确认重新生成' }).click()
+
+  expect(requests.find((request) => request.path.endsWith('/regenerate'))?.body).toEqual({
+    themeUid: 'theme_system_general',
+    useLatestThemeVersion: true,
+  })
+  await expectCleanRuntime(page, errors)
+})
 
 test('legacy word URL stays in collection and does not fetch a card detail', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
@@ -251,6 +533,11 @@ for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
       candidateRevisionUid: 'rev_candidate',
       content: { term: 'innovative', definitions: ['current definition'], examples: ['current example'], notes: 'current note' },
       candidateContent: { term: 'innovative', definitions: ['AI definition'], usage: 'AI usage' },
+      theme: null,
+      themeVersion: null,
+      core: null,
+      markdown: null,
+      contentFormatVersion: null,
     })
     const { requests } = await installApiMocks(page, [reviewCard])
 
@@ -287,17 +574,17 @@ for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
   })
 }
 
-test('card commands, source/history tabs, cancel reset, and delete confirmation are operable', async ({ page }) => {
+test('card commands, source/history tabs, Markdown cancel reset, and delete confirmation are operable', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   const failedCard = makeCard({ cardUid: 'card_failed', status: 'failed', generationStatus: 'failed', generationError: 'temporary generation failure' })
   const { requests } = await installApiMocks(page, [failedCard])
   await page.goto('/app/vocabulary/cards/card_failed')
 
-  await page.getByRole('button', { name: '编辑卡片' }).click()
-  await page.getByLabel('个人笔记').fill('Unsaved note')
+  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await page.getByLabel('Markdown 内容').fill('Unsaved Markdown')
   await page.getByRole('button', { name: '取消编辑' }).click()
-  await page.getByRole('button', { name: '编辑卡片' }).click()
-  await expect(page.getByLabel('个人笔记')).toHaveValue('Original personal note.')
+  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await expect(page.getByLabel('Markdown 内容')).toHaveValue(/学习提示/)
   await page.getByRole('button', { name: '取消编辑' }).click()
 
   await page.getByRole('tab', { name: '来源' }).click()
@@ -306,11 +593,13 @@ test('card commands, source/history tabs, cancel reset, and delete confirmation 
   await expect(page.getByText('创建卡片')).toBeVisible()
 
   await page.getByRole('button', { name: '重试生成' }).click()
-  await page.getByLabel('重新生成模板').selectOption('exam')
-  await page.getByRole('button', { name: '重新生成' }).click()
+  await page.getByRole('button', { name: '重新生成', exact: true }).click()
   await expect.poll(() => requests.filter((request) => request.path.endsWith('/retry')).length).toBe(1)
   await expect.poll(() => requests.filter((request) => request.path.endsWith('/regenerate')).length).toBe(1)
-  expect(requests.find((request) => request.path.endsWith('/regenerate'))?.body).toEqual({ templateKey: 'exam' })
+  expect(requests.find((request) => request.path.endsWith('/regenerate'))?.body).toEqual({
+    themeUid: 'theme_system_general',
+    useLatestThemeVersion: true,
+  })
 
   await page.getByRole('button', { name: '删除' }).click()
   await expect(page.getByRole('dialog', { name: '删除单词卡？' })).toBeVisible()
@@ -333,7 +622,7 @@ for (const { name, viewport } of [
     const errors = collectRuntimeErrors(page)
     await installApiMocks(page, [makeCard()])
     await page.goto('/app/vocabulary/cards/card_ready')
-    await expect(page.getByRole('heading', { name: 'innovative' })).toBeVisible()
+    await expect(page.getByRole('region', { name: '单词卡详情' }).locator('h2')).toHaveText('innovative')
 
     const navButtons = page.locator('.vocabulary-nav button')
     for (let index = 0; index < await navButtons.count(); index += 1) {
@@ -344,7 +633,7 @@ for (const { name, viewport } of [
       expect(metrics.whiteSpace).toBe('nowrap')
       expect(metrics.flexShrink).toBe('0')
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false)
+    await expectNoHorizontalOverflow(page)
     await expectCleanRuntime(page, errors)
     await page.screenshot({ path: `test-results/vocabulary-deposition-${name}.png`, fullPage: true })
   })

@@ -167,6 +167,7 @@ export default defineConfig({
             { text: '学习助手 Agent 编排', link: '/agent/学习助手Agent编排架构' },
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
             { text: 'Prompt 管理', link: '/ai/prompt-management' },
+            { text: '主题化单词卡 Prompt', link: '/ai/vocabulary-theme-prompts' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
           ]
         }

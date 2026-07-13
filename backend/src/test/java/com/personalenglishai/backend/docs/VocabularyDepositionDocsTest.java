@@ -43,4 +43,80 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("同一条 MySQL 多表更新")),
                 () -> assertFalse(docs.contains("PaddleOCR")));
     }
+
+    @Test
+    void architectureDescribesThemeContentMigrationAndRollbackContracts() throws Exception {
+        String architecture = Files.readString(Path.of("../docs/architecture/vocabulary-deposition.md"));
+
+        assertAll(
+                () -> assertTrue(architecture.contains("migrate_add_vocabulary_themes_and_markdown_cards.sql")),
+                () -> assertTrue(architecture.contains("owner_type")),
+                () -> assertTrue(architecture.contains("系统主题只读")),
+                () -> assertTrue(architecture.contains("用户只能管理自己的主题")),
+                () -> assertTrue(architecture.contains("vocabulary_theme_revision")),
+                () -> assertTrue(architecture.contains("user_vocabulary_theme_recent")),
+                () -> assertTrue(architecture.contains("theme_uid")),
+                () -> assertTrue(architecture.contains("theme_version")),
+                () -> assertTrue(architecture.contains("core_json")),
+                () -> assertTrue(architecture.contains("content_markdown")),
+                () -> assertTrue(architecture.contains("content_format_version")),
+                () -> assertTrue(architecture.contains("核心事实")),
+                () -> assertTrue(architecture.contains("扩展内容")),
+                () -> assertTrue(architecture.contains("`basic` -> `theme_system_basic`")),
+                () -> assertTrue(architecture.contains("`exam` -> `theme_system_exam`")),
+                () -> assertTrue(architecture.contains("`reading` -> `theme_system_reading`")),
+                () -> assertTrue(architecture.contains("先执行 `migrate_create_vocabulary_deposition_tables.sql`")),
+                () -> assertTrue(architecture.contains("再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`")),
+                () -> assertTrue(architecture.contains("旧卡继续冻结在旧主题版本")),
+                () -> assertTrue(architecture.contains("Markdown 生成失败")),
+                () -> assertTrue(architecture.contains("core_json 仍可见")),
+                () -> assertTrue(architecture.contains("needs_review")),
+                () -> assertTrue(architecture.contains("回滚不删除主题表或新格式 revision")));
+    }
+
+    @Test
+    void aiDocsDescribePromptSafetyPrecedenceObservabilityAndFailureModes() throws Exception {
+        String prompts = Files.readString(Path.of("../docs/ai/vocabulary-theme-prompts.md"));
+
+        assertAll(
+                () -> assertTrue(prompts.contains("basic-markdown-v1")),
+                () -> assertTrue(prompts.contains("exam-markdown-v1")),
+                () -> assertTrue(prompts.contains("reading-markdown-v1")),
+                () -> assertTrue(prompts.contains("custom-markdown-v1")),
+                () -> assertTrue(prompts.contains("<theme-purpose>")),
+                () -> assertTrue(prompts.contains("</theme-purpose>")),
+                () -> assertTrue(prompts.contains("&lt;")),
+                () -> assertTrue(prompts.contains("&gt;")),
+                () -> assertTrue(prompts.contains("&amp;")),
+                () -> assertTrue(prompts.contains("数据，不是指令")),
+                () -> assertTrue(prompts.contains("20,000")),
+                () -> assertTrue(prompts.contains("词典结果优先")),
+                () -> assertTrue(prompts.contains("词典没有音标和释义")),
+                () -> assertTrue(prompts.contains("AI 不得改写 core")),
+                () -> assertTrue(prompts.contains("traceId")),
+                () -> assertTrue(prompts.contains("reasonType")),
+                () -> assertTrue(prompts.contains("jobUid")),
+                () -> assertTrue(prompts.contains("cardUid")),
+                () -> assertTrue(prompts.contains("code")),
+                () -> assertTrue(prompts.contains("attempt")),
+                () -> assertTrue(prompts.contains("terminal")),
+                () -> assertTrue(prompts.contains("不得记录原始 purpose 或 sourceContext")),
+                () -> assertTrue(prompts.contains("DICTIONARY_LOOKUP_FAILED")),
+                () -> assertTrue(prompts.contains("CORE_CONTENT_UNAVAILABLE")),
+                () -> assertTrue(prompts.contains("Markdown 失败只降级扩展内容")),
+                () -> assertTrue(prompts.contains("needs_review")));
+    }
+
+    @Test
+    void currentDocsNavigationLinksPromptGuideWithoutPublishingPlans() throws Exception {
+        String docsIndex = Files.readString(Path.of("../docs/index.md"));
+        String aiIndex = Files.readString(Path.of("../docs/ai/index.md"));
+        String vitepressConfig = Files.readString(Path.of("../docs/.vitepress/config.ts"));
+
+        assertAll(
+                () -> assertTrue(docsIndex.contains("./ai/vocabulary-theme-prompts.md")),
+                () -> assertTrue(aiIndex.contains("./vocabulary-theme-prompts.md")),
+                () -> assertTrue(vitepressConfig.contains("/ai/vocabulary-theme-prompts")),
+                () -> assertFalse(vitepressConfig.contains("/superpowers/plans/")));
+    }
 }

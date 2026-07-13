@@ -2,13 +2,14 @@
 title: AI
 status: active
 owner: project
-last_updated: 2026-05-18
+last_updated: 2026-07-13
 review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/ai/
   - backend/src/main/java/com/personalenglishai/backend/service/writing/
   - python/ai_orchestrator/
-related_docs: []
+related_docs:
+  - docs/architecture/vocabulary-deposition.md
 ---
 
 # AI
@@ -25,4 +26,5 @@ AI 文档记录评分、语法检查、Prompt 组装、助手路由、输出契�
 - [Agent 产品现状与路线图](../agent/Agent产品现状与路线图.md)
 - [助手输出格式](./assistant-output-format.md)
 - [Prompt 管理与远程发布](./prompt-management.md)
+- [主题化单词卡 Prompt](./vocabulary-theme-prompts.md)
 - [OpenAI Agents 请求架构](./openai-agents-request-architecture.md)
