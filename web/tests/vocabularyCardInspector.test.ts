@@ -88,6 +88,10 @@ test('new format conflicts compare markdown as a whole and legacy revisions keep
   assert.match(inspector, /keep_current/)
   assert.match(inspector, /use_ai/)
   assert.match(inspector, /merge_fields/)
+  assert.match(inspector, /schemaVersion:\s*source\.schemaVersion/)
+  assert.match(inspector, /phonetics:\s*source\.phonetics/)
+  assert.match(inspector, /senses:\s*source\.senses/)
+  assert.doesNotMatch(inspector, /\{\s*\.\.\.source,\s*term:/, 'compatibility-only markdown must not leak into core')
 })
 
 test('conflict format follows the backend current revision shape check', async () => {

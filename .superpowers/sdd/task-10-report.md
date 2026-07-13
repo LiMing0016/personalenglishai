@@ -58,3 +58,9 @@
 
 - The mocked Chromium regression exercises the actual stale conflict dialog and resolve request. It does not replace an authenticated integration run against a live backend or broad visual screenshot regression.
 - Legacy projection intentionally handles the established `phonetic`, `partOfSpeech`, and `definitions` shapes. Unknown historical extension fields remain outside the v1 core instead of being guessed in the component.
+
+## Final Review Fix
+
+- A v1 conflict compatibility object is now projected to the exact core keys (`schemaVersion`, `term`, `phonetics`, `senses`), so compatibility-only `markdown` cannot leak into strict core validation.
+- Conflict format-version fields remain additive and are optional in the TypeScript DTO, preserving compatibility with older 409 fixtures and servers.
+- Fresh validation: 15 focused API/inspector tests passed and the production web build passed.

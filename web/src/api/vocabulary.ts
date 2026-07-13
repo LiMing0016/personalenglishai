@@ -214,8 +214,8 @@ export interface VocabularyConflictResponse {
   candidateRevisionUid: string | null
   currentContent: unknown
   candidateContent: unknown
-  currentContentFormatVersion: number | null
-  candidateContentFormatVersion: number | null
+  currentContentFormatVersion?: number | null
+  candidateContentFormatVersion?: number | null
   conflictStatus: VocabularyConflictStatus
 }
 

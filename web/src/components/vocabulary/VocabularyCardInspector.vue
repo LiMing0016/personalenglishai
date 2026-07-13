@@ -267,7 +267,12 @@ function conflictCore(revisionUid: string | null, content: unknown): VocabularyC
   const revisionCore = revisionFor(revisionUid)?.core
   const source = revisionCore ?? (isCoreContent(content) ? content : null)
   return source
-    ? { ...source, term: props.card.normalizedTerm }
+    ? {
+        schemaVersion: source.schemaVersion,
+        term: props.card.normalizedTerm,
+        phonetics: source.phonetics,
+        senses: source.senses,
+      }
     : displayCore.value
 }
 
