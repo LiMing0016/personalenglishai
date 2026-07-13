@@ -35,7 +35,8 @@ for (const requiredText of [
   '全部来源',
   'A-Z',
   '最近沉淀',
-  '重新生成模板',
+  '重新生成主题',
+  '使用最新主题版本？',
   '再次收藏或录入时可恢复',
 ]) {
   assert.ok(composedSource.includes(requiredText), `vocabulary learning page should render ${requiredText}`)
