@@ -67,3 +67,17 @@ test('vocabulary card queries no longer load legacy templates', () => {
   assert.doesNotMatch(vocabularyCards, /listVocabularyTemplates/)
   assert.doesNotMatch(vocabularyCards, /templateQuery/)
 })
+
+test('vocabulary card query retries stop for unavailable details and stay bounded otherwise', async () => {
+  const cards = await import('../src/composables/useVocabularyCards.ts')
+  const shouldRetry = (cards as Record<string, unknown>).shouldRetryVocabularyCardQuery
+  assert.equal(typeof shouldRetry, 'function')
+  const retry = shouldRetry as (failureCount: number, error: unknown) => boolean
+  const axiosError = (status: number) => ({ response: { status } })
+
+  assert.equal(retry(0, axiosError(403)), false)
+  assert.equal(retry(0, axiosError(404)), false)
+  assert.equal(retry(0, axiosError(500)), true)
+  assert.equal(retry(2, new Error('temporary network failure')), true)
+  assert.equal(retry(3, new Error('temporary network failure')), false)
+})

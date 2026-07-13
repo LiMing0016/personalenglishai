@@ -1,5 +1,6 @@
 import { computed, type Ref } from 'vue'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import type { AxiosError } from 'axios'
 
 import {
   captureVocabulary,
@@ -22,6 +23,12 @@ import { isVocabularyGenerationActive } from '@/features/vocabulary/generationPo
 const POLL_INTERVAL_MS = 2000
 const VOCABULARY_CORE_MAX_SCALAR_LENGTH = 2_000
 const VOCABULARY_CORE_MAX_MEANINGS = 30
+
+export function shouldRetryVocabularyCardQuery(failureCount: number, error: unknown): boolean {
+  const status = (error as AxiosError | null | undefined)?.response?.status
+  if (status === 403 || status === 404) return false
+  return failureCount < 3
+}
 
 export interface VocabularyCardDraftIdentity {
   cardUid: string
@@ -148,6 +155,7 @@ export function useVocabularyCards(
     queryKey: computed(() => ['vocabulary', 'card', selectedCardUid.value]),
     queryFn: () => getVocabularyCard(selectedCardUid.value!),
     enabled: computed(() => Boolean(selectedCardUid.value)),
+    retry: shouldRetryVocabularyCardQuery,
     refetchInterval: (query) => query.state.data && isVocabularyGenerationActive(query.state.data)
       ? POLL_INTERVAL_MS
       : false,
@@ -156,7 +164,10 @@ export function useVocabularyCards(
   const revisionsQuery = useQuery({
     queryKey: computed(() => ['vocabulary', 'card', selectedCardUid.value, 'revisions']),
     queryFn: () => listVocabularyRevisions(selectedCardUid.value!),
-    enabled: computed(() => Boolean(selectedCardUid.value)),
+    enabled: computed(() => Boolean(
+      selectedCardUid.value && detailQuery.data.value?.cardUid === selectedCardUid.value,
+    )),
+    retry: shouldRetryVocabularyCardQuery,
   })
 
   async function invalidateCardQueries(cardUid?: string) {

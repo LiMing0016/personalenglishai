@@ -33,6 +33,7 @@ type ConflictPayload = {
   candidateContentFormatVersion: number | null
   conflictStatus: 'needs_review'
 }
+type DetailStatusSequences = Record<string, number[]>
 type Card = {
   cardUid: string
   displayTerm: string
@@ -140,6 +141,7 @@ async function installApiMocks(
   initialCards: Card[],
   updateConflicts: Record<string, ConflictPayload> = {},
   initialUserThemes: Theme[] = [],
+  detailStatusSequences: DetailStatusSequences = {},
 ) {
   const cards = initialCards.map((card) => structuredClone(card))
   const systemThemes: Theme[] = [{
@@ -151,6 +153,7 @@ async function installApiMocks(
   let defaultThemeUid = userThemes.find((theme) => theme.defaultTheme)?.themeUid ?? 'theme_system_general'
   let recentThemeUids = userThemes.filter((theme) => theme.recent).map((theme) => theme.themeUid)
   const requests: Array<{ method: string, path: string, body: unknown }> = []
+  const detailAttempts = new Map<string, number>()
 
   await page.addInitScript(() => localStorage.setItem('auth_token', 'vocabulary-e2e-token'))
   await page.route('**/users/me/profile', (route) => route.fulfill({ json: { code: '0', data: { studyStage: 'college' } } }))
@@ -162,13 +165,6 @@ async function installApiMocks(
     const body = route.request().postDataJSON?.() ?? null
     requests.push({ method, path, body })
 
-    if (path.endsWith('/templates')) {
-      return route.fulfill({ json: { code: '0', data: { items: [
-        { key: 'basic', version: 1, name: '基础卡片', fields: ['term', 'definitions', 'examples', 'usage'] },
-        { key: 'exam', version: 1, name: '考试卡片', fields: ['term', 'definitions', 'examples', 'examTips'] },
-        { key: 'reading', version: 1, name: '阅读卡片', fields: ['term', 'definitions', 'sourceContext'] },
-      ], defaultTemplateKey: 'basic' } } })
-    }
     if (path.endsWith('/themes') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: {
         systemThemes,
@@ -248,8 +244,18 @@ async function installApiMocks(
     const suffix = match?.[2] ?? ''
     const card = cards.find((item) => item.cardUid === cardUid)
 
+    if (!suffix && method === 'GET' && cardUid) {
+      const attempt = detailAttempts.get(cardUid) ?? 0
+      detailAttempts.set(cardUid, attempt + 1)
+      const sequence = detailStatusSequences[cardUid]
+      const status = sequence?.[Math.min(attempt, sequence.length - 1)] ?? 200
+      if (status !== 200) {
+        return route.fulfill({ status, json: { code: String(status), message: `detail failed with ${status}`, data: null } })
+      }
+      if (!card) return route.fulfill({ status: 404, json: { code: '404', message: 'card not found', data: null } })
+      return route.fulfill({ json: { code: '0', data: card } })
+    }
     if (!card) return route.fulfill({ status: 404, json: { code: '404', message: 'card not found', data: null } })
-    if (!suffix && method === 'GET') return route.fulfill({ json: { code: '0', data: card } })
     if (suffix === 'revisions') {
       return route.fulfill({ json: { code: '0', data: {
         currentRevisionUid: card.activeRevisionUid,
@@ -295,7 +301,11 @@ async function installApiMocks(
     return route.fulfill({ status: 404, json: { code: '404', message: `unmocked ${method} ${path}`, data: null } })
   })
 
-  return { cards, requests, systemThemes, userThemes }
+  const requestCount = (method: string, pathSuffix: string) => requests.filter((request) => (
+    request.method === method && request.path.endsWith(pathSuffix)
+  )).length
+
+  return { cards, requests, requestCount, systemThemes, userThemes }
 }
 
 function makeUserTheme(overrides: Partial<Theme> = {}): Theme {
@@ -393,8 +403,8 @@ test('creates a custom default theme, selects it from the shelf, and captures tw
   await expect(shelfTheme).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('textbox', { name: '批量录入单词' }).fill('resilient\npragmatic')
   await page.getByRole('button', { name: '按「产品英语」生成 2 张卡片' }).click()
-  await expect(page.getByRole('list', { name: '录入结果' })).toContainText('resilient')
-  await expect(page.getByRole('list', { name: '录入结果' })).toContainText('pragmatic')
+  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/card_capture_1$/)
+  await expect(page.locator('.card-inspector h2')).toHaveText('resilient')
 
   const captureRequest = requests.find((request) => request.path.endsWith('/captures'))
   expect(captureRequest?.body).toMatchObject({
@@ -471,7 +481,7 @@ test('Markdown generation failure keeps core content and a reviewable user-facin
   await installApiMocks(page, [partialCard])
 
   await page.goto('/app/vocabulary/cards/card_partial_markdown')
-  await expect(page.getByLabel('当前单词卡详情').getByText('待确认')).toBeVisible()
+  await expect(page.locator('.card-inspector').getByText('待确认')).toBeVisible()
   await expect(page.getByText('dealing with problems practically')).toBeVisible()
   await expect(page.getByText('务实的')).toBeVisible()
   await expect(page.getByLabel('Markdown 内容')).toHaveValue('')
@@ -503,7 +513,7 @@ test('legacy basic card remains readable and regenerates into the themed format'
 
   await page.goto('/app/vocabulary/cards/card_legacy_basic')
   await expect(page.getByText('兼容卡片')).toBeVisible()
-  await expect(page.getByRole('region', { name: '单词卡详情' }).locator('h2')).toHaveText('legacy')
+  await expect(page.locator('.card-inspector h2')).toHaveText('legacy')
   await expect(page.getByText('something handed down from the past')).toBeVisible()
   await page.getByRole('button', { name: '重新生成', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: '使用最新主题版本？' })
@@ -516,17 +526,86 @@ test('legacy basic card remains readable and regenerates into the themed format'
   await expectCleanRuntime(page, errors)
 })
 
-test('legacy word URL stays in collection and does not fetch a card detail', async ({ page }) => {
-  const errors = collectRuntimeErrors(page)
-  const { requests } = await installApiMocks(page, [makeCard()])
+test('hard refresh on a persisted card route renders detail only', async ({ page }) => {
+  const { requestCount } = await installApiMocks(page, [makeCard()])
 
-  await page.goto('/app/vocabulary/cards/innovative')
-  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/innovative$/)
+  await page.goto('/app/vocabulary/cards/card_ready')
+  await page.reload()
+
+  await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
+  await expect(page.getByRole('heading', { name: '单词卡中心' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: '批量录入单词' })).toHaveCount(0)
+  expect(requestCount('GET', '/cards/card_ready')).toBeGreaterThanOrEqual(1)
+  expect(requestCount('GET', '/templates')).toBe(0)
+})
+
+test('persisted card navigation loads the next selected card', async ({ page }) => {
+  const first = makeCard({ cardUid: 'card_first', displayTerm: 'first', normalizedTerm: 'first' })
+  const second = makeCard({ cardUid: 'card_second', displayTerm: 'second', normalizedTerm: 'second' })
+  const { requestCount } = await installApiMocks(page, [first, second])
+
+  await page.goto('/app/vocabulary?tab=collection')
+  await page.getByRole('listitem').filter({ hasText: 'first' }).click()
+  await expect(page.locator('.card-inspector h2')).toHaveText('first')
+  await page.getByRole('button', { name: '返回单词库' }).click()
+  await page.getByRole('listitem').filter({ hasText: 'second' }).click()
+  await expect(page.locator('.card-inspector h2')).toHaveText('second')
+
+  expect(requestCount('GET', '/cards/card_first')).toBe(1)
+  expect(requestCount('GET', '/cards/card_second')).toBe(1)
+})
+
+test('legacy word URL stays keyword-filtered collection and does not fetch detail', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const { requestCount } = await installApiMocks(page, [makeCard()])
+
+  await page.goto('/app/vocabulary/cards/supposed')
+  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/supposed$/)
   await expect(page.getByRole('heading', { name: '单词卡中心' })).toBeVisible()
-  await expect(page.getByText('选择一张单词卡查看详情')).toBeVisible()
-  await expect.poll(() => requests.filter((request) => request.method === 'GET' && request.path.endsWith('/cards')).length).toBe(1)
-  expect(requests.filter((request) => request.method === 'GET' && request.path.endsWith('/cards/innovative'))).toEqual([])
+  await expect(page.getByRole('searchbox', { name: '搜索单词' })).toHaveValue('supposed')
+  await expect(page.locator('.vocabulary-card-page')).toHaveCount(0)
+  await expect.poll(() => requestCount('GET', '/cards')).toBe(1)
+  expect(requestCount('GET', '/cards/supposed')).toBe(0)
+  expect(requestCount('GET', '/cards/supposed/revisions')).toBe(0)
   await expectCleanRuntime(page, errors)
+})
+
+for (const detailError of [
+  { status: 403, cardUid: 'card_forbidden', message: '无权查看这张单词卡' },
+  { status: 404, cardUid: 'card_missing', message: '单词卡不存在或已被删除' },
+]) {
+  test(`${detailError.status} card detail is terminal and does not request revisions`, async ({ page }) => {
+    const card = makeCard({ cardUid: detailError.cardUid })
+    const { requestCount } = await installApiMocks(page, [card], {}, [], {
+      [detailError.cardUid]: [detailError.status],
+    })
+
+    await page.goto(`/app/vocabulary/cards/${detailError.cardUid}`)
+
+    const alert = page.getByRole('alert')
+    await expect(alert).toContainText(detailError.message)
+    await expect(alert.getByRole('button', { name: '重试' })).toHaveCount(0)
+    await expect(alert.getByRole('button', { name: '返回单词库' })).toBeVisible()
+    expect(requestCount('GET', `/cards/${detailError.cardUid}`)).toBe(1)
+    expect(requestCount('GET', `/cards/${detailError.cardUid}/revisions`)).toBe(0)
+  })
+}
+
+test('generic detail failure can retry and recover', async ({ page }) => {
+  const card = makeCard({ cardUid: 'card_transient' })
+  const { requestCount } = await installApiMocks(page, [card], {}, [], {
+    card_transient: [500, 500, 500, 500, 200],
+  })
+
+  await page.goto('/app/vocabulary/cards/card_transient')
+
+  const alert = page.getByRole('alert')
+  await expect(alert).toContainText('单词卡详情加载失败', { timeout: 15_000 })
+  const attemptsBeforeRetry = requestCount('GET', '/cards/card_transient')
+  expect(attemptsBeforeRetry).toBe(4)
+  await alert.getByRole('button', { name: '重试' }).click()
+  await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
+  expect(requestCount('GET', '/cards/card_transient')).toBe(attemptsBeforeRetry + 1)
 })
 
 for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
@@ -548,9 +627,9 @@ for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
     const { requests } = await installApiMocks(page, [reviewCard])
 
     await page.goto(`/app/vocabulary/cards/${reviewCard.cardUid}`)
-    await expect.poll(() => requests.filter((request) => request.path.endsWith('/templates')).length).toBe(1)
-    expect(errors).toEqual([])
     await expect(page.getByRole('dialog', { name: '发现版本冲突' })).toBeVisible()
+    expect(requests.filter((request) => request.path.endsWith('/templates'))).toEqual([])
+    expect(errors).toEqual([])
     await page.getByRole('radio', { name: choice === 'keep_current' ? '保留当前内容' : choice === 'use_ai' ? '使用 AI 新版本' : '逐字段合并' }).check()
 
     if (choice === 'merge_fields') {
@@ -628,7 +707,7 @@ for (const { name, viewport } of [
     const errors = collectRuntimeErrors(page)
     await installApiMocks(page, [makeCard()])
     await page.goto('/app/vocabulary/cards/card_ready')
-    await expect(page.getByRole('region', { name: '单词卡详情' }).locator('h2')).toHaveText('innovative')
+    await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
 
     const navButtons = page.locator('.vocabulary-nav button')
     for (let index = 0; index < await navButtons.count(); index += 1) {
