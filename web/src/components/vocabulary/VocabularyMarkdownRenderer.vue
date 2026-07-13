@@ -3,6 +3,7 @@
     v-if="props.markdown.trim()"
     class="vocabulary-markdown"
     v-html="document.html"
+    @click="copyMarkdownCodeFromClick"
   ></article>
   <p v-else class="vocabulary-markdown__empty">暂无主题内容</p>
 </template>
@@ -11,6 +12,7 @@
 import { computed, watch } from 'vue'
 
 import {
+  copyMarkdownCodeFromClick,
   renderMarkdownDocument,
   type MarkdownSection,
 } from '../assistant/markdown'
