@@ -875,6 +875,47 @@ test('mobile More owns theme and delete controls and closes across navigation', 
   await expect(more).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByLabel('重新生成主题')).toBeVisible()
   await expect(page.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  const menuLayout = await page.locator('#vocabulary-card-more-menu').evaluate((menu) => {
+    const inspector = menu.closest('.card-inspector')
+    const toolbar = menu.closest('.card-inspector__toolbar')
+    const themeSelect = menu.querySelector('select')
+    const deleteButton = [...menu.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === '删除')
+    if (!(inspector instanceof HTMLElement)
+      || !(toolbar instanceof HTMLElement)
+      || !(themeSelect instanceof HTMLElement)
+      || !(deleteButton instanceof HTMLElement)) return null
+
+    const menuRect = menu.getBoundingClientRect()
+    const inspectorRect = inspector.getBoundingClientRect()
+    const toolbarRect = toolbar.getBoundingClientRect()
+    const selectRect = themeSelect.getBoundingClientRect()
+    const deleteRect = deleteButton.getBoundingClientRect()
+    const viewportRect = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
+    const within = (inner: DOMRect, outer: { left: number, top: number, right: number, bottom: number }) => (
+      inner.left >= outer.left
+      && inner.top >= outer.top
+      && inner.right <= outer.right
+      && inner.bottom <= outer.bottom
+    )
+
+    return {
+      menuWithinInspector: menuRect.left >= inspectorRect.left && menuRect.right <= inspectorRect.right,
+      menuWithinToolbarContent: menuRect.left >= toolbarRect.left && menuRect.right <= toolbarRect.right,
+      menuWithinViewport: within(menuRect, viewportRect),
+      controlsWithinMenu: [selectRect, deleteRect].every((rect) => within(rect, menuRect)),
+      controlsWithinViewport: [selectRect, deleteRect].every((rect) => within(rect, viewportRect)),
+      controlsDoNotOverlap: selectRect.bottom <= deleteRect.top,
+    }
+  })
+  expect(menuLayout).toEqual({
+    menuWithinInspector: true,
+    menuWithinToolbarContent: true,
+    menuWithinViewport: true,
+    controlsWithinMenu: true,
+    controlsWithinViewport: true,
+    controlsDoNotOverlap: true,
+  })
   await page.getByLabel('重新生成主题').focus()
   await page.keyboard.press('Escape')
   await expect(more).toHaveAttribute('aria-expanded', 'false')

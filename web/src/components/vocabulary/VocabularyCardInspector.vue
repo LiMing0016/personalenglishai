@@ -775,7 +775,8 @@ function statusLabel(status: VocabularyCardStatus) {
   .card-inspector__heading h2 { font-size: 24px; }
   .card-inspector__toolbar { align-items: stretch; }
   .card-inspector__mode { flex: 1 1 130px; }
-  .card-inspector__more { margin-left: 0; }
+  .card-inspector__more { position: static; margin-left: 0; }
+  .card-inspector__more-menu { box-sizing: border-box; left: 0; right: 0; width: auto; min-width: 0; }
   .card-inspector__generation { align-items: flex-start; flex-direction: column; }
   .card-inspector__notebook { display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 20px; }
   .card-inspector__chapters { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 5px; }
