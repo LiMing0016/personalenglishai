@@ -34,6 +34,7 @@ type ConflictPayload = {
   conflictStatus: 'needs_review'
 }
 type DetailStatusSequences = Record<string, number[]>
+type DetailCardSequences = Record<string, Card[]>
 type Card = {
   cardUid: string
   displayTerm: string
@@ -142,6 +143,7 @@ async function installApiMocks(
   updateConflicts: Record<string, ConflictPayload> = {},
   initialUserThemes: Theme[] = [],
   detailStatusSequences: DetailStatusSequences = {},
+  detailCardSequences: DetailCardSequences = {},
 ) {
   const cards = initialCards.map((card) => structuredClone(card))
   const systemThemes: Theme[] = [{
@@ -253,6 +255,9 @@ async function installApiMocks(
         return route.fulfill({ status, json: { code: String(status), message: `detail failed with ${status}`, data: null } })
       }
       if (!card) return route.fulfill({ status: 404, json: { code: '404', message: 'card not found', data: null } })
+      const cardSequence = detailCardSequences[cardUid]
+      const cardSnapshot = cardSequence?.[Math.min(attempt, cardSequence.length - 1)]
+      if (cardSnapshot) Object.assign(card, structuredClone(cardSnapshot))
       return route.fulfill({ json: { code: '0', data: card } })
     }
     if (!card) return route.fulfill({ status: 404, json: { code: '404', message: 'card not found', data: null } })
@@ -261,13 +266,13 @@ async function installApiMocks(
         currentRevisionUid: card.activeRevisionUid,
         candidateRevisionUid: card.candidateRevisionUid,
         conflictStatus: card.conflictStatus,
-        items: [{
+        items: card.activeRevisionUid ? [{
           revisionUid: card.activeRevisionUid, baseRevisionUid: null, authorType: 'user',
           templateKey: 'basic', templateVersion: 1, content: card.content,
           theme: card.theme, themeVersion: card.themeVersion, core: card.core, markdown: card.markdown,
           contentFormatVersion: card.contentFormatVersion, changeSummary: '创建卡片', active: true,
           candidate: false, createdAt: card.createdAt,
-        }],
+        }] : [],
       } } })
     }
     if (!suffix && method === 'PUT') {
@@ -688,13 +693,26 @@ test('notebook commands, source/history chapters, Markdown save/cancel, and dele
   await page.getByLabel('Markdown 内容').fill('## 保存后的标题\n\nSaved body.')
   await page.getByRole('button', { name: '保存修改' }).click()
   await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
-  await expect(page.locator('.card-inspector__save-announcement')).toHaveText('单词卡已保存')
+  const saveAnnouncement = page.locator('.card-inspector__save-announcement')
+  await expect(saveAnnouncement).toHaveAttribute('aria-live', 'polite')
+  await expect(saveAnnouncement).toHaveText('单词卡已保存')
   await expect(page.getByRole('heading', { name: '保存后的标题' })).toBeVisible()
 
   const chapters = page.getByRole('navigation', { name: '单词卡章节' })
-  await chapters.getByRole('button', { name: '来源' }).click()
+  const sourceSection = page.getByLabel('单词卡来源')
+  const sourceTopBeforeNavigation = await sourceSection.evaluate((section) => section.getBoundingClientRect().top)
+  const sourceChapter = chapters.getByRole('button', { name: '来源' })
+  await sourceChapter.click()
+  await expect(sourceChapter).toHaveAttribute('aria-current', 'location')
+  await expect.poll(() => sourceSection.evaluate((section) => section.getBoundingClientRect().top)).toBeLessThan(sourceTopBeforeNavigation)
   await expect(page.getByText('产品写作笔记')).toBeVisible()
-  await chapters.getByRole('button', { name: '历史' }).click()
+  const historySection = page.getByLabel('单词卡修订历史')
+  const historyTopBeforeNavigation = await historySection.evaluate((section) => section.getBoundingClientRect().top)
+  const scrollYBeforeHistoryNavigation = await page.evaluate(() => window.scrollY)
+  const historyChapter = chapters.getByRole('button', { name: '历史' })
+  await historyChapter.click()
+  await expect.poll(() => historySection.evaluate((section) => section.getBoundingClientRect().top)).toBeLessThan(historyTopBeforeNavigation)
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollYBeforeHistoryNavigation)
   await expect(page.getByText('创建卡片')).toBeVisible()
   await expect(page.getByRole('tab')).toHaveCount(0)
 
@@ -720,6 +738,19 @@ test('notebook commands, source/history chapters, Markdown save/cancel, and dele
 })
 
 test('generation states do not present missing revisions as readable documents', async ({ page }) => {
+  const captured = makeCard({
+    cardUid: 'card_captured_empty',
+    displayTerm: 'captured',
+    normalizedTerm: 'captured',
+    status: 'captured',
+    activeRevisionUid: null,
+    generationStatus: 'captured',
+    generationOutcome: null,
+    core: null,
+    markdown: null,
+    content: {},
+    sources: [],
+  })
   const generating = makeCard({
     cardUid: 'card_generating_empty',
     displayTerm: 'pending',
@@ -751,7 +782,14 @@ test('generation states do not present missing revisions as readable documents',
     content: {},
     sources: [],
   })
-  await installApiMocks(page, [generating, regenerating, failedEmpty])
+  await installApiMocks(page, [captured, generating, regenerating, failedEmpty])
+
+  await page.goto('/app/vocabulary/cards/card_captured_empty')
+  await expect(page.locator('.card-inspector__heading')).toContainText('captured')
+  await expect(page.getByRole('status')).toHaveAttribute('aria-live', 'polite')
+  await expect(page.getByRole('status')).toHaveText('正在生成单词卡')
+  await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '编辑', exact: true })).toBeDisabled()
 
   await page.goto('/app/vocabulary/cards/card_generating_empty')
   await expect(page.getByRole('status')).toHaveText('正在生成单词卡')
@@ -768,6 +806,58 @@ test('generation states do not present missing revisions as readable documents',
   await expect(page.getByText('暂时没有可阅读的卡片内容', { exact: true })).toHaveCount(1)
   await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '重试生成' })).toHaveCount(1)
+})
+
+test('generating card live region yields to readable content after polling ready detail', async ({ page }) => {
+  const generating = makeCard({
+    cardUid: 'card_transition',
+    displayTerm: 'eventual',
+    normalizedTerm: 'eventual',
+    status: 'generating',
+    activeRevisionUid: null,
+    generationStatus: 'running',
+    generationOutcome: null,
+    core: null,
+    markdown: null,
+    content: {},
+    sources: [],
+  })
+  const ready = makeCard({
+    cardUid: 'card_transition',
+    displayTerm: 'eventual',
+    normalizedTerm: 'eventual',
+    status: 'ready',
+    activeRevisionUid: 'rev_transition_ready',
+    generationStatus: 'ready',
+    core: {
+      schemaVersion: 1,
+      term: 'eventual',
+      phonetics: [],
+      senses: [{
+        partOfSpeech: 'adjective',
+        meanings: [{ definitionEn: 'happening at the end', definitionZh: '最终的' }],
+      }],
+    },
+    markdown: '## 生成完成后的主题内容\n\nThe eventual result is readable.',
+    content: {},
+    sources: [],
+  })
+  const { requestCount } = await installApiMocks(page, [generating], {}, [], {}, {
+    card_transition: [generating, ready],
+  })
+
+  await page.goto('/app/vocabulary/cards/card_transition')
+  const generationLiveRegion = page.getByRole('status')
+  await expect(generationLiveRegion).toHaveAttribute('aria-live', 'polite')
+  await expect(generationLiveRegion).toHaveText('正在生成单词卡')
+  await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
+
+  await expect.poll(() => requestCount('GET', '/cards/card_transition'), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
+  await expect(generationLiveRegion).toHaveCount(0)
+  await expect(page.getByLabel('eventual').getByRole('heading', { name: 'eventual' })).toBeVisible()
+  await expect(page.getByText('happening at the end')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '生成完成后的主题内容' })).toBeVisible()
+  await expect(page.getByText('The eventual result is readable.')).toBeVisible()
 })
 
 test('mobile More owns theme and delete controls and closes across navigation', async ({ page }) => {
@@ -800,7 +890,21 @@ test('mobile More owns theme and delete controls and closes across navigation', 
 
 test('vocabulary detail remains readable across the required responsive viewports', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
-  await installApiMocks(page, [makeCard()])
+  await installApiMocks(page, [makeCard({
+    markdown: [
+      '## A deliberately long contextual explanation chapter',
+      '',
+      'Context body.',
+      '',
+      '## A deliberately long examples and counterexamples chapter',
+      '',
+      'Examples body.',
+      '',
+      '## A deliberately long memory and review guidance chapter',
+      '',
+      'Review body.',
+    ].join('\n'),
+  })])
   await page.goto('/app/vocabulary/cards/card_ready')
 
   for (const viewport of [
@@ -866,6 +970,19 @@ test('vocabulary detail remains readable across the required responsive viewport
         chapterButtonsDoNotShrink: true,
       })
       expect(mobileLayout!.documentWidth).toBeGreaterThanOrEqual(mobileLayout!.notebookWidth - 1)
+
+      const horizontalOverflow = await chapters.evaluate((navigation) => ({
+        clientWidth: navigation.clientWidth,
+        scrollWidth: navigation.scrollWidth,
+      }))
+      expect(horizontalOverflow.scrollWidth).toBeGreaterThan(horizontalOverflow.clientWidth)
+      await chapters.evaluate((navigation) => { navigation.scrollLeft = navigation.scrollWidth })
+      await expect.poll(() => chapters.evaluate((navigation) => navigation.scrollLeft)).toBeGreaterThan(0)
+      const lastChapter = chapters.getByRole('button', { name: '历史' })
+      const historySection = page.getByLabel('单词卡修订历史')
+      const historyTopBeforeNavigation = await historySection.evaluate((section) => section.getBoundingClientRect().top)
+      await lastChapter.click()
+      await expect.poll(() => historySection.evaluate((section) => section.getBoundingClientRect().top)).toBeLessThan(historyTopBeforeNavigation)
     }
   }
 
