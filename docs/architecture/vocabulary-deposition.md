@@ -5,6 +5,7 @@ owner: backend
 last_updated: 2026-07-13
 review_cycle: on-change
 related_code:
+  - backend/src/main/resources/db/schema.sql
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/
   - backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
@@ -42,7 +43,9 @@ related_docs:
 
 ## 数据库部署
 
-新建数据库先执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
+Docker Compose 把 `backend/src/main/resources/db/schema.sql` 挂载为 MySQL 的 `001_schema.sql`。全新数据卷首次初始化只执行该全量脚本；脚本直接创建 3 张主题表、主题索引和系统主题种子，并在单词卡相关表中一次性定义 theme/core、冲突候选、生成结果和 warning 列，不追加同表的第二套定义，也不再补跑下述 migration。
+
+非 Docker、仅在新库中部署单词沉淀模块时，先执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
@@ -78,7 +81,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
 ```
 
-新库部署先执行 `migrate_create_vocabulary_deposition_tables.sql`，再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`，历史库不得省略该增量。
+非 Docker 模块新库先执行 `migrate_create_vocabulary_deposition_tables.sql`，再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`；Docker 全量新库只执行 `schema.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`，历史库不得省略该增量。
 
 迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version` 共 5 列。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
 
@@ -158,9 +161,9 @@ vocabulary:
 
 ### 列表查询
 
-`GET /api/vocabulary/cards` 保留 `keyword`、`status`、`sourceType`、`page` 和 `size`，并支持 `sort`：`sort=recent` 按最近沉淀排序，`sort=az` 按规范词形 A-Z 排序。搜索范围包括 display/normalized/original term 和 active revision 的 `definitions`。
+`GET /api/vocabulary/cards` 保留 `keyword`、`status`、`sourceType`、`page` 和 `size`，并支持 `sort`：`sort=recent` 按最近沉淀排序，`sort=az` 按规范词形 A-Z 排序。搜索范围包括 display/normalized/original term；搜索同时覆盖 `core_json` 与 legacy `content_json`，新格式读取 `senses[*].meanings[*].definitionEn/definitionZh`，旧格式读取 active revision 的 `definitions`。
 
-列表 summary 返回 `phonetic`、`coreDefinition`、`sourceCount`、`updatedAt`、`generationStatus` 和 `generationError`。来源类型与数量、最新 generation job 都按当前页批量加载。
+列表 summary 返回 `phonetic`、`coreDefinition`、`sourceCount`、`updatedAt`、`generationStatus`、`generationError`、`generationOutcome` 和 `warning`。其中 `generationStatus`/`generationError` 表示任务执行状态与错误，`generationOutcome` 和 `warning` 表示成功、partial 或冲突等稳定业务结果及可展示提示。来源类型与数量、最新 generation job 都按当前页批量加载。
 
 ## 前端路由
 

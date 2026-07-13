@@ -29,21 +29,81 @@ class VocabularyFreshSchemaMySqlTest {
     private static final String DATABASE_PREFIX = "peai_vocab_fresh_";
 
     @Test
-    void freshReadmePathContainsAllReviewSemanticsColumns() throws Exception {
+    void dockerSchemaContainsAllThemeCoreAndReviewSemanticsColumns() throws Exception {
         withFreshSchema((connection, database) -> {
+            assertEquals(1, countTable(connection, database, "vocabulary_theme"));
+            assertEquals(1, countTable(connection, database, "vocabulary_theme_revision"));
+            assertEquals(1, countTable(connection, database, "user_vocabulary_theme_recent"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card", "theme_uid"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card", "theme_version"));
             assertEquals(1, countColumn(connection, database,
                     "vocabulary_card", "conflict_candidate_revision_uid"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card_revision", "theme_uid"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card_revision", "theme_version"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card_revision", "core_json"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card_revision", "content_markdown"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_card_revision", "content_format_version"));
+            assertEquals(1, countColumn(connection, database,
+                    "user_vocabulary_preference", "default_theme_uid"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_generation_job", "theme_uid"));
+            assertEquals(1, countColumn(connection, database,
+                    "vocabulary_generation_job", "theme_version"));
             assertEquals(1, countColumn(connection, database,
                     "vocabulary_generation_job", "generation_outcome"));
             assertEquals(1, countColumn(connection, database,
                     "vocabulary_generation_job", "warning"));
+            assertEquals(1, countIndex(connection, database,
+                    "vocabulary_theme", "uk_vocabulary_theme_active_user_name"));
+            assertEquals(1, countIndex(connection, database,
+                    "vocabulary_theme", "idx_vocabulary_theme_user_status"));
+            assertEquals(1, countIndex(connection, database,
+                    "vocabulary_theme_revision", "uk_vocabulary_theme_version"));
+            assertEquals(1, countIndex(connection, database,
+                    "user_vocabulary_theme_recent", "idx_vocabulary_theme_recent"));
         });
     }
 
     @Test
-    void freshReadmePathSupportsCardMapperSelect() throws Exception {
+    void dockerSchemaSupportsThemeRevisionAndCardMapperSql() throws Exception {
         withFreshSchema((connection, database) -> {
             seedCard(connection);
+
+            BoundSql themes = mappedStatement(
+                    "mapper/VocabularyThemeMapper.xml",
+                    "com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper.findVisibleThemes")
+                    .getBoundSql(Map.of("userId", 7L));
+            try (PreparedStatement statement = prepare(connection, themes, Map.of("userId", 7L));
+                    ResultSet result = statement.executeQuery()) {
+                int count = 0;
+                while (result.next()) {
+                    count++;
+                }
+                assertEquals(3, count);
+            }
+
+            Map<String, Object> revision = revisionParameters();
+            BoundSql insertRevision = mappedStatement(
+                    "mapper/VocabularyRevisionMapper.xml",
+                    "com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper.insertRevision")
+                    .getBoundSql(revision);
+            try (PreparedStatement statement = prepare(connection, insertRevision, revision)) {
+                assertEquals(1, statement.executeUpdate());
+            }
+            try (Statement statement = connection.createStatement()) {
+                assertEquals(1, statement.executeUpdate("""
+                        UPDATE vocabulary_card
+                        SET active_revision_uid = 'revision_fresh', status = 'ready'
+                        WHERE card_uid = 'card_fresh'
+                        """));
+            }
 
             BoundSql select = mappedStatement(
                     "mapper/VocabularyCardMapper.xml",
@@ -55,11 +115,14 @@ class VocabularyFreshSchemaMySqlTest {
                 assertEquals("card_fresh", result.getString("card_uid"));
                 assertNull(result.getString("conflict_candidate_revision_uid"));
             }
+
+            assertCardSearchReturnsFreshCard(connection, "durable");
+            assertCardSearchReturnsFreshCard(connection, "legacy definition");
         });
     }
 
     @Test
-    void freshReadmePathSupportsGenerationJobMapperInsertAndSelect() throws Exception {
+    void dockerSchemaSupportsGenerationJobMapperInsertAndSelect() throws Exception {
         withFreshSchema((connection, database) -> {
             seedCard(connection);
             Map<String, Object> job = generationJobParameters();
@@ -117,9 +180,7 @@ class VocabularyFreshSchemaMySqlTest {
 
     private void runFreshSchemaPath(Connection connection) {
         ScriptUtils.executeSqlScript(connection,
-                new ClassPathResource("db/migrate_create_vocabulary_deposition_tables.sql"));
-        ScriptUtils.executeSqlScript(connection,
-                new ClassPathResource("db/migrate_add_vocabulary_themes_and_markdown_cards.sql"));
+                new ClassPathResource("db/schema.sql"));
     }
 
     private void seedCard(Connection connection) throws Exception {
@@ -162,6 +223,48 @@ class VocabularyFreshSchemaMySqlTest {
         return parameters;
     }
 
+    private Map<String, Object> revisionParameters() {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("revisionUid", "revision_fresh");
+        parameters.put("cardUid", "card_fresh");
+        parameters.put("baseRevisionUid", null);
+        parameters.put("authorType", "ai");
+        parameters.put("templateKey", "basic");
+        parameters.put("templateVersion", 1);
+        parameters.put("themeUid", "theme_system_basic");
+        parameters.put("themeVersion", 1);
+        parameters.put("contentJson", "{\"definitions\":[\"legacy definition\"]}");
+        parameters.put("coreJson", """
+                {"schemaVersion":1,"term":"resilient","senses":[{"meanings":[
+                {"definitionEn":"durable under pressure","definitionZh":"resilient"}
+                ]}]}
+                """.replaceAll("\\s+", ""));
+        parameters.put("contentMarkdown", "## Learning note");
+        parameters.put("contentFormatVersion", 1);
+        parameters.put("changeSummary", "fresh schema mapper probe");
+        return parameters;
+    }
+
+    private void assertCardSearchReturnsFreshCard(Connection connection, String keyword) throws Exception {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("userId", 7L);
+        parameters.put("keyword", keyword);
+        parameters.put("status", null);
+        parameters.put("sourceType", null);
+        parameters.put("sort", "recent");
+        parameters.put("limit", 10);
+        parameters.put("offset", 0);
+        BoundSql search = mappedStatement(
+                "mapper/VocabularyCardMapper.xml",
+                "com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper.listByUser")
+                .getBoundSql(parameters);
+        try (PreparedStatement statement = prepare(connection, search, parameters);
+                ResultSet result = statement.executeQuery()) {
+            assertTrue(result.next());
+            assertEquals("card_fresh", result.getString("card_uid"));
+        }
+    }
+
     private MappedStatement mappedStatement(String resource, String statementId) throws Exception {
         Configuration configuration = new Configuration();
         try (InputStream input = getClass().getClassLoader().getResourceAsStream(resource)) {
@@ -191,6 +294,37 @@ class VocabularyFreshSchemaMySqlTest {
             statement.setString(1, database);
             statement.setString(2, table);
             statement.setString(3, column);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private int countTable(Connection connection, String database, String table) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = ? AND table_name = ?
+                """)) {
+            statement.setString(1, database);
+            statement.setString(2, table);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private int countIndex(Connection connection, String database, String table, String index) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(DISTINCT index_name)
+                FROM information_schema.statistics
+                WHERE table_schema = ? AND table_name = ? AND index_name = ?
+                """)) {
+            statement.setString(1, database);
+            statement.setString(2, table);
+            statement.setString(3, index);
             try (ResultSet result = statement.executeQuery()) {
                 assertTrue(result.next());
                 return result.getInt(1);

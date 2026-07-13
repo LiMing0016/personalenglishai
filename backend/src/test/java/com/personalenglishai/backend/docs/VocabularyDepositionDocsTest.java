@@ -51,7 +51,8 @@ class VocabularyDepositionDocsTest {
         String readme = Files.readString(Path.of("../README.md"));
 
         assertAll(
-                () -> assertTrue(readme.contains("新库初始脚本已经包含全部基础列")),
+                () -> assertTrue(readme.contains("Docker 首次初始化仅执行 `backend/src/main/resources/db/schema.sql`")),
+                () -> assertTrue(readme.contains("`schema.sql` 已包含完整的主题表、索引、系统主题种子")),
                 () -> assertTrue(readme.contains("新库不得执行 `migrate_add_vocabulary_review_semantics.sql`")),
                 () -> assertTrue(readme.contains("历史库必须按以下顺序执行")),
                 () -> assertTrue(readme.contains("conflict_candidate_revision_uid")),
@@ -87,6 +88,8 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(architecture.contains("Markdown 生成失败")),
                 () -> assertTrue(architecture.contains("core_json 仍可见")),
                 () -> assertTrue(architecture.contains("needs_review")),
+                () -> assertTrue(architecture.contains("搜索同时覆盖 `core_json` 与 legacy `content_json`")),
+                () -> assertTrue(architecture.contains("`generationOutcome` 和 `warning`")),
                 () -> assertTrue(architecture.contains("回滚不删除主题表或新格式 revision")));
     }
 

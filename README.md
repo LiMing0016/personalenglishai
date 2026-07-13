@@ -113,7 +113,9 @@ npm run build
 
 当前阶段单词沉淀仅支持 `manual`（手动录入）和 `dictionary`（词典收藏）；PDF、AI 对话、笔记和错题尚未接入。
 
-新建本地数据库后，先执行单词卡初始迁移：
+使用 `docker-compose.local.yml` 创建全新 MySQL 数据卷时，Docker 首次初始化仅执行 `backend/src/main/resources/db/schema.sql`。`schema.sql` 已包含完整的主题表、索引、系统主题种子，以及 theme/core、`conflict_candidate_revision_uid`、`generation_outcome`、`warning` 等当前列；不要再对该新库重复执行单词卡 migration。
+
+不使用 Docker 全量 schema、仅在新库中部署单词沉淀模块时，先执行单词卡初始迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
@@ -125,7 +127,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_voc
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
 ```
 
-新库初始脚本已经包含全部基础列，包括租约字段及 `conflict_candidate_revision_uid`、`generation_outcome`、`warning`。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`；该脚本只用于历史库增量升级。
+单词卡初始迁移已经包含全部基础列，包括租约字段及 `conflict_candidate_revision_uid`、`generation_outcome`、`warning`。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`；该脚本只用于历史库增量升级。
 
 尚未完成升级的历史库必须按以下顺序执行。第一步执行可重试的租约迁移：
 
