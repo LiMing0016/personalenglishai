@@ -7,7 +7,6 @@
     <textarea
       id="vocabulary-markdown"
       :value="modelValue"
-      :readonly="readonly"
       maxlength="20000"
       rows="12"
       :aria-invalid="tooLong"
@@ -23,7 +22,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{ modelValue: string, readonly?: boolean }>()
+const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const tooLong = computed(() => props.modelValue.length > 20_000)
 
@@ -39,7 +38,6 @@ function updateValue(event: Event) {
 .markdown-editor__label-row label { font-weight: 800; }
 .markdown-editor__label-row span { flex: none; color: #64748b; font-variant-numeric: tabular-nums; }
 .markdown-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 220px; max-height: 560px; resize: vertical; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #0f172a; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.markdown-editor textarea[readonly] { background: #f8fafc; color: #475569; }
 .markdown-editor p { min-height: 18px; margin: 0; color: #64748b; font-size: 12px; }
 .markdown-editor__count--error, .markdown-editor__error { color: #b91c1c !important; }
 @media (max-width: 620px) { .markdown-editor textarea { min-height: 180px; } }

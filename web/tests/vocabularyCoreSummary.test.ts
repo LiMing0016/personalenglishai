@@ -39,7 +39,7 @@ test('markdown editor preserves source in a bounded textarea without rendering H
   assert.match(markdownEditorSource, /modelValue\.length/)
   assert.match(markdownEditorSource, /emit\('update:modelValue', input\.value\)/)
   assert.match(markdownEditorSource, /超过 20,000 字限制/)
-  assert.doesNotMatch(markdownEditorSource, /v-html|contenteditable|\.trim\(|markdown-it|marked/)
+  assert.doesNotMatch(markdownEditorSource, /readonly|textarea\[readonly\]|v-html|contenteditable|\.trim\(|markdown-it|marked/)
 })
 
 test('legacy content is projected through one pure typed core adapter', () => {

@@ -1,34 +1,67 @@
 <template>
   <section class="card-inspector" aria-label="单词卡详情">
     <header class="card-inspector__header">
-      <div>
-        <p>{{ card.theme?.name || '兼容卡片' }}<template v-if="card.themeVersion"> · v{{ card.themeVersion }}</template></p>
-        <h2>{{ card.displayTerm }}</h2>
-        <span :class="`card-inspector__status card-inspector__status--${card.status}`">{{ statusLabel(card.status) }}</span>
-      </div>
       <button type="button" class="card-inspector__back" @click="emit('back')">返回单词库</button>
+      <div class="card-inspector__heading">
+        <h2>{{ card.displayTerm }}</h2>
+        <p v-if="headerSummary" class="card-inspector__summary">{{ headerSummary }}</p>
+        <div class="card-inspector__metadata">
+          <span :class="`card-inspector__status card-inspector__status--${card.status}`">{{ statusLabel(card.status) }}</span>
+          <span>{{ card.theme?.name || '兼容卡片' }}<template v-if="card.themeVersion"> · v{{ card.themeVersion }}</template></span>
+        </div>
+      </div>
     </header>
 
-    <div class="card-inspector__actions" aria-label="单词卡操作">
-      <button v-if="editing" type="button" @click="cancelEditing">取消编辑</button>
-      <button v-else type="button" @click="editing = true">编辑 Markdown</button>
-      <label class="card-inspector__regenerate-theme">
-        <span>主题</span>
-        <select v-model="selectedThemeUid" aria-label="重新生成主题" :disabled="!activeThemes.length || themesQuery.isLoading.value">
-          <option v-for="theme in activeThemes" :key="theme.themeUid" :value="theme.themeUid">{{ theme.name }}</option>
-        </select>
-      </label>
-      <button
-        type="button"
-        :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
-        @click="requestRegenerate"
-      >
-        {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
-      </button>
-      <button v-if="card.status === 'failed' || card.generationStatus === 'failed'" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
-        {{ retryVocabularyCard.isPending.value ? '重试中...' : '重试生成' }}
-      </button>
-      <button type="button" class="card-inspector__danger" @click="deleteDialogOpen = true">删除</button>
+    <div class="card-inspector__toolbar" aria-label="单词卡操作">
+      <div class="card-inspector__mode" aria-label="阅读模式">
+        <button type="button" :aria-pressed="!editing" @click="cancelEditing">阅读</button>
+        <button type="button" :aria-pressed="editing" :disabled="!hasReadableRevision" @click="startEditing">编辑</button>
+      </div>
+      <template v-if="editing">
+        <button type="button" @click="cancelEditing">取消</button>
+        <button
+          type="button"
+          class="card-inspector__primary"
+          :disabled="!card.activeRevisionUid || markdownTooLong || updateMutation.isPending.value"
+          @click="save"
+        >
+          {{ updateMutation.isPending.value ? '保存中...' : '保存修改' }}
+        </button>
+      </template>
+      <template v-else>
+        <button
+          v-if="!isPartialMarkdown"
+          type="button"
+          :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
+          @click="requestRegenerate"
+        >
+          {{ regenerateMutation.isPending.value ? '生成中...' : '重新生成' }}
+        </button>
+        <button v-if="showRetry" type="button" :disabled="retryVocabularyCard.isPending.value" @click="retry">
+          {{ retryVocabularyCard.isPending.value ? '重试中...' : '重试生成' }}
+        </button>
+      </template>
+
+      <template v-if="!isNarrow">
+        <ThemeSelector @selected="closeMoreMenu" />
+        <button type="button" class="card-inspector__danger" @click="deleteDialogOpen = true">删除</button>
+      </template>
+      <div v-else class="card-inspector__more">
+        <button
+          ref="moreButton"
+          type="button"
+          aria-label="更多单词卡操作"
+          :aria-expanded="moreMenuOpen"
+          aria-controls="vocabulary-card-more-menu"
+          @click="moreMenuOpen = !moreMenuOpen"
+        >
+          更多
+        </button>
+        <div v-if="moreMenuOpen" id="vocabulary-card-more-menu" class="card-inspector__more-menu">
+          <ThemeSelector @selected="closeMoreMenu" />
+          <button type="button" class="card-inspector__danger" @click="openDeleteDialog">删除</button>
+        </div>
+      </div>
     </div>
 
     <div v-if="themesQuery.isLoading.value && !themesQuery.data.value" class="card-inspector__theme-state">主题加载中...</div>
@@ -37,40 +70,65 @@
       <button type="button" :disabled="themesQuery.isFetching.value" @click="themesQuery.refetch()">重新加载</button>
     </div>
     <p v-else-if="!activeThemes.length" class="card-inspector__theme-state">暂无可用主题</p>
-    <p v-if="generationErrorMessage" class="card-inspector__error" role="alert">{{ generationErrorMessage }}</p>
 
-    <div class="card-inspector__tabs" role="tablist" aria-label="单词卡内容">
-      <button type="button" role="tab" :aria-selected="activeTab === 'details'" @click="activeTab = 'details'">卡片内容</button>
-      <button type="button" role="tab" :aria-selected="activeTab === 'sources'" @click="activeTab = 'sources'">来源</button>
-      <button type="button" role="tab" :aria-selected="activeTab === 'history'" @click="activeTab = 'history'">历史</button>
+    <div v-if="generationState" class="card-inspector__generation" role="status" aria-live="polite">
+      <span>{{ generationState.text }}</span>
     </div>
+    <p class="card-inspector__save-announcement sr-only" aria-live="polite">{{ saveAnnouncement }}</p>
 
-    <form v-if="activeTab === 'details'" class="card-inspector__content" @submit.prevent="save">
-      <VocabularyCoreSummary :core="displayCore" />
-      <VocabularyMarkdownEditor v-model="editMarkdown" :readonly="!editing" />
-      <div v-if="editing" class="card-inspector__save-row">
-        <button type="submit" :disabled="!card.activeRevisionUid || markdownTooLong || updateMutation.isPending.value">
-          {{ updateMutation.isPending.value ? '保存中...' : '保存修改' }}
+    <div v-if="editing" class="card-inspector__editor-document">
+      <VocabularyMarkdownEditor v-model="editMarkdown" />
+    </div>
+    <div v-else-if="showReadableDocument" class="card-inspector__notebook">
+      <nav class="card-inspector__chapters" aria-label="单词卡章节">
+        <button
+          v-for="section in sections"
+          :key="section.id"
+          type="button"
+          :aria-current="activeSectionId === section.id ? 'location' : undefined"
+          @click="scrollToSection(section.id)"
+        >
+          {{ section.title }}
         </button>
-      </div>
-    </form>
+      </nav>
 
-    <section v-else-if="activeTab === 'sources'" class="card-inspector__sources" aria-label="单词卡来源">
-      <p v-if="!card.sources.length" class="card-inspector__empty">暂无来源记录</p>
-      <article v-for="source in card.sources" :key="source.sourceUid">
-        <strong>{{ source.sourceTitle || source.sourceType }}</strong>
-        <span>{{ source.contextText || '未记录语境' }}</span>
-        <a v-if="safeExternalUrl(source.sourceUrl)" :href="safeExternalUrl(source.sourceUrl)!" target="_blank" rel="noreferrer">查看原始来源</a>
-      </article>
-    </section>
+      <main class="card-inspector__document">
+        <section id="core-information" class="card-inspector__document-section">
+          <VocabularyCoreSummary :core="displayCore" />
+        </section>
 
-    <section v-else class="card-inspector__history" aria-label="单词卡修订历史">
-      <p v-if="!listVocabularyRevisions || !listVocabularyRevisions.items.length" class="card-inspector__empty">暂无修订记录</p>
-      <article v-for="revision in listVocabularyRevisions?.items ?? []" :key="revision.revisionUid">
-        <div><strong>{{ revision.authorType }}</strong><span>{{ revision.changeSummary || '无修改说明' }}</span></div>
-        <small>{{ revision.createdAt || '时间未知' }}</small>
-      </article>
-    </section>
+        <section v-if="isPartialMarkdown" class="card-inspector__partial-markdown" aria-label="主题内容">
+          <h3>主题内容待完善</h3>
+          <p>核心信息已保留，可以重新生成主题内容。</p>
+          <button type="button" :disabled="!selectedTheme" @click="requestRegenerate">重新生成</button>
+        </section>
+        <VocabularyMarkdownRenderer
+          v-else
+          :markdown="cardMarkdown(card)"
+          @sections-change="markdownSections = $event"
+        />
+
+        <section v-if="card.sources.length" id="card-sources" class="card-inspector__document-section card-inspector__sources" aria-label="单词卡来源">
+          <h3>来源</h3>
+          <article v-for="source in card.sources" :key="source.sourceUid">
+            <strong>{{ source.sourceTitle || source.sourceType }}</strong>
+            <span>{{ source.contextText || '未记录语境' }}</span>
+            <a v-if="safeExternalUrl(source.sourceUrl)" :href="safeExternalUrl(source.sourceUrl)!" target="_blank" rel="noreferrer">查看原始来源</a>
+          </article>
+        </section>
+
+        <section v-if="listVocabularyRevisions?.items.length" id="card-history" class="card-inspector__document-section card-inspector__history" aria-label="单词卡修订历史">
+          <h3>历史</h3>
+          <article v-for="revision in listVocabularyRevisions.items" :key="revision.revisionUid">
+            <div><strong>{{ revision.authorType }}</strong><span>{{ revision.changeSummary || '无修改说明' }}</span></div>
+            <small>{{ revision.createdAt || '时间未知' }}</small>
+          </article>
+        </section>
+      </main>
+    </div>
+    <div v-else class="card-inspector__placeholder">
+      <strong>{{ generationState?.text || '暂时没有可阅读的卡片内容' }}</strong>
+    </div>
 
     <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="regenerateConfirmationOpen = false">
       <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title">
@@ -135,10 +193,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, type Ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
+import type { MarkdownSection } from '../assistant/markdown'
 import VocabularyCoreSummary from './VocabularyCoreSummary.vue'
 import VocabularyMarkdownEditor from './VocabularyMarkdownEditor.vue'
+import VocabularyMarkdownRenderer from './VocabularyMarkdownRenderer.vue'
+import { buildVocabularyCardSections } from './vocabularyCardSections'
 import {
   VocabularyConflictError,
   type RegenerateVocabularyCardRequest,
@@ -177,16 +239,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{ back: [] }>()
 const { themesQuery } = useVocabularyThemes()
-const activeTab = ref<'details' | 'sources' | 'history'>('details')
+const isNarrow = useMediaQuery('(max-width: 767px)')
 const editing = ref(false)
 const editMarkdown = ref('')
 const selectedThemeUid = ref('')
 const regenerateConfirmationOpen = ref(false)
 const deleteDialogOpen = ref(false)
+const moreMenuOpen = ref(false)
+const moreButton = ref<HTMLButtonElement | null>(null)
+const saveAnnouncement = ref('')
 const conflict = ref<VocabularyConflictResponse | null>(null)
 const conflictChoice = ref<ResolveVocabularyConflictRequest['choice']>('keep_current')
 const mergeChoice = ref<MergeChoice>({})
 const draftIdentity = ref<VocabularyCardDraftIdentity>()
+const markdownSections = ref<MarkdownSection[]>([])
+const activeSectionId = ref('core-information')
+let observer: IntersectionObserver | undefined
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -204,19 +272,58 @@ const displayCore = computed<VocabularyCoreContent>(() => {
     ? { ...projected, term: props.card.normalizedTerm }
     : minimalVocabularyCore(props.card.normalizedTerm)
 })
+const headerSummary = computed(() => {
+  const phonetic = displayCore.value.phonetics[0]?.text || props.card.phonetic
+  const partOfSpeech = [...new Set(displayCore.value.senses.map((sense) => sense.partOfSpeech).filter(Boolean))].join(' / ')
+  return [phonetic, partOfSpeech].filter(Boolean).join(' · ')
+})
+const hasReadableRevision = computed(() => Boolean(props.card.activeRevisionUid))
 const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
-const generationErrorMessage = computed(() => {
+const isPartialMarkdown = computed(() => (
+  props.card.generationOutcome === 'partial' && props.card.warning === 'markdown_unavailable'
+))
+const showRetry = computed(() => (
+  props.card.status === 'failed'
+  || props.card.generationStatus === 'failed'
+  || props.card.generationOutcome === 'failed'
+  || Boolean(props.card.generationError)
+))
+const generationState = computed(() => {
+  const generating = props.card.status === 'captured'
+    || props.card.status === 'generating'
+    || props.card.generationStatus === 'pending'
+    || props.card.generationStatus === 'running'
+  if (generating) {
+    return hasReadableRevision.value
+      ? { text: '正在生成新版本，当前内容可继续阅读' }
+      : { text: '正在生成单词卡' }
+  }
+  if (props.card.status === 'needs_review' && props.card.candidateRevisionUid) {
+    return { text: '发现待确认的新版本' }
+  }
   if (props.card.generationOutcome === 'partial'
       && props.card.warning === 'markdown_unavailable') {
-    return '主题内容待完善，可重新生成。'
+    return { text: '主题内容待完善' }
   }
   if (props.card.generationOutcome === 'failed'
+      || props.card.status === 'failed'
       || props.card.generationStatus === 'failed'
       || props.card.generationError) {
-    return '生成未完成，请重试。'
+    return hasReadableRevision.value
+      ? { text: '本次生成失败，当前内容未受影响' }
+      : { text: '暂时没有可阅读的卡片内容' }
   }
-  return ''
+  return null
 })
+const showReadableDocument = computed(() => hasReadableRevision.value || isPartialMarkdown.value)
+const sections = computed(() => buildVocabularyCardSections(
+  markdownSections.value,
+  props.card.sources.length > 0,
+  Boolean(props.listVocabularyRevisions?.items.length),
+))
+const renderedSectionIds = computed(() => (
+  !editing.value && showReadableDocument.value ? sections.value.map((section) => section.id) : []
+))
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
 const activeThemes = computed(() => {
   const catalog = themesQuery.data.value
@@ -229,10 +336,72 @@ const regenerateNeedsConfirmation = computed(() => (
   || selectedTheme.value?.version !== props.card.themeVersion
 ))
 
+const ThemeSelector = defineComponent({
+  emits: ['selected'],
+  setup(_, { emit: emitSelection }) {
+    return () => h('label', { class: 'card-inspector__regenerate-theme' }, [
+      h('span', '主题'),
+      h('select', {
+        value: selectedThemeUid.value,
+        'aria-label': '重新生成主题',
+        disabled: !activeThemes.value.length || themesQuery.isLoading.value,
+        onChange: (event: Event) => {
+          selectedThemeUid.value = (event.target as HTMLSelectElement).value
+          emitSelection('selected')
+        },
+      }, activeThemes.value.map((theme) => h('option', { key: theme.themeUid, value: theme.themeUid }, theme.name))),
+    ])
+  },
+})
+
 function cardMarkdown(card: VocabularyCardDetail): string {
   if (card.markdown != null) return card.markdown
   const compatibleMarkdown = asRecord(card.content).markdown
   return typeof compatibleMarkdown === 'string' ? compatibleMarkdown : ''
+}
+
+function scrollToSection(id: string) {
+  activeSectionId.value = id
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function rebuildObserver() {
+  observer?.disconnect()
+  observer = undefined
+  if (typeof window === 'undefined' || typeof document === 'undefined' || typeof IntersectionObserver === 'undefined') return
+  const elements = renderedSectionIds.value
+    .map((id) => document.getElementById(id))
+    .filter((element): element is HTMLElement => Boolean(element))
+  if (!elements.length) return
+  observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((left, right) => Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top))
+    if (visible[0]?.target.id) activeSectionId.value = visible[0].target.id
+  }, { rootMargin: '-96px 0px -55% 0px', threshold: [0, 0.1, 0.5] })
+  elements.forEach((element) => observer?.observe(element))
+}
+
+function closeMoreMenu() {
+  moreMenuOpen.value = false
+}
+
+function openDeleteDialog() {
+  closeMoreMenu()
+  deleteDialogOpen.value = true
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !moreMenuOpen.value) return
+  closeMoreMenu()
+  void nextTick(() => moreButton.value?.focus())
+}
+
+function startEditing() {
+  if (!hasReadableRevision.value) return
+  editMarkdown.value = cardMarkdown(props.card)
+  editing.value = true
+  closeMoreMenu()
 }
 
 function revisionFor(revisionUid: string | null): VocabularyRevision | undefined {
@@ -310,11 +479,14 @@ function setConflict(nextConflict: VocabularyConflictResponse) {
 watch(
   () => [props.card.cardUid, props.card.activeRevisionUid] as const,
   ([cardUid, activeRevisionUid]) => {
+    closeMoreMenu()
     const nextIdentity = { cardUid, activeRevisionUid }
     if (!shouldResetVocabularyCardDraft(draftIdentity.value, nextIdentity)) return
     const cardChanged = draftIdentity.value?.cardUid !== cardUid
     draftIdentity.value = nextIdentity
     editMarkdown.value = cardMarkdown(props.card)
+    markdownSections.value = []
+    activeSectionId.value = 'core-information'
     if (cardChanged) {
       selectedThemeUid.value = selectVocabularyThemeUid(
         activeThemes.value,
@@ -364,6 +536,26 @@ watch(() => themesQuery.data.value, (catalog) => {
 }, { immediate: true })
 
 watch([v1Conflict, conflict], () => resetMergeChoice())
+watch(isNarrow, (narrow) => { if (!narrow) closeMoreMenu() })
+watch(
+  () => renderedSectionIds.value.join('|'),
+  async () => {
+    await nextTick()
+    rebuildObserver()
+  },
+  { flush: 'post' },
+)
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+  rebuildObserver()
+})
+
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  observer = undefined
+  window.removeEventListener('keydown', handleKeydown)
+})
 
 function cancelEditing() {
   editMarkdown.value = cardMarkdown(props.card)
@@ -372,6 +564,7 @@ function cancelEditing() {
 
 async function save() {
   if (!props.card.activeRevisionUid || markdownTooLong.value) return
+  saveAnnouncement.value = ''
   try {
     const savedCard = await props.updateMutation.mutateAsync({
       cardUid: props.card.cardUid,
@@ -388,17 +581,20 @@ async function save() {
       activeRevisionUid: savedCard.activeRevisionUid,
     }
     editing.value = false
+    saveAnnouncement.value = '单词卡已保存'
     showToast('单词卡已保存', 'success')
   } catch (error) {
     if (error instanceof VocabularyConflictError) {
       setConflict(error.conflict)
       return
     }
+    saveAnnouncement.value = '保存失败，请重试'
     showToast(error instanceof Error ? error.message : '保存失败，请重试', 'error')
   }
 }
 
 function requestRegenerate() {
+  closeMoreMenu()
   if (!selectedTheme.value) return
   if (regenerateNeedsConfirmation.value) {
     regenerateConfirmationOpen.value = true
@@ -479,41 +675,60 @@ function statusLabel(status: VocabularyCardStatus) {
 </script>
 
 <style scoped>
-.card-inspector { min-width: 0; padding: 18px; border: 1px solid #dce7e1; border-radius: 8px; background: #fff; color: #334155; }
-.card-inspector__header, .card-inspector__actions, .card-inspector__dialog-actions { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
-.card-inspector__header p, .card-inspector__header h2 { margin: 0; }
-.card-inspector__header p { color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
-.card-inspector__header h2 { margin-top: 5px; color: #0f172a; font-size: 22px; overflow-wrap: anywhere; }
-.card-inspector__status { display: inline-block; margin-top: 7px; color: #047857; font-size: 12px; font-weight: 800; }
+.card-inspector { min-width: 0; padding: 22px clamp(16px, 3vw, 40px) 56px; background: #fff; color: #334155; }
+.card-inspector__header { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 18px; max-width: 1060px; margin: 0 auto; }
+.card-inspector__heading { min-width: 0; }
+.card-inspector__heading h2 { margin: 0; color: #0f172a; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
+.card-inspector__summary { margin: 6px 0 0; color: #475569; font-size: 14px; overflow-wrap: anywhere; }
+.card-inspector__metadata { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 9px; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
+.card-inspector__status { color: #047857; font-weight: 800; }
 .card-inspector__status--failed { color: #b91c1c; }
 .card-inspector__status--needs_review { color: #b45309; }
-.card-inspector button { min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }
+.card-inspector button { box-sizing: border-box; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }
 .card-inspector button:disabled { cursor: not-allowed; opacity: .55; }
 .card-inspector__back { white-space: nowrap; }
-.card-inspector__actions { flex-wrap: wrap; margin-top: 16px; align-items: center; justify-content: flex-start; }
-.card-inspector__actions button:first-child, .card-inspector__save-row button, .card-inspector__dialog-actions button:last-child { border-color: #059669; background: #059669; color: #fff; }
+.card-inspector__toolbar { position: sticky; top: 0; z-index: 8; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 1060px; margin: 18px auto 0; padding: 10px 0; border-bottom: 1px solid #dce7e1; background: rgba(255, 255, 255, .96); }
+.card-inspector__mode { display: inline-grid; grid-template-columns: repeat(2, minmax(56px, 1fr)); border: 1px solid #dce7e1; border-radius: 6px; overflow: hidden; }
+.card-inspector__mode button { min-width: 56px; border: 0; border-radius: 0; }
+.card-inspector__mode button + button { border-left: 1px solid #dce7e1; }
+.card-inspector__mode button[aria-pressed="true"] { background: #ecfdf5; color: #047857; }
+.card-inspector__primary, .card-inspector__dialog-actions button:last-child { border-color: #059669 !important; background: #059669 !important; color: #fff !important; }
 .card-inspector__danger { border-color: #fecaca !important; background: #fff !important; color: #b91c1c !important; }
 .card-inspector__regenerate-theme { min-width: 0; display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 12px; }
 .card-inspector__regenerate-theme select { box-sizing: border-box; max-width: 220px; min-width: 0; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; font: inherit; padding: 0 8px; }
-.card-inspector__theme-state { min-width: 0; display: flex; align-items: center; gap: 8px; margin: 9px 0 0; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
-.card-inspector__theme-state--error, .card-inspector__error { color: #b91c1c; }
-.card-inspector__error { margin: 12px 0 0; font-size: 13px; overflow-wrap: anywhere; }
-.card-inspector__tabs { display: flex; gap: 4px; margin-top: 18px; overflow-x: auto; border-bottom: 1px solid #dce7e1; }
-.card-inspector__tabs button { flex: none; border: 0; border-radius: 0; background: transparent; padding: 0 8px 9px; }
-.card-inspector__tabs button[aria-selected="true"] { border-bottom: 2px solid #059669; color: #047857; }
-.card-inspector__content { min-width: 0; display: grid; gap: 20px; margin-top: 16px; }
-.card-inspector__save-row { display: flex; justify-content: flex-end; }
-.card-inspector__sources, .card-inspector__history { min-width: 0; display: grid; gap: 10px; margin-top: 16px; }
-.card-inspector__sources article, .card-inspector__history article { min-width: 0; display: grid; gap: 4px; padding: 11px; border: 1px solid #edf2f7; border-radius: 6px; }
+.card-inspector__more { position: relative; margin-left: auto; }
+.card-inspector__more-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; min-width: min(280px, calc(100vw - 32px)); display: grid; gap: 10px; padding: 12px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; box-shadow: 0 12px 26px rgba(15, 23, 42, .14); }
+.card-inspector__more-menu .card-inspector__regenerate-theme { display: grid; }
+.card-inspector__more-menu select, .card-inspector__more-menu button { width: 100%; max-width: none; }
+.card-inspector__theme-state, .card-inspector__generation { min-width: 0; max-width: 1060px; display: flex; align-items: center; gap: 8px; margin: 10px auto 0; color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__theme-state--error { color: #b91c1c; }
+.card-inspector__generation { padding: 10px 12px; border-left: 3px solid #34d399; background: #f0fdf4; color: #065f46; }
+.card-inspector__notebook { min-width: 0; max-width: 1060px; margin: 28px auto 0; }
+.card-inspector__chapters { min-width: 0; }
+.card-inspector__chapters button { display: block; width: 100%; min-width: 0; border: 0; background: transparent; color: #64748b; text-align: left; overflow-wrap: anywhere; }
+.card-inspector__chapters button[aria-current="location"] { color: #047857; background: #ecfdf5; }
+.card-inspector__document, .card-inspector__editor-document { min-width: 0; width: 100%; max-width: 840px; }
+.card-inspector__document { margin: 0 auto; }
+.card-inspector__editor-document { margin: 28px auto 0; }
+.card-inspector__document-section { min-width: 0; scroll-margin-top: 96px; }
+.card-inspector__document :deep([id^="markdown-section-"]) { scroll-margin-top: 96px; }
+.card-inspector__document-section + .card-inspector__document-section, .card-inspector__sources, .card-inspector__history { margin-top: 40px; padding-top: 26px; border-top: 1px solid #dce7e1; }
+.card-inspector__partial-markdown { min-width: 0; margin-top: 32px; padding: 16px 0; border-top: 1px solid #dce7e1; }
+.card-inspector__partial-markdown h3, .card-inspector__partial-markdown p { margin: 0; overflow-wrap: anywhere; }
+.card-inspector__partial-markdown p { margin-top: 6px; color: #64748b; }
+.card-inspector__partial-markdown button { margin-top: 12px; }
+.card-inspector__sources h3, .card-inspector__history h3 { margin: 0 0 14px; color: #0f172a; font-size: 20px; }
+.card-inspector__sources article, .card-inspector__history article { min-width: 0; display: grid; gap: 5px; padding: 12px 0; border-bottom: 1px solid #edf2f7; }
 .card-inspector__sources span, .card-inspector__history span, .card-inspector__history small { color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
-.card-inspector__sources a { color: #047857; font-size: 13px; overflow-wrap: anywhere; }
+.card-inspector__sources a { color: #047857; font-size: 13px; overflow-wrap: anywhere; word-break: break-all; }
 .card-inspector__history article div { min-width: 0; display: flex; justify-content: space-between; gap: 8px; }
-.card-inspector__empty { color: #64748b; font-size: 13px; }
+.card-inspector__placeholder { min-width: 0; max-width: 840px; min-height: 220px; display: grid; place-items: center; margin: 28px auto 0; border-top: 1px solid #dce7e1; color: #64748b; text-align: center; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .card-inspector__dialog-backdrop { position: fixed; inset: 0; z-index: 10001; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .42); }
-.card-inspector__dialog { box-sizing: border-box; width: min(100%, 460px); max-height: calc(100vh - 32px); overflow: auto; border-radius: 8px; background: #fff; padding: 20px; box-shadow: 0 18px 45px rgba(15, 23, 42, .25); }
-.card-inspector__dialog h3, .card-inspector__dialog p { margin: 0; }
+.card-inspector__dialog { box-sizing: border-box; width: min(100%, 460px); max-height: calc(100vh - 32px); overflow: auto; border-radius: 6px; background: #fff; padding: 20px; box-shadow: 0 18px 45px rgba(15, 23, 42, .25); }
+.card-inspector__dialog h3, .card-inspector__dialog p { margin: 0; overflow-wrap: anywhere; }
 .card-inspector__dialog > p { margin-top: 8px; color: #64748b; line-height: 1.5; }
-.card-inspector__dialog-actions { margin-top: 18px; justify-content: flex-end; align-items: center; }
+.card-inspector__dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 18px; }
 .card-inspector__dialog--conflict { width: min(100%, 840px); }
 .card-inspector__conflict-columns { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 .card-inspector__conflict-columns section { min-width: 0; border: 1px solid #edf2f7; border-radius: 6px; padding: 10px; }
@@ -528,13 +743,30 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__merge-fields { display: grid; gap: 8px; margin-top: 14px; }
 .card-inspector__merge-fields label { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); gap: 8px; align-items: center; font-size: 13px; }
 .card-inspector__merge-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; }
-@media (max-width: 620px) {
-  .card-inspector { padding: 14px; }
-  .card-inspector__header { align-items: start; flex-direction: column; }
-  .card-inspector__back { width: 100%; }
-  .card-inspector__actions { display: grid; grid-template-columns: 1fr; }
-  .card-inspector__actions button, .card-inspector__regenerate-theme, .card-inspector__regenerate-theme select { width: 100%; max-width: none; }
-  .card-inspector__conflict-columns, .card-inspector__merge-fields label { grid-template-columns: 1fr; }
+
+@media (min-width: 1024px) {
+  .card-inspector__notebook { display: grid; grid-template-columns: 180px minmax(0, 840px); gap: 40px; align-items: start; }
+  .card-inspector__chapters { position: sticky; top: 86px; display: grid; gap: 4px; }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .card-inspector__notebook { display: grid; grid-template-columns: 1fr; gap: 22px; }
+  .card-inspector__chapters { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; }
+  .card-inspector__chapters button { width: auto; flex: none; white-space: nowrap; }
+}
+
+@media (max-width: 767px) {
+  .card-inspector { padding: 16px 14px 42px; }
+  .card-inspector__header { grid-template-columns: 1fr; gap: 12px; }
+  .card-inspector__heading h2 { font-size: 24px; }
+  .card-inspector__toolbar { align-items: stretch; }
+  .card-inspector__mode { flex: 1 1 130px; }
+  .card-inspector__more { margin-left: 0; }
+  .card-inspector__generation { align-items: flex-start; flex-direction: column; }
+  .card-inspector__notebook { display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 20px; }
+  .card-inspector__chapters { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 5px; }
+  .card-inspector__chapters button { width: auto; flex: none; white-space: nowrap; }
   .card-inspector__history article div { flex-direction: column; }
+  .card-inspector__conflict-columns, .card-inspector__merge-fields label { grid-template-columns: 1fr; }
 }
 </style>

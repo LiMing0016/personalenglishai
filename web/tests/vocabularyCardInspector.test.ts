@@ -62,10 +62,84 @@ test('theme fallback runs on card changes and preserves an active manual choice'
 
 test('inspector adapts core once and edits markdown without legacy field guesses', () => {
   assert.match(inspector, /VocabularyCoreSummary/)
+  assert.match(inspector, /VocabularyMarkdownRenderer/)
   assert.match(inspector, /VocabularyMarkdownEditor/)
+  assert.match(inspector, /buildVocabularyCardSections/)
   assert.match(inspector, /card\.core\s*\?\?\s*projectLegacyVocabularyCore/)
   assert.match(inspector, /minimalVocabularyCore/)
-  assert.doesNotMatch(inspector, /props\.template\.fields|fieldNames|isArrayField/)
+  assert.doesNotMatch(inspector, /VocabularyTemplate|props\.template|templates|fieldNames|isArrayField/)
+})
+
+test('inspector is a notebook document with dynamic chapter navigation', () => {
+  assert.match(inspector, /ref<MarkdownSection\[\]>\(\[\]\)/)
+  assert.match(inspector, /buildVocabularyCardSections\(/)
+  assert.match(inspector, /markdownSections\.value/)
+  assert.match(inspector, /props\.card\.sources\.length\s*>\s*0/)
+  assert.match(inspector, /Boolean\(props\.listVocabularyRevisions\?\.items\.length\)/)
+  assert.match(inspector, /aria-label="单词卡章节"/)
+  assert.match(inspector, /id="core-information"/)
+  assert.match(inspector, /id="card-sources"/)
+  assert.match(inspector, /id="card-history"/)
+  assert.match(inspector, /aria-current="location"/)
+  assert.match(inspector, /scrollToSection\(section\.id\)/)
+  assert.doesNotMatch(inspector, /activeTab/)
+  assert.doesNotMatch(inspector, /role="tab(?:list)?"/)
+})
+
+test('inspector tracks notebook chapters with one rebuilt window observer', () => {
+  assert.match(inspector, /IntersectionObserver/)
+  assert.match(inspector, /document\.getElementById\(id\)\?\.scrollIntoView\(\{\s*behavior:\s*['"]smooth['"],\s*block:\s*['"]start['"]\s*\}\)/)
+  assert.match(inspector, /rootMargin:\s*['"]-\d+px\s+0px/)
+  assert.match(inspector, /observer\?\.disconnect\(\)/)
+  assert.match(inspector, /onBeforeUnmount/)
+  assert.match(inspector, /typeof window\s*===\s*['"]undefined['"]/)
+  assert.match(inspector, /activeSectionId\s*=\s*ref\(['"]core-information['"]\)/)
+})
+
+test('inspector provides read and edit modes with polite save announcements', () => {
+  assert.match(inspector, />阅读</)
+  assert.match(inspector, />编辑</)
+  assert.match(inspector, /v-if="editing"[\s\S]*VocabularyMarkdownEditor/)
+  assert.match(inspector, /v-else[\s\S]*VocabularyMarkdownRenderer/)
+  assert.match(inspector, /saveAnnouncement\s*=\s*ref\(['"]['"]\)/)
+  assert.match(inspector, /aria-live="polite"/)
+  assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]单词卡已保存['"]/)
+  assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]保存失败，请重试['"]/)
+  assert.match(inspector, /<template v-if="editing">[\s\S]*?<template v-else>/)
+})
+
+test('inspector exposes the stable generation state matrix', () => {
+  assert.match(inspector, /hasReadableRevision/)
+  for (const text of [
+    '正在生成单词卡',
+    '正在生成新版本，当前内容可继续阅读',
+    '发现待确认的新版本',
+    '本次生成失败，当前内容未受影响',
+    '暂时没有可阅读的卡片内容',
+    '主题内容待完善',
+  ]) {
+    assert.match(inspector, new RegExp(text))
+  }
+  assert.match(inspector, /role="status"/)
+  const liveRegion = inspector.match(/<div v-if="generationState"[^>]*role="status"[\s\S]*?<\/div>/)?.[0] ?? ''
+  assert.doesNotMatch(liveRegion, /<button/)
+  assert.equal((inspector.match(/重试生成/g) ?? []).length, 1)
+  const retryBlock = inspector.match(/const showRetry = computed\(\(\) => \([\s\S]*?\n\)\)/)?.[0] ?? ''
+  assert.match(retryBlock, /generationOutcome\s*===\s*['"]failed['"]/)
+  assert.match(retryBlock, /generationError/)
+  assert.doesNotMatch(inspector, /poll|轮询|count/i)
+})
+
+test('inspector moves theme and delete into one narrow-screen more menu', () => {
+  assert.match(inspector, /useMediaQuery\(['"]\(max-width: 767px\)['"]\)/)
+  assert.match(inspector, /aria-label="更多单词卡操作"/)
+  assert.match(inspector, /:aria-expanded="moreMenuOpen"/)
+  assert.match(inspector, /aria-controls="vocabulary-card-more-menu"/)
+  assert.doesNotMatch(inspector, /role="menu(?:item)?"/)
+  assert.match(inspector, /event\.key\s*!==\s*['"]Escape['"]/)
+  assert.match(inspector, /moreButton\.value\?\.focus\(\)/)
+  assert.match(inspector, /window\.addEventListener\(['"]keydown['"]/)
+  assert.match(inspector, /window\.removeEventListener\(['"]keydown['"]/)
 })
 
 test('save preserves term identity and sends core markdown revision and summary', () => {
@@ -132,7 +206,7 @@ test('regenerate uses active cached themes and confirms switching to the latest 
 })
 
 test('inspector retains legacy retry conflict and soft-delete behavior', () => {
-  assert.match(inspector, /card\.status\s*===\s*['"]failed['"]\s*\|\|\s*card\.generationStatus\s*===\s*['"]failed['"]/)
+  assert.match(inspector, /props\.card\.status\s*===\s*['"]failed['"]\s*\|\|\s*props\.card\.generationStatus\s*===\s*['"]failed['"]/)
   assert.match(inspector, /safeExternalUrl\(source\.sourceUrl\)/)
   assert.match(inspector, /再次收藏或录入时可恢复/)
   assert.match(inspector, /card\.candidateRevisionUid/)
@@ -140,16 +214,21 @@ test('inspector retains legacy retry conflict and soft-delete behavior', () => {
 })
 
 test('partial generation warning uses stable outcome fields instead of cleared errors', () => {
-  const warningBlock = inspector.match(/const generationErrorMessage = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
+  const warningBlock = inspector.match(/const generationState = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
   assert.match(warningBlock, /generationOutcome\s*===\s*['"]partial['"]/)
   assert.match(warningBlock, /warning\s*===\s*['"]markdown_unavailable['"]/)
-  assert.match(warningBlock, /主题内容待完善，可重新生成。/)
+  assert.match(warningBlock, /主题内容待完善/)
   assert.doesNotMatch(warningBlock, /!props\.card\.generationError/)
 })
 
 test('inspector styles stable editors and narrow screens without horizontal overflow', () => {
   assert.match(inspector, /min-width:\s*0/)
   assert.match(inspector, /overflow-wrap:\s*anywhere/)
-  assert.match(inspector, /@media \(max-width:\s*620px\)/)
+  assert.match(inspector, /@media \(min-width:\s*1024px\)/)
+  assert.match(inspector, /@media \(min-width:\s*768px\) and \(max-width:\s*1023px\)/)
+  assert.match(inspector, /@media \(max-width:\s*767px\)/)
+  assert.match(inspector, /180px/)
+  assert.match(inspector, /840px/)
+  assert.match(inspector, /:deep\(\[id\^="markdown-section-"\]\)[^{]*\{[^}]*scroll-margin-top:/)
   assert.match(inspector, /grid-template-columns:\s*1fr/)
 })

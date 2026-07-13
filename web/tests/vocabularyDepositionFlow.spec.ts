@@ -39,8 +39,8 @@ type Card = {
   displayTerm: string
   normalizedTerm: string
   templateKey: 'basic'
-  status: 'ready' | 'failed' | 'needs_review'
-  activeRevisionUid: string
+  status: 'captured' | 'generating' | 'ready' | 'failed' | 'needs_review'
+  activeRevisionUid: string | null
   sourceTypes: string[]
   lastCapturedAt: string
   updatedAt: string
@@ -347,7 +347,7 @@ test('stale v1 conflict uses the 409 current format when the revision cache miss
   })
 
   await page.goto('/app/vocabulary/cards/card_stale_v1')
-  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByRole('button', { name: '保存修改' }).click()
 
   const dialog = page.getByRole('dialog', { name: '发现版本冲突' })
@@ -404,7 +404,7 @@ test('creates a custom default theme, selects it from the shelf, and captures tw
   await page.getByRole('textbox', { name: '批量录入单词' }).fill('resilient\npragmatic')
   await page.getByRole('button', { name: '按「产品英语」生成 2 张卡片' }).click()
   await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/card_capture_1$/)
-  await expect(page.locator('.card-inspector h2')).toHaveText('resilient')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('resilient')
 
   const captureRequest = requests.find((request) => request.path.endsWith('/captures'))
   expect(captureRequest?.body).toMatchObject({
@@ -444,7 +444,8 @@ test('editing a theme freezes the old card version and regeneration uses the lat
 
   await page.goto('/app/vocabulary/cards/card_theme_v1')
   await expect(page.getByText('产品英语 · v1')).toBeVisible()
-  await expect(page.getByLabel('Markdown 内容')).toHaveValue(/v1 学习提示/)
+  await expect(page.getByRole('heading', { name: 'v1 学习提示' })).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
   await page.getByRole('button', { name: '重新生成', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: '使用最新主题版本？' })
   await expect(confirmation).toContainText('当前版本会保留在历史中')
@@ -455,7 +456,7 @@ test('editing a theme freezes the old card version and regeneration uses the lat
     useLatestThemeVersion: true,
   })
   await expect(page.getByText('产品英语 · v1')).toBeVisible()
-  await expect(page.getByLabel('Markdown 内容')).toHaveValue(/v1 学习提示/)
+  await expect(page.getByRole('heading', { name: 'v1 学习提示' })).toBeVisible()
   await expectCleanRuntime(page, errors)
 })
 
@@ -484,8 +485,8 @@ test('Markdown generation failure keeps core content and a reviewable user-facin
   await expect(page.locator('.card-inspector').getByText('待确认')).toBeVisible()
   await expect(page.getByText('dealing with problems practically')).toBeVisible()
   await expect(page.getByText('务实的')).toBeVisible()
-  await expect(page.getByLabel('Markdown 内容')).toHaveValue('')
-  await expect(page.getByText('主题内容待完善')).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '主题内容待完善' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await expectCleanRuntime(page, errors)
 })
@@ -513,7 +514,7 @@ test('legacy basic card remains readable and regenerates into the themed format'
 
   await page.goto('/app/vocabulary/cards/card_legacy_basic')
   await expect(page.getByText('兼容卡片')).toBeVisible()
-  await expect(page.locator('.card-inspector h2')).toHaveText('legacy')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('legacy')
   await expect(page.getByText('something handed down from the past')).toBeVisible()
   await page.getByRole('button', { name: '重新生成', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: '使用最新主题版本？' })
@@ -532,7 +533,12 @@ test('hard refresh on a persisted card route renders detail only', async ({ page
   await page.goto('/app/vocabulary/cards/card_ready')
   await page.reload()
 
-  await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('innovative')
+  const chapters = page.getByRole('navigation', { name: '单词卡章节' })
+  await expect(chapters).toBeVisible()
+  await expect(chapters.getByRole('button', { name: '学习提示' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '学习提示' })).toBeVisible()
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '单词卡中心' })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: '批量录入单词' })).toHaveCount(0)
   expect(requestCount('GET', '/cards/card_ready')).toBeGreaterThanOrEqual(1)
@@ -546,10 +552,10 @@ test('persisted card navigation loads the next selected card', async ({ page }) 
 
   await page.goto('/app/vocabulary?tab=collection')
   await page.getByRole('listitem').filter({ hasText: 'first' }).click()
-  await expect(page.locator('.card-inspector h2')).toHaveText('first')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('first')
   await page.getByRole('button', { name: '返回单词库' }).click()
   await page.getByRole('listitem').filter({ hasText: 'second' }).click()
-  await expect(page.locator('.card-inspector h2')).toHaveText('second')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('second')
 
   expect(requestCount('GET', '/cards/card_first')).toBe(1)
   expect(requestCount('GET', '/cards/card_second')).toBe(1)
@@ -604,7 +610,7 @@ test('generic detail failure can retry and recover', async ({ page }) => {
   const attemptsBeforeRetry = requestCount('GET', '/cards/card_transient')
   expect(attemptsBeforeRetry).toBe(4)
   await alert.getByRole('button', { name: '重试' }).click()
-  await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('innovative')
   expect(requestCount('GET', '/cards/card_transient')).toBe(attemptsBeforeRetry + 1)
 })
 
@@ -659,23 +665,35 @@ for (const choice of ['keep_current', 'use_ai', 'merge_fields'] as const) {
   })
 }
 
-test('card commands, source/history tabs, Markdown cancel reset, and delete confirmation are operable', async ({ page }) => {
+test('notebook commands, source/history chapters, Markdown save/cancel, and delete confirmation are operable', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   const failedCard = makeCard({ cardUid: 'card_failed', status: 'failed', generationStatus: 'failed', generationError: 'temporary generation failure' })
   const { requests } = await installApiMocks(page, [failedCard])
   await page.goto('/app/vocabulary/cards/card_failed')
 
-  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await expect(page.getByText('本次生成失败，当前内容未受影响')).toBeVisible()
+  await expect(page.getByRole('button', { name: '重试生成' })).toHaveCount(1)
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  await expect(page.getByRole('button', { name: '重新生成', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重试生成' })).toHaveCount(0)
   await page.getByLabel('Markdown 内容').fill('Unsaved Markdown')
-  await page.getByRole('button', { name: '取消编辑' }).click()
-  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
   await expect(page.getByLabel('Markdown 内容')).toHaveValue(/学习提示/)
-  await page.getByRole('button', { name: '取消编辑' }).click()
+  await page.getByLabel('Markdown 内容').fill('## 保存后的标题\n\nSaved body.')
+  await page.getByRole('button', { name: '保存修改' }).click()
+  await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
+  await expect(page.locator('.card-inspector__save-announcement')).toHaveText('单词卡已保存')
+  await expect(page.getByRole('heading', { name: '保存后的标题' })).toBeVisible()
 
-  await page.getByRole('tab', { name: '来源' }).click()
+  const chapters = page.getByRole('navigation', { name: '单词卡章节' })
+  await chapters.getByRole('button', { name: '来源' }).click()
   await expect(page.getByText('产品写作笔记')).toBeVisible()
-  await page.getByRole('tab', { name: '历史' }).click()
+  await chapters.getByRole('button', { name: '历史' }).click()
   await expect(page.getByText('创建卡片')).toBeVisible()
+  await expect(page.getByRole('tab')).toHaveCount(0)
 
   await page.getByRole('button', { name: '重试生成' }).click()
   await page.getByRole('button', { name: '重新生成', exact: true }).click()
@@ -698,6 +716,83 @@ test('card commands, source/history tabs, Markdown cancel reset, and delete conf
   await expectCleanRuntime(page, errors)
 })
 
+test('generation states do not present missing revisions as readable documents', async ({ page }) => {
+  const generating = makeCard({
+    cardUid: 'card_generating_empty',
+    displayTerm: 'pending',
+    normalizedTerm: 'pending',
+    status: 'generating',
+    activeRevisionUid: null,
+    generationStatus: 'pending',
+    generationOutcome: null,
+    core: null,
+    markdown: null,
+    content: {},
+    sources: [],
+  })
+  const regenerating = makeCard({
+    cardUid: 'card_regenerating',
+    status: 'generating',
+    generationStatus: 'running',
+  })
+  const failedEmpty = makeCard({
+    cardUid: 'card_failed_empty',
+    displayTerm: 'unavailable',
+    normalizedTerm: 'unavailable',
+    status: 'failed',
+    activeRevisionUid: null,
+    generationStatus: 'failed',
+    generationOutcome: 'failed',
+    core: null,
+    markdown: null,
+    content: {},
+    sources: [],
+  })
+  await installApiMocks(page, [generating, regenerating, failedEmpty])
+
+  await page.goto('/app/vocabulary/cards/card_generating_empty')
+  await expect(page.getByRole('status')).toHaveText('正在生成单词卡')
+  await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
+  await expect(page.getByText('暂无释义')).toHaveCount(0)
+
+  await page.goto('/app/vocabulary/cards/card_regenerating')
+  await expect(page.getByRole('status')).toHaveText('正在生成新版本，当前内容可继续阅读')
+  await expect(page.getByRole('heading', { name: '学习提示' })).toBeVisible()
+
+  await page.goto('/app/vocabulary/cards/card_failed_empty')
+  await expect(page.getByRole('status')).toHaveText('暂时没有可阅读的卡片内容')
+  await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '重试生成' })).toHaveCount(1)
+})
+
+test('mobile More owns theme and delete controls and closes across navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const first = makeCard({ cardUid: 'card_mobile_first', displayTerm: 'first', normalizedTerm: 'first' })
+  const second = makeCard({ cardUid: 'card_mobile_second', displayTerm: 'second', normalizedTerm: 'second' })
+  await installApiMocks(page, [first, second])
+  await page.goto('/app/vocabulary/cards/card_mobile_first')
+
+  const more = page.getByRole('button', { name: '更多单词卡操作' })
+  await expect(more).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByLabel('重新生成主题')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveCount(0)
+  await more.click()
+  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByLabel('重新生成主题')).toBeVisible()
+  await expect(page.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+  await page.getByLabel('重新生成主题').focus()
+  await page.keyboard.press('Escape')
+  await expect(more).toHaveAttribute('aria-expanded', 'false')
+  await expect(more).toBeFocused()
+
+  await more.click()
+  await page.getByRole('button', { name: '返回单词库' }).click()
+  await page.getByRole('listitem').filter({ hasText: 'second' }).click()
+  await expect(page.locator('.card-inspector__heading h2')).toHaveText('second')
+  await expect(page.getByRole('button', { name: '更多单词卡操作' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByLabel('重新生成主题')).toHaveCount(0)
+})
+
 for (const { name, viewport } of [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
   { name: 'mobile', viewport: { width: 390, height: 844 } },
@@ -707,7 +802,7 @@ for (const { name, viewport } of [
     const errors = collectRuntimeErrors(page)
     await installApiMocks(page, [makeCard()])
     await page.goto('/app/vocabulary/cards/card_ready')
-    await expect(page.locator('.card-inspector h2')).toHaveText('innovative')
+    await expect(page.locator('.card-inspector__heading h2')).toHaveText('innovative')
 
     const navButtons = page.locator('.vocabulary-nav button')
     for (let index = 0; index < await navButtons.count(); index += 1) {
