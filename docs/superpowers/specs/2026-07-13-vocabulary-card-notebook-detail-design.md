@@ -58,7 +58,7 @@ related_docs:
 
 ### 单词卡详情路由
 
-`/app/vocabulary/cards/:cardUid` 使用以下纵向结构：
+当 `:cardUid` 是以 `card_` 开头的持久化卡片 ID 时，`/app/vocabulary/cards/:cardUid` 使用以下纵向结构：
 
 1. 顶部工具栏：返回单词库、阅读/编辑模式、主题选择、重新生成、保存和更多操作。
 2. 单词标题区：单词、音标、词性、状态和当前主题。
@@ -67,6 +67,15 @@ related_docs:
 5. 页面级状态：生成进度、部分成功、失败、冲突和删除确认。
 
 详情正文最大宽度保持在适合阅读的范围内，而不是铺满超宽屏。左侧导航只承担定位功能，不与正文竞争视觉层级。
+
+### 旧链接兼容
+
+历史版本允许把普通单词放在 `/app/vocabulary/cards/:cardUid` 参数中，并把它解释为单词库关键词。这个行为继续保留：
+
+- 参数以 `card_` 开头时进入全页详情。
+- 参数不是持久化卡片 ID 时继续进入单词库，并由 `legacyVocabularyCardKeyword()` 写入列表关键词。
+- 旧关键词链接不请求卡片详情，也不显示全页详情的加载或失败状态。
+- 本次不删除兼容函数和现有路由测试；后续若要迁移为查询参数，需要单独设计链接迁移和重定向策略。
 
 ## 章节导航规则
 
@@ -79,7 +88,7 @@ related_docs:
 - Markdown 为空时不生成主题章节，正文显示可执行的空状态。
 - Markdown 中出现“个人笔记”等标题时自然成为章节；本次不新增独立个人笔记字段。
 
-每个导航项对应稳定的页面锚点。点击后滚动到章节，滚动正文时同步高亮当前章节。标题重复时在页面内生成唯一锚点，但不修改保存的 Markdown 源码。
+每个导航项对应稳定的页面锚点。Markdown 章节按出现顺序使用 `markdown-section-1`、`markdown-section-2` 等页面内 ID，因此两个同名的 `## 例句` 也会得到不同锚点。点击后滚动窗口到章节；页面滚动时使用 `IntersectionObserver` 观察正文标题并同步高亮当前章节，不创建独立滚动容器。锚点只存在于渲染结果中，不修改保存的 Markdown 源码。
 
 桌面端左侧导航在内容滚动时保持可见。中等屏幕和手机端改为正文顶部的横向章节导航，避免固定侧栏压缩内容。
 
@@ -92,7 +101,7 @@ related_docs:
 - 核心 JSON 渲染为单词、音标、词性和释义摘要。
 - Markdown 渲染标题、段落、列表、引用、表格、代码块和强调文本。
 - 不显示字符计数或“保留 Markdown 源码格式”等编辑提示。
-- 原始 HTML 始终转义，不执行脚本、事件属性或 iframe。
+- 原始 HTML 始终转义，包括 Markdown 中的 `<br>`；不执行脚本、事件属性或 iframe。
 - 单词卡正文不自动加载 Markdown 图片；图片语法退化为可读替代文本。
 
 ### 编辑模式
@@ -133,7 +142,7 @@ related_docs:
 
 ### `VocabularyCardInspector.vue`
 
-保留现有 props、mutation 和冲突处理能力，但从“右侧检查器”调整为全页详情内容组件。内部拆出清晰区域，避免继续把标题、操作、核心内容、Markdown、来源、历史和对话框全部堆在单一模板中。
+保留现有卡片、mutation 和冲突处理能力，但从“右侧检查器”调整为全页详情内容组件。当前未被使用的必填 `template` 和 `templates` props 移除，`selectedVocabularyTemplate` 不再作为详情渲染门槛。卡片详情可以在旧模板查询加载失败、模板已下线或 `templateKey` 无法匹配时正常显示；主题名称优先读取卡片详情中的主题快照，缺失时显示通用回退文案。内部拆出清晰区域，避免继续把标题、操作、核心内容、Markdown、来源、历史和对话框全部堆在单一模板中。
 
 ### `VocabularyMarkdownRenderer.vue`
 
@@ -145,17 +154,38 @@ related_docs:
 - 向父组件提供章节元数据。
 - 处理空内容展示。
 
+渲染工具的公开结果固定为：
+
+```ts
+interface VocabularyMarkdownDocument {
+  html: string
+  sections: Array<{
+    id: string
+    title: string
+    level: 2
+  }>
+}
+```
+
+`sections` 只包含二级标题，`id` 按标题出现顺序生成，`title` 是移除 Markdown 强调和代码标记后的可读文本。
+
 ### `VocabularyMarkdownEditor.vue`
 
 只在编辑模式使用，继续负责源码输入、字符计数和长度校验，不再承担只读展示。
 
 ### 共享 Markdown 工具
 
-复用 `web/src/components/assistant/markdown.ts` 已有的转义和基础 Markdown 解析能力，并把需要的解析函数提取为可配置的共享边界。单词卡配置禁用图片自动加载并启用标题锚点。不得直接把未经转义的 AI 输出交给 `v-html`，也不新增 `marked`、`markdown-it` 等依赖。
+复用 `web/src/components/assistant/markdown.ts` 已有的转义和基础 Markdown 解析能力，并把需要的解析函数提取为可配置的共享边界。共享解析器增加显式选项，例如 `allowImages`、`allowHtmlBreaks` 和 `headingAnchors`：
+
+- 现有 `renderAssistantMarkdown` 继续使用 `allowHtmlBreaks: true`，保持助手内容和已有 `<br>` 测试不变。
+- 单词卡使用 `allowImages: false`、`allowHtmlBreaks: false` 和 `headingAnchors: true`。
+- 严格模式下 `<br>` 只显示为转义文本，不重新转成 HTML 元素。
+
+不得直接把未经转义的 AI 输出交给 `v-html`，也不新增 `marked`、`markdown-it` 等依赖。
 
 ## 数据流
 
-1. 路由参数解析得到持久化 `cardUid`。
+1. 路由参数先区分持久化 `cardUid` 与旧关键词；只有持久化 ID 才进入详情数据流。
 2. `useVocabularyCards` 继续加载卡片详情和版本历史，并在生成期间轮询。
 3. 详情组件从 `core` 读取统一词典信息；旧卡片继续通过现有兼容投影读取。
 4. Markdown 渲染器从 `markdown` 或兼容内容读取正文，生成安全 HTML 和章节元数据。
@@ -169,7 +199,7 @@ related_docs:
 
 ### 加载与不存在
 
-- 详情加载中显示稳定尺寸的页面骨架，不回退到列表加空右栏。
+- 详情加载中显示稳定尺寸的页面骨架，不回退到列表加空右栏，也不等待旧模板查询。
 - 详情请求失败显示返回和重试操作。
 - 卡片不存在或无权限时使用明确的不可用状态，不无限轮询。
 
