@@ -1,3 +1,26 @@
+export interface MarkdownSection {
+  id: string
+  title: string
+  level: 2
+}
+
+export interface MarkdownDocument {
+  html: string
+  sections: MarkdownSection[]
+}
+
+export interface MarkdownRenderOptions {
+  allowImages?: boolean
+  allowHtmlBreaks?: boolean
+  headingAnchors?: boolean
+}
+
+interface ResolvedMarkdownRenderOptions {
+  allowImages: boolean
+  allowHtmlBreaks: boolean
+  headingAnchors: boolean
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -11,11 +34,11 @@ function escapeAttribute(text: string): string {
     .replace(/'/g, '&#39;')
 }
 
-function renderInlineText(text: string): string {
-  return escapeHtml(text)
+function renderInlineText(text: string, options: ResolvedMarkdownRenderOptions): string {
+  const html = escapeHtml(text)
     .replace(/`([^`]+?)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
+  return options.allowHtmlBreaks ? html.replace(/&lt;br\s*\/?&gt;/gi, '<br/>') : html
 }
 
 function readMarkdownImageSource(sourceText: string): string {
@@ -32,8 +55,14 @@ function isSafeImageSource(source: string): boolean {
   return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
 }
 
-function renderMarkdownImage(alt: string, source: string): string {
-  if (!isSafeImageSource(source)) return renderInlineText(alt || '图片')
+function renderMarkdownImage(
+  alt: string,
+  source: string,
+  options: ResolvedMarkdownRenderOptions,
+): string {
+  if (!options.allowImages || !isSafeImageSource(source)) {
+    return renderInlineText(alt || '图片', options)
+  }
   return [
     '<img',
     ' class="markdown-image"',
@@ -44,45 +73,49 @@ function renderMarkdownImage(alt: string, source: string): string {
   ].join('')
 }
 
-function renderInline(text: string): string {
+function renderInline(text: string, options: ResolvedMarkdownRenderOptions): string {
   const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g
   let html = ''
   let cursor = 0
 
   for (const match of text.matchAll(imagePattern)) {
     const start = match.index ?? 0
-    html += renderInlineText(text.slice(cursor, start))
-    html += renderMarkdownImage(match[1] ?? '', readMarkdownImageSource(match[2] ?? ''))
+    html += renderInlineText(text.slice(cursor, start), options)
+    html += renderMarkdownImage(
+      match[1] ?? '',
+      readMarkdownImageSource(match[2] ?? ''),
+      options,
+    )
     cursor = start + match[0].length
   }
 
-  html += renderInlineText(text.slice(cursor))
+  html += renderInlineText(text.slice(cursor), options)
   return html
 }
 
-function renderParagraph(lines: string[]): string {
-  return `<p>${lines.map(renderInline).join('<br/>')}</p>`
+function renderParagraph(lines: string[], options: ResolvedMarkdownRenderOptions): string {
+  return `<p>${lines.map((line) => renderInline(line, options)).join('<br/>')}</p>`
 }
 
-function renderList(lines: string[]): string {
+function renderList(lines: string[], options: ResolvedMarkdownRenderOptions): string {
   const items = lines
     .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
-    .map((item) => `<li>${renderInline(item)}</li>`)
+    .map((item) => `<li>${renderInline(item, options)}</li>`)
     .join('')
   return `<ul>${items}</ul>`
 }
 
-function renderOrderedList(lines: string[]): string {
+function renderOrderedList(lines: string[], options: ResolvedMarkdownRenderOptions): string {
   const items = lines
     .map((line) => line.replace(/^\s*\d+[.)]\s+/, '').trim())
-    .map((item) => `<li>${renderInline(item)}</li>`)
+    .map((item) => `<li>${renderInline(item, options)}</li>`)
     .join('')
   return `<ol>${items}</ol>`
 }
 
-function renderBlockquote(lines: string[]): string {
+function renderBlockquote(lines: string[], options: ResolvedMarkdownRenderOptions): string {
   const quoteLines = lines.map((line) => line.replace(/^>\s?/, ''))
-  return `<blockquote>${renderParagraph(quoteLines)}</blockquote>`
+  return `<blockquote>${renderParagraph(quoteLines, options)}</blockquote>`
 }
 
 function renderCodeBlock(language: string, code: string): string {
@@ -202,19 +235,40 @@ function normalizeTableCells(cells: string[], columnCount: number): string[] {
   return Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
 }
 
-function renderTable(lines: string[]): string {
+function renderTable(lines: string[], options: ResolvedMarkdownRenderOptions): string {
   const headers = splitTableRow(lines[0]!)
   const rows = lines.slice(2).map((line) => normalizeTableCells(splitTableRow(line), headers.length))
-  const headerHtml = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join('')
+  const headerHtml = headers.map((cell) => `<th>${renderInline(cell, options)}</th>`).join('')
   const rowHtml = rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join('')}</tr>`)
+    .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell, options)}</td>`).join('')}</tr>`)
     .join('')
   return `<div class="markdown-table-scroll"><table><thead><tr>${headerHtml}</tr></thead><tbody>${rowHtml}</tbody></table></div>`
 }
 
-export function renderAssistantMarkdown(markdown: string): string {
+function plainTextFromInlineMarkdown(text: string): string {
+  return text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`([^`]+?)`/g, '$1')
+    .replace(/\*\*([^*]+?)\*\*/g, '$1')
+    .replace(/__([^_]+?)__/g, '$1')
+    .replace(/\*([^*]+?)\*/g, '$1')
+    .replace(/_([^_]+?)_/g, '$1')
+    .trim()
+}
+
+export function renderMarkdownDocument(
+  markdown: string,
+  options: MarkdownRenderOptions = {},
+): MarkdownDocument {
+  const resolvedOptions: ResolvedMarkdownRenderOptions = {
+    allowImages: options.allowImages ?? true,
+    allowHtmlBreaks: options.allowHtmlBreaks ?? false,
+    headingAnchors: options.headingAnchors ?? false,
+  }
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
   const blocks: string[] = []
+  const sections: MarkdownSection[] = []
   let paragraph: string[] = []
   let list: string[] = []
   let orderedList: string[] = []
@@ -222,25 +276,25 @@ export function renderAssistantMarkdown(markdown: string): string {
 
   const flushParagraph = () => {
     if (paragraph.length === 0) return
-    blocks.push(renderParagraph(paragraph))
+    blocks.push(renderParagraph(paragraph, resolvedOptions))
     paragraph = []
   }
 
   const flushList = () => {
     if (list.length === 0) return
-    blocks.push(renderList(list))
+    blocks.push(renderList(list, resolvedOptions))
     list = []
   }
 
   const flushOrderedList = () => {
     if (orderedList.length === 0) return
-    blocks.push(renderOrderedList(orderedList))
+    blocks.push(renderOrderedList(orderedList, resolvedOptions))
     orderedList = []
   }
 
   const flushQuote = () => {
     if (quote.length === 0) return
-    blocks.push(renderBlockquote(quote))
+    blocks.push(renderBlockquote(quote, resolvedOptions))
     quote = []
   }
 
@@ -283,7 +337,7 @@ export function renderAssistantMarkdown(markdown: string): string {
         index += 1
       }
       index -= 1
-      blocks.push(renderTable(tableLines))
+      blocks.push(renderTable(tableLines, resolvedOptions))
       continue
     }
 
@@ -297,7 +351,20 @@ export function renderAssistantMarkdown(markdown: string): string {
     if (heading) {
       flushAll()
       const level = heading[1].length
-      blocks.push(`<h${level}>${renderInline(heading[2].trim())}</h${level}>`)
+      const headingText = heading[2].trim()
+      if (level === 2 && resolvedOptions.headingAnchors) {
+        const section: MarkdownSection = {
+          id: `markdown-section-${sections.length + 1}`,
+          title: plainTextFromInlineMarkdown(headingText),
+          level: 2,
+        }
+        sections.push(section)
+        blocks.push(
+          `<h2 id="${escapeAttribute(section.id)}">${renderInline(headingText, resolvedOptions)}</h2>`,
+        )
+      } else {
+        blocks.push(`<h${level}>${renderInline(headingText, resolvedOptions)}</h${level}>`)
+      }
       continue
     }
 
@@ -332,5 +399,12 @@ export function renderAssistantMarkdown(markdown: string): string {
   }
 
   flushAll()
-  return blocks.join('')
+  return { html: blocks.join(''), sections }
+}
+
+export function renderAssistantMarkdown(markdown: string): string {
+  return renderMarkdownDocument(markdown, {
+    allowImages: true,
+    allowHtmlBreaks: true,
+  }).html
 }
