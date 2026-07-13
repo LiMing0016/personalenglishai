@@ -274,7 +274,9 @@ class VocabularyCardServiceTest {
             return VocabularyRevisionWriteService.WriteOutcome.STALE;
         });
         when(revisions.findRevision("rev_old")).thenReturn(VocabularyTestFixtures.userRevision("rev_old"));
-        when(revisions.findRevision("rev_current")).thenReturn(VocabularyTestFixtures.userRevision("rev_current"));
+        var currentRevision = VocabularyTestFixtures.userRevision("rev_current");
+        currentRevision.setContentFormatVersion(1);
+        when(revisions.findRevision("rev_current")).thenReturn(currentRevision);
         when(revisions.listRevisions("card_1")).thenAnswer(ignored -> List.of(candidate.get()));
         ObjectNode content = (ObjectNode) objectMapper.readTree("""
                 {"term":"innovative","phonetic":"","partOfSpeech":"adjective","definitions":[],"examples":[],"notes":"edited"}
@@ -288,6 +290,8 @@ class VocabularyCardServiceTest {
         assertEquals(ErrorCode.VOCABULARY_REVISION_CONFLICT, error.getErrorCode());
         assertEquals("rev_current", error.getConflict().currentRevisionUid());
         assertEquals(candidate.get().getRevisionUid(), error.getConflict().candidateRevisionUid());
+        assertEquals(1, error.getConflict().currentContentFormatVersion());
+        assertNull(error.getConflict().candidateContentFormatVersion());
         assertEquals("user", candidate.get().getAuthorType());
         verify(revisions).listRevisions("card_1");
     }

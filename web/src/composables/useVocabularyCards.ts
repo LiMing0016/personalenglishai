@@ -58,7 +58,8 @@ export function isVocabularyV1Revision(
 ): boolean {
   const content = asLegacyRecord(compatibilityContent)
   return contentFormatVersion != null
-    && Number.isInteger(content?.schemaVersion)
+    && content?.schemaVersion === 1
+    && typeof content.term === 'string'
     && Array.isArray(content?.phonetics)
     && Array.isArray(content?.senses)
 }

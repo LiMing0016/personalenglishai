@@ -2,7 +2,16 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
-type CardContent = Record<string, string | string[]>
+type CardContent = Record<string, unknown>
+type ConflictPayload = {
+  currentRevisionUid: string
+  candidateRevisionUid: string
+  currentContent: CardContent
+  candidateContent: CardContent
+  currentContentFormatVersion: number | null
+  candidateContentFormatVersion: number | null
+  conflictStatus: 'needs_review'
+}
 type Card = {
   cardUid: string
   displayTerm: string
@@ -72,16 +81,22 @@ function makeCard(overrides: Partial<Card> = {}): Card {
   }
 }
 
-function collectRuntimeErrors(page: Page) {
+function collectRuntimeErrors(page: Page, ignoredHttpStatuses: number[] = []) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
   page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`console: ${message.text()}`)
+    const text = message.text()
+    const ignoredHttpError = ignoredHttpStatuses.some((status) => text.includes(`status of ${status}`))
+    if (message.type() === 'error' && !ignoredHttpError) errors.push(`console: ${text}`)
   })
   return errors
 }
 
-async function installApiMocks(page: Page, initialCards: Card[]) {
+async function installApiMocks(
+  page: Page,
+  initialCards: Card[],
+  updateConflicts: Record<string, ConflictPayload> = {},
+) {
   const cards = initialCards.map((card) => structuredClone(card))
   const requests: Array<{ method: string, path: string, body: unknown }> = []
 
@@ -102,6 +117,18 @@ async function installApiMocks(page: Page, initialCards: Card[]) {
         { key: 'reading', version: 1, name: '阅读卡片', fields: ['term', 'definitions', 'sourceContext'] },
       ], defaultTemplateKey: 'basic' } } })
     }
+    if (path.endsWith('/themes')) {
+      return route.fulfill({ json: { code: '0', data: {
+        systemThemes: [{
+          themeUid: 'theme_system_general', ownerType: 'system', name: '通用积累', purpose: '通用词汇积累',
+          version: 1, status: 'active', system: true, defaultTheme: true, recent: false,
+          promptStrategyKey: 'general',
+        }],
+        userThemes: [],
+        defaultThemeUid: 'theme_system_general',
+        recentThemeUids: [],
+      } } })
+    }
     if (path.endsWith('/cards') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: { items: cards, total: cards.length, page: 1, size: 20 } } })
     }
@@ -121,6 +148,13 @@ async function installApiMocks(page: Page, initialCards: Card[]) {
       } } })
     }
     if (!suffix && method === 'PUT') {
+      const updateConflict = updateConflicts[card.cardUid]
+      if (updateConflict) {
+        return route.fulfill({
+          status: 409,
+          json: { code: '409030', message: 'revision conflict', data: updateConflict },
+        })
+      }
       card.content = (body as { content: CardContent }).content
       return route.fulfill({ json: { code: '0', data: card } })
     }
@@ -143,6 +177,46 @@ async function installApiMocks(page: Page, initialCards: Card[]) {
 
   return { cards, requests }
 }
+
+test('stale v1 conflict uses the 409 current format when the revision cache misses it', async ({ page }) => {
+  const errors = collectRuntimeErrors(page, [409])
+  const staleCard = makeCard({ cardUid: 'card_stale_v1', activeRevisionUid: 'rev_stale_base' })
+  const currentCore = { schemaVersion: 1, term: 'innovative', phonetics: [], senses: [] }
+  const candidateCore = {
+    schemaVersion: 1,
+    term: 'innovative',
+    phonetics: [],
+    senses: [{ partOfSpeech: 'adjective', meanings: [{ definitionEn: 'new', definitionZh: '创新的' }] }],
+  }
+  const { requests } = await installApiMocks(page, [staleCard], {
+    card_stale_v1: {
+      currentRevisionUid: 'rev_server_current',
+      candidateRevisionUid: 'rev_stale_candidate',
+      currentContent: { ...currentCore, markdown: '# Current' },
+      candidateContent: { ...candidateCore, markdown: '# Candidate' },
+      currentContentFormatVersion: 1,
+      candidateContentFormatVersion: 1,
+      conflictStatus: 'needs_review',
+    },
+  })
+
+  await page.goto('/app/vocabulary/cards/card_stale_v1')
+  await page.getByRole('button', { name: '编辑 Markdown' }).click()
+  await page.getByRole('button', { name: '保存修改' }).click()
+
+  const dialog = page.getByRole('dialog', { name: '发现版本冲突' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('当前 Markdown')).toBeVisible()
+  await dialog.getByRole('radio', { name: '组合核心数据与 Markdown' }).check()
+  await dialog.getByRole('button', { name: '确认处理' }).click()
+
+  const resolveRequest = requests.find((request) => request.path.includes('/conflicts/rev_stale_candidate/'))
+  expect(resolveRequest?.body).toMatchObject({
+    choice: 'merge_fields',
+    mergeFields: { core: currentCore, markdown: '# Current' },
+  })
+  await expectCleanRuntime(page, errors)
+})
 
 async function expectCleanRuntime(page: Page, errors: string[]) {
   const errorToastCount = await page.locator('#toast-container > div').evaluateAll((toasts) => toasts.filter((toast) => (

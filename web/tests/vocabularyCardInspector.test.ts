@@ -97,17 +97,23 @@ test('conflict format follows the backend current revision shape check', async (
   const isV1 = classifyRevision as (formatVersion: number | null, content: unknown) => boolean
   const legacy = { term: 'record', definitions: ['entry'] }
   const v1 = { schemaVersion: 1, term: 'record', phonetics: [], senses: [], markdown: '# Card' }
+  const v1Lookalike = { schemaVersion: 1, phonetics: [], senses: [], markdown: '# Card' }
 
   assert.equal(isV1(1, v1), true)
   assert.equal(isV1(null, legacy), false, 'current legacy stays legacy even when a candidate is v1')
   assert.equal(isV1(1, legacy), false, 'a mislabeled legacy current revision stays legacy')
   assert.equal(isV1(null, v1), false, 'shape alone cannot override the current revision format')
+  assert.equal(isV1(1, v1Lookalike), false, 'a format marker still requires the real core compatibility shape')
 
   const block = inspector.match(/const v1Conflict = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
   assert.doesNotMatch(block, /candidateRevision|candidateContent/)
+  assert.match(block, /currentContentFormatVersion/)
+  assert.match(block, /currentContentFormatVersion\s*!==\s*undefined/)
   assert.match(block, /conflict\.value\?\.currentContent/)
-  assert.doesNotMatch(block, /currentRevision\?\.contentFormatVersion\s*\?\?/, 'an explicit null revision format remains authoritative')
-  assert.match(block, /currentRevision\s*\?\s*currentRevision\.contentFormatVersion\s*:/)
+  assert.match(block, /currentRevision\?\.contentFormatVersion/)
+  assert.doesNotMatch(block, /currentRevision\?\.contentFormatVersion\s*\?\?/, 'an explicit null conflict format remains authoritative')
+  assert.match(inspector, /currentContentFormatVersion:\s*props\.card\.contentFormatVersion/)
+  assert.match(inspector, /candidateContentFormatVersion:\s*null/)
 })
 
 test('regenerate uses active cached themes and confirms switching to the latest revision', () => {

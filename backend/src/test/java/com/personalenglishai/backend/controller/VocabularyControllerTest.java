@@ -340,7 +340,7 @@ class VocabularyControllerTest {
         var content = JsonNodeFactory.instance.objectNode().put("term", "innovative");
         when(cardService.update(eq(7L), eq("card_1"), any()))
                 .thenThrow(new VocabularyRevisionConflictException(new VocabularyConflictResponse(
-                        "rev_current", "rev_candidate", content, content, "needs_review")));
+                        "rev_current", "rev_candidate", content, content, 1, null, "needs_review")));
 
         mockMvc.perform(put("/api/vocabulary/cards/card_1")
                         .requestAttr("userId", 7L)
@@ -351,6 +351,8 @@ class VocabularyControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("409030"))
                 .andExpect(jsonPath("$.data.currentRevisionUid").value("rev_current"))
-                .andExpect(jsonPath("$.data.candidateRevisionUid").value("rev_candidate"));
+                .andExpect(jsonPath("$.data.candidateRevisionUid").value("rev_candidate"))
+                .andExpect(jsonPath("$.data.currentContentFormatVersion").value(1))
+                .andExpect(jsonPath("$.data.candidateContentFormatVersion").isEmpty());
     }
 }

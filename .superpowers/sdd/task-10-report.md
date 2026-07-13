@@ -7,6 +7,7 @@
 - Added one pure `projectLegacyVocabularyCore` adapter. The inspector reads `card.core`, then the legacy projection, then a minimal v1 core, and always restores the card's normalized term identity.
 - Reworked save to submit `baseRevisionUid`, identity-safe `core`, exact `markdown`, and `changeSummary`, with pending, success, conflict, length-error, and failure states.
 - Split conflict presentation by revision format. V1 compares Markdown as a whole and merges only whole `core`/`markdown` values; legacy revisions retain field-level merge behavior.
+- Extended stale-revision 409 responses with nullable current/candidate content format versions. The inspector treats the response's current version as authoritative, falls back to cached current-revision metadata only when the additive field is absent, and still requires the current compatibility content to have the real v1 core shape. Candidate metadata never selects the protocol.
 - Replaced template regeneration controls with active theme selection backed by the existing `['vocabulary', 'themes']` TanStack Query cache. Blocking errors require no cached catalog, retry refetches the query, and loading/error/empty states disable regeneration.
 - Added the required latest-theme confirmation when the selected theme UID or catalog version differs from the frozen card revision, and sends `themeUid` with `useLatestThemeVersion: true`.
 - Kept fixed editor dimensions, narrow-screen single-column controls, wrapping text, and bounded conflict previews to avoid horizontal overflow.
@@ -33,23 +34,27 @@
 - Canonical legacy projection:
   - RED: added boundary and shape tests for 30 total meanings, 2,000-character scalar limits, `unknown` part of speech, bilingual delimiter splitting, empty definition arrays, and ignored object definitions. The tests exposed unbounded values, heuristic language detection, and guessed extension fields.
   - GREEN: the pure projection helper now mirrors backend canonical handling for the supported `phonetic`, `partOfSpeech`, and string-array `definitions` fields, producing a saveable v1 core without guessing unknown fields.
+- Stale 409 format authority:
+  - RED: backend tests failed to compile against the missing conflict version accessors/constructor; frontend API and inspector tests failed because the fields were absent and a marker plus a term-less lookalike shape was classified as v1.
+  - GREEN: `conflictFor` now copies each revision's nullable `contentFormatVersion`; controller JSON covers current v1 `1` plus legacy candidate `null`; the web type is additive and `unwrap` is unchanged.
+  - Browser regression: a stale PUT returns current v1 metadata for a revision UID intentionally absent from the revisions cache. The dialog uses the v1 path and resolves with `mergeFields.core` plus `mergeFields.markdown`; a mislabeled legacy shape remains on the legacy path.
 
 ## Validation
 
-- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts` (16 tests).
-- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyApiContract.test.ts tests/vocabularyThemeApiContract.test.ts tests/vocabularyThemeLibrary.test.ts tests/vocabularyThemeShelf.test.ts tests/vocabularyDepositionWorkspace.test.ts` (44 tests).
-- Passed: `web\npm.cmd run build` (`vue-tsc` and Vite; 3264 modules transformed).
-- Passed: `git diff --check` (only existing LF-to-CRLF conversion notices).
-- Not run: authenticated browser interaction or visual screenshot regression.
+- Passed: `backend\.\mvnw.cmd -q "-Dtest=VocabularyControllerTest,VocabularyCardServiceTest" test`.
+- Passed: `backend\.\mvnw.cmd -q test` (581 tests, 0 failures/errors/skips).
+- Passed: `web\npx.cmd tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyApiContract.test.ts` (21 tests).
+- Passed: `web\npx.cmd playwright test tests/vocabularyDepositionFlow.spec.ts --project=chromium --no-deps -g "stale v1 conflict"` (1 test).
+- Passed: `web\npm.cmd run build` (`vue-tsc` and Vite).
 - Existing build warning: unrelated application chunks exceed Vite's 500 kB warning threshold.
 
 ## Documentation And Merge Assessment
 
-- The existing vocabulary theme/Markdown design and implementation plan already document the core schema, Markdown limit, theme version confirmation, compatibility order, and conflict behavior. No additional architecture or API documentation update is required.
-- No dependency, API type, route, store, persistence key, or deployment behavior changed.
+- The existing vocabulary theme/Markdown design and implementation plan already document the core schema, Markdown limit, theme version confirmation, compatibility order, and conflict behavior. The additive 409 metadata does not change architecture, state flow, caching, routes, or deployment, so no architecture document update is required beyond this task report.
+- The conflict API type changed additively; all old response fields and `unwrap` behavior remain intact. No dependency, route, store, persistence key, or deployment behavior changed.
 - The implementation is suitable for merge review from `codex/vocabulary-deposition-core`; merge depends on the Task 7-9 theme/API work already present on the branch.
 
 ## Residual Risk
 
-- Source-contract tests and `vue-tsc` cover data flow and component integration, but no authenticated browser session was available to exercise actual API conflict dialogs and responsive rendering.
+- The mocked Chromium regression exercises the actual stale conflict dialog and resolve request. It does not replace an authenticated integration run against a live backend or broad visual screenshot regression.
 - Legacy projection intentionally handles the established `phonetic`, `partOfSpeech`, and `definitions` shapes. Unknown historical extension fields remain outside the v1 core instead of being guessed in the component.

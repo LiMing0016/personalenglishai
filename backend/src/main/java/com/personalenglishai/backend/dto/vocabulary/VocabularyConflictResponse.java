@@ -7,5 +7,7 @@ public record VocabularyConflictResponse(
         String candidateRevisionUid,
         JsonNode currentContent,
         JsonNode candidateContent,
+        Integer currentContentFormatVersion,
+        Integer candidateContentFormatVersion,
         String conflictStatus) {
 }

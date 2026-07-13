@@ -560,6 +560,8 @@ public class VocabularyCardService {
                 candidate == null ? null : candidate.getRevisionUid(),
                 current == null ? null : revisionContent(current),
                 candidate == null ? null : revisionContent(candidate),
+                current == null ? null : current.getContentFormatVersion(),
+                candidate == null ? null : candidate.getContentFormatVersion(),
                 conflictStatus(currentCard, candidate)));
     }
 

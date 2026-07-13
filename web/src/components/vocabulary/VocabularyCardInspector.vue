@@ -237,11 +237,10 @@ function isCoreContent(value: unknown): value is VocabularyCoreContent {
 
 const v1Conflict = computed(() => {
   const currentRevision = revisionFor(conflict.value?.currentRevisionUid ?? null)
-  const currentFormatVersion = currentRevision
-    ? currentRevision.contentFormatVersion
-    : (conflict.value?.currentRevisionUid === props.card.activeRevisionUid
-      ? props.card.contentFormatVersion
-      : null)
+  const currentContentFormatVersion = conflict.value?.currentContentFormatVersion
+  const currentFormatVersion = currentContentFormatVersion !== undefined
+    ? currentContentFormatVersion
+    : currentRevision?.contentFormatVersion
   return isVocabularyV1Revision(currentFormatVersion, conflict.value?.currentContent)
 })
 
@@ -330,6 +329,8 @@ watch(
         candidateRevisionUid,
         currentContent: content,
         candidateContent,
+        currentContentFormatVersion: props.card.contentFormatVersion,
+        candidateContentFormatVersion: null,
         conflictStatus: 'needs_review',
       })
     } else {
