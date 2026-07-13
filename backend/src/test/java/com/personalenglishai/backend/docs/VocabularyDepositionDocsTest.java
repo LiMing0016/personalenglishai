@@ -18,6 +18,7 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("migrate_create_vocabulary_deposition_tables.sql")),
                 () -> assertTrue(docs.contains("migrate_add_vocabulary_generation_job_leases.sql")),
                 () -> assertTrue(docs.contains("migrate_make_vocabulary_identity_exact.sql")),
+                () -> assertTrue(docs.contains("migrate_add_vocabulary_review_semantics.sql")),
                 () -> assertTrue(docs.contains("当前阶段仅支持 `manual` 和 `dictionary`")),
                 () -> assertTrue(docs.contains("PDF、AI 对话、笔记和错题尚未接入")),
                 () -> assertTrue(docs.contains("初始迁移已包含")),
@@ -43,6 +44,20 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("数据库和基础设施异常必须向上抛出")),
                 () -> assertTrue(docs.contains("同一条 MySQL 多表更新")),
                 () -> assertFalse(docs.contains("PaddleOCR")));
+    }
+
+    @Test
+    void readmeSeparatesFreshSchemaFromOrderedHistoricalUpgrades() throws Exception {
+        String readme = Files.readString(Path.of("../README.md"));
+
+        assertAll(
+                () -> assertTrue(readme.contains("新库初始脚本已经包含全部基础列")),
+                () -> assertTrue(readme.contains("新库不得执行 `migrate_add_vocabulary_review_semantics.sql`")),
+                () -> assertTrue(readme.contains("历史库必须按以下顺序执行")),
+                () -> assertTrue(readme.contains("conflict_candidate_revision_uid")),
+                () -> assertTrue(readme.contains("generation_outcome")),
+                () -> assertTrue(readme.contains("warning"))
+        );
     }
 
     @Test

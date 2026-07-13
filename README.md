@@ -113,22 +113,42 @@ npm run build
 
 当前阶段单词沉淀仅支持 `manual`（手动录入）和 `dictionary`（词典收藏）；PDF、AI 对话、笔记和错题尚未接入。
 
-新建本地数据库后，只执行单词卡初始迁移。初始迁移已经包含生成任务租约字段和索引：
+新建本地数据库后，先执行单词卡初始迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
 ```
 
-历史旧表升级或上次迁移中断时执行租约迁移；新库的初始迁移已经包含完整租约结构，无需额外执行：
+再执行新库必需的主题与 Markdown 卡片迁移：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
+```
+
+新库初始脚本已经包含全部基础列，包括租约字段及 `conflict_candidate_revision_uid`、`generation_outcome`、`warning`。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`；该脚本只用于历史库增量升级。
+
+尚未完成升级的历史库必须按以下顺序执行。第一步执行可重试的租约迁移：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
 ```
 
-已部署单词沉淀表的环境还必须执行精确身份迁移，使重音不同的规范词形不会被 MySQL 合并：
+第二步执行精确身份迁移，使重音不同的规范词形不会被 MySQL 合并：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocabulary_identity_exact.sql
+```
+
+第三步执行主题与 Markdown 卡片迁移：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
+```
+
+第四步执行审核语义增量，补充显式冲突候选和稳定生成结果字段：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
 ```
 
 租约迁移会通过 `information_schema` 分别检查两列和恢复索引，可重复执行。中断后直接重跑即可；已有结构不会重复创建，仍为 `running` 且租约到期时间为空的历史任务会完成回填。

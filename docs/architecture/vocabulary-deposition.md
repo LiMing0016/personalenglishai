@@ -9,6 +9,7 @@ related_code:
   - backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
+  - backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyThemeService.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCardGenerator.java
   - web/src/views/VocabularyView.vue
@@ -41,10 +42,16 @@ related_docs:
 
 ## 数据库部署
 
-新建数据库只执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
+新建数据库先执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
+```
+
+新库随后执行主题与 Markdown 卡片迁移，不执行历史库专用的 review-semantics 增量。初始迁移已经包含 `conflict_candidate_revision_uid`、`generation_outcome` 和 `warning`：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
 ```
 
 历史旧表升级或租约迁移中断后，执行已有库租约迁移：
@@ -65,7 +72,13 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocab
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
 ```
 
-部署顺序是：先执行 `migrate_create_vocabulary_deposition_tables.sql`，历史库按需执行租约迁移，再执行精确身份迁移，最后再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`。全新可丢弃 schema 的 Task11 验收只需依次执行基础迁移和主题迁移，因为基础迁移已经包含租约字段和精确 collation。
+历史库最后执行审核语义增量，为已有表补充显式冲突候选和生成结果字段：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
+```
+
+新库部署先执行 `migrate_create_vocabulary_deposition_tables.sql`，再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`，历史库不得省略该增量。
 
 迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version` 共 5 列。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
 

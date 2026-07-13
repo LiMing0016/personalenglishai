@@ -99,16 +99,21 @@ class VocabularyDepositionSchemaTest {
     }
 
     @Test
-    void reviewSemanticsMigrationAddsExplicitCandidateAndStableGenerationOutcome() throws Exception {
-        String sql = Files.readString(Path.of(
+    void freshSchemaAndReviewSemanticsMigrationContainExplicitReviewColumns() throws Exception {
+        String initial = Files.readString(Path.of(
+                "src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql"));
+        String upgrade = Files.readString(Path.of(
                 "src/main/resources/db/migrate_add_vocabulary_review_semantics.sql"));
 
         assertAll(
-                () -> assertTrue(sql.contains("conflict_candidate_revision_uid VARCHAR(64) NULL")),
-                () -> assertTrue(sql.contains("generation_outcome VARCHAR(24) NULL")),
-                () -> assertTrue(sql.contains("warning VARCHAR(64) NULL")),
-                () -> assertTrue(sql.contains("information_schema.columns")),
-                () -> assertTrue(sql.contains("table_schema = DATABASE()"))
+                () -> assertTrue(initial.contains("conflict_candidate_revision_uid VARCHAR(64) NULL")),
+                () -> assertTrue(initial.contains("generation_outcome VARCHAR(24) NULL")),
+                () -> assertTrue(initial.contains("warning VARCHAR(64) NULL")),
+                () -> assertTrue(upgrade.contains("conflict_candidate_revision_uid VARCHAR(64) NULL")),
+                () -> assertTrue(upgrade.contains("generation_outcome VARCHAR(24) NULL")),
+                () -> assertTrue(upgrade.contains("warning VARCHAR(64) NULL")),
+                () -> assertTrue(upgrade.contains("information_schema.columns")),
+                () -> assertTrue(upgrade.contains("table_schema = DATABASE()"))
         );
     }
 }
