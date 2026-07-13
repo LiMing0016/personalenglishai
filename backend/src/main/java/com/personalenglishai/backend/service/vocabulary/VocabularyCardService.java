@@ -320,7 +320,7 @@ public class VocabularyCardService {
             default -> throw new BizException(ErrorCode.COMMON_VALIDATION_ERROR, "Unsupported vocabulary conflict choice");
         };
         revisions.insertRevision(resolution);
-        activateResolution(userId, card, current, resolution);
+        activateResolution(userId, card, current, currentCandidate, resolution);
         return getDetail(userId, cardUid);
     }
 
@@ -584,10 +584,11 @@ public class VocabularyCardService {
             Long userId,
             VocabularyCard card,
             VocabularyCardRevision current,
+            VocabularyCardRevision expectedCandidate,
             VocabularyCardRevision next) {
         if (cards.updateActiveRevision(userId, card.getCardUid(), current.getRevisionUid(), next.getRevisionUid(),
                 "ready", next.getTemplateKey(), next.getTemplateVersion(),
-                next.getThemeUid(), next.getThemeVersion()) != 1) {
+                next.getThemeUid(), next.getThemeVersion(), expectedCandidate.getRevisionUid()) != 1) {
             throw conflictFor(userId, card.getCardUid());
         }
     }

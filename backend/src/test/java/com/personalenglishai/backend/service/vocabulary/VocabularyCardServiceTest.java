@@ -404,7 +404,8 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq(current.getRevisionUid()), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null),
+                eq("rev_candidate"))).thenReturn(1);
         var mergedDefinitions = objectMapper.createArrayNode().add("merged legacy definition");
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
@@ -729,7 +730,8 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null),
+                eq("rev_candidate"))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("merge_fields", Map.of(
@@ -764,7 +766,8 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null),
+                eq("rev_candidate"))).thenReturn(1);
         ResolveVocabularyConflictRequest request = "merge_fields".equals(choice)
                 ? new ResolveVocabularyConflictRequest(choice, Map.of(
                         "notes", objectMapper.getNodeFactory().textNode("merged")))
@@ -798,7 +801,8 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq((String) null), eq((Integer) null),
+                eq("rev_candidate"))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("keep_current", null));
@@ -937,7 +941,8 @@ class VocabularyCardServiceTest {
         when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3))).thenReturn(1);
+                eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3),
+                eq("rev_candidate"))).thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest("use_ai", null));
@@ -978,14 +983,16 @@ class VocabularyCardServiceTest {
         String expectedThemeUid = "use_ai".equals(choice) ? "theme_ai" : "theme_current";
         int expectedThemeVersion = "use_ai".equals(choice) ? 5 : 2;
         when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion)))
+                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion),
+                eq("rev_candidate")))
                 .thenReturn(1);
 
         service.resolveConflict(7L, "card_1", "rev_candidate",
                 new ResolveVocabularyConflictRequest(choice, Map.of()));
 
         verify(cards).updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion));
+                eq("ready"), eq("basic"), eq(1), eq(expectedThemeUid), eq(expectedThemeVersion),
+                eq("rev_candidate"));
     }
 
     @Test
@@ -1011,7 +1018,7 @@ class VocabularyCardServiceTest {
 
         verify(revisions, never()).insertRevision(any());
         verify(cards, never()).updateActiveRevision(any(), anyString(), anyString(), anyString(),
-                anyString(), anyString(), any(Integer.class), any(), any());
+                anyString(), anyString(), any(Integer.class), any(), any(), any());
     }
 
     private com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision newFormatConflictCurrent(
@@ -1047,7 +1054,8 @@ class VocabularyCardServiceTest {
         when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
         if (expectActivation) {
             when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
-                    eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3))).thenReturn(1);
+                    eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3),
+                    eq("rev_candidate"))).thenReturn(1);
         }
     }
 

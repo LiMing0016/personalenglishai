@@ -317,6 +317,28 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void activeRevisionUpdateCanCasTheExpectedConflictCandidateBeforeClearingIt() throws Exception {
+        String updateSql = statementSql("VocabularyCardMapper", "updateActiveRevision", Map.of(
+                "userId", 7L,
+                "cardUid", "card_1",
+                "baseRevisionUid", "rev_current",
+                "revisionUid", "rev_resolution",
+                "status", "ready",
+                "templateKey", "basic",
+                "templateVersion", 1,
+                "themeUid", "theme_1",
+                "themeVersion", 2,
+                "expectedCandidate", "rev_candidate_old"));
+
+        assertAll(
+                () -> assertTrue(updateSql.contains("SET active_revision_uid = ?")),
+                () -> assertTrue(updateSql.contains("conflict_candidate_revision_uid = NULL")),
+                () -> assertTrue(updateSql.contains("AND active_revision_uid = ?")),
+                () -> assertTrue(updateSql.contains("AND conflict_candidate_revision_uid = ?"))
+        );
+    }
+
+    @Test
     void mapperXmlResourcesParseAndRegisterAllStatements() throws Exception {
         Configuration configuration = new Configuration();
         Map<String, String[]> mapperStatements = Map.of(

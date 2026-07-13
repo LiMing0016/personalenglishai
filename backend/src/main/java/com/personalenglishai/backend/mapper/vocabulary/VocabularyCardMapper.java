@@ -53,6 +53,21 @@ public interface VocabularyCardMapper {
             @Param("status") String status,
             @Param("sourceType") String sourceType);
 
+    default int updateActiveRevision(
+            @Param("userId") Long userId,
+            @Param("cardUid") String cardUid,
+            @Param("baseRevisionUid") String baseRevisionUid,
+            @Param("revisionUid") String revisionUid,
+            @Param("status") String status,
+            @Param("templateKey") String templateKey,
+            @Param("templateVersion") int templateVersion,
+            @Param("themeUid") String themeUid,
+            @Param("themeVersion") Integer themeVersion) {
+        return updateActiveRevision(
+                userId, cardUid, baseRevisionUid, revisionUid, status,
+                templateKey, templateVersion, themeUid, themeVersion, null);
+    }
+
     int updateActiveRevision(
             @Param("userId") Long userId,
             @Param("cardUid") String cardUid,
@@ -62,7 +77,8 @@ public interface VocabularyCardMapper {
             @Param("templateKey") String templateKey,
             @Param("templateVersion") int templateVersion,
             @Param("themeUid") String themeUid,
-            @Param("themeVersion") Integer themeVersion);
+            @Param("themeVersion") Integer themeVersion,
+            @Param("expectedCandidate") String expectedCandidate);
 
     int markConflictCandidate(
             @Param("cardUid") String cardUid,

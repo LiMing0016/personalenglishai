@@ -176,6 +176,9 @@
             <when test="baseRevisionUid == null">AND active_revision_uid IS NULL</when>
             <otherwise>AND active_revision_uid = #{baseRevisionUid}</otherwise>
         </choose>
+        <if test="expectedCandidate != null">
+            AND conflict_candidate_revision_uid = #{expectedCandidate}
+        </if>
     </update>
 
     <update id="markConflictCandidate">
