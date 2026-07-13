@@ -100,7 +100,13 @@
         <section v-if="isPartialMarkdown" class="card-inspector__partial-markdown" aria-label="主题内容">
           <h3>主题内容待完善</h3>
           <p>核心信息已保留，可以重新生成主题内容。</p>
-          <button type="button" :disabled="!selectedTheme" @click="requestRegenerate">重新生成</button>
+          <button
+            type="button"
+            :disabled="!selectedTheme || regenerateMutation.isPending.value || themesBlockingError"
+            @click="requestRegenerate"
+          >
+            重新生成
+          </button>
         </section>
         <VocabularyMarkdownRenderer
           v-else
@@ -126,9 +132,7 @@
         </section>
       </main>
     </div>
-    <div v-else class="card-inspector__placeholder">
-      <strong>{{ generationState?.text || '暂时没有可阅读的卡片内容' }}</strong>
-    </div>
+    <div v-else class="card-inspector__placeholder" aria-hidden="true"></div>
 
     <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="regenerateConfirmationOpen = false">
       <section class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title">
@@ -255,6 +259,7 @@ const draftIdentity = ref<VocabularyCardDraftIdentity>()
 const markdownSections = ref<MarkdownSection[]>([])
 const activeSectionId = ref('core-information')
 let observer: IntersectionObserver | undefined
+const intersectingSectionIds = new Set<string>()
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -365,19 +370,29 @@ function scrollToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function rebuildObserver() {
+function disconnectObserver() {
   observer?.disconnect()
   observer = undefined
+  intersectingSectionIds.clear()
+}
+
+function rebuildObserver() {
+  disconnectObserver()
   if (typeof window === 'undefined' || typeof document === 'undefined' || typeof IntersectionObserver === 'undefined') return
   const elements = renderedSectionIds.value
     .map((id) => document.getElementById(id))
     .filter((element): element is HTMLElement => Boolean(element))
   if (!elements.length) return
   observer = new IntersectionObserver((entries) => {
-    const visible = entries
-      .filter((entry) => entry.isIntersecting)
-      .sort((left, right) => Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top))
-    if (visible[0]?.target.id) activeSectionId.value = visible[0].target.id
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) intersectingSectionIds.add(entry.target.id)
+      else intersectingSectionIds.delete(entry.target.id)
+    })
+    const closestSection = [...intersectingSectionIds]
+      .map((id) => document.getElementById(id))
+      .filter((element): element is HTMLElement => Boolean(element))
+      .sort((left, right) => Math.abs(left.getBoundingClientRect().top) - Math.abs(right.getBoundingClientRect().top))[0]
+    if (closestSection) activeSectionId.value = closestSection.id
   }, { rootMargin: '-96px 0px -55% 0px', threshold: [0, 0.1, 0.5] })
   elements.forEach((element) => observer?.observe(element))
 }
@@ -552,8 +567,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  observer?.disconnect()
-  observer = undefined
+  disconnectObserver()
   window.removeEventListener('keydown', handleKeydown)
 })
 
@@ -584,11 +598,11 @@ async function save() {
     saveAnnouncement.value = '单词卡已保存'
     showToast('单词卡已保存', 'success')
   } catch (error) {
+    saveAnnouncement.value = '保存失败，请重试'
     if (error instanceof VocabularyConflictError) {
       setConflict(error.conflict)
       return
     }
-    saveAnnouncement.value = '保存失败，请重试'
     showToast(error instanceof Error ? error.message : '保存失败，请重试', 'error')
   }
 }

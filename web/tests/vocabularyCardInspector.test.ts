@@ -94,6 +94,10 @@ test('inspector tracks notebook chapters with one rebuilt window observer', () =
   assert.match(inspector, /onBeforeUnmount/)
   assert.match(inspector, /typeof window\s*===\s*['"]undefined['"]/)
   assert.match(inspector, /activeSectionId\s*=\s*ref\(['"]core-information['"]\)/)
+  assert.match(inspector, /const intersectingSectionIds = new Set<string>\(\)/)
+  assert.match(inspector, /entry\.isIntersecting[\s\S]*intersectingSectionIds\.(?:add|delete)\(entry\.target\.id\)/)
+  assert.match(inspector, /\[\.\.\.intersectingSectionIds\][\s\S]*getBoundingClientRect\(\)\.top/)
+  assert.match(inspector, /intersectingSectionIds\.clear\(\)/)
 })
 
 test('inspector provides read and edit modes with polite save announcements', () => {
@@ -106,6 +110,8 @@ test('inspector provides read and edit modes with polite save announcements', ()
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]单词卡已保存['"]/)
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]保存失败，请重试['"]/)
   assert.match(inspector, /<template v-if="editing">[\s\S]*?<template v-else>/)
+  const saveCatch = inspector.match(/\}\s*catch \(error\) \{[\s\S]*?\n  \}\n\}/)?.[0] ?? ''
+  assert.ok(saveCatch.indexOf("saveAnnouncement.value = '保存失败，请重试'") < saveCatch.indexOf('error instanceof VocabularyConflictError'))
 })
 
 test('inspector exposes the stable generation state matrix', () => {
@@ -123,6 +129,8 @@ test('inspector exposes the stable generation state matrix', () => {
   assert.match(inspector, /role="status"/)
   const liveRegion = inspector.match(/<div v-if="generationState"[^>]*role="status"[\s\S]*?<\/div>/)?.[0] ?? ''
   assert.doesNotMatch(liveRegion, /<button/)
+  const placeholder = inspector.match(/<div v-else class="card-inspector__placeholder"[\s\S]*?<\/div>/)?.[0] ?? ''
+  assert.doesNotMatch(placeholder, /generationState|正在生成单词卡|暂时没有可阅读的卡片内容/)
   assert.equal((inspector.match(/重试生成/g) ?? []).length, 1)
   const retryBlock = inspector.match(/const showRetry = computed\(\(\) => \([\s\S]*?\n\)\)/)?.[0] ?? ''
   assert.match(retryBlock, /generationOutcome\s*===\s*['"]failed['"]/)
@@ -219,6 +227,8 @@ test('partial generation warning uses stable outcome fields instead of cleared e
   assert.match(warningBlock, /warning\s*===\s*['"]markdown_unavailable['"]/)
   assert.match(warningBlock, /主题内容待完善/)
   assert.doesNotMatch(warningBlock, /!props\.card\.generationError/)
+  const partialSection = inspector.match(/<section v-if="isPartialMarkdown"[\s\S]*?<\/section>/)?.[0] ?? ''
+  assert.match(partialSection, /!selectedTheme\s*\|\|\s*regenerateMutation\.isPending\.value\s*\|\|\s*themesBlockingError/)
 })
 
 test('inspector styles stable editors and narrow screens without horizontal overflow', () => {

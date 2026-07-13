@@ -352,6 +352,7 @@ test('stale v1 conflict uses the 409 current format when the revision cache miss
 
   const dialog = page.getByRole('dialog', { name: '发现版本冲突' })
   await expect(dialog).toBeVisible()
+  await expect(page.locator('.card-inspector__save-announcement')).toHaveText('保存失败，请重试')
   await expect(dialog.getByText('当前 Markdown')).toBeVisible()
   await dialog.getByRole('radio', { name: '组合核心数据与 Markdown' }).check()
   await dialog.getByRole('button', { name: '确认处理' }).click()
@@ -479,7 +480,7 @@ test('Markdown generation failure keeps core content and a reviewable user-facin
     },
     markdown: null,
   })
-  await installApiMocks(page, [partialCard])
+  const { requests } = await installApiMocks(page, [partialCard])
 
   await page.goto('/app/vocabulary/cards/card_partial_markdown')
   await expect(page.locator('.card-inspector').getByText('待确认')).toBeVisible()
@@ -487,6 +488,8 @@ test('Markdown generation failure keeps core content and a reviewable user-facin
   await expect(page.getByText('务实的')).toBeVisible()
   await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '主题内容待完善' })).toBeVisible()
+  await page.getByLabel('主题内容').getByRole('button', { name: '重新生成' }).click()
+  await expect.poll(() => requests.filter((request) => request.path.endsWith('/regenerate')).length).toBe(1)
   await expectNoHorizontalOverflow(page)
   await expectCleanRuntime(page, errors)
 })
@@ -752,6 +755,7 @@ test('generation states do not present missing revisions as readable documents',
 
   await page.goto('/app/vocabulary/cards/card_generating_empty')
   await expect(page.getByRole('status')).toHaveText('正在生成单词卡')
+  await expect(page.getByText('正在生成单词卡', { exact: true })).toHaveCount(1)
   await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
   await expect(page.getByText('暂无释义')).toHaveCount(0)
 
@@ -761,6 +765,7 @@ test('generation states do not present missing revisions as readable documents',
 
   await page.goto('/app/vocabulary/cards/card_failed_empty')
   await expect(page.getByRole('status')).toHaveText('暂时没有可阅读的卡片内容')
+  await expect(page.getByText('暂时没有可阅读的卡片内容', { exact: true })).toHaveCount(1)
   await expect(page.getByRole('navigation', { name: '单词卡章节' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '重试生成' })).toHaveCount(1)
 })
