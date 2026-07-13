@@ -16,7 +16,7 @@ export function buildVocabularyCardSections(
   ]
 
   if (hasSources) sections.push({ id: 'card-sources', title: '来源' })
-  if (hasHistory) sections.push({ id: 'card-history', title: '历史记录' })
+  if (hasHistory) sections.push({ id: 'card-history', title: '历史' })
 
   return sections
 }

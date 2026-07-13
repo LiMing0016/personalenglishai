@@ -10,7 +10,7 @@ test('builds core markdown sources and history sections in display order', () =>
     { id: 'core-information', title: '核心信息' },
     { id: 'markdown-section-1', title: '例句' },
     { id: 'card-sources', title: '来源' },
-    { id: 'card-history', title: '历史记录' },
+    { id: 'card-history', title: '历史' },
   ])
 })
 
