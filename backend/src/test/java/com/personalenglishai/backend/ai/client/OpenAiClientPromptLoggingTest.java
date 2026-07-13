@@ -6,12 +6,21 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.personalenglishai.backend.ai.config.AiProviderProperties;
 import com.personalenglishai.backend.ai.config.AiProviderSelection;
 import com.personalenglishai.backend.ai.config.OpenAiClientConfig;
+import com.personalenglishai.backend.service.vocabulary.ResolvedVocabularyTheme;
+import com.personalenglishai.backend.service.vocabulary.VocabularyMarkdownPromptBuilder;
+import com.sun.net.httpserver.HttpServer;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -57,10 +66,70 @@ class OpenAiClientPromptLoggingTest {
                 .doesNotContain("The private captured sentence.");
     }
 
+    @Test
+    void vocabularyRawAndDebugPayloadLogsAreSafeWithoutChangingSentPrompt() throws Exception {
+        String sourceContext = "SOURCE_CONTEXT_SENTINEL: private captured sentence";
+        String themePurpose = "THEME_PURPOSE_SENTINEL: confidential learning goal";
+        String sensitiveMaterial = "SENSITIVE_CORE_SENTINEL: private card material";
+        ObjectMapper objectMapper = new ObjectMapper();
+        VocabularyMarkdownPromptBuilder builder = new VocabularyMarkdownPromptBuilder(objectMapper);
+        ObjectNode core = objectMapper.createObjectNode();
+        core.put("term", "record");
+        core.put("privateMaterial", sensitiveMaterial);
+        ResolvedVocabularyTheme theme = new ResolvedVocabularyTheme(
+                "theme-private", 4, "Private theme", themePurpose,
+                "custom-markdown-v1", 1, "custom");
+        String systemPrompt = builder.systemPrompt(theme);
+        String userPrompt = builder.userPrompt(theme, core, sourceContext);
+
+        AtomicReference<JsonNode> sentPayload = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            sentPayload.set(objectMapper.readTree(exchange.getRequestBody()));
+            byte[] response = """
+                    {"id":"chat-log-test","choices":[{"message":{"role":"assistant","content":"# Result"}}]}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            OpenAiClientConfig config = new OpenAiClientConfig();
+            config.setMaxRetries(0);
+            OpenAiClient client = client(
+                    "http://127.0.0.1:" + server.getAddress().getPort(), true, true, config);
+
+            String output = String.join("\n", captureLogs(
+                    () -> client.callWithTraceId(systemPrompt, userPrompt, "trace-vocabulary-log")));
+
+            assertThat(output)
+                    .contains("OpenAI prompt raw")
+                    .contains("FINAL OPENAI PAYLOAD")
+                    .contains("[REDACTED_VOCABULARY_PROMPT")
+                    .doesNotContain(sourceContext)
+                    .doesNotContain(themePurpose)
+                    .doesNotContain(sensitiveMaterial);
+            assertThat(sentPayload.get()).isNotNull();
+            assertThat(sentPayload.get().path("messages").get(0).path("content").asText())
+                    .isEqualTo(systemPrompt);
+            assertThat(sentPayload.get().path("messages").get(1).path("content").asText())
+                    .isEqualTo(userPrompt);
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private List<String> capturePromptLogs(
             OpenAiClient client,
             String systemPrompt,
             String userPrompt) throws Exception {
+        return captureLogs(() -> invokePromptLogging(client, systemPrompt, userPrompt));
+    }
+
+    private List<String> captureLogs(ThrowingAction action) throws Exception {
         Logger logger = (Logger) LoggerFactory.getLogger(OpenAiClient.class);
         Level originalLevel = logger.getLevel();
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
@@ -68,7 +137,7 @@ class OpenAiClientPromptLoggingTest {
         logger.addAppender(appender);
         logger.setLevel(Level.DEBUG);
         try {
-            invokePromptLogging(client, systemPrompt, userPrompt);
+            action.run();
             return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         } finally {
             logger.detachAppender(appender);
@@ -99,11 +168,19 @@ class OpenAiClientPromptLoggingTest {
     }
 
     private OpenAiClient client(boolean rawLoggingEnabled) {
+        return client("https://api.openai.com", false, rawLoggingEnabled, new OpenAiClientConfig());
+    }
+
+    private OpenAiClient client(
+            String baseUrl,
+            boolean debugLoggingEnabled,
+            boolean rawLoggingEnabled,
+            OpenAiClientConfig config) {
         AiProviderProperties properties = new AiProviderProperties();
         properties.setActive("openai");
         AiProviderProperties.Provider provider = new AiProviderProperties.Provider();
         provider.setApiKey("test-key");
-        provider.setBaseUrl("https://api.openai.com");
+        provider.setBaseUrl(baseUrl);
         provider.setModel("gpt-4o");
         properties.getProviders().put("openai", provider);
         return new OpenAiClient(
@@ -111,9 +188,14 @@ class OpenAiClientPromptLoggingTest {
                 "test",
                 "chat_completions",
                 "gpt-4o",
-                false,
+                debugLoggingEnabled,
                 rawLoggingEnabled,
                 12000,
-                new OpenAiClientConfig());
+                config);
+    }
+
+    @FunctionalInterface
+    private interface ThrowingAction {
+        void run() throws Exception;
     }
 }

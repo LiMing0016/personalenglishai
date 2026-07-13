@@ -62,6 +62,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private static final String ENDPOINT_MODE_CHAT_COMPLETIONS = "chat_completions";
     private static final String ENDPOINT_MODE_RESPONSES = "responses";
     private static final String PROMPT_VERSION = "v1";
+    private static final String VOCABULARY_MARKDOWN_PROMPT_PREFIX =
+            "以下 JSON 是可信的卡片核心与来源上下文：";
+    private static final String VOCABULARY_THEME_PURPOSE_TAG = "<theme-purpose>";
     private static final Random RANDOM = new Random();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -1872,6 +1875,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (content == null) {
             return "";
         }
+        if (isVocabularyMarkdownPrompt(content)) {
+            return safeVocabularyPromptSummary(content);
+        }
         String redacted = redactSourceContext(content);
         redacted = redacted.replaceAll("sk-[a-zA-Z0-9]+", "sk-***");
         redacted = redacted.replaceAll("(?i)(api[_-]?key\\s*[:=]\\s*)([^\\s,;]+)", "$1***");
@@ -1890,7 +1896,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
             }
             return objectMapper.writeValueAsString(copy);
         } catch (JsonProcessingException exception) {
-            return content;
+            return containsSensitivePromptMarker(content)
+                    ? safeUnparseablePromptSummary(content)
+                    : content;
         }
     }
 
@@ -1905,16 +1913,63 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 if (isSourceContextField(fieldName)) {
                     object.put(fieldName, "[REDACTED]");
                     redacted = true;
+                } else if (value != null && value.isTextual()
+                        && containsSensitivePromptMarker(value.asText())) {
+                    object.put(fieldName, safeSensitivePromptSummary(value.asText()));
+                    redacted = true;
                 } else if (value != null) {
                     redacted |= redactSourceContextFields(value);
                 }
             }
         } else if (node.isArray()) {
-            for (JsonNode item : node) {
-                redacted |= redactSourceContextFields(item);
+            ArrayNode array = (ArrayNode) node;
+            for (int i = 0; i < array.size(); i++) {
+                JsonNode item = array.get(i);
+                if (item != null && item.isTextual()
+                        && containsSensitivePromptMarker(item.asText())) {
+                    array.set(i, objectMapper.getNodeFactory().textNode(
+                            safeSensitivePromptSummary(item.asText())));
+                    redacted = true;
+                } else if (item != null) {
+                    redacted |= redactSourceContextFields(item);
+                }
             }
         }
         return redacted;
+    }
+
+    private boolean isVocabularyMarkdownPrompt(String content) {
+        return content != null
+                && content.contains(VOCABULARY_MARKDOWN_PROMPT_PREFIX)
+                && content.contains(VOCABULARY_THEME_PURPOSE_TAG);
+    }
+
+    private boolean containsSensitivePromptMarker(String content) {
+        if (content == null) {
+            return false;
+        }
+        String normalized = content.toLowerCase(java.util.Locale.ROOT);
+        return content.contains(VOCABULARY_MARKDOWN_PROMPT_PREFIX)
+                || content.contains(VOCABULARY_THEME_PURPOSE_TAG)
+                || normalized.contains("\"sourcecontext\"")
+                || normalized.contains("\"capturedsourcecontext\"")
+                || normalized.contains("\"contexttext\"");
+    }
+
+    private String safeVocabularyPromptSummary(String content) {
+        return "[REDACTED_VOCABULARY_PROMPT chars=" + content.length()
+                + " sha256=" + sha256Hex(content) + "]";
+    }
+
+    private String safeSensitivePromptSummary(String content) {
+        return isVocabularyMarkdownPrompt(content)
+                ? safeVocabularyPromptSummary(content)
+                : safeUnparseablePromptSummary(content);
+    }
+
+    private String safeUnparseablePromptSummary(String content) {
+        return "[REDACTED_UNPARSEABLE_PROMPT chars=" + content.length()
+                + " sha256=" + sha256Hex(content) + "]";
     }
 
     private boolean isSourceContextField(String fieldName) {
