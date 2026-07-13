@@ -2,7 +2,7 @@
 title: 单词沉淀架构
 status: active
 owner: backend
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 review_cycle: on-change
 related_code:
   - backend/src/main/resources/db/schema.sql
@@ -98,7 +98,7 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 
 核心 JSON 固定 `schemaVersion`、`term`、`phonetics` 和 `senses`，保存核心事实，用于列表摘要、搜索和后续结构化学习。生成器先读取共享词典，不读取 `favorite`、`lookupCount` 等用户状态；词典缺少音标和释义时才调用结构化 AI fallback。无论来源如何，最终 core 都必须保持卡片规范词形并通过 schema 校验。
 
-主题 Markdown 只承载扩展内容，包括例句、学习提示、考试侧重点或语境解释，不承担单词身份和核心释义。输出为空、超过 20,000 字符或包含原始 HTML 时视为失败；保存和缓存前均执行相同校验。详细 Prompt、安全分隔符、词典优先级和日志字段见[主题化单词卡 Prompt](../ai/vocabulary-theme-prompts.md)。
+主题 Markdown 只承载扩展内容，包括例句、学习提示、考试侧重点或语境解释，不承担单词身份和核心释义。输出为空、超过 20,000 字符或包含原始 HTML 时视为失败；保存和缓存前均执行相同校验。详情阅读模式把 core JSON 作为结构化核心信息展示，并以严格模式渲染主题 Markdown，不执行原始 HTML、`<br>` 或图片；只有进入编辑模式后才显示并保存原始 Markdown 源字符串。详细 Prompt、安全分隔符、词典优先级和日志字段见[主题化单词卡 Prompt](../ai/vocabulary-theme-prompts.md)。
 
 当 core 有效而 Markdown 生成失败时，仍追加包含 `core_json` 的 revision，卡片状态为 `needs_review`，所以 core_json 仍可见；前端显示核心内容和“主题内容待完善”，并允许重新生成。技术异常原文不直接展示给用户。
 
@@ -167,7 +167,7 @@ vocabulary:
 
 ## 前端路由
 
-词典和卡片工作台入口是 `/app/vocabulary`，卡片详情工作区路由为 `/app/vocabulary/cards/:cardUid`。卡片列表可按来源类型筛选并切换最近/A-Z 排序，详情显示来源、最新任务状态、活跃版本和候选冲突状态。列表与详情仅在最新 job 为 `pending`/`running`（或兼容旧 `generating` 状态）时轮询，终态后停止。Inspector 只为合法 `http`/`https` 来源渲染外链；删除是软删除，再次收藏或录入可恢复。
+词典和卡片工作台入口是 `/app/vocabulary`。`/app/vocabulary/cards/:cardUid` 会按参数身份分流：持久化 `card_` UID 使用独立全页详情，只显示单词卡文档及其操作，不同时保留列表或批量录入区；不带 `card_` 前缀的旧关键词路径继续进入单词库，并用该参数填充 `keyword` 过滤条件，不请求持久化卡片详情。卡片列表可按来源类型筛选并切换最近/A-Z 排序，全页详情显示来源、最新任务状态、活跃版本和候选冲突状态。列表与详情仅在最新 job 为 `pending`/`running`（或兼容旧 `generating` 状态）时轮询，终态后停止。Inspector 只为合法 `http`/`https` 来源渲染外链；删除是软删除，再次收藏或录入可恢复。
 
 主题库入口是 `/app/vocabulary/themes`。捕获区的主题 shelf 最多展示默认主题和最近使用主题；批量捕获显式发送本次选择的 `themeUid`。详情优先渲染新格式 core + Markdown；legacy `basic`、`exam`、`reading` 通过兼容适配器投影 core，仍可读取，并可选择主题重新生成成新格式。
 
@@ -203,7 +203,7 @@ cd backend
 .\mvnw.cmd -q test
 
 cd ..\web
-npx tsx --test tests/vocabularyCaptureTerms.test.ts tests/vocabularyApiContract.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyCardInspector.test.ts
+npx tsx --test src/components/assistant/markdown.test.ts tests/vocabularyMarkdownRenderer.test.ts tests/vocabularyCardSections.test.ts tests/vocabularyDepositionWorkspace.test.ts tests/vocabularyLearningPage.test.ts tests/vocabularyCardInspector.test.ts tests/vocabularyCoreSummary.test.ts
 npm run build
 $env:PLAYWRIGHT_BASE_URL='http://127.0.0.1:5177'
 $env:E2E_MOCK_AUTH='1'

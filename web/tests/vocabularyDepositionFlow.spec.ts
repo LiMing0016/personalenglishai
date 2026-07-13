@@ -798,28 +798,76 @@ test('mobile More owns theme and delete controls and closes across navigation', 
   await expect(page.getByLabel('重新生成主题')).toHaveCount(0)
 })
 
-for (const { name, viewport } of [
-  { name: 'desktop', viewport: { width: 1440, height: 900 } },
-  { name: 'mobile', viewport: { width: 390, height: 844 } },
-]) {
-  test(`vocabulary detail is clean and responsive on ${name}`, async ({ page }) => {
-    await page.setViewportSize(viewport)
-    const errors = collectRuntimeErrors(page)
-    await installApiMocks(page, [makeCard()])
-    await page.goto('/app/vocabulary/cards/card_ready')
-    await expect(page.locator('.card-inspector__heading h2')).toHaveText('innovative')
+test('vocabulary detail remains readable across the required responsive viewports', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  await installApiMocks(page, [makeCard()])
+  await page.goto('/app/vocabulary/cards/card_ready')
 
-    const navButtons = page.locator('.vocabulary-nav button')
-    for (let index = 0; index < await navButtons.count(); index += 1) {
-      const metrics = await navButtons.nth(index).evaluate((button) => {
-        const style = getComputedStyle(button)
-        return { whiteSpace: style.whiteSpace, flexShrink: style.flexShrink }
-      })
-      expect(metrics.whiteSpace).toBe('nowrap')
-      expect(metrics.flexShrink).toBe('0')
-    }
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+
+    const heading = page.locator('.card-inspector__heading').getByRole('heading', { name: 'innovative' })
+    const chapters = page.getByRole('navigation', { name: '单词卡章节' })
+    const readButton = page.getByRole('button', { name: '阅读', exact: true })
+    const editButton = page.getByRole('button', { name: '编辑', exact: true })
+    const regenerateButton = page.getByRole('button', { name: '重新生成', exact: true })
+    await expect(heading).toBeVisible()
+    await expect(chapters).toBeVisible()
+    await expect(readButton).toBeVisible()
+    await expect(editButton).toBeVisible()
+    await expect(regenerateButton).toBeVisible()
+
+    const controlsDoNotOverlap = await page.locator('.card-inspector').evaluate((inspector) => {
+      const elements = [
+        inspector.querySelector('.card-inspector__heading h2'),
+        inspector.querySelector('.card-inspector__chapters'),
+        ...inspector.querySelectorAll('.card-inspector__mode button'),
+        [...inspector.querySelectorAll('.card-inspector__toolbar > button')]
+          .find((button) => button.textContent?.trim() === '重新生成'),
+      ].filter((element): element is Element => element instanceof Element)
+      const rectangles = elements.map((element) => element.getBoundingClientRect())
+      return rectangles.every((rectangle, index) => rectangles.slice(index + 1).every((other) => (
+        rectangle.right <= other.left
+        || other.right <= rectangle.left
+        || rectangle.bottom <= other.top
+        || other.bottom <= rectangle.top
+      )))
+    })
+    expect(controlsDoNotOverlap).toBe(true)
     await expectNoHorizontalOverflow(page)
-    await expectCleanRuntime(page, errors)
-    await page.screenshot({ path: `test-results/vocabulary-deposition-${name}.png`, fullPage: true })
-  })
-}
+
+    if (viewport.width === 390) {
+      const mobileLayout = await page.locator('.card-inspector__notebook').evaluate((notebook) => {
+        const chapters = notebook.querySelector('.card-inspector__chapters')
+        const document = notebook.querySelector('.card-inspector__document')
+        if (!(chapters instanceof HTMLElement) || !(document instanceof HTMLElement)) return null
+        const chapterButtons = [...chapters.querySelectorAll('button')]
+        const buttonTops = chapterButtons.map((button) => button.getBoundingClientRect().top)
+        const notebookRect = notebook.getBoundingClientRect()
+        const documentRect = document.getBoundingClientRect()
+        return {
+          chaptersDisplay: getComputedStyle(chapters).display,
+          chaptersOverflowX: getComputedStyle(chapters).overflowX,
+          chapterButtonsStayOnOneRow: new Set(buttonTops).size === 1,
+          chapterButtonsDoNotShrink: chapterButtons.every((button) => getComputedStyle(button).flexShrink === '0'),
+          notebookWidth: notebookRect.width,
+          documentWidth: documentRect.width,
+        }
+      })
+      expect(mobileLayout).not.toBeNull()
+      expect(mobileLayout).toMatchObject({
+        chaptersDisplay: 'flex',
+        chaptersOverflowX: 'auto',
+        chapterButtonsStayOnOneRow: true,
+        chapterButtonsDoNotShrink: true,
+      })
+      expect(mobileLayout!.documentWidth).toBeGreaterThanOrEqual(mobileLayout!.notebookWidth - 1)
+    }
+  }
+
+  await expectCleanRuntime(page, errors)
+})
