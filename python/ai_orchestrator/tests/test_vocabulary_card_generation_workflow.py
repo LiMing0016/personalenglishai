@@ -126,7 +126,8 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.core.term, "supposed")
         self.assertEqual(response.core.schema_version, 1)
         self.assertEqual(response.core.phonetics, fallback.phonetics)
-        self.assertEqual(response.core.senses, VocabularyCore.model_validate(original).senses)
+        self.assertEqual(response.core.senses[0], VocabularyCore.model_validate(original).senses[0])
+        self.assertEqual(response.core.senses[1], fallback.senses[0])
         self.assertEqual(response.core.senses[0].meanings[0].definition_en, "trusted definition")
         self.assertEqual(response.generation.model_call_count, 2)
 
@@ -150,12 +151,14 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(merged.schema_version, trusted.schema_version)
         self.assertEqual(merged.term, trusted.term)
-        self.assertEqual(merged.phonetics, trusted.phonetics)
-        self.assertEqual(merged.senses, trusted.senses)
+        self.assertEqual(merged.phonetics[0], trusted.phonetics[0])
+        self.assertEqual(merged.senses[0], trusted.senses[0])
         self.assertEqual(
             merged.senses[0].meanings[0].definition_en,
             trusted.senses[0].meanings[0].definition_en,
         )
+        self.assertEqual(merged.phonetics[1], fallback.phonetics[0])
+        self.assertEqual(merged.senses[1], fallback.senses[0])
 
     def test_merge_fills_blank_scalars_and_appends_new_fallback_structures(self) -> None:
         trusted = VocabularyCore.model_validate(
@@ -226,10 +229,103 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged.senses[0].meanings[1].definition_en, "fallback English")
         self.assertEqual(merged.senses[0].meanings[1].definition_zh, "可信中文")
         self.assertEqual(merged.senses[0].meanings[2].definition_en, "new noun meaning")
-        self.assertEqual(merged.senses[1].part_of_speech, "verb")
-        self.assertEqual(merged.senses[1].meanings[0].definition_en, "fallback verb")
+        self.assertEqual(merged.senses[1], trusted.senses[1])
+        self.assertEqual(merged.senses[2].part_of_speech, "verb")
+        self.assertEqual(merged.senses[2].meanings[0].definition_en, "fallback verb")
+        self.assertEqual(merged.senses[2].meanings[1].definition_en, "new verb meaning")
+        self.assertEqual(merged.senses[3].part_of_speech, "adjective")
+
+    def test_merge_uses_semantic_keys_without_corrupting_or_duplicating_structures(self) -> None:
+        trusted = VocabularyCore.model_validate(
+            core_payload(
+                phonetics=[
+                    {"region": "uk", "text": "", "audioUrl": None},
+                    {"region": "us", "text": "", "audioUrl": None},
+                ],
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "trusted noun", "definitionZh": ""},
+                            {"definitionEn": "", "definitionZh": ""},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [{"definitionEn": "trusted verb", "definitionZh": ""}],
+                    },
+                    {
+                        "partOfSpeech": "",
+                        "meanings": [{"definitionEn": "shared definition", "definitionZh": ""}],
+                    },
+                    {
+                        "partOfSpeech": "",
+                        "meanings": [{"definitionEn": "", "definitionZh": ""}],
+                    },
+                ],
+            )
+        )
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                phonetics=[
+                    {"region": "us", "text": "fallback us", "audioUrl": None},
+                    {"region": "uk", "text": "fallback uk", "audioUrl": None},
+                    {"region": "uk", "text": "duplicate uk", "audioUrl": None},
+                    {"region": "other", "text": "fallback other", "audioUrl": None},
+                ],
+                senses=[
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [
+                            {"definitionEn": "trusted verb", "definitionZh": "动词释义"},
+                            {"definitionEn": "new verb meaning", "definitionZh": "新动词释义"},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "trusted noun", "definitionZh": "名词释义"},
+                            {"definitionEn": "trusted noun", "definitionZh": "重复名词释义"},
+                            {"definitionEn": "new noun meaning", "definitionZh": "新名词释义"},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "adjective",
+                        "meanings": [{"definitionEn": "shared definition", "definitionZh": "共享释义"}],
+                    },
+                    {
+                        "partOfSpeech": "adverb",
+                        "meanings": [{"definitionEn": "unrelated fallback", "definitionZh": "不相关释义"}],
+                    },
+                ],
+            )
+        )
+
+        merged = merge_missing_core(trusted, fallback)
+
+        self.assertEqual(
+            [(phonetic.region, phonetic.text) for phonetic in merged.phonetics],
+            [("uk", "fallback uk"), ("us", "fallback us"), ("other", "fallback other")],
+        )
+        self.assertEqual(
+            [sense.part_of_speech for sense in merged.senses],
+            ["noun", "verb", "adjective", "", "adverb"],
+        )
+        self.assertEqual(merged.senses[0].meanings[0].definition_zh, "名词释义")
+        self.assertEqual(merged.senses[0].meanings[1].definition_en, "")
+        self.assertEqual(merged.senses[0].meanings[2].definition_en, "new noun meaning")
+        self.assertEqual(merged.senses[1].meanings[0].definition_zh, "动词释义")
         self.assertEqual(merged.senses[1].meanings[1].definition_en, "new verb meaning")
-        self.assertEqual(merged.senses[2].part_of_speech, "adjective")
+        self.assertEqual(merged.senses[2].meanings[0].definition_zh, "共享释义")
+        self.assertEqual(merged.senses[3].meanings[0].definition_en, "")
+        self.assertEqual(merged.senses[4].part_of_speech, "adverb")
+        self.assertEqual(
+            sum(
+                meaning.definition_en == "trusted noun"
+                for meaning in merged.senses[0].meanings
+            ),
+            1,
+        )
 
     async def test_invalid_fallback_never_generates_markdown_and_raises_core_error(self) -> None:
         invalid_fallback = VocabularyCoreFallbackOutput.model_validate(core_payload(phonetics=[], senses=[]))

@@ -19,6 +19,8 @@ from ..schemas.vocabulary_card import (
     VocabularyCoreFallbackOutput,
     VocabularyGenerationMetadata,
     VocabularyMarkdownOutput,
+    VocabularyMeaning,
+    VocabularySense,
     validate_markdown_content,
 )
 
@@ -78,9 +80,35 @@ def _normalized_key(value: str) -> str:
     return value.strip().casefold()
 
 
-def _match_fallback_index(
+def _meanings_overlap(left: VocabularyMeaning, right: VocabularyMeaning) -> bool:
+    left_en = _normalized_key(left.definition_en)
+    right_en = _normalized_key(right.definition_en)
+    left_zh = _normalized_key(left.definition_zh)
+    right_zh = _normalized_key(right.definition_zh)
+    return bool(left_en and right_en and left_en == right_en) or bool(
+        left_zh and right_zh and left_zh == right_zh
+    )
+
+
+def _senses_match(left: VocabularySense, right: VocabularySense) -> bool:
+    left_part_of_speech = _normalized_key(left.part_of_speech)
+    right_part_of_speech = _normalized_key(right.part_of_speech)
+    return (
+        bool(
+            left_part_of_speech
+            and right_part_of_speech
+            and left_part_of_speech == right_part_of_speech
+        )
+        or any(
+            _meanings_overlap(left_meaning, right_meaning)
+            for left_meaning in left.meanings
+            for right_meaning in right.meanings
+        )
+    )
+
+
+def _matching_fallback_index(
     *,
-    trusted_index: int,
     fallback_values: list[Any],
     used_indices: set[int],
     matches_semantically: Callable[[Any], bool],
@@ -88,18 +116,15 @@ def _match_fallback_index(
     for fallback_index, fallback_value in enumerate(fallback_values):
         if fallback_index not in used_indices and matches_semantically(fallback_value):
             return fallback_index
-    if trusted_index < len(fallback_values) and trusted_index not in used_indices:
-        return trusted_index
     return None
 
 
 def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> VocabularyCore:
-    """Fill blank trusted fields by semantic key or index; append unmatched fallback structures."""
+    """Fill blank trusted fields by semantic key and append distinct fallback structures."""
     used_phonetics: set[int] = set()
     phonetics: list[dict[str, Any]] = []
-    for trusted_index, trusted_phonetic in enumerate(trusted.phonetics):
-        fallback_index = _match_fallback_index(
-            trusted_index=trusted_index,
+    for trusted_phonetic in trusted.phonetics:
+        fallback_index = _matching_fallback_index(
             fallback_values=fallback.phonetics,
             used_indices=used_phonetics,
             matches_semantically=lambda candidate: candidate.region == trusted_phonetic.region,
@@ -122,22 +147,20 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
                 ),
             }
         )
-    phonetics.extend(
-        phonetic.model_dump(by_alias=True, mode="json")
-        for fallback_index, phonetic in enumerate(fallback.phonetics)
-        if fallback_index not in used_phonetics
-    )
+    known_regions = {phonetic.region for phonetic in trusted.phonetics}
+    for fallback_index, phonetic in enumerate(fallback.phonetics):
+        if fallback_index in used_phonetics or phonetic.region in known_regions:
+            continue
+        phonetics.append(phonetic.model_dump(by_alias=True, mode="json"))
+        known_regions.add(phonetic.region)
 
     used_senses: set[int] = set()
     senses: list[dict[str, Any]] = []
-    for trusted_index, trusted_sense in enumerate(trusted.senses):
-        trusted_part_of_speech = _normalized_key(trusted_sense.part_of_speech)
-        fallback_index = _match_fallback_index(
-            trusted_index=trusted_index,
+    for trusted_sense in trusted.senses:
+        fallback_index = _matching_fallback_index(
             fallback_values=fallback.senses,
             used_indices=used_senses,
-            matches_semantically=lambda candidate: bool(trusted_part_of_speech)
-            and _normalized_key(candidate.part_of_speech) == trusted_part_of_speech,
+            matches_semantically=lambda candidate: _senses_match(trusted_sense, candidate),
         )
         fallback_sense = fallback.senses[fallback_index] if fallback_index is not None else None
         if fallback_index is not None:
@@ -146,19 +169,11 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
         used_meanings: set[int] = set()
         meanings: list[dict[str, str]] = []
         fallback_meanings = fallback_sense.meanings if fallback_sense else []
-        for meaning_index, trusted_meaning in enumerate(trusted_sense.meanings):
-            trusted_en = _normalized_key(trusted_meaning.definition_en)
-            trusted_zh = _normalized_key(trusted_meaning.definition_zh)
-            fallback_meaning_index = _match_fallback_index(
-                trusted_index=meaning_index,
+        for trusted_meaning in trusted_sense.meanings:
+            fallback_meaning_index = _matching_fallback_index(
                 fallback_values=fallback_meanings,
                 used_indices=used_meanings,
-                matches_semantically=lambda candidate: (
-                    bool(trusted_en) and _normalized_key(candidate.definition_en) == trusted_en
-                )
-                or (
-                    bool(trusted_zh) and _normalized_key(candidate.definition_zh) == trusted_zh
-                ),
+                matches_semantically=lambda candidate: _meanings_overlap(trusted_meaning, candidate),
             )
             fallback_meaning = (
                 fallback_meanings[fallback_meaning_index]
@@ -179,11 +194,14 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
                     ),
                 }
             )
-        meanings.extend(
-            meaning.model_dump(by_alias=True, mode="json")
-            for fallback_meaning_index, meaning in enumerate(fallback_meanings)
-            if fallback_meaning_index not in used_meanings
-        )
+        known_meanings = list(trusted_sense.meanings)
+        for fallback_meaning_index, meaning in enumerate(fallback_meanings):
+            if fallback_meaning_index in used_meanings or any(
+                _meanings_overlap(meaning, known_meaning) for known_meaning in known_meanings
+            ):
+                continue
+            meanings.append(meaning.model_dump(by_alias=True, mode="json"))
+            known_meanings.append(meaning)
         senses.append(
             {
                 "partOfSpeech": _fill_blank_scalar(
@@ -193,11 +211,14 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
                 "meanings": meanings,
             }
         )
-    senses.extend(
-        sense.model_dump(by_alias=True, mode="json")
-        for fallback_index, sense in enumerate(fallback.senses)
-        if fallback_index not in used_senses
-    )
+    known_senses = list(trusted.senses)
+    for fallback_index, sense in enumerate(fallback.senses):
+        if fallback_index in used_senses or any(
+            _senses_match(sense, known_sense) for known_sense in known_senses
+        ):
+            continue
+        senses.append(sense.model_dump(by_alias=True, mode="json"))
+        known_senses.append(sense)
 
     return VocabularyCore.model_validate(
         {
