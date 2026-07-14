@@ -113,21 +113,13 @@ npm run build
 
 当前阶段单词沉淀仅支持 `manual`（手动录入）和 `dictionary`（词典收藏）；PDF、AI 对话、笔记和错题尚未接入。
 
-使用 `docker-compose.local.yml` 创建全新 MySQL 数据卷时，Docker 首次初始化仅执行 `backend/src/main/resources/db/schema.sql`。`schema.sql` 已包含完整的主题表、索引、系统主题种子，以及 theme/core、`conflict_candidate_revision_uid`、`generation_outcome`、`warning` 等当前列；不要再对该新库重复执行单词卡 migration。
-
-不使用 Docker 全量 schema、仅在新库中部署单词沉淀模块时，先执行单词卡初始迁移：
+使用 `docker-compose.local.yml` 创建全新 MySQL 数据卷时，Docker 首次初始化仅执行 `backend/src/main/resources/db/schema.sql`。全新库只执行 `backend/src/main/resources/db/schema.sql`；非 Docker 环境也应使用同一全量 schema，而不是串行补跑单词卡 migration。`schema.sql` 已包含完整的主题表、索引、系统主题种子，以及 theme/core、`conflict_candidate_revision_uid`、`generation_outcome`、`warning`、`generation_metadata_json` 等当前列。
 
 ```powershell
-mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
+mysql -u <user> -p <database> < backend/src/main/resources/db/schema.sql
 ```
 
-再执行新库必需的主题与 Markdown 卡片迁移：
-
-```powershell
-mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
-```
-
-单词卡初始迁移已经包含全部基础列，包括租约字段及 `conflict_candidate_revision_uid`、`generation_outcome`、`warning`。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`；该脚本只用于历史库增量升级。
+新库不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 `migrate_add_vocabulary_generation_metadata.sql`；这两个脚本只用于历史库增量升级。
 
 尚未完成升级的历史库必须按以下顺序执行。第一步执行可重试的租约迁移：
 
@@ -153,7 +145,25 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
 ```
 
+第五步执行生成元数据迁移，为已有 revision 补充可空的 JSON 审计字段：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
+```
+
 租约迁移会通过 `information_schema` 分别检查两列和恢复索引，可重复执行。中断后直接重跑即可；已有结构不会重复创建，仍为 `running` 且租约到期时间为空的历史任务会完成回填。
+
+### 单词卡 MySQL 集成测试
+
+`VocabularyGenerationMetadataMigrationMySqlTest` 只连接可丢弃的 MySQL 8 实例，并由以下环境变量显式启用：
+
+```powershell
+$env:VOCABULARY_MYSQL_INTEGRATION_URL='jdbc:mysql://127.0.0.1:3306/?useSSL=false&allowPublicKeyRetrieval=true'
+$env:VOCABULARY_MYSQL_INTEGRATION_USERNAME='vocabulary_test'
+$env:VOCABULARY_MYSQL_INTEGRATION_PASSWORD='<disposable-instance-password>'
+```
+
+测试账号需要 `CREATE DATABASE`、`CREATE TABLE`、`ALTER TABLE`、`INSERT`、`SELECT` 和 `DROP DATABASE` 权限。测试只创建和删除以 `peai_vocab_generation_metadata_` 开头的随机 schema，绝不连接或删除业务 schema；清理直接执行 `DROP DATABASE`，不依赖 `USE mysql` 或对系统库的访问权限。连接 URL 必须指向隔离的 disposable MySQL 实例，密码只能通过环境变量或密钥管理注入，不得提交到仓库。
 
 启动后端时保持 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`（对应 `vocabulary.generation.scheduler.enabled`），以处理单词卡生成任务。
 

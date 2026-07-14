@@ -11,6 +11,7 @@ related_code:
   - backend/src/main/resources/db/migrate_add_vocabulary_generation_job_leases.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
+  - backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyThemeService.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCardGenerator.java
   - web/src/views/VocabularyView.vue
@@ -43,19 +44,15 @@ related_docs:
 
 ## 数据库部署
 
-Docker Compose 把 `backend/src/main/resources/db/schema.sql` 挂载为 MySQL 的 `001_schema.sql`。全新数据卷首次初始化只执行该全量脚本；脚本直接创建 3 张主题表、主题索引和系统主题种子，并在单词卡相关表中一次性定义 theme/core、冲突候选、生成结果和 warning 列，不追加同表的第二套定义，也不再补跑下述 migration。
+Docker Compose 把 `backend/src/main/resources/db/schema.sql` 挂载为 MySQL 的 `001_schema.sql`。全新数据卷首次初始化只执行该全量脚本；脚本直接创建 3 张主题表、主题索引和系统主题种子，并在单词卡相关表中一次性定义 theme/core、冲突候选、生成结果、warning 和 `generation_metadata_json` 列，不追加同表的第二套定义，也不再补跑下述 migration。
 
-非 Docker、仅在新库中部署单词沉淀模块时，先执行初始迁移，创建单词卡、来源、版本、偏好和生成任务表：
-
-```powershell
-mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql
-```
-
-新库随后执行主题与 Markdown 卡片迁移，不执行历史库专用的 review-semantics 增量。初始迁移已经包含 `conflict_candidate_revision_uid`、`generation_outcome` 和 `warning`：
+无论 Docker 或非 Docker，全新库只执行 `schema.sql`：
 
 ```powershell
-mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
+mysql -u <user> -p <database> < backend/src/main/resources/db/schema.sql
 ```
+
+全新库不执行任何历史增量，尤其不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 `migrate_add_vocabulary_generation_metadata.sql`。
 
 历史旧表升级或租约迁移中断后，执行已有库租约迁移：
 
@@ -75,17 +72,35 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_make_vocab
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
 ```
 
-历史库最后执行审核语义增量，为已有表补充显式冲突候选和生成结果字段：
+历史库第四步执行审核语义增量，为已有表补充显式冲突候选和生成结果字段：
 
 ```powershell
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
 ```
 
-非 Docker 模块新库先执行 `migrate_create_vocabulary_deposition_tables.sql`，再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`；Docker 全量新库只执行 `schema.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量。新库不得执行 `migrate_add_vocabulary_review_semantics.sql`，历史库不得省略该增量。
+历史库第五步执行生成元数据迁移，为已有 `vocabulary_card_revision` 增加可空的 JSON 审计字段：
 
-迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version` 共 5 列。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
+```
 
-初始迁移已包含新库所需的 `lease_token`、`lease_expires_at` 和索引，因此新库无需额外执行租约迁移；租约迁移只用于历史旧表或恢复中断升级。该脚本通过 `information_schema` 独立检查两列和 `idx_vocabulary_job_lease`，可重复执行；已存在的结构不会重复创建，缺失动作会继续完成，最后对租约到期时间为空的 `running` 任务执行幂等回填。新库仍需继续执行后续主题迁移。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
+全新库只执行 `schema.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量、生成元数据迁移。新库不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 `migrate_add_vocabulary_generation_metadata.sql`，历史库不得省略任一增量。
+
+迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version`、`generation_metadata_json` 共 6 列，其中 `generation_metadata_json` 是 `JSON NULL`。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
+
+### 生成元数据 MySQL 集成测试
+
+`VocabularyGenerationMetadataMigrationMySqlTest` 使用以下环境变量连接可丢弃的 MySQL 8 实例：
+
+```powershell
+$env:VOCABULARY_MYSQL_INTEGRATION_URL='jdbc:mysql://127.0.0.1:3306/?useSSL=false&allowPublicKeyRetrieval=true'
+$env:VOCABULARY_MYSQL_INTEGRATION_USERNAME='vocabulary_test'
+$env:VOCABULARY_MYSQL_INTEGRATION_PASSWORD='<disposable-instance-password>'
+```
+
+测试账号必须具备 `CREATE DATABASE`、`CREATE TABLE`、`ALTER TABLE`、`INSERT`、`SELECT` 和 `DROP DATABASE` 权限。测试仅创建和删除 `peai_vocab_generation_metadata_` 前缀的随机 schema；连接 URL 必须指向隔离的 disposable MySQL，绝不能指向开发、测试或生产业务库。清理操作直接 `DROP DATABASE`，不执行 `USE mysql`，因此不需要访问 MySQL 系统库。密码只能从环境变量或密钥管理注入，不得写入仓库、命令历史或日志。
+
+初始全量 schema 已包含新库所需的 `lease_token`、`lease_expires_at` 和索引，因此新库无需额外执行租约迁移；租约迁移只用于历史旧表或恢复中断升级。该脚本通过 `information_schema` 独立检查两列和 `idx_vocabulary_job_lease`，可重复执行；已存在的结构不会重复创建，缺失动作会继续完成，最后对租约到期时间为空的 `running` 任务执行幂等回填。迁移完成后再启动后端，避免调度器在不完整表结构上领取任务。
 
 ## 主题所有权与版本
 

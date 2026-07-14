@@ -21,7 +21,7 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("migrate_add_vocabulary_review_semantics.sql")),
                 () -> assertTrue(docs.contains("当前阶段仅支持 `manual` 和 `dictionary`")),
                 () -> assertTrue(docs.contains("PDF、AI 对话、笔记和错题尚未接入")),
-                () -> assertTrue(docs.contains("初始迁移已包含")),
+                () -> assertTrue(docs.contains("初始全量 schema 已包含")),
                 () -> assertTrue(docs.contains("新库无需额外执行租约迁移")),
                 () -> assertTrue(docs.contains("租约迁移只用于历史旧表")),
                 () -> assertTrue(docs.contains("可重复执行")),
@@ -52,9 +52,14 @@ class VocabularyDepositionDocsTest {
 
         assertAll(
                 () -> assertTrue(readme.contains("Docker 首次初始化仅执行 `backend/src/main/resources/db/schema.sql`")),
+                () -> assertTrue(readme.contains("全新库只执行 `backend/src/main/resources/db/schema.sql`")),
                 () -> assertTrue(readme.contains("`schema.sql` 已包含完整的主题表、索引、系统主题种子")),
-                () -> assertTrue(readme.contains("新库不得执行 `migrate_add_vocabulary_review_semantics.sql`")),
+                () -> assertTrue(readme.contains("新库不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 "
+                        + "`migrate_add_vocabulary_generation_metadata.sql`")),
                 () -> assertTrue(readme.contains("历史库必须按以下顺序执行")),
+                () -> assertTrue(readme.contains("migrate_add_vocabulary_generation_metadata.sql")),
+                () -> assertTrue(readme.indexOf("migrate_add_vocabulary_review_semantics.sql")
+                        < readme.indexOf("migrate_add_vocabulary_generation_metadata.sql")),
                 () -> assertTrue(readme.contains("conflict_candidate_revision_uid")),
                 () -> assertTrue(readme.contains("generation_outcome")),
                 () -> assertTrue(readme.contains("warning"))
@@ -82,8 +87,15 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(architecture.contains("`basic` -> `theme_system_basic`")),
                 () -> assertTrue(architecture.contains("`exam` -> `theme_system_exam`")),
                 () -> assertTrue(architecture.contains("`reading` -> `theme_system_reading`")),
-                () -> assertTrue(architecture.contains("先执行 `migrate_create_vocabulary_deposition_tables.sql`")),
-                () -> assertTrue(architecture.contains("再执行 `migrate_add_vocabulary_themes_and_markdown_cards.sql`")),
+                () -> assertTrue(architecture.contains("migrate_add_vocabulary_generation_metadata.sql")),
+                () -> assertTrue(architecture.indexOf("migrate_add_vocabulary_review_semantics.sql")
+                        < architecture.indexOf("migrate_add_vocabulary_generation_metadata.sql")),
+                () -> assertTrue(architecture.contains("全新库只执行 `schema.sql`")),
+                () -> assertTrue(architecture.contains("VOCABULARY_MYSQL_INTEGRATION_URL")),
+                () -> assertTrue(architecture.contains("VOCABULARY_MYSQL_INTEGRATION_USERNAME")),
+                () -> assertTrue(architecture.contains("VOCABULARY_MYSQL_INTEGRATION_PASSWORD")),
+                () -> assertTrue(architecture.contains("CREATE DATABASE`、`CREATE TABLE`、`ALTER TABLE`、`INSERT`、`SELECT` 和 `DROP DATABASE")),
+                () -> assertTrue(architecture.contains("peai_vocab_generation_metadata_")),
                 () -> assertTrue(architecture.contains("旧卡继续冻结在旧主题版本")),
                 () -> assertTrue(architecture.contains("Markdown 生成失败")),
                 () -> assertTrue(architecture.contains("core_json 仍可见")),
