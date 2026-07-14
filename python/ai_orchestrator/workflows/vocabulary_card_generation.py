@@ -376,6 +376,12 @@ class VocabularyCardGenerationWorkflow:
 
         markdown_call_number = model_call_count + 1
         self._require_remaining_budget(request.timeout_budget_ms, started_at)
+        markdown_call_started = False
+
+        def mark_markdown_call_started() -> None:
+            nonlocal markdown_call_started
+            markdown_call_started = True
+
         try:
             markdown_output = await self._run_agent(
                 agent=self._markdown_agent,
@@ -383,12 +389,15 @@ class VocabularyCardGenerationWorkflow:
                 request=request,
                 model_call_number=markdown_call_number,
                 started_at=started_at,
+                on_start=mark_markdown_call_started,
             )
             model_call_count = markdown_call_number
             content_markdown = self._validate_markdown_output(markdown_output)
         except asyncio.CancelledError:
             raise
         except Exception:
+            if not markdown_call_started:
+                raise
             return self._partial_response(request, core, markdown_call_number)
 
         return VocabularyCardGenerationResponse(
@@ -468,26 +477,30 @@ class VocabularyCardGenerationWorkflow:
         request: VocabularyCardGenerationRequest,
         model_call_number: int,
         started_at: float,
+        on_start: Callable[[], None] | None = None,
     ) -> Any:
         timeout_seconds = self._remaining_timeout_seconds(
             request.timeout_budget_ms,
             started_at,
         )
         try:
-            result = await asyncio.wait_for(
-                Runner.run(
-                    agent,
-                    agent_input,
-                    run_config=RunConfig(
-                        workflow_name=WORKFLOW_NAME,
-                        trace_include_sensitive_data=False,
-                        trace_metadata={
-                            "request_id": request.request_id,
-                            "trace_id": request.trace_id,
-                            "model_call_number": model_call_number,
-                        },
-                    ),
+            run = Runner.run(
+                agent,
+                agent_input,
+                run_config=RunConfig(
+                    workflow_name=WORKFLOW_NAME,
+                    trace_include_sensitive_data=False,
+                    trace_metadata={
+                        "request_id": request.request_id,
+                        "trace_id": request.trace_id,
+                        "model_call_number": model_call_number,
+                    },
                 ),
+            )
+            if on_start is not None:
+                on_start()
+            result = await asyncio.wait_for(
+                run,
                 timeout=timeout_seconds,
             )
         except asyncio.CancelledError:

@@ -562,6 +562,18 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(raised.exception.retryable)
         run.assert_not_awaited()
 
+    async def test_markdown_budget_expiring_before_runner_starts_returns_model_timeout(self) -> None:
+        clock = Mock(side_effect=[100.0, 100.0, 145.001])
+
+        with patch("agents.Runner.run", new_callable=AsyncMock) as run:
+            with self.assertRaisesRegex(
+                VocabularyCardGenerationError, "MODEL_TIMEOUT"
+            ) as raised:
+                await self.service(clock=clock).generate(request())
+
+        self.assertTrue(raised.exception.retryable)
+        run.assert_not_awaited()
+
     async def test_runner_cancellation_propagates_without_partial_response(self) -> None:
         with patch("agents.Runner.run", new_callable=AsyncMock, side_effect=asyncio.CancelledError):
             with self.assertRaises(asyncio.CancelledError):
