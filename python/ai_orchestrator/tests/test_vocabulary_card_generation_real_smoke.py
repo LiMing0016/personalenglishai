@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 from python.ai_orchestrator.schemas.vocabulary_card import VocabularyCardGenerationRequest
 from python.ai_orchestrator.services.vocabulary_card_generation import (
@@ -45,22 +46,42 @@ def request(*, term: str, theme: dict, trace_id: str) -> VocabularyCardGeneratio
     )
 
 
+def configured_real_smoke_service() -> VocabularyCardGenerationService:
+    required = (
+        "RUN_VOCABULARY_REAL_MODEL_SMOKE",
+        "OPENAI_API_KEY",
+        "VOCABULARY_GENERATION_INTERNAL_TOKEN",
+    )
+    if os.getenv("RUN_VOCABULARY_REAL_MODEL_SMOKE") != "1" or any(
+        not os.getenv(name, "").strip() for name in required[1:]
+    ):
+        raise unittest.SkipTest("real vocabulary model smoke is not explicitly enabled")
+
+    service = VocabularyCardGenerationService.from_env()
+    if not service.is_configured():
+        raise RuntimeError("real vocabulary model smoke lacks model configuration")
+    return service
+
+
+class VocabularyCardGenerationRealSmokeConfigurationTest(unittest.TestCase):
+    def test_explicit_opt_in_with_missing_model_fails_instead_of_skipping(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RUN_VOCABULARY_REAL_MODEL_SMOKE": "1",
+                "OPENAI_API_KEY": "test-key",
+                "VOCABULARY_GENERATION_INTERNAL_TOKEN": "test-token",
+                "VOCABULARY_GENERATION_MODEL": "",
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "model configuration"):
+                configured_real_smoke_service()
+
+
 class VocabularyCardGenerationRealSmokeTest(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        required = (
-            "RUN_VOCABULARY_REAL_MODEL_SMOKE",
-            "OPENAI_API_KEY",
-            "VOCABULARY_GENERATION_INTERNAL_TOKEN",
-        )
-        if os.getenv("RUN_VOCABULARY_REAL_MODEL_SMOKE") != "1" or any(
-            not os.getenv(name, "").strip() for name in required[1:]
-        ):
-            raise unittest.SkipTest("real vocabulary model smoke is not explicitly enabled")
-
-        cls.service = VocabularyCardGenerationService.from_env()
-        if not cls.service.is_configured():
-            raise unittest.SkipTest("real vocabulary model smoke lacks model configuration")
+        cls.service = configured_real_smoke_service()
 
     async def test_basic_dictionary_core_and_custom_theme_complete_without_sensitive_output(self) -> None:
         cases = (

@@ -2,13 +2,17 @@
 title: 主题化单词卡 Prompt
 status: active
 owner: ai
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyMarkdownPromptBuilder.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCardGenerator.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCoreFallbackGenerator.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyGenerationWorker.java
+  - python/ai_orchestrator/agents/vocabulary_card.py
+  - python/ai_orchestrator/workflows/vocabulary_card_generation.py
+  - python/ai_orchestrator/prompts/agent_instructions/vocabulary_core_fallback.md
+  - python/ai_orchestrator/prompts/agent_instructions/vocabulary_card_markdown.md
 related_docs:
   - docs/architecture/vocabulary-deposition.md
   - docs/architecture/dictionary-oxford.md
@@ -70,7 +74,7 @@ System Prompt 固定要求只输出 Markdown、禁止 JSON/代码围栏和原始
 - 最大长度是 20,000 字符，后端生成、缓存读取和用户保存均执行边界校验。
 - 禁止原始 HTML 标签、声明和处理指令；前端以源码编辑器显示，不执行脚本、事件属性、iframe 或危险 URL。
 - Markdown 不重复承担 term、音标、词性和核心释义；这些事实只从 `core_json` 读取。
-- 生成温度为 `0.2`，最大输出 token 为 `1200`。成功结果按主题 UID/version、core 和来源语境生成 cache key，TTL 为 7 天。
+- Java 回滚 provider 的生成温度为 `0.2`，最大输出 token 为 `1200`。只有 Java 回滚 provider 使用七天生成缓存：成功结果按主题 UID/version、core 和来源语境生成 cache key；Python provider 不读写该缓存。
 
 ## 日志与可观测性
 

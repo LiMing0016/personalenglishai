@@ -54,6 +54,7 @@ services:
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
 
       # Python OpenAI Agents SDK orchestrator
+      - ASSISTANT_ORCHESTRATOR_BASE_URL=http://assistant-orchestrator:8011
       - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8011}
       # Vocabulary Python provider is opt-in; service DNS is required inside the Compose network.
       - VOCABULARY_GENERATION_PROVIDER=${VOCABULARY_GENERATION_PROVIDER:-java}
