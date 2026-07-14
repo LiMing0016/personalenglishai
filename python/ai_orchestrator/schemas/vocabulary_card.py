@@ -19,7 +19,8 @@ MAX_TERM_LENGTH = 200
 MAX_SOURCE_CONTEXT_LENGTH = 10_000
 MAX_SCALAR_LENGTH = 2_000
 MAX_TIMEOUT_BUDGET_MS = 60_000
-MAX_TRACE_ID_LENGTH = 80
+MAX_OPAQUE_ID_LENGTH = 128
+OPAQUE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 _COMMONMARK = MarkdownIt("commonmark")
 
 
@@ -41,6 +42,12 @@ def validate_markdown_content(value: str, *, require_nonempty: bool) -> str:
         raise ValueError("contentMarkdown must be non-empty Markdown")
     if _contains_raw_html(value):
         raise ValueError("contentMarkdown must not contain raw HTML")
+    return value
+
+
+def _require_nonblank_term(value: str) -> str:
+    if not value.strip():
+        raise ValueError("term must contain a non-whitespace character")
     return value
 
 
@@ -70,6 +77,11 @@ class VocabularyCore(StrictVocabularyModel):
     phonetics: list[VocabularyPhonetic] = Field(max_length=10)
     senses: list[VocabularySense] = Field(max_length=20)
 
+    @field_validator("term")
+    @classmethod
+    def require_nonblank_term(cls, value: str) -> str:
+        return _require_nonblank_term(value)
+
 
 class VocabularyThemeSnapshot(StrictVocabularyModel):
     uid: str = Field(min_length=1, max_length=200)
@@ -83,13 +95,28 @@ class VocabularyThemeSnapshot(StrictVocabularyModel):
 class VocabularyCardGenerationRequest(StrictVocabularyModel):
     contract_version: Literal[1] = Field(alias="contractVersion")
     core_schema_version: Literal[1] = Field(alias="coreSchemaVersion")
-    request_id: str = Field(alias="requestId", min_length=1, max_length=200)
-    trace_id: str = Field(alias="traceId", min_length=1, max_length=MAX_TRACE_ID_LENGTH)
+    request_id: str = Field(
+        alias="requestId",
+        min_length=1,
+        max_length=MAX_OPAQUE_ID_LENGTH,
+        pattern=OPAQUE_ID_PATTERN,
+    )
+    trace_id: str = Field(
+        alias="traceId",
+        min_length=1,
+        max_length=MAX_OPAQUE_ID_LENGTH,
+        pattern=OPAQUE_ID_PATTERN,
+    )
     timeout_budget_ms: int = Field(alias="timeoutBudgetMs", ge=1, le=MAX_TIMEOUT_BUDGET_MS)
     term: str = Field(min_length=1, max_length=MAX_TERM_LENGTH)
     dictionary_core: VocabularyCore = Field(alias="dictionaryCore")
     source_context: str = Field(default="", alias="sourceContext", max_length=MAX_SOURCE_CONTEXT_LENGTH)
     theme: VocabularyThemeSnapshot
+
+    @field_validator("term")
+    @classmethod
+    def require_nonblank_term(cls, value: str) -> str:
+        return _require_nonblank_term(value)
 
     @model_validator(mode="after")
     def validate_dictionary_core_term(self) -> "VocabularyCardGenerationRequest":
@@ -103,7 +130,12 @@ class VocabularyGenerationMetadata(StrictVocabularyModel):
     model: str = Field(min_length=1, max_length=200)
     prompt_version: str = Field(alias="promptVersion", min_length=1, max_length=200)
     model_call_count: int = Field(alias="modelCallCount", ge=1, le=2)
-    trace_id: str = Field(alias="traceId", min_length=1, max_length=MAX_TRACE_ID_LENGTH)
+    trace_id: str = Field(
+        alias="traceId",
+        min_length=1,
+        max_length=MAX_OPAQUE_ID_LENGTH,
+        pattern=OPAQUE_ID_PATTERN,
+    )
 
 
 class VocabularyCardGenerationResponse(StrictVocabularyModel):

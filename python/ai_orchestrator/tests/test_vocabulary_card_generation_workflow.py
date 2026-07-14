@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -130,16 +132,18 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
     def test_merge_never_overwrites_nonempty_dictionary_core_fields(self) -> None:
         trusted = VocabularyCore.model_validate(core_payload())
-        fallback = VocabularyCoreFallbackOutput.model_construct(
-            schema_version=2,
-            term="different",
-            phonetics=[{"region": "us", "text": "different", "audioUrl": None}],
-            senses=[
-                {
-                    "partOfSpeech": "verb",
-                    "meanings": [{"definitionEn": "changed", "definitionZh": "已修改"}],
-                }
-            ],
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                phonetics=[{"region": "us", "text": "different", "audioUrl": None}],
+                senses=[
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [{"definitionEn": "changed", "definitionZh": "已修改"}],
+                    }
+                ],
+            )
+        ).model_copy(
+            update={"schema_version": 2, "term": "different"}
         )
 
         merged = merge_missing_core(trusted, fallback)
@@ -152,6 +156,80 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
             merged.senses[0].meanings[0].definition_en,
             trusted.senses[0].meanings[0].definition_en,
         )
+
+    def test_merge_fills_blank_scalars_and_appends_new_fallback_structures(self) -> None:
+        trusted = VocabularyCore.model_validate(
+            core_payload(
+                phonetics=[
+                    {"region": "uk", "text": "", "audioUrl": None},
+                    {"region": "us", "text": "trusted us", "audioUrl": None},
+                ],
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "trusted English", "definitionZh": ""},
+                            {"definitionEn": "", "definitionZh": "可信中文"},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "",
+                        "meanings": [{"definitionEn": "", "definitionZh": ""}],
+                    },
+                ],
+            )
+        )
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                phonetics=[
+                    {"region": "uk", "text": "fallback uk", "audioUrl": "https://audio/uk"},
+                    {"region": "us", "text": "changed us", "audioUrl": "https://audio/us"},
+                    {"region": "other", "text": "new phonetic", "audioUrl": None},
+                ],
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "trusted English", "definitionZh": "回退中文"},
+                            {"definitionEn": "fallback English", "definitionZh": "可信中文"},
+                            {"definitionEn": "new noun meaning", "definitionZh": "新名词释义"},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [
+                            {"definitionEn": "fallback verb", "definitionZh": "动词释义"},
+                            {"definitionEn": "new verb meaning", "definitionZh": "新动词释义"},
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "adjective",
+                        "meanings": [{"definitionEn": "new sense", "definitionZh": "新词义"}],
+                    },
+                ],
+            )
+        )
+
+        merged = merge_missing_core(trusted, fallback)
+
+        self.assertEqual(merged.schema_version, 1)
+        self.assertEqual(merged.term, "supposed")
+        self.assertEqual(merged.phonetics[0].region, "uk")
+        self.assertEqual(merged.phonetics[0].text, "fallback uk")
+        self.assertEqual(merged.phonetics[0].audio_url, "https://audio/uk")
+        self.assertEqual(merged.phonetics[1].text, "trusted us")
+        self.assertEqual(merged.phonetics[1].audio_url, "https://audio/us")
+        self.assertEqual(merged.phonetics[2].text, "new phonetic")
+        self.assertEqual(merged.senses[0].part_of_speech, "noun")
+        self.assertEqual(merged.senses[0].meanings[0].definition_en, "trusted English")
+        self.assertEqual(merged.senses[0].meanings[0].definition_zh, "回退中文")
+        self.assertEqual(merged.senses[0].meanings[1].definition_en, "fallback English")
+        self.assertEqual(merged.senses[0].meanings[1].definition_zh, "可信中文")
+        self.assertEqual(merged.senses[0].meanings[2].definition_en, "new noun meaning")
+        self.assertEqual(merged.senses[1].part_of_speech, "verb")
+        self.assertEqual(merged.senses[1].meanings[0].definition_en, "fallback verb")
+        self.assertEqual(merged.senses[1].meanings[1].definition_en, "new verb meaning")
+        self.assertEqual(merged.senses[2].part_of_speech, "adjective")
 
     async def test_invalid_fallback_never_generates_markdown_and_raises_core_error(self) -> None:
         invalid_fallback = VocabularyCoreFallbackOutput.model_validate(core_payload(phonetics=[], senses=[]))
@@ -215,13 +293,50 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         run.assert_not_awaited()
 
     async def test_fallback_timeout_and_upstream_errors_are_retryable(self) -> None:
-        for failure, expected_code in ((TimeoutError(), "MODEL_TIMEOUT"), (ConnectionError(), "MODEL_UPSTREAM_UNAVAILABLE")):
+        for failure, expected_code in (
+            (TimeoutError(), "MODEL_TIMEOUT"),
+            (ConnectionError(), "MODEL_UPSTREAM_UNAVAILABLE"),
+            (RuntimeError("local failure"), "GENERATION_INTERNAL_ERROR"),
+        ):
             with self.subTest(failure=expected_code):
                 with patch("agents.Runner.run", new_callable=AsyncMock, side_effect=failure) as run:
                     with self.assertRaisesRegex(VocabularyCardGenerationError, expected_code) as raised:
                         await self.service().generate(request(core=core_payload(phonetics=[], senses=[])))
                 self.assertTrue(raised.exception.retryable)
                 run.assert_awaited_once()
+
+    async def test_inflight_fallback_timeout_uses_remaining_monotonic_budget(self) -> None:
+        async def sleeping_run(*args: object, **kwargs: object) -> SimpleNamespace:
+            await asyncio.sleep(0.2)
+            return SimpleNamespace(final_output=None)
+
+        timeout_request = request(core=core_payload(phonetics=[], senses=[])).model_copy(
+            update={"timeout_budget_ms": 10}
+        )
+        started_at = time.monotonic()
+        with patch("agents.Runner.run", new=sleeping_run):
+            with self.assertRaisesRegex(VocabularyCardGenerationError, "MODEL_TIMEOUT") as raised:
+                await self.service().generate(timeout_request)
+
+        self.assertTrue(raised.exception.retryable)
+        self.assertLess(time.monotonic() - started_at, 0.12)
+
+    async def test_budget_expiring_before_runner_starts_returns_model_timeout(self) -> None:
+        clock = Mock(side_effect=[100.0, 100.0, 145.001])
+
+        with patch("agents.Runner.run", new_callable=AsyncMock) as run:
+            with self.assertRaisesRegex(VocabularyCardGenerationError, "MODEL_TIMEOUT") as raised:
+                await self.service(clock=clock).generate(
+                    request(core=core_payload(phonetics=[], senses=[]))
+                )
+
+        self.assertTrue(raised.exception.retryable)
+        run.assert_not_awaited()
+
+    async def test_runner_cancellation_propagates_without_partial_response(self) -> None:
+        with patch("agents.Runner.run", new_callable=AsyncMock, side_effect=asyncio.CancelledError):
+            with self.assertRaises(asyncio.CancelledError):
+                await self.service().generate(request(core=core_payload(phonetics=[], senses=[])))
 
     async def test_markdown_model_failure_returns_partial_for_valid_core(self) -> None:
         with patch("agents.Runner.run", new_callable=AsyncMock, side_effect=TimeoutError()) as run:
@@ -246,8 +361,6 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
             {
                 "request_id": "job_123:attempt_1",
                 "trace_id": "vocab-job_123-attempt_1",
-                "theme_uid": "theme_system_exam",
-                "theme_version": 1,
                 "model_call_number": 1,
             },
         )

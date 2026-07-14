@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
@@ -43,7 +44,7 @@ class VocabularyCardGenerationError(RuntimeError):
 
 
 def is_core_complete(core: VocabularyCore, *, term: str) -> bool:
-    if core.schema_version != 1 or core.term != term:
+    if not term.strip() or not core.term.strip() or core.schema_version != 1 or core.term != term:
         return False
     if not any(phonetic.text.strip() for phonetic in core.phonetics):
         return False
@@ -57,16 +58,153 @@ def is_core_complete(core: VocabularyCore, *, term: str) -> bool:
     )
 
 
+def _is_blank(value: str | None) -> bool:
+    return value is None or not value.strip()
+
+
+def _fill_blank_scalar(trusted: str, fallback: str) -> str:
+    if _is_blank(trusted) and not _is_blank(fallback):
+        return fallback
+    return trusted
+
+
+def _fill_blank_optional_scalar(trusted: str | None, fallback: str | None) -> str | None:
+    if _is_blank(trusted) and not _is_blank(fallback):
+        return fallback
+    return trusted
+
+
+def _normalized_key(value: str) -> str:
+    return value.strip().casefold()
+
+
+def _match_fallback_index(
+    *,
+    trusted_index: int,
+    fallback_values: list[Any],
+    used_indices: set[int],
+    matches_semantically: Callable[[Any], bool],
+) -> int | None:
+    for fallback_index, fallback_value in enumerate(fallback_values):
+        if fallback_index not in used_indices and matches_semantically(fallback_value):
+            return fallback_index
+    if trusted_index < len(fallback_values) and trusted_index not in used_indices:
+        return trusted_index
+    return None
+
+
 def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> VocabularyCore:
-    """Keep every non-empty dictionary collection authoritative."""
+    """Fill blank trusted fields by semantic key or index; append unmatched fallback structures."""
+    used_phonetics: set[int] = set()
+    phonetics: list[dict[str, Any]] = []
+    for trusted_index, trusted_phonetic in enumerate(trusted.phonetics):
+        fallback_index = _match_fallback_index(
+            trusted_index=trusted_index,
+            fallback_values=fallback.phonetics,
+            used_indices=used_phonetics,
+            matches_semantically=lambda candidate: candidate.region == trusted_phonetic.region,
+        )
+        fallback_phonetic = (
+            fallback.phonetics[fallback_index] if fallback_index is not None else None
+        )
+        if fallback_index is not None:
+            used_phonetics.add(fallback_index)
+        phonetics.append(
+            {
+                "region": trusted_phonetic.region,
+                "text": _fill_blank_scalar(
+                    trusted_phonetic.text,
+                    fallback_phonetic.text if fallback_phonetic else "",
+                ),
+                "audioUrl": _fill_blank_optional_scalar(
+                    trusted_phonetic.audio_url,
+                    fallback_phonetic.audio_url if fallback_phonetic else None,
+                ),
+            }
+        )
+    phonetics.extend(
+        phonetic.model_dump(by_alias=True, mode="json")
+        for fallback_index, phonetic in enumerate(fallback.phonetics)
+        if fallback_index not in used_phonetics
+    )
+
+    used_senses: set[int] = set()
+    senses: list[dict[str, Any]] = []
+    for trusted_index, trusted_sense in enumerate(trusted.senses):
+        trusted_part_of_speech = _normalized_key(trusted_sense.part_of_speech)
+        fallback_index = _match_fallback_index(
+            trusted_index=trusted_index,
+            fallback_values=fallback.senses,
+            used_indices=used_senses,
+            matches_semantically=lambda candidate: bool(trusted_part_of_speech)
+            and _normalized_key(candidate.part_of_speech) == trusted_part_of_speech,
+        )
+        fallback_sense = fallback.senses[fallback_index] if fallback_index is not None else None
+        if fallback_index is not None:
+            used_senses.add(fallback_index)
+
+        used_meanings: set[int] = set()
+        meanings: list[dict[str, str]] = []
+        fallback_meanings = fallback_sense.meanings if fallback_sense else []
+        for meaning_index, trusted_meaning in enumerate(trusted_sense.meanings):
+            trusted_en = _normalized_key(trusted_meaning.definition_en)
+            trusted_zh = _normalized_key(trusted_meaning.definition_zh)
+            fallback_meaning_index = _match_fallback_index(
+                trusted_index=meaning_index,
+                fallback_values=fallback_meanings,
+                used_indices=used_meanings,
+                matches_semantically=lambda candidate: (
+                    bool(trusted_en) and _normalized_key(candidate.definition_en) == trusted_en
+                )
+                or (
+                    bool(trusted_zh) and _normalized_key(candidate.definition_zh) == trusted_zh
+                ),
+            )
+            fallback_meaning = (
+                fallback_meanings[fallback_meaning_index]
+                if fallback_meaning_index is not None
+                else None
+            )
+            if fallback_meaning_index is not None:
+                used_meanings.add(fallback_meaning_index)
+            meanings.append(
+                {
+                    "definitionEn": _fill_blank_scalar(
+                        trusted_meaning.definition_en,
+                        fallback_meaning.definition_en if fallback_meaning else "",
+                    ),
+                    "definitionZh": _fill_blank_scalar(
+                        trusted_meaning.definition_zh,
+                        fallback_meaning.definition_zh if fallback_meaning else "",
+                    ),
+                }
+            )
+        meanings.extend(
+            meaning.model_dump(by_alias=True, mode="json")
+            for fallback_meaning_index, meaning in enumerate(fallback_meanings)
+            if fallback_meaning_index not in used_meanings
+        )
+        senses.append(
+            {
+                "partOfSpeech": _fill_blank_scalar(
+                    trusted_sense.part_of_speech,
+                    fallback_sense.part_of_speech if fallback_sense else "",
+                ),
+                "meanings": meanings,
+            }
+        )
+    senses.extend(
+        sense.model_dump(by_alias=True, mode="json")
+        for fallback_index, sense in enumerate(fallback.senses)
+        if fallback_index not in used_senses
+    )
+
     return VocabularyCore.model_validate(
         {
             "schemaVersion": trusted.schema_version,
             "term": trusted.term,
-            "phonetics": (
-                trusted.phonetics if trusted.phonetics else fallback.phonetics
-            ),
-            "senses": trusted.senses if trusted.senses else fallback.senses,
+            "phonetics": phonetics,
+            "senses": senses,
         }
     )
 
@@ -151,6 +289,8 @@ class VocabularyCardGenerationWorkflow:
             )
             model_call_count = markdown_call_number
             content_markdown = self._validate_markdown_output(markdown_output)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             return self._partial_response(request, core, markdown_call_number)
 
@@ -232,34 +372,46 @@ class VocabularyCardGenerationWorkflow:
         model_call_number: int,
         started_at: float,
     ) -> Any:
+        timeout_seconds = self._remaining_timeout_seconds(
+            request.timeout_budget_ms,
+            started_at,
+        )
         try:
-            result = await Runner.run(
-                agent,
-                agent_input,
-                run_config=RunConfig(
-                    workflow_name=WORKFLOW_NAME,
-                    trace_include_sensitive_data=False,
-                    trace_metadata={
-                        "request_id": request.request_id,
-                        "trace_id": request.trace_id,
-                        "theme_uid": request.theme.uid,
-                        "theme_version": request.theme.version,
-                        "model_call_number": model_call_number,
-                    },
+            result = await asyncio.wait_for(
+                Runner.run(
+                    agent,
+                    agent_input,
+                    run_config=RunConfig(
+                        workflow_name=WORKFLOW_NAME,
+                        trace_include_sensitive_data=False,
+                        trace_metadata={
+                            "request_id": request.request_id,
+                            "trace_id": request.trace_id,
+                            "model_call_number": model_call_number,
+                        },
+                    ),
                 ),
+                timeout=timeout_seconds,
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
-            raise self._map_model_error(exc) from exc
+            raise self._map_model_error(exc) from None
         return getattr(result, "final_output", None)
 
-    def _require_remaining_budget(self, timeout_budget_ms: int, started_at: float) -> None:
+    def _remaining_timeout_seconds(self, timeout_budget_ms: int, started_at: float) -> float:
         elapsed_ms = (self._clock() - started_at) * 1_000
-        if elapsed_ms >= timeout_budget_ms:
+        remaining_ms = timeout_budget_ms - elapsed_ms
+        if remaining_ms <= 0:
             raise VocabularyCardGenerationError(
                 "MODEL_TIMEOUT",
                 True,
                 "The vocabulary generation timeout budget is exhausted.",
             )
+        return remaining_ms / 1_000
+
+    def _require_remaining_budget(self, timeout_budget_ms: int, started_at: float) -> None:
+        self._remaining_timeout_seconds(timeout_budget_ms, started_at)
 
     def _map_model_error(self, exc: Exception) -> VocabularyCardGenerationError:
         if isinstance(exc, TimeoutError) or exc.__class__.__name__ in {"APITimeoutError", "TimeoutException"}:
@@ -276,9 +428,9 @@ class VocabularyCardGenerationWorkflow:
                 "The model upstream is unavailable.",
             )
         return VocabularyCardGenerationError(
-            "MODEL_UPSTREAM_UNAVAILABLE",
+            "GENERATION_INTERNAL_ERROR",
             True,
-            "The model request failed.",
+            "The vocabulary generation encountered an internal error.",
         )
 
     def _partial_response(

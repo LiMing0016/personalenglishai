@@ -226,6 +226,56 @@ class VocabularyCardSchemasTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             VocabularyCardGenerationRequest.model_validate(excessive_timeout)
 
+    def test_term_identity_requires_nonblank_values_without_trimming(self) -> None:
+        blank_request_term = request_payload()
+        blank_request_term["term"] = "   "
+        blank_request_term["dictionaryCore"] = {
+            **blank_request_term["dictionaryCore"],
+            "term": "   ",
+        }
+        with self.assertRaises(ValidationError):
+            VocabularyCardGenerationRequest.model_validate(blank_request_term)
+
+        blank_core_term = complete_core_payload()
+        blank_core_term["term"] = "   "
+        with self.assertRaises(ValidationError):
+            VocabularyCore.model_validate(blank_core_term)
+
+        exact_term = request_payload()
+        exact_term["term"] = " supposed "
+        exact_term["dictionaryCore"] = {
+            **exact_term["dictionaryCore"],
+            "term": " supposed ",
+        }
+        request = VocabularyCardGenerationRequest.model_validate(exact_term)
+        self.assertEqual(request.term, " supposed ")
+        self.assertEqual(request.dictionary_core.term, " supposed ")
+
+    def test_metadata_ids_require_opaque_safe_syntax(self) -> None:
+        for field, invalid_value in (
+            ("requestId", "sourceContext=private sentence"),
+            ("traceId", "private sentence"),
+            ("requestId", "a" * 129),
+        ):
+            with self.subTest(field=field, invalid_value=invalid_value):
+                payload = request_payload()
+                payload[field] = invalid_value
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationRequest.model_validate(payload)
+
+        valid_ids = request_payload()
+        valid_ids["requestId"] = "job_123:attempt-1.2"
+        valid_ids["traceId"] = "trace_123:attempt-1.2"
+        self.assertEqual(
+            VocabularyCardGenerationRequest.model_validate(valid_ids).request_id,
+            "job_123:attempt-1.2",
+        )
+
+        invalid_metadata = response_payload()["generation"]
+        invalid_metadata["traceId"] = "private sentence"
+        with self.assertRaises(ValidationError):
+            VocabularyGenerationMetadata.model_validate(invalid_metadata)
+
     def test_theme_accepts_only_registered_strategy_keys_and_format_version(self) -> None:
         unsupported_strategy = request_payload()
         unsupported_strategy["theme"] = {
