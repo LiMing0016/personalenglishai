@@ -369,6 +369,44 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(merged.senses[1].meanings), 1)
         self.assertEqual(merged.senses[1].meanings[0].definition_zh, "第二个义项")
 
+    def test_merge_never_matches_equal_meanings_across_conflicting_parts_of_speech(self) -> None:
+        trusted = VocabularyCore.model_validate(
+            core_payload(
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [{"definitionEn": "record", "definitionZh": ""}],
+                    },
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [{"definitionEn": "record", "definitionZh": ""}],
+                    },
+                ]
+            )
+        )
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                senses=[
+                    {
+                        "partOfSpeech": "verb",
+                        "meanings": [{"definitionEn": "record", "definitionZh": "动词释义"}],
+                    },
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [{"definitionEn": "record", "definitionZh": "名词释义"}],
+                    },
+                ]
+            )
+        )
+
+        merged = merge_missing_core(trusted, fallback)
+
+        self.assertEqual(len(merged.senses), 2)
+        self.assertEqual(merged.senses[0].part_of_speech, "noun")
+        self.assertEqual(merged.senses[0].meanings[0].definition_zh, "名词释义")
+        self.assertEqual(merged.senses[1].part_of_speech, "verb")
+        self.assertEqual(merged.senses[1].meanings[0].definition_zh, "动词释义")
+
     def test_merge_deduplicates_identical_blank_fallback_structures(self) -> None:
         blank_sense = {
             "partOfSpeech": "",

@@ -103,6 +103,18 @@ def _senses_share_part_of_speech(left: VocabularySense, right: VocabularySense) 
     )
 
 
+def _senses_have_compatible_part_of_speech(
+    left: VocabularySense, right: VocabularySense
+) -> bool:
+    left_part_of_speech = _normalized_key(left.part_of_speech)
+    right_part_of_speech = _normalized_key(right.part_of_speech)
+    return (
+        not left_part_of_speech
+        or not right_part_of_speech
+        or left_part_of_speech == right_part_of_speech
+    )
+
+
 def _sense_meanings_overlap(left: VocabularySense, right: VocabularySense) -> bool:
     return any(
         _meanings_overlap(left_meaning, right_meaning)
@@ -142,7 +154,9 @@ def _matching_fallback_sense_index(
         if index not in used_indices
     ]
     for fallback_index, fallback_sense in available:
-        if _sense_meanings_overlap(trusted_sense, fallback_sense):
+        if _senses_have_compatible_part_of_speech(
+            trusted_sense, fallback_sense
+        ) and _sense_meanings_overlap(trusted_sense, fallback_sense):
             return fallback_index
 
     same_part_of_speech = [
@@ -161,7 +175,10 @@ def _matching_fallback_sense_index(
 
 
 def _senses_are_duplicates(left: VocabularySense, right: VocabularySense) -> bool:
-    return left == right or _sense_meanings_overlap(left, right)
+    return left == right or (
+        _senses_have_compatible_part_of_speech(left, right)
+        and _sense_meanings_overlap(left, right)
+    )
 
 
 def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> VocabularyCore:
