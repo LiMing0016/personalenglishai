@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Callable
+from typing import Any
+
+from agents import RunConfig, Runner
+
+from ..agents.vocabulary_card import (
+    create_vocabulary_card_markdown_agent,
+    create_vocabulary_core_fallback_agent,
+)
+from ..schemas.vocabulary_card import (
+    VocabularyCardGenerationRequest,
+    VocabularyCardGenerationResponse,
+    VocabularyCore,
+    VocabularyCoreFallbackOutput,
+    VocabularyGenerationMetadata,
+    VocabularyMarkdownOutput,
+    validate_markdown_content,
+)
+
+
+WORKFLOW_NAME = "PEAI Vocabulary Card Generation"
+PROMPT_VERSION = "vocabulary-card-markdown-v1"
+SUPPORTED_PROMPT_STRATEGIES = frozenset(
+    {
+        "basic-markdown-v1",
+        "exam-markdown-v1",
+        "reading-markdown-v1",
+        "custom-markdown-v1",
+    }
+)
+
+
+class VocabularyCardGenerationError(RuntimeError):
+    def __init__(self, code: str, retryable: bool, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.retryable = retryable
+        self.message = message
+
+
+def is_core_complete(core: VocabularyCore, *, term: str) -> bool:
+    if core.schema_version != 1 or core.term != term:
+        return False
+    if not any(phonetic.text.strip() for phonetic in core.phonetics):
+        return False
+    return any(
+        sense.part_of_speech.strip()
+        and any(
+            meaning.definition_en.strip() or meaning.definition_zh.strip()
+            for meaning in sense.meanings
+        )
+        for sense in core.senses
+    )
+
+
+def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> VocabularyCore:
+    """Keep every non-empty dictionary collection authoritative."""
+    return VocabularyCore.model_validate(
+        {
+            "schemaVersion": trusted.schema_version,
+            "term": trusted.term,
+            "phonetics": (
+                trusted.phonetics if trusted.phonetics else fallback.phonetics
+            ),
+            "senses": trusted.senses if trusted.senses else fallback.senses,
+        }
+    )
+
+
+def serialize_core_fallback_input(request: VocabularyCardGenerationRequest) -> str:
+    return json.dumps(
+        {
+            "term": request.term,
+            "dictionaryCore": request.dictionary_core.model_dump(by_alias=True, mode="json"),
+            "sourceContext": request.source_context,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def serialize_markdown_input(
+    request: VocabularyCardGenerationRequest,
+    core: VocabularyCore,
+) -> str:
+    return json.dumps(
+        {
+            "term": request.term,
+            "core": core.model_dump(by_alias=True, mode="json"),
+            "sourceContext": request.source_context,
+            "theme": request.theme.model_dump(by_alias=True, mode="json"),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+class VocabularyCardGenerationWorkflow:
+    def __init__(
+        self,
+        *,
+        model: str,
+        monotonic_clock: Callable[[], float] | None = None,
+    ) -> None:
+        self._model = model
+        self._clock = monotonic_clock or time.monotonic
+        self._core_fallback_agent = create_vocabulary_core_fallback_agent(model)
+        self._markdown_agent = create_vocabulary_card_markdown_agent(model)
+
+    async def generate(
+        self,
+        request: VocabularyCardGenerationRequest,
+    ) -> VocabularyCardGenerationResponse:
+        self._validate_request_version_and_strategy(request)
+        started_at = self._clock()
+        model_call_count = 0
+        core = self._validate_core(request.dictionary_core)
+
+        if not is_core_complete(core, term=request.term):
+            self._require_remaining_budget(request.timeout_budget_ms, started_at)
+            fallback_output = await self._run_agent(
+                agent=self._core_fallback_agent,
+                agent_input=serialize_core_fallback_input(request),
+                request=request,
+                model_call_number=1,
+                started_at=started_at,
+            )
+            model_call_count = 1
+            fallback_core = self._validate_fallback_output(fallback_output)
+            core = merge_missing_core(core, fallback_core)
+            if not is_core_complete(core, term=request.term):
+                raise VocabularyCardGenerationError(
+                    "CORE_CONTENT_UNAVAILABLE",
+                    True,
+                    "The vocabulary core remains incomplete after fallback.",
+                )
+
+        markdown_call_number = model_call_count + 1
+        self._require_remaining_budget(request.timeout_budget_ms, started_at)
+        try:
+            markdown_output = await self._run_agent(
+                agent=self._markdown_agent,
+                agent_input=serialize_markdown_input(request, core),
+                request=request,
+                model_call_number=markdown_call_number,
+                started_at=started_at,
+            )
+            model_call_count = markdown_call_number
+            content_markdown = self._validate_markdown_output(markdown_output)
+        except Exception:
+            return self._partial_response(request, core, markdown_call_number)
+
+        return VocabularyCardGenerationResponse(
+            contractVersion=1,
+            coreSchemaVersion=1,
+            core=core,
+            contentMarkdown=content_markdown,
+            contentFormatVersion=1,
+            outcome="complete",
+            warning=None,
+            generation=self._metadata(request, model_call_count),
+        )
+
+    def _validate_request_version_and_strategy(
+        self,
+        request: VocabularyCardGenerationRequest,
+    ) -> None:
+        if request.contract_version != 1 or request.core_schema_version != 1:
+            raise VocabularyCardGenerationError(
+                "UNSUPPORTED_CONTRACT_VERSION",
+                False,
+                "The vocabulary generation contract version is unsupported.",
+            )
+        if request.theme.content_format_version != 1:
+            raise VocabularyCardGenerationError(
+                "UNSUPPORTED_CONTENT_FORMAT_VERSION",
+                False,
+                "The vocabulary content format version is unsupported.",
+            )
+        if request.theme.prompt_strategy_key not in SUPPORTED_PROMPT_STRATEGIES:
+            raise VocabularyCardGenerationError(
+                "UNSUPPORTED_PROMPT_STRATEGY",
+                False,
+                "The vocabulary prompt strategy is unsupported.",
+            )
+
+    def _validate_core(self, core: VocabularyCore) -> VocabularyCore:
+        try:
+            return VocabularyCore.model_validate(core.model_dump(by_alias=True, mode="json"))
+        except Exception as exc:
+            raise VocabularyCardGenerationError(
+                "CORE_CONTENT_UNAVAILABLE",
+                True,
+                "The dictionary core is invalid.",
+            ) from exc
+
+    def _validate_fallback_output(self, output: Any) -> VocabularyCore:
+        if not isinstance(output, VocabularyCoreFallbackOutput):
+            raise VocabularyCardGenerationError(
+                "CORE_CONTENT_UNAVAILABLE",
+                True,
+                "The core fallback returned invalid structured output.",
+            )
+        try:
+            return VocabularyCore.model_validate(output.model_dump(by_alias=True, mode="json"))
+        except Exception as exc:
+            raise VocabularyCardGenerationError(
+                "CORE_CONTENT_UNAVAILABLE",
+                True,
+                "The core fallback returned invalid structured output.",
+            ) from exc
+
+    def _validate_markdown_output(self, output: Any) -> str:
+        if not isinstance(output, VocabularyMarkdownOutput):
+            raise ValueError("Markdown agent returned invalid structured output")
+        content = output.content_markdown
+        validate_markdown_content(content, require_nonempty=True)
+        if len(content) > 20_000:
+            raise ValueError("Markdown output exceeds the maximum length")
+        return content
+
+    async def _run_agent(
+        self,
+        *,
+        agent: Any,
+        agent_input: str,
+        request: VocabularyCardGenerationRequest,
+        model_call_number: int,
+        started_at: float,
+    ) -> Any:
+        try:
+            result = await Runner.run(
+                agent,
+                agent_input,
+                run_config=RunConfig(
+                    workflow_name=WORKFLOW_NAME,
+                    trace_include_sensitive_data=False,
+                    trace_metadata={
+                        "request_id": request.request_id,
+                        "trace_id": request.trace_id,
+                        "theme_uid": request.theme.uid,
+                        "theme_version": request.theme.version,
+                        "model_call_number": model_call_number,
+                    },
+                ),
+            )
+        except Exception as exc:
+            raise self._map_model_error(exc) from exc
+        return getattr(result, "final_output", None)
+
+    def _require_remaining_budget(self, timeout_budget_ms: int, started_at: float) -> None:
+        elapsed_ms = (self._clock() - started_at) * 1_000
+        if elapsed_ms >= timeout_budget_ms:
+            raise VocabularyCardGenerationError(
+                "MODEL_TIMEOUT",
+                True,
+                "The vocabulary generation timeout budget is exhausted.",
+            )
+
+    def _map_model_error(self, exc: Exception) -> VocabularyCardGenerationError:
+        if isinstance(exc, TimeoutError) or exc.__class__.__name__ in {"APITimeoutError", "TimeoutException"}:
+            return VocabularyCardGenerationError("MODEL_TIMEOUT", True, "The model request timed out.")
+        if isinstance(exc, ConnectionError) or exc.__class__.__name__ in {
+            "APIConnectionError",
+            "APIStatusError",
+            "InternalServerError",
+            "RateLimitError",
+        }:
+            return VocabularyCardGenerationError(
+                "MODEL_UPSTREAM_UNAVAILABLE",
+                True,
+                "The model upstream is unavailable.",
+            )
+        return VocabularyCardGenerationError(
+            "MODEL_UPSTREAM_UNAVAILABLE",
+            True,
+            "The model request failed.",
+        )
+
+    def _partial_response(
+        self,
+        request: VocabularyCardGenerationRequest,
+        core: VocabularyCore,
+        model_call_count: int,
+    ) -> VocabularyCardGenerationResponse:
+        return VocabularyCardGenerationResponse(
+            contractVersion=1,
+            coreSchemaVersion=1,
+            core=core,
+            contentMarkdown="",
+            contentFormatVersion=1,
+            outcome="partial",
+            warning="markdown_unavailable",
+            generation=self._metadata(request, model_call_count),
+        )
+
+    def _metadata(
+        self,
+        request: VocabularyCardGenerationRequest,
+        model_call_count: int,
+    ) -> VocabularyGenerationMetadata:
+        return VocabularyGenerationMetadata(
+            provider="openai",
+            model=self._model,
+            promptVersion=PROMPT_VERSION,
+            modelCallCount=model_call_count,
+            traceId=request.trace_id,
+        )
