@@ -1,3 +1,18 @@
+---
+title: 环境变量说明
+status: active
+owner: ops
+last_updated: 2026-07-14
+review_cycle: on-change
+related_code:
+  - docker-compose.yml
+  - backend/src/main/resources/application.yml
+  - python/ai_orchestrator/env_loader.py
+related_docs:
+  - docs/runbooks/docker-local.md
+  - docs/runbooks/local-scripts.md
+---
+
 # 环境变量说明
 
 本文说明 Personal English AI 当前使用的环境变量。配置时不要靠记忆，应以本文、`.env.example`、`backend/.env.example`、`web/.env.example` 和部署平台 Secret 配置为准。
@@ -211,7 +226,7 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。Compose 中必须为 `http://assistant-orchestrator:8011`，不得使用容器内 `127.0.0.1`。 |
 | `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS` | `60000` | 后端单次 Python HTTP timeout，必须小于 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS` 的 `300000` 默认值。 |
 | `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | backend 和 Python orchestrator 必须收到同一个非空专用 token。不得提交、打印或回传。 |
-| `VOCABULARY_GENERATION_MODEL` | `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
+| `VOCABULARY_GENERATION_MODEL` | Compose 默认 `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用；服务代码本身没有模型默认值，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
 
 Java 继续拥有词典查询、generation job、租约、revision、冲突和持久化；Python 只拥有 Prompt、模型调用、缺失 core 回填、Markdown 及 typed trace metadata。Python provider 不会使用旧 Java 七天缓存，且同一个 job attempt 内不会静默回退到 `java`。因此 Python 的 4xx 作为稳定配置/契约错误处理，5xx、连接失败和 timeout 继续由既有 job 重试处理；有效 core 的 Markdown 失败保存为 `partial`/`markdown_unavailable`，不会伪造 complete，也不会丢弃 core。
 
@@ -223,7 +238,7 @@ Java 继续拥有词典查询、generation job、租约、revision、冲突和�
 4. 用真实 Basic dictionary core 和自定义主题完成验收，检查 complete/partial、稳定 retry 行为、lease 和冲突行为未改变，并在 revision 的 `generation_metadata_json` 查看 provider、model、Prompt version、调用次数和安全 trace ID。
 5. 仅在上述检查完成后显式切换 `VOCABULARY_GENERATION_PROVIDER=python` 并重启后端。回滚只把 `VOCABULARY_GENERATION_PROVIDER=java` 后重启；不要删除 metadata 列、Python endpoint 或 Python 已生成的 revision。
 
-真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。它不打印 token、Prompt、词典 core、sourceContext、生成 Markdown 或原始模型输出；未满足前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
+真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。直接运行真实模型 smoke 时必须显式设置非空 `VOCABULARY_GENERATION_MODEL`；显式启用后缺少模型配置会失败，不会降级为跳过。smoke 不打印 token、Prompt、词典 core、sourceContext、生成 Markdown 或原始模型输出；未满足三个 opt-in 前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
 
 ## Prompt 与 AI 调试
 
