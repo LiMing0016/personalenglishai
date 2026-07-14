@@ -240,6 +240,7 @@ Java 和 Python 都执行 Markdown 边界校验。双重校验是跨服务信任
 
 - 幂等键继续由 Java generation job、job UID 和 attempt 管理。
 - Python endpoint 无状态，不保存业务结果，也不自行重放 Java job。
+- Python provider 不复用现有 Java 侧 7 天语义缓存。Java 在调用前不知道 Python 实际 Prompt version，继续沿用旧 cache key 会在 Prompt 升级后返回陈旧内容；该缓存只保留给临时 `java` 回滚 provider。
 - Java 的单次 HTTP timeout 必须小于 generation lease，并预留 finalizer 和数据库写入时间。
 - Python 内部模型重试次数必须有界；Java 和 Python 的组合最坏耗时不得超过单次 attempt 预算。
 - Java 把当前 attempt 的剩余预算写入 `timeoutBudgetMs`；Python 不得在该预算结束后继续开始新的模型调用。
