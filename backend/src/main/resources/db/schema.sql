@@ -1375,6 +1375,7 @@ CREATE TABLE IF NOT EXISTS vocabulary_card_revision (
     core_json JSON NULL,
     content_markdown MEDIUMTEXT NULL,
     content_format_version INT NULL,
+    generation_metadata_json JSON NULL,
     change_summary VARCHAR(255) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_vocabulary_revision_uid (revision_uid),

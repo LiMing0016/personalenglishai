@@ -116,4 +116,20 @@ class VocabularyDepositionSchemaTest {
                 () -> assertTrue(upgrade.contains("table_schema = DATABASE()"))
         );
     }
+
+    @Test
+    void generationMetadataIsAdditiveOnFreshAndHistoricalRevisionSchemas() throws Exception {
+        String schema = Files.readString(Path.of("src/main/resources/db/schema.sql"));
+        String migration = Files.readString(Path.of(
+                "src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql"));
+
+        assertAll(
+                () -> assertTrue(schema.contains("generation_metadata_json JSON NULL")),
+                () -> assertTrue(migration.contains("ALTER TABLE vocabulary_card_revision")),
+                () -> assertTrue(migration.contains("generation_metadata_json JSON NULL")),
+                () -> assertTrue(migration.contains("FROM information_schema.columns")),
+                () -> assertTrue(migration.contains("table_schema = DATABASE()")),
+                () -> assertTrue(migration.contains("PREPARE vocabulary_generation_metadata_migration_stmt"))
+        );
+    }
 }

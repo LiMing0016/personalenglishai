@@ -17,6 +17,7 @@
         <result column="core_json" property="coreJson"/>
         <result column="content_markdown" property="contentMarkdown"/>
         <result column="content_format_version" property="contentFormatVersion"/>
+        <result column="generation_metadata_json" property="generationMetadataJson"/>
         <result column="change_summary" property="changeSummary"/>
         <result column="created_at" property="createdAt"/>
     </resultMap>
@@ -24,7 +25,7 @@
     <sql id="VocabularyRevisionColumns">
         id, revision_uid, card_uid, base_revision_uid, author_type, template_key,
         template_version, theme_uid, theme_version, content_json, core_json, content_markdown,
-        content_format_version, change_summary, created_at
+        content_format_version, generation_metadata_json, change_summary, created_at
     </sql>
 
     <insert id="insertRevision" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision"
@@ -32,11 +33,11 @@
         INSERT INTO vocabulary_card_revision (
             revision_uid, card_uid, base_revision_uid, author_type, template_key,
             template_version, theme_uid, theme_version, content_json, core_json, content_markdown,
-            content_format_version, change_summary
+            content_format_version, generation_metadata_json, change_summary
         ) VALUES (
             #{revisionUid}, #{cardUid}, #{baseRevisionUid}, #{authorType}, #{templateKey},
             #{templateVersion}, #{themeUid}, #{themeVersion}, #{contentJson}, #{coreJson}, #{contentMarkdown},
-            #{contentFormatVersion}, #{changeSummary}
+            #{contentFormatVersion}, #{generationMetadataJson}, #{changeSummary}
         )
     </insert>
 

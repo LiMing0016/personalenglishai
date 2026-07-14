@@ -16,6 +16,7 @@ public class VocabularyCardRevision {
     private String coreJson;
     private String contentMarkdown;
     private Integer contentFormatVersion;
+    private String generationMetadataJson;
     private String changeSummary;
     private LocalDateTime createdAt;
 
@@ -45,6 +46,8 @@ public class VocabularyCardRevision {
     public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
     public Integer getContentFormatVersion() { return contentFormatVersion; }
     public void setContentFormatVersion(Integer contentFormatVersion) { this.contentFormatVersion = contentFormatVersion; }
+    public String getGenerationMetadataJson() { return generationMetadataJson; }
+    public void setGenerationMetadataJson(String generationMetadataJson) { this.generationMetadataJson = generationMetadataJson; }
     public String getChangeSummary() { return changeSummary; }
     public void setChangeSummary(String changeSummary) { this.changeSummary = changeSummary; }
     public LocalDateTime getCreatedAt() { return createdAt; }

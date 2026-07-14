@@ -53,6 +53,28 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void revisionMapperPersistsNullableGenerationMetadata() throws Exception {
+        String revisions = readMapper("VocabularyRevisionMapper.xml");
+        String insertSql = statementSql("VocabularyRevisionMapper", "insertRevision", Map.of(
+                "revisionUid", "revision_1",
+                "cardUid", "card_1",
+                "authorType", "generated",
+                "templateKey", "basic",
+                "templateVersion", 1,
+                "contentJson", "{}",
+                "generationMetadataJson", "{\"provider\":\"openai\"}"));
+
+        assertAll(
+                () -> assertTrue(revisions.contains(
+                        "<result column=\"generation_metadata_json\" property=\"generationMetadataJson\"/>")),
+                () -> assertTrue(revisions.contains("generation_metadata_json")),
+                () -> assertTrue(insertSql.contains("generation_metadata_json")),
+                () -> assertTrue(insertSql.contains("VALUES")),
+                () -> assertTrue(insertSql.contains("?"))
+        );
+    }
+
+    @Test
     void atomicClaimUsesDatabaseTimeAndAttemptFence() throws Exception {
         String sql = statementSql("VocabularyGenerationJobMapper", "markRunning", Map.of(
                 "jobUid", "job_1",
