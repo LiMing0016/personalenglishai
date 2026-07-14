@@ -68,6 +68,8 @@ public final class VocabularyGenerationPythonClient {
             throw failure("PYTHON_GENERATION_NOT_CONFIGURED", false, "Python generation client is not configured");
         }
         try {
+            Duration requestTimeout = Duration.ofMillis(
+                    Math.min(timeout.toMillis(), request.timeoutBudgetMs()));
             String body = webClient.post()
                     .uri(PATH)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -79,7 +81,7 @@ public final class VocabularyGenerationPythonClient {
                         }
                         return response.releaseBody().then(reactor.core.publisher.Mono.error(statusFailure(response.statusCode())));
                     })
-                    .timeout(timeout)
+                    .timeout(requestTimeout)
                     .block();
             VocabularyGenerationPythonResponse response = parseResponse(body);
             if (!request.term().equals(response.core().term())

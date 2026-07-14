@@ -29,6 +29,7 @@ public class VocabularyGenerationWorker {
     private static final int MAX_ATTEMPTS = 3;
     private static final int MAX_ERROR_CODE_LENGTH = 64;
     private static final int MAX_ERROR_MESSAGE_LENGTH = 1_000;
+    private static final long FINALIZATION_RESERVE_MS = 5_000L;
     private static final int MAX_MARKDOWN_CHARS = 20_000;
 
     private final VocabularyGenerationJobMapper jobs;
@@ -41,6 +42,7 @@ public class VocabularyGenerationWorker {
     private final ObjectMapper objectMapper;
     private final VocabularyGenerationFinalizer finalizer;
     private final int leaseSeconds;
+    private final long leaseMs;
 
     public VocabularyGenerationWorker(
             VocabularyGenerationJobMapper jobs,
@@ -63,6 +65,7 @@ public class VocabularyGenerationWorker {
         this.objectMapper = objectMapper;
         this.finalizer = finalizer;
         this.leaseSeconds = leaseSeconds(leaseMs);
+        this.leaseMs = Math.max(1L, leaseMs);
     }
 
     public int processPendingJobs(int batchSize) {
@@ -78,12 +81,17 @@ public class VocabularyGenerationWorker {
                 continue;
             }
             claimed++;
-            processClaimed(candidate, leaseToken);
+            VocabularyGenerationDeadline deadline = VocabularyGenerationDeadline.fromNow(
+                    leaseMs, FINALIZATION_RESERVE_MS, System::nanoTime);
+            processClaimed(candidate, leaseToken, deadline);
         }
         return claimed;
     }
 
-    private void processClaimed(VocabularyGenerationJob job, String leaseToken) {
+    private void processClaimed(
+            VocabularyGenerationJob job,
+            String leaseToken,
+            VocabularyGenerationDeadline deadline) {
         VocabularyCard card = cards.findByUidIncludingDeleted(job.getCardUid());
         if (card == null || card.getDeletedAt() != null) {
             finalizer.cancel(job, leaseToken);
@@ -93,7 +101,7 @@ public class VocabularyGenerationWorker {
         try {
             ResolvedVocabularyTheme theme = requireTheme(job);
             GeneratedVocabularyCard generated = generator.generate(
-                    card, sources.listSources(card.getCardUid()), theme, job.getJobUid());
+                    card, sources.listSources(card.getCardUid()), theme, job.getJobUid(), deadline);
             VocabularyCardRevision revision = newRevision(job, card, theme, generated);
             finalizer.finalizeSuccess(
                     job, leaseToken, revision, generated.generationOutcome(), generated.warning());

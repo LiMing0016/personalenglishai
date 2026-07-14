@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.personalenglishai.backend.dto.dictionary.DictionaryPhoneticDto;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupException;
@@ -18,6 +19,8 @@ import com.personalenglishai.backend.service.dictionary.DictionaryLookupService;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -148,6 +151,61 @@ class VocabularyCardGeneratorTest {
     }
 
     @Test
+    void allowsProviderToCompleteMissingDictionaryCoreWithoutChangingTrustedFields() {
+        DictionaryLookupResponse partialDictionary = new DictionaryLookupResponse();
+        partialDictionary.setWord("record");
+        partialDictionary.setLanguage("en-gb");
+        partialDictionary.setPhonetics(List.of(
+                new DictionaryPhoneticDto("UK /\u02c8rek\u0254\u02d0d/", null)));
+        partialDictionary.setEntries(List.of());
+        when(dictionary.lookup("record", "en-gb")).thenReturn(partialDictionary);
+        RecordingProvider provider = new RecordingProvider("python") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                ObjectNode completedCore = input.dictionaryCore();
+                completedCore.putArray("senses").addObject()
+                        .put("partOfSpeech", "noun")
+                        .putArray("meanings").addObject()
+                        .put("definitionEn", "a written account")
+                        .put("definitionZh", "\u8bb0\u5f55");
+                return card(completedCore, input.theme());
+            }
+        };
+
+        GeneratedVocabularyCard result = generator("python", provider).generate(
+                VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-complete");
+
+        assertEquals("UK /\u02c8rek\u0254\u02d0d/",
+                result.core().path("phonetics").get(0).path("text").asText());
+        assertEquals("a written account", result.core().path("senses").get(0)
+                .path("meanings").get(0).path("definitionEn").asText());
+    }
+
+    @Test
+    void rejectsProviderThatOverwritesNonblankDictionaryCoreField() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        RecordingProvider provider = new RecordingProvider("python") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                ObjectNode changedCore = input.dictionaryCore();
+                ((ObjectNode) changedCore.path("senses").get(0).path("meanings").get(0))
+                        .put("definitionEn", "provider replacement");
+                return card(changedCore, input.theme());
+            }
+        };
+
+        VocabularyGenerationException exception = assertThrows(VocabularyGenerationException.class,
+                () -> generator("python", provider).generate(
+                        VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-overwrite"));
+
+        assertEquals("INVALID_PROVIDER_RESULT", exception.code());
+        assertFalse(exception.retryable());
+    }
+
+    @Test
     void dictionaryFailureIsRetryableAndDoesNotCallProvider() {
         when(dictionary.lookup("record", "en-gb"))
                 .thenThrow(new DictionaryLookupException(DictionaryLookupException.Kind.TIMEOUT));
@@ -158,6 +216,51 @@ class VocabularyCardGeneratorTest {
                         VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-dict"));
 
         assertEquals("DICTIONARY_LOOKUP_FAILED", exception.code());
+        assertTrue(exception.retryable());
+        assertEquals(0, provider.calls);
+    }
+
+    @Test
+    void subtractsDictionaryTimeFromTheRemainingProviderBudget() {
+        AtomicLong nanoTime = new AtomicLong();
+        when(dictionary.lookup("record", "en-gb")).thenAnswer(invocation -> {
+            nanoTime.addAndGet(TimeUnit.SECONDS.toNanos(7));
+            return VocabularyTestFixtures.dictionaryLookupWithCoreTruth();
+        });
+        RecordingProvider provider = new RecordingProvider("python");
+        VocabularyCardGenerator generator = new VocabularyCardGenerator(
+                new VocabularyDictionaryEnricher(dictionary), codec, List.of(provider), "python",
+                nanoTime::get);
+        VocabularyGenerationDeadline deadline = VocabularyGenerationDeadline.fromNow(
+                10_000, 0, nanoTime::get);
+
+        generator.generate(
+                VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-budget", deadline);
+
+        assertEquals(3_000, provider.observedInput.timeoutBudgetMs());
+    }
+
+    @Test
+    void exhaustedAttemptBudgetNeverCallsTheProvider() {
+        AtomicLong nanoTime = new AtomicLong();
+        when(dictionary.lookup("record", "en-gb")).thenAnswer(invocation -> {
+            nanoTime.addAndGet(TimeUnit.SECONDS.toNanos(11));
+            return VocabularyTestFixtures.dictionaryLookupWithCoreTruth();
+        });
+        RecordingProvider provider = new RecordingProvider("python");
+        VocabularyCardGenerator generator = new VocabularyCardGenerator(
+                new VocabularyDictionaryEnricher(dictionary), codec, List.of(provider), "python",
+                nanoTime::get);
+        VocabularyGenerationDeadline deadline = VocabularyGenerationDeadline.fromNow(
+                10_000, 0, nanoTime::get);
+
+        VocabularyGenerationException exception = assertThrows(
+                VocabularyGenerationException.class,
+                () -> generator.generate(
+                        VocabularyTestFixtures.generating("record"), List.of(), theme(),
+                        "trace-budget", deadline));
+
+        assertEquals("GENERATION_TIMEOUT", exception.code());
         assertTrue(exception.retryable());
         assertEquals(0, provider.calls);
     }

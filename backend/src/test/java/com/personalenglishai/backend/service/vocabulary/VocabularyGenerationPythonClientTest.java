@@ -3,6 +3,7 @@ package com.personalenglishai.backend.service.vocabulary;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -193,6 +194,19 @@ class VocabularyGenerationPythonClientTest {
         assertTrue(timeoutException.retryable());
     }
 
+    @Test
+    void caps_http_timeout_by_the_remaining_request_budget() {
+        VocabularyGenerationException timeoutException = assertTimeoutPreemptively(
+                Duration.ofMillis(500),
+                () -> assertThrows(
+                        VocabularyGenerationException.class,
+                        () -> client(request -> Mono.never(), Duration.ofSeconds(2))
+                                .generate(request(10))));
+
+        assertEquals("PYTHON_GENERATION_TIMEOUT", timeoutException.code());
+        assertTrue(timeoutException.retryable());
+    }
+
     private void assertInvalidResponse(String body) {
         VocabularyGenerationException exception = assertThrows(
                 VocabularyGenerationException.class,
@@ -207,10 +221,14 @@ class VocabularyGenerationPythonClientTest {
     }
 
     private VocabularyGenerationPythonRequest request() {
+        return request(45_000);
+    }
+
+    private VocabularyGenerationPythonRequest request(int timeoutBudgetMs) {
         return new VocabularyGenerationPythonRequest(
                 "request_123",
                 "trace_123",
-                45_000,
+                timeoutBudgetMs,
                 "supposed",
                 new VocabularyGenerationPythonRequest.Core(
                         "supposed",

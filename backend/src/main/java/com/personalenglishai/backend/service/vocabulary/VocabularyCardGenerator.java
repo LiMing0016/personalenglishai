@@ -8,7 +8,9 @@ import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,15 +28,27 @@ public final class VocabularyCardGenerator {
     private final VocabularyDictionaryEnricher dictionaryEnricher;
     private final VocabularyCoreContentCodec coreCodec;
     private final VocabularyGenerationProvider provider;
+    private final LongSupplier nanoTime;
 
+    @Autowired
     public VocabularyCardGenerator(
             VocabularyDictionaryEnricher dictionaryEnricher,
             VocabularyCoreContentCodec coreCodec,
             List<VocabularyGenerationProvider> providers,
             @Value("${vocabulary.generation.provider:java}") String providerKey) {
+        this(dictionaryEnricher, coreCodec, providers, providerKey, System::nanoTime);
+    }
+
+    VocabularyCardGenerator(
+            VocabularyDictionaryEnricher dictionaryEnricher,
+            VocabularyCoreContentCodec coreCodec,
+            List<VocabularyGenerationProvider> providers,
+            String providerKey,
+            LongSupplier nanoTime) {
         this.dictionaryEnricher = dictionaryEnricher;
         this.coreCodec = coreCodec;
         this.provider = selectProvider(providers, providerKey);
+        this.nanoTime = nanoTime;
     }
 
     public GeneratedVocabularyCard generate(
@@ -42,13 +56,29 @@ public final class VocabularyCardGenerator {
             List<VocabularyCardSource> sources,
             ResolvedVocabularyTheme theme,
             String traceId) {
+        return generate(card, sources, theme, traceId, VocabularyGenerationDeadline.fromNow(
+                VocabularyGenerationPythonRequest.MAX_TIMEOUT_BUDGET_MS, 0L, nanoTime));
+    }
+
+    public GeneratedVocabularyCard generate(
+            VocabularyCard card,
+            List<VocabularyCardSource> sources,
+            ResolvedVocabularyTheme theme,
+            String traceId,
+            VocabularyGenerationDeadline deadline) {
         requireInputs(card, theme);
+        if (deadline == null) {
+            throw new VocabularyGenerationException(
+                    "INVALID_GENERATION_REQUEST", false, "Vocabulary generation deadline is missing");
+        }
         String expectedTerm = valueOrEmpty(card.getDisplayTerm());
         String sourceContext = firstCapturedContext(sources);
         DictionaryLookupResponse dictionary = lookupDictionary(card, traceId);
         ObjectNode trustedCore = coreCodec.fromDictionary(expectedTerm, dictionary);
+        int timeoutBudgetMs = deadline.remainingBudgetMs(
+                nanoTime, VocabularyGenerationPythonRequest.MAX_TIMEOUT_BUDGET_MS);
         GeneratedVocabularyCard generated = provider.generate(new VocabularyGenerationInput(
-                expectedTerm, trustedCore, sourceContext, theme, traceId));
+                expectedTerm, trustedCore, sourceContext, theme, traceId, timeoutBudgetMs));
         validateProviderResult(generated, expectedTerm, trustedCore, theme);
         return new GeneratedVocabularyCard(
                 generated.core().deepCopy(), generated.markdown(), generated.contentFormatVersion(),
@@ -78,9 +108,10 @@ public final class VocabularyCardGenerator {
                 throw new IllegalArgumentException("Provider result is incomplete");
             }
             coreCodec.validate(expectedTerm, generated.core());
-            if (hasPhoneticOrSense(trustedCore) && !trustedCore.equals(generated.core())) {
-                throw new IllegalArgumentException("Provider result changed trusted dictionary core");
+            if (!coreCodec.isComplete(expectedTerm, generated.core())) {
+                throw new IllegalArgumentException("Provider core is incomplete");
             }
+            coreCodec.validatePreservesTrustedFields(expectedTerm, trustedCore, generated.core());
             validateProviderContent(generated);
         } catch (RuntimeException exception) {
             throw new VocabularyGenerationException(
@@ -126,12 +157,6 @@ public final class VocabularyCardGenerator {
             throw new IllegalStateException("Unknown vocabulary generation provider: " + providerKey);
         }
         return selected;
-    }
-
-    private boolean hasPhoneticOrSense(JsonNode core) {
-        return core != null
-                && ((core.path("phonetics").isArray() && !core.path("phonetics").isEmpty())
-                || (core.path("senses").isArray() && !core.path("senses").isEmpty()));
     }
 
     private String firstCapturedContext(List<VocabularyCardSource> sources) {

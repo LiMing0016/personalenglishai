@@ -67,7 +67,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_1"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_1")))
+        when(generator.generate(any(), anyList(), any(), eq("job_1"), any()))
                 .thenReturn(VocabularyTestFixtures.basicGeneratedCard());
 
         assertEquals(1, worker.processPendingJobs(10));
@@ -80,7 +80,7 @@ class VocabularyGenerationWorkerTest {
                 eq("complete"), eq(null));
         assertEquals(claimToken.getValue(), finalizationToken.getValue());
         InOrder order = org.mockito.Mockito.inOrder(generator, finalizer);
-        order.verify(generator).generate(any(), anyList(), any(), eq("job_1"));
+        order.verify(generator).generate(any(), anyList(), any(), eq("job_1"), any());
         order.verify(finalizer).finalizeSuccess(
                 eq(job), eq(claimToken.getValue()), any(), eq("complete"), eq(null));
     }
@@ -121,7 +121,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_retry"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_retry")))
+        when(generator.generate(any(), anyList(), any(), eq("job_retry"), any()))
                 .thenThrow(new VocabularyGenerationException("AI_TIMEOUT", true, "AI request timed out"));
         LocalDateTime before = LocalDateTime.now();
 
@@ -146,7 +146,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_retry_3"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_retry_3")))
+        when(generator.generate(any(), anyList(), any(), eq("job_retry_3"), any()))
                 .thenThrow(new VocabularyGenerationException("AI_TIMEOUT", true, "AI request timed out"));
 
         worker.processPendingJobs(10);
@@ -164,7 +164,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_invalid"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_invalid")))
+        when(generator.generate(any(), anyList(), any(), eq("job_invalid"), any()))
                 .thenReturn(new GeneratedVocabularyCard(
                         invalid, "", 1, "test-model", "invalid fixture", true));
 
@@ -188,14 +188,14 @@ class VocabularyGenerationWorkerTest {
                 .thenReturn(VocabularyTestFixtures.generating("card_1", null));
         when(themes.findRevision("theme_custom", 4)).thenReturn(revision);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_theme")))
+        when(generator.generate(any(), anyList(), any(), eq("job_theme"), any()))
                 .thenReturn(VocabularyTestFixtures.basicGeneratedCard());
 
         worker.processPendingJobs(10);
 
         ArgumentCaptor<ResolvedVocabularyTheme> resolved =
                 ArgumentCaptor.forClass(ResolvedVocabularyTheme.class);
-        verify(generator).generate(any(), anyList(), resolved.capture(), eq("job_theme"));
+        verify(generator).generate(any(), anyList(), resolved.capture(), eq("job_theme"), any());
         assertEquals("theme_custom", resolved.getValue().themeUid());
         assertEquals(4, resolved.getValue().version());
         assertEquals("frozen purpose", resolved.getValue().purpose());
@@ -218,7 +218,7 @@ class VocabularyGenerationWorkerTest {
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(themes.findRevision("theme_user_1", 3)).thenReturn(theme);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_persist")))
+        when(generator.generate(any(), anyList(), any(), eq("job_persist"), any()))
                 .thenReturn(new GeneratedVocabularyCard(
                         generatedCore, "## Exam tips", 2, "test-model", "Generated", false));
 
@@ -247,7 +247,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_metadata"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_metadata")))
+        when(generator.generate(any(), anyList(), any(), eq("job_metadata"), any()))
                 .thenReturn(new GeneratedVocabularyCard(
                         complete.core(), complete.markdown(), complete.contentFormatVersion(), complete.model(),
                         complete.changeSummary(), false, "complete", null, metadata));
@@ -281,7 +281,7 @@ class VocabularyGenerationWorkerTest {
         when(jobs.markRunning(eq("job_markdown_invalid"), anyString(), eq(300))).thenReturn(1);
         when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
         when(sources.listSources("card_1")).thenReturn(List.of());
-        when(generator.generate(any(), anyList(), any(), eq("job_markdown_invalid")))
+        when(generator.generate(any(), anyList(), any(), eq("job_markdown_invalid"), any()))
                 .thenReturn(new GeneratedVocabularyCard(
                         complete.core(), "<!-- unsafe -->", complete.contentFormatVersion(), complete.model(),
                         complete.changeSummary(), false, "complete", null, metadata));
@@ -322,7 +322,7 @@ class VocabularyGenerationWorkerTest {
                 .thenReturn(VocabularyTestFixtures.generating("card_1", null));
         when(sources.listSources("card_1")).thenReturn(List.of());
         GeneratedVocabularyCard complete = VocabularyTestFixtures.basicGeneratedCard();
-        when(generator.generate(any(), anyList(), any(), eq("job_partial")))
+        when(generator.generate(any(), anyList(), any(), eq("job_partial"), any()))
                 .thenReturn(new GeneratedVocabularyCard(
                         complete.core(), "", complete.contentFormatVersion(), complete.model(),
                         "Markdown unavailable", true, "partial", "markdown_unavailable"));

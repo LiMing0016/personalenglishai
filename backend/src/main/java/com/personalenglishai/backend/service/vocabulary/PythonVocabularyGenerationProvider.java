@@ -57,6 +57,9 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
         try {
             ObjectNode core = responseCore(response);
             coreCodec.validate(input.term(), core);
+            if (!coreCodec.isComplete(input.term(), core)) {
+                throw invalidProviderResult();
+            }
             validateResponse(response, request);
             return new GeneratedVocabularyCard(
                     core,
@@ -81,7 +84,7 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
             return new VocabularyGenerationPythonRequest(
                     "request_" + traceId,
                     traceId,
-                    timeoutBudgetMs,
+                    Math.min(timeoutBudgetMs, input.timeoutBudgetMs()),
                     input.term(),
                     VocabularyGenerationPythonRequest.Core.fromJson(input.dictionaryCore()),
                     input.sourceContext(),

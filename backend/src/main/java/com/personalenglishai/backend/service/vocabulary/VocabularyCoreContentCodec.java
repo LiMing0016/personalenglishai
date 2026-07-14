@@ -165,6 +165,76 @@ public final class VocabularyCoreContentCodec {
         validate(expectedTerm, core);
     }
 
+    public boolean isComplete(String expectedTerm, JsonNode core) {
+        try {
+            validate(expectedTerm, core);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        if (firstPhonetic(core) == null) {
+            return false;
+        }
+        for (JsonNode sense : core.path("senses")) {
+            if (!hasText(sense.path("partOfSpeech").asText(null))
+                    || !sense.path("meanings").isArray()) {
+                continue;
+            }
+            for (JsonNode meaning : sense.path("meanings")) {
+                if (textOrNull(meaning.path("definitionEn")) != null
+                        || textOrNull(meaning.path("definitionZh")) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public void validatePreservesTrustedFields(
+            String expectedTerm, JsonNode trustedCore, JsonNode candidateCore) {
+        validate(expectedTerm, trustedCore);
+        validate(expectedTerm, candidateCore);
+
+        JsonNode trustedPhonetics = trustedCore.path("phonetics");
+        JsonNode candidatePhonetics = candidateCore.path("phonetics");
+        requireAtLeastTrustedSize(trustedPhonetics, candidatePhonetics, "phonetics");
+        for (int index = 0; index < trustedPhonetics.size(); index++) {
+            JsonNode trusted = trustedPhonetics.get(index);
+            JsonNode candidate = candidatePhonetics.get(index);
+            requireEqual(trusted.path("region"), candidate.path("region"), "phonetic region");
+            requireNonblankPreserved(trusted.path("text"), candidate.path("text"), "phonetic text");
+            requireNonblankPreserved(
+                    trusted.path("audioUrl"), candidate.path("audioUrl"), "phonetic audioUrl");
+        }
+
+        JsonNode trustedSenses = trustedCore.path("senses");
+        JsonNode candidateSenses = candidateCore.path("senses");
+        requireAtLeastTrustedSize(trustedSenses, candidateSenses, "senses");
+        for (int senseIndex = 0; senseIndex < trustedSenses.size(); senseIndex++) {
+            JsonNode trustedSense = trustedSenses.get(senseIndex);
+            JsonNode candidateSense = candidateSenses.get(senseIndex);
+            requireNonblankPreserved(
+                    trustedSense.path("partOfSpeech"),
+                    candidateSense.path("partOfSpeech"),
+                    "partOfSpeech");
+
+            JsonNode trustedMeanings = trustedSense.path("meanings");
+            JsonNode candidateMeanings = candidateSense.path("meanings");
+            requireAtLeastTrustedSize(trustedMeanings, candidateMeanings, "meanings");
+            for (int meaningIndex = 0; meaningIndex < trustedMeanings.size(); meaningIndex++) {
+                JsonNode trustedMeaning = trustedMeanings.get(meaningIndex);
+                JsonNode candidateMeaning = candidateMeanings.get(meaningIndex);
+                requireNonblankPreserved(
+                        trustedMeaning.path("definitionEn"),
+                        candidateMeaning.path("definitionEn"),
+                        "definitionEn");
+                requireNonblankPreserved(
+                        trustedMeaning.path("definitionZh"),
+                        candidateMeaning.path("definitionZh"),
+                        "definitionZh");
+            }
+        }
+    }
+
     public String summaryPhonetic(JsonNode core) {
         return firstPhonetic(core);
     }
@@ -351,6 +421,24 @@ public final class VocabularyCoreContentCodec {
         value.fieldNames().forEachRemaining(actual::add);
         if (!allowed.containsAll(actual)) {
             throw invalid("unknown field in " + objectName);
+        }
+    }
+
+    private void requireAtLeastTrustedSize(JsonNode trusted, JsonNode candidate, String field) {
+        if (!trusted.isArray() || !candidate.isArray() || candidate.size() < trusted.size()) {
+            throw invalid("candidate removed trusted " + field);
+        }
+    }
+
+    private void requireNonblankPreserved(JsonNode trusted, JsonNode candidate, String field) {
+        if (textOrNull(trusted) != null) {
+            requireEqual(trusted, candidate, field);
+        }
+    }
+
+    private void requireEqual(JsonNode trusted, JsonNode candidate, String field) {
+        if (!trusted.equals(candidate)) {
+            throw invalid("candidate changed trusted " + field);
         }
     }
 

@@ -7,10 +7,23 @@ public record VocabularyGenerationInput(
         ObjectNode dictionaryCore,
         String sourceContext,
         ResolvedVocabularyTheme theme,
-        String traceId) {
+        String traceId,
+        int timeoutBudgetMs) {
+
+    public VocabularyGenerationInput(
+            String term,
+            ObjectNode dictionaryCore,
+            String sourceContext,
+            ResolvedVocabularyTheme theme,
+            String traceId) {
+        this(term, dictionaryCore, sourceContext, theme, traceId,
+                VocabularyGenerationPythonRequest.MAX_TIMEOUT_BUDGET_MS);
+    }
 
     public VocabularyGenerationInput {
-        if (term == null || term.isBlank() || dictionaryCore == null || theme == null) {
+        if (term == null || term.isBlank() || dictionaryCore == null || theme == null
+                || timeoutBudgetMs < 1
+                || timeoutBudgetMs > VocabularyGenerationPythonRequest.MAX_TIMEOUT_BUDGET_MS) {
             throw new IllegalArgumentException("Vocabulary generation input is incomplete");
         }
         dictionaryCore = dictionaryCore.deepCopy();

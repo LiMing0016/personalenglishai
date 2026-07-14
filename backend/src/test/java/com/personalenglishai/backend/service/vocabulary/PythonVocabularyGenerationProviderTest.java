@@ -124,12 +124,50 @@ class PythonVocabularyGenerationProviderTest {
         assertSame(expected, actual);
     }
 
+    @Test
+    void rejectsStructurallyValidButIncompletePythonCore() {
+        VocabularyGenerationInput input = input("job_incomplete");
+        VocabularyGenerationMetadata metadata = metadata("job_incomplete");
+        when(client.generate(any())).thenReturn(new VocabularyGenerationPythonResponse(
+                1,
+                1,
+                new VocabularyGenerationPythonRequest.Core("record", List.of(), List.of()),
+                "## Exam focus",
+                1,
+                "complete",
+                null,
+                metadata));
+
+        VocabularyGenerationException exception = assertThrows(
+                VocabularyGenerationException.class, () -> provider.generate(input));
+
+        assertEquals("INVALID_PROVIDER_RESULT", exception.code());
+        assertFalse(exception.retryable());
+    }
+
+    @Test
+    void capsConfiguredTimeoutByTheRemainingAttemptBudget() {
+        VocabularyGenerationInput input = input("job_budget", 1_234);
+        when(client.generate(any())).thenReturn(complete(input, metadata("job_budget")));
+
+        provider.generate(input);
+
+        ArgumentCaptor<VocabularyGenerationPythonRequest> request =
+                ArgumentCaptor.forClass(VocabularyGenerationPythonRequest.class);
+        verify(client).generate(request.capture());
+        assertEquals(1_234, request.getValue().timeoutBudgetMs());
+    }
+
     private VocabularyGenerationInput input(String traceId) {
+        return input(traceId, 45_000);
+    }
+
+    private VocabularyGenerationInput input(String traceId, int timeoutBudgetMs) {
         return new VocabularyGenerationInput(
                 "record", core(), "The record was complete.",
                 new ResolvedVocabularyTheme(
                         "theme_exam_3", 3, "Exam", "Exam preparation", "exam-markdown-v1", 1, "exam"),
-                traceId);
+                traceId, timeoutBudgetMs);
     }
 
     private ObjectNode core() {
