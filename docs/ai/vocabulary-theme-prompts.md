@@ -24,7 +24,7 @@ related_docs:
 
 `basic-markdown-v1`、`exam-markdown-v1`、`reading-markdown-v1` 和 `custom-markdown-v1` 是主题快照中的策略 key。策略 key 映射到 Python Prompt 资产：`vocabulary_core_fallback` 负责只补齐缺失 core，`vocabulary_card_markdown` 负责按主题生成 Markdown；Java 只冻结主题 UID、版本和策略 key，不持有或拼接 Prompt 正文。
 
-Prompt version 由 Python 根据本次实际解析到的 Prompt 返回，Java 不发送 Prompt version。本地 Prompt 使用仓库版本名；remote/hybrid 命中 OpenAI Prompt 时必须同时固定 Prompt ID 和 version，审计值包含实际 ID/version。Python 在 generation metadata 中返回 provider、model、Prompt version、模型调用次数和安全 trace ID；Java 仅把已验证的 metadata 保存到 `generation_metadata_json`。不要在日志、测试失败输出或人工验收记录中打印 Prompt 正文、词典 core、sourceContext、生成 Markdown 或原始模型输出。
+Prompt version 由 Python 根据本次实际解析到的 Prompt 返回，Java 不发送 Prompt version。本地 Prompt 使用仓库版本名；remote/hybrid 命中 OpenAI Prompt 时必须同时固定 Prompt ID 和 version，审计值包含实际 ID/version。远程 Prompt 缺少固定 version 时，Python 健康检查必须报告 vocabulary generation 未配置，生成端点返回不可重试的 `VOCABULARY_GENERATION_NOT_CONFIGURED`。Python 在 generation metadata 中返回 provider、model、Prompt version、模型调用次数和安全 trace ID；Java 仅把已验证的 metadata 保存到 `generation_metadata_json`。不要在日志、测试失败输出或人工验收记录中打印 Prompt 正文、词典 core、sourceContext、生成 Markdown 或原始模型输出。
 
 ## 当前结论
 

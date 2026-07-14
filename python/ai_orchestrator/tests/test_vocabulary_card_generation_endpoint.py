@@ -1,9 +1,13 @@
+import os
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from python.ai_orchestrator.app import app
+from python.ai_orchestrator.services.vocabulary_card_generation import (
+    VocabularyCardGenerationService,
+)
 from python.ai_orchestrator.workflows.vocabulary_card_generation import (
     VocabularyCardGenerationError,
 )
@@ -236,6 +240,31 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
             self.assertEqual(response.status_code, 503)
             self.assertEqual(response.json()["detail"]["code"], code)
             self.assertNotIn("private model response", response.text)
+
+    def test_unpinned_remote_prompt_is_unhealthy_and_returns_non_retryable_configuration_error(self) -> None:
+        environment = {
+            "AI_ASSISTANT_PROMPT_SOURCE": "remote",
+            "AI_PROMPT_VOCABULARY_CORE_FALLBACK_ID": "pmpt_vocab_core_123",
+            "AI_PROMPT_VOCABULARY_CORE_FALLBACK_VERSION": "1",
+            "AI_PROMPT_VOCABULARY_CARD_MARKDOWN_ID": "pmpt_vocab_markdown_456",
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "https://api.openai.com/v1",
+            "VOCABULARY_GENERATION_INTERNAL_TOKEN": "internal-test-token",
+            "VOCABULARY_GENERATION_MODEL": "test-model",
+        }
+
+        with patch.dict(os.environ, environment, clear=True):
+            service = VocabularyCardGenerationService.from_env()
+            with patch("python.ai_orchestrator.app.vocabulary_card_generation_service", service):
+                health_response = TestClient(app).get("/health")
+                generation_response = self.post(TestClient(app))
+
+        self.assertFalse(health_response.json()["vocabularyCardGenerationConfigured"])
+        self.assertEqual(generation_response.status_code, 503)
+        self.assertEqual(
+            generation_response.json()["detail"]["code"],
+            "VOCABULARY_GENERATION_NOT_CONFIGURED",
+        )
 
     def test_timeout_error_maps_to_504(self) -> None:
         client = TestClient(app)
