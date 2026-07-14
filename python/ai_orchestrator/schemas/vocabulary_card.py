@@ -7,12 +7,6 @@ from markdown_it.token import Token
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-VocabularyPromptStrategyKey = Literal[
-    "basic-markdown-v1",
-    "exam-markdown-v1",
-    "reading-markdown-v1",
-    "custom-markdown-v1",
-]
 VocabularyGenerationOutcome = Literal["complete", "partial"]
 
 MAX_TERM_LENGTH = 200
@@ -24,6 +18,8 @@ MAX_MEANING_COUNT = 30
 MAX_TIMEOUT_BUDGET_MS = 60_000
 MAX_OPAQUE_ID_LENGTH = 128
 OPAQUE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+MAX_PROMPT_STRATEGY_KEY_LENGTH = 100
+PROMPT_STRATEGY_KEY_PATTERN = r"^[a-z0-9][a-z0-9-]{0,99}$"
 _COMMONMARK = MarkdownIt("commonmark")
 
 
@@ -91,7 +87,12 @@ class VocabularyThemeSnapshot(StrictVocabularyModel):
     version: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=200)
     purpose: str = Field(max_length=MAX_SOURCE_CONTEXT_LENGTH)
-    prompt_strategy_key: VocabularyPromptStrategyKey = Field(alias="promptStrategyKey")
+    prompt_strategy_key: str = Field(
+        alias="promptStrategyKey",
+        min_length=1,
+        max_length=MAX_PROMPT_STRATEGY_KEY_LENGTH,
+        pattern=PROMPT_STRATEGY_KEY_PATTERN,
+    )
     content_format_version: Literal[1] = Field(alias="contentFormatVersion")
 
 

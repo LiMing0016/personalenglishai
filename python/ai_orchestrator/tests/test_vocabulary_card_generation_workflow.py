@@ -514,9 +514,7 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.outcome, "partial")
 
     async def test_unknown_strategy_is_non_retryable_and_makes_no_model_calls(self) -> None:
-        unsupported = request().model_copy(
-            update={"theme": request().theme.model_copy(update={"prompt_strategy_key": "unknown-markdown-v1"})}
-        )
+        unsupported = request(strategy="unknown-markdown-v1")
 
         with patch("agents.Runner.run", new_callable=AsyncMock) as run:
             with self.assertRaisesRegex(VocabularyCardGenerationError, "UNSUPPORTED_PROMPT_STRATEGY") as raised:

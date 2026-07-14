@@ -276,14 +276,22 @@ class VocabularyCardSchemasTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             VocabularyGenerationMetadata.model_validate(invalid_metadata)
 
-    def test_theme_accepts_only_registered_strategy_keys_and_format_version(self) -> None:
+    def test_theme_accepts_well_formed_strategy_keys_and_only_supported_format_version(self) -> None:
         unsupported_strategy = request_payload()
         unsupported_strategy["theme"] = {
             **unsupported_strategy["theme"],
             "promptStrategyKey": "unknown-markdown-v1",
         }
+        parsed = VocabularyCardGenerationRequest.model_validate(unsupported_strategy)
+        self.assertEqual(parsed.theme.prompt_strategy_key, "unknown-markdown-v1")
+
+        malformed_strategy = request_payload()
+        malformed_strategy["theme"] = {
+            **malformed_strategy["theme"],
+            "promptStrategyKey": "Unknown strategy",
+        }
         with self.assertRaises(ValidationError):
-            VocabularyCardGenerationRequest.model_validate(unsupported_strategy)
+            VocabularyCardGenerationRequest.model_validate(malformed_strategy)
 
         unsupported_format = request_payload()
         unsupported_format["theme"] = {

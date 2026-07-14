@@ -209,6 +209,23 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"]["code"], "UNSUPPORTED_PROMPT_STRATEGY")
         self.assertNotIn("private model response", response.text)
 
+    def test_unknown_prompt_strategy_reaches_workflow_and_returns_stable_400_code(self) -> None:
+        client = TestClient(app)
+        service = CapturingVocabularyGenerationService(
+            error=VocabularyCardGenerationError(
+                "UNSUPPORTED_PROMPT_STRATEGY", False, "Unsupported prompt strategy."
+            )
+        )
+        payload = request_payload()
+        payload["theme"]["promptStrategyKey"] = "future-markdown-v2"
+
+        with patch("python.ai_orchestrator.app.vocabulary_card_generation_service", service):
+            response = self.post(client, payload=payload)
+
+        self.assertIsNotNone(service.received)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"]["code"], "UNSUPPORTED_PROMPT_STRATEGY")
+
     def test_service_auth_errors_map_to_401_and_403(self) -> None:
         client = TestClient(app)
 
