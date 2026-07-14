@@ -18,6 +18,9 @@ VocabularyGenerationOutcome = Literal["complete", "partial"]
 MAX_TERM_LENGTH = 200
 MAX_SOURCE_CONTEXT_LENGTH = 10_000
 MAX_SCALAR_LENGTH = 2_000
+MAX_PHONETIC_COUNT = 10
+MAX_SENSE_COUNT = 20
+MAX_MEANING_COUNT = 30
 MAX_TIMEOUT_BUDGET_MS = 60_000
 MAX_OPAQUE_ID_LENGTH = 128
 OPAQUE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
@@ -68,14 +71,14 @@ class VocabularyMeaning(StrictVocabularyModel):
 
 class VocabularySense(StrictVocabularyModel):
     part_of_speech: str = Field(alias="partOfSpeech", max_length=MAX_SCALAR_LENGTH)
-    meanings: list[VocabularyMeaning] = Field(max_length=30)
+    meanings: list[VocabularyMeaning] = Field(max_length=MAX_MEANING_COUNT)
 
 
 class VocabularyCore(StrictVocabularyModel):
     schema_version: Literal[1] = Field(alias="schemaVersion")
     term: str = Field(min_length=1, max_length=MAX_TERM_LENGTH)
-    phonetics: list[VocabularyPhonetic] = Field(max_length=10)
-    senses: list[VocabularySense] = Field(max_length=20)
+    phonetics: list[VocabularyPhonetic] = Field(max_length=MAX_PHONETIC_COUNT)
+    senses: list[VocabularySense] = Field(max_length=MAX_SENSE_COUNT)
 
     @field_validator("term")
     @classmethod

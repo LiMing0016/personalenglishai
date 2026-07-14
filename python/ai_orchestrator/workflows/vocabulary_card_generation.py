@@ -13,6 +13,9 @@ from ..agents.vocabulary_card import (
     create_vocabulary_core_fallback_agent,
 )
 from ..schemas.vocabulary_card import (
+    MAX_MEANING_COUNT,
+    MAX_PHONETIC_COUNT,
+    MAX_SENSE_COUNT,
     VocabularyCardGenerationRequest,
     VocabularyCardGenerationResponse,
     VocabularyCore,
@@ -90,20 +93,28 @@ def _meanings_overlap(left: VocabularyMeaning, right: VocabularyMeaning) -> bool
     )
 
 
-def _senses_match(left: VocabularySense, right: VocabularySense) -> bool:
+def _senses_share_part_of_speech(left: VocabularySense, right: VocabularySense) -> bool:
     left_part_of_speech = _normalized_key(left.part_of_speech)
     right_part_of_speech = _normalized_key(right.part_of_speech)
-    return (
-        bool(
-            left_part_of_speech
-            and right_part_of_speech
-            and left_part_of_speech == right_part_of_speech
-        )
-        or any(
-            _meanings_overlap(left_meaning, right_meaning)
-            for left_meaning in left.meanings
-            for right_meaning in right.meanings
-        )
+    return bool(
+        left_part_of_speech
+        and right_part_of_speech
+        and left_part_of_speech == right_part_of_speech
+    )
+
+
+def _sense_meanings_overlap(left: VocabularySense, right: VocabularySense) -> bool:
+    return any(
+        _meanings_overlap(left_meaning, right_meaning)
+        for left_meaning in left.meanings
+        for right_meaning in right.meanings
+    )
+
+
+def _sense_has_identifiable_meaning(sense: VocabularySense) -> bool:
+    return any(
+        not _is_blank(meaning.definition_en) or not _is_blank(meaning.definition_zh)
+        for meaning in sense.meanings
     )
 
 
@@ -117,6 +128,40 @@ def _matching_fallback_index(
         if fallback_index not in used_indices and matches_semantically(fallback_value):
             return fallback_index
     return None
+
+
+def _matching_fallback_sense_index(
+    *,
+    trusted_sense: VocabularySense,
+    fallback_senses: list[VocabularySense],
+    used_indices: set[int],
+) -> int | None:
+    available = [
+        (index, sense)
+        for index, sense in enumerate(fallback_senses)
+        if index not in used_indices
+    ]
+    for fallback_index, fallback_sense in available:
+        if _sense_meanings_overlap(trusted_sense, fallback_sense):
+            return fallback_index
+
+    same_part_of_speech = [
+        (index, sense)
+        for index, sense in available
+        if _senses_share_part_of_speech(trusted_sense, sense)
+    ]
+    if len(same_part_of_speech) != 1:
+        return None
+    fallback_index, fallback_sense = same_part_of_speech[0]
+    if _sense_has_identifiable_meaning(trusted_sense) and _sense_has_identifiable_meaning(
+        fallback_sense
+    ):
+        return None
+    return fallback_index
+
+
+def _senses_are_duplicates(left: VocabularySense, right: VocabularySense) -> bool:
+    return left == right or _sense_meanings_overlap(left, right)
 
 
 def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> VocabularyCore:
@@ -151,16 +196,18 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
     for fallback_index, phonetic in enumerate(fallback.phonetics):
         if fallback_index in used_phonetics or phonetic.region in known_regions:
             continue
+        if len(phonetics) >= MAX_PHONETIC_COUNT:
+            break
         phonetics.append(phonetic.model_dump(by_alias=True, mode="json"))
         known_regions.add(phonetic.region)
 
     used_senses: set[int] = set()
     senses: list[dict[str, Any]] = []
     for trusted_sense in trusted.senses:
-        fallback_index = _matching_fallback_index(
-            fallback_values=fallback.senses,
+        fallback_index = _matching_fallback_sense_index(
+            trusted_sense=trusted_sense,
+            fallback_senses=fallback.senses,
             used_indices=used_senses,
-            matches_semantically=lambda candidate: _senses_match(trusted_sense, candidate),
         )
         fallback_sense = fallback.senses[fallback_index] if fallback_index is not None else None
         if fallback_index is not None:
@@ -197,9 +244,12 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
         known_meanings = list(trusted_sense.meanings)
         for fallback_meaning_index, meaning in enumerate(fallback_meanings):
             if fallback_meaning_index in used_meanings or any(
-                _meanings_overlap(meaning, known_meaning) for known_meaning in known_meanings
+                meaning == known_meaning or _meanings_overlap(meaning, known_meaning)
+                for known_meaning in known_meanings
             ):
                 continue
+            if len(meanings) >= MAX_MEANING_COUNT:
+                break
             meanings.append(meaning.model_dump(by_alias=True, mode="json"))
             known_meanings.append(meaning)
         senses.append(
@@ -214,9 +264,11 @@ def merge_missing_core(trusted: VocabularyCore, fallback: VocabularyCore) -> Voc
     known_senses = list(trusted.senses)
     for fallback_index, sense in enumerate(fallback.senses):
         if fallback_index in used_senses or any(
-            _senses_match(sense, known_sense) for known_sense in known_senses
+            _senses_are_duplicates(sense, known_sense) for known_sense in known_senses
         ):
             continue
+        if len(senses) >= MAX_SENSE_COUNT:
+            break
         senses.append(sense.model_dump(by_alias=True, mode="json"))
         known_senses.append(sense)
 
@@ -290,7 +342,14 @@ class VocabularyCardGenerationWorkflow:
             )
             model_call_count = 1
             fallback_core = self._validate_fallback_output(fallback_output)
-            core = merge_missing_core(core, fallback_core)
+            try:
+                core = merge_missing_core(core, fallback_core)
+            except Exception as exc:
+                raise VocabularyCardGenerationError(
+                    "CORE_CONTENT_UNAVAILABLE",
+                    True,
+                    "The vocabulary core could not be merged safely.",
+                ) from exc
             if not is_core_complete(core, term=request.term):
                 raise VocabularyCardGenerationError(
                     "CORE_CONTENT_UNAVAILABLE",

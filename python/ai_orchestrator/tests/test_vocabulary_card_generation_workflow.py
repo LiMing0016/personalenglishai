@@ -327,6 +327,101 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
+    def test_merge_matches_reordered_same_pos_senses_by_meaning_before_part_of_speech(self) -> None:
+        trusted = VocabularyCore.model_validate(
+            core_payload(
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [{"definitionEn": "first sense", "definitionZh": ""}],
+                    },
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [{"definitionEn": "second sense", "definitionZh": ""}],
+                    },
+                ]
+            )
+        )
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                senses=[
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "second sense", "definitionZh": "第二个义项"}
+                        ],
+                    },
+                    {
+                        "partOfSpeech": "noun",
+                        "meanings": [
+                            {"definitionEn": "first sense", "definitionZh": "第一个义项"}
+                        ],
+                    },
+                ]
+            )
+        )
+
+        merged = merge_missing_core(trusted, fallback)
+
+        self.assertEqual(len(merged.senses), 2)
+        self.assertEqual(len(merged.senses[0].meanings), 1)
+        self.assertEqual(merged.senses[0].meanings[0].definition_zh, "第一个义项")
+        self.assertEqual(len(merged.senses[1].meanings), 1)
+        self.assertEqual(merged.senses[1].meanings[0].definition_zh, "第二个义项")
+
+    def test_merge_deduplicates_identical_blank_fallback_structures(self) -> None:
+        blank_sense = {
+            "partOfSpeech": "",
+            "meanings": [{"definitionEn": "", "definitionZh": ""}],
+        }
+        trusted = VocabularyCore.model_validate(core_payload(senses=[blank_sense]))
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(senses=[blank_sense, blank_sense])
+        )
+
+        merged = merge_missing_core(trusted, fallback)
+
+        self.assertEqual(len(merged.senses), 1)
+        self.assertEqual(merged.senses[0], trusted.senses[0])
+
+    async def test_merge_capacity_exhaustion_returns_stable_core_content_error(self) -> None:
+        blank_sense = {
+            "partOfSpeech": "",
+            "meanings": [{"definitionEn": "", "definitionZh": ""}],
+        }
+        original = core_payload(phonetics=[], senses=[blank_sense] * 20)
+        fallback = VocabularyCoreFallbackOutput.model_validate(
+            core_payload(
+                phonetics=[{"region": "uk", "text": "fallback", "audioUrl": None}],
+                senses=[
+                    {
+                        "partOfSpeech": f"part-{index}",
+                        "meanings": [
+                            {
+                                "definitionEn": f"fallback meaning {index}",
+                                "definitionZh": f"回退释义 {index}",
+                            }
+                        ],
+                    }
+                    for index in range(20)
+                ],
+            )
+        )
+
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(final_output=fallback),
+        ) as run:
+            with self.assertRaisesRegex(
+                VocabularyCardGenerationError, "CORE_CONTENT_UNAVAILABLE"
+            ) as raised:
+                await self.service().generate(request(core=original))
+
+        self.assertEqual(raised.exception.code, "CORE_CONTENT_UNAVAILABLE")
+        self.assertTrue(raised.exception.retryable)
+        run.assert_awaited_once()
+
     async def test_invalid_fallback_never_generates_markdown_and_raises_core_error(self) -> None:
         invalid_fallback = VocabularyCoreFallbackOutput.model_validate(core_payload(phonetics=[], senses=[]))
 
