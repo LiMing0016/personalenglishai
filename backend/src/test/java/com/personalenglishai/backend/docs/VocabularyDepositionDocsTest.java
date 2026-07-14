@@ -1,11 +1,14 @@
 package com.personalenglishai.backend.docs;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class VocabularyDepositionDocsTest {
@@ -57,9 +60,11 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(readme.contains("新库不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 "
                         + "`migrate_add_vocabulary_generation_metadata.sql`")),
                 () -> assertTrue(readme.contains("历史库必须按以下顺序执行")),
-                () -> assertTrue(readme.contains("migrate_add_vocabulary_generation_metadata.sql")),
-                () -> assertTrue(readme.indexOf("migrate_add_vocabulary_review_semantics.sql")
-                        < readme.indexOf("migrate_add_vocabulary_generation_metadata.sql")),
+                () -> assertHistoricalUpgradeOrder(readme,
+                        "第四步执行审核语义增量，补充显式冲突候选和稳定生成结果字段：",
+                        "migrate_add_vocabulary_review_semantics.sql",
+                        "第五步执行生成元数据迁移，为已有 revision 补充可空的 JSON 审计字段：",
+                        "migrate_add_vocabulary_generation_metadata.sql"),
                 () -> assertTrue(readme.contains("conflict_candidate_revision_uid")),
                 () -> assertTrue(readme.contains("generation_outcome")),
                 () -> assertTrue(readme.contains("warning"))
@@ -87,9 +92,11 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(architecture.contains("`basic` -> `theme_system_basic`")),
                 () -> assertTrue(architecture.contains("`exam` -> `theme_system_exam`")),
                 () -> assertTrue(architecture.contains("`reading` -> `theme_system_reading`")),
-                () -> assertTrue(architecture.contains("migrate_add_vocabulary_generation_metadata.sql")),
-                () -> assertTrue(architecture.indexOf("migrate_add_vocabulary_review_semantics.sql")
-                        < architecture.indexOf("migrate_add_vocabulary_generation_metadata.sql")),
+                () -> assertHistoricalUpgradeOrder(architecture,
+                        "历史库第四步执行审核语义增量，为已有表补充显式冲突候选和生成结果字段：",
+                        "migrate_add_vocabulary_review_semantics.sql",
+                        "历史库第五步执行生成元数据迁移，为已有 `vocabulary_card_revision` 增加可空的 JSON 审计字段：",
+                        "migrate_add_vocabulary_generation_metadata.sql"),
                 () -> assertTrue(architecture.contains("全新库只执行 `schema.sql`")),
                 () -> assertTrue(architecture.contains("VOCABULARY_MYSQL_INTEGRATION_URL")),
                 () -> assertTrue(architecture.contains("VOCABULARY_MYSQL_INTEGRATION_USERNAME")),
@@ -149,5 +156,41 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(aiIndex.contains("./vocabulary-theme-prompts.md")),
                 () -> assertTrue(vitepressConfig.contains("/ai/vocabulary-theme-prompts")),
                 () -> assertFalse(vitepressConfig.contains("/superpowers/plans/")));
+    }
+
+    private static void assertHistoricalUpgradeOrder(
+            String document,
+            String reviewStepTitle,
+            String reviewMigration,
+            String metadataStepTitle,
+            String metadataMigration) {
+        HistoricalUpgradeStep review = historicalUpgradeStep(document, reviewStepTitle);
+        HistoricalUpgradeStep metadata = historicalUpgradeStep(document, metadataStepTitle);
+
+        assertEquals(mysqlMigrationCommand(reviewMigration), review.command());
+        assertEquals(mysqlMigrationCommand(metadataMigration), metadata.command());
+        assertTrue(review.position() < metadata.position(),
+                "the review-semantics migration step must precede the generation-metadata migration step");
+    }
+
+    private static HistoricalUpgradeStep historicalUpgradeStep(String document, String stepTitle) {
+        Pattern titlePattern = Pattern.compile("(?m)^" + Pattern.quote(stepTitle) + "$");
+        assertEquals(1, titlePattern.matcher(document).results().count(),
+                "historical upgrade step title must be unique: " + stepTitle);
+
+        Pattern pattern = Pattern.compile("(?m)^" + Pattern.quote(stepTitle)
+                + "\\R+```powershell\\R(?<command>mysql -u <user> -p <database> < [^\\r\\n]+)\\R```");
+        Matcher matcher = pattern.matcher(document);
+        assertTrue(matcher.find(), "missing historical upgrade step: " + stepTitle);
+        HistoricalUpgradeStep step = new HistoricalUpgradeStep(matcher.start(), matcher.group("command"));
+        assertFalse(matcher.find(), "historical upgrade step must be unique: " + stepTitle);
+        return step;
+    }
+
+    private static String mysqlMigrationCommand(String migration) {
+        return "mysql -u <user> -p <database> < backend/src/main/resources/db/" + migration;
+    }
+
+    private record HistoricalUpgradeStep(int position, String command) {
     }
 }

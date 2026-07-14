@@ -21,11 +21,14 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -33,17 +36,55 @@ class VocabularyGenerationMetadataMigrationMySqlTest {
     private static final String DATABASE_PREFIX = "peai_vocab_generation_metadata_";
 
     @Test
-    void migrationIsAdditiveAndRerunnableOnMySql8() throws Exception {
+    void keepsMapperAssertionFailurePrimaryAndSuppressesSchemaCleanupFailure() {
+        String database = randomDisposableSchemaName();
+        AssertionError mapperAssertionFailure = new AssertionError("mapper assertion failed");
+        SQLException cleanupFailure = new SQLException("drop failed");
+
+        AssertionError thrown = assertThrows(AssertionError.class,
+                () -> executeWithDisposableSchemaCleanup(database,
+                        () -> {
+                            throw mapperAssertionFailure;
+                        },
+                        () -> {
+                            throw cleanupFailure;
+                        }));
+
+        assertSame(mapperAssertionFailure, thrown);
+        assertEquals(1, thrown.getSuppressed().length);
+        assertTrue(thrown.getSuppressed()[0].getMessage().contains(database));
+        assertSame(cleanupFailure, thrown.getSuppressed()[0].getCause());
+    }
+
+    @Test
+    void failsWithSchemaQualifiedCleanupFailureAfterSuccessfulMigration() {
+        String database = randomDisposableSchemaName();
+        SQLException cleanupFailure = new SQLException("drop failed");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> executeWithDisposableSchemaCleanup(database,
+                        () -> {
+                        },
+                        () -> {
+                            throw cleanupFailure;
+                        }));
+
+        assertTrue(thrown.getMessage().contains(database));
+        assertSame(cleanupFailure, thrown.getCause());
+    }
+
+    @Test
+    void migrationIsAdditiveAndRerunnableOnMySql8() throws Throwable {
         String url = System.getenv("VOCABULARY_MYSQL_INTEGRATION_URL");
         assumeTrue(url != null && !url.isBlank(),
                 "Set VOCABULARY_MYSQL_INTEGRATION_URL to run the MySQL 8 vocabulary migration test");
         String username = System.getenv("VOCABULARY_MYSQL_INTEGRATION_USERNAME");
         String password = System.getenv("VOCABULARY_MYSQL_INTEGRATION_PASSWORD");
-        String database = DATABASE_PREFIX + UUID.randomUUID().toString().replace("-", "");
+        String database = randomDisposableSchemaName();
 
         try (Connection connection = DriverManager.getConnection(
                 url, username == null ? "root" : username, password == null ? "" : password)) {
-            try {
+            executeWithDisposableSchemaCleanup(database, () -> {
                 try (Statement statement = connection.createStatement()) {
                     statement.execute("CREATE DATABASE `" + database
                             + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -56,13 +97,44 @@ class VocabularyGenerationMetadataMigrationMySqlTest {
 
                 assertGenerationMetadataColumn(connection, database);
                 assertMapperRoundTripsGenerationMetadata(connection);
-            } finally {
-                assertTrue(database.startsWith(DATABASE_PREFIX), "refusing to drop an unexpected database");
-                try (Statement statement = connection.createStatement()) {
-                    statement.execute("DROP DATABASE IF EXISTS `" + database + "`");
+            }, () -> dropDisposableDatabase(connection, database));
+        }
+    }
+
+    private static void executeWithDisposableSchemaCleanup(
+            String database, ThrowingAction action, ThrowingAction cleanup) throws Throwable {
+        Throwable primaryFailure = null;
+        try {
+            action.run();
+        } catch (Throwable error) {
+            primaryFailure = error;
+            throw error;
+        } finally {
+            try {
+                cleanup.run();
+            } catch (Throwable cleanupError) {
+                IllegalStateException schemaCleanupFailure = new IllegalStateException(
+                        "Failed to drop disposable MySQL schema '" + database + "'", cleanupError);
+                if (primaryFailure != null) {
+                    primaryFailure.addSuppressed(schemaCleanupFailure);
+                } else {
+                    throw schemaCleanupFailure;
                 }
             }
         }
+    }
+
+    private void dropDisposableDatabase(Connection connection, String database) throws SQLException {
+        if (!database.startsWith(DATABASE_PREFIX)) {
+            throw new IllegalArgumentException("Refusing to drop unexpected MySQL schema '" + database + "'");
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS `" + database + "`");
+        }
+    }
+
+    private static String randomDisposableSchemaName() {
+        return DATABASE_PREFIX + UUID.randomUUID().toString().replace("-", "");
     }
 
     private void runMigration(Connection connection) {
@@ -154,5 +226,10 @@ class VocabularyGenerationMetadataMigrationMySqlTest {
         revision.setGenerationMetadataJson(generationMetadataJson);
         revision.setChangeSummary("metadata migration test");
         return revision;
+    }
+
+    @FunctionalInterface
+    private interface ThrowingAction {
+        void run() throws Throwable;
     }
 }

@@ -104,3 +104,34 @@ Result: GREEN, exit code `0`.
 ### Merge Assessment
 
 - The remediation is scoped to migration acceptance tests and operational documentation. It is suitable to merge into `main` after a disposable MySQL 8 run executes the newly added JSON/NULL mapper round-trip assertions.
+
+## Second Re-review Remediation
+
+### Scope
+
+- Updated only `VocabularyGenerationMetadataMigrationMySqlTest`, `VocabularyDepositionDocsTest`, and this report.
+- The README and vocabulary architecture runbook already contained the correct fourth-then-fifth historical upgrade commands, so their content was not changed.
+
+### RED and GREEN
+
+- RED: added the cleanup-priority and title-plus-command-block contract calls before their helper structures existed. The focused Maven run failed at test compilation with the expected missing `executeWithDisposableSchemaCleanup` and `assertHistoricalUpgradeOrder` symbols.
+- GREEN: added a test-local disposable-schema executor that keeps any primary `Throwable` (including a mapper assertion failure), attaches a schema-qualified cleanup failure as suppressed, and throws the cleanup failure only after a successful primary action. Unit tests do not require MySQL and verify both paths with a prefix-constrained random schema name.
+- Replaced whole-document migration-name `indexOf` checks with a parser that requires each exact historical step title exactly once, captures its immediately following PowerShell MySQL command block, asserts the expected script path, and compares the two matched step positions.
+
+### Verification
+
+- Passed focused tests:
+
+  ```powershell
+  cd F:\personalenglishai\.worktrees\vocabulary-deposition-core\backend
+  $env:JWT_SECRET='test-jwt-secret-for-vocabulary-python-32-bytes'
+  .\mvnw.cmd -q "-Dtest=VocabularyGenerationMetadataMigrationMySqlTest,VocabularyDepositionDocsTest" test
+  ```
+
+- Passed the full backend suite: `backend\mvnw.cmd -q test` with the same `JWT_SECRET`.
+- Passed `docs\npm run build`; documentation source was unchanged. The build emitted existing syntax-highlighting and bundle-size warnings but exited successfully.
+- Real MySQL 8 execution was not run or claimed: `VOCABULARY_MYSQL_INTEGRATION_URL` was not configured, so `VocabularyGenerationMetadataMigrationMySqlTest` skipped its integration case. The new cleanup-order tests ran without MySQL.
+
+### Merge Assessment
+
+- This is a small, test-only reliability correction with focused and full-suite coverage and is suitable to merge into `main`. A disposable MySQL 8 run remains the outstanding environment-dependent validation for the original migration path.
