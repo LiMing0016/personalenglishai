@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 from typing import Annotated, Any
 
@@ -22,11 +23,15 @@ try:
     from .schemas.prompt_sheet import PromptSheetChatResponse
     from .schemas.learning_assets import LearningAssetOrganizeRequest
     from .schemas.learning_assets import LearningAssetOrganizeResponse
+    from .schemas.vocabulary_card import VocabularyCardGenerationRequest
+    from .schemas.vocabulary_card import VocabularyCardGenerationResponse
     from .services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from .services.prompt_sheet_workflow import PromptSheetWorkflowService
     from .services.learning_asset_copilot import LearningAssetCopilotConfigError
     from .services.learning_asset_copilot import LearningAssetCopilotService
     from .services.assistant_request_validator import AssistantRequestValidationError
+    from .services.vocabulary_card_generation import VocabularyCardGenerationError
+    from .services.vocabulary_card_generation import VocabularyCardGenerationService
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
     from env_loader import load_orchestrator_env
@@ -41,11 +46,15 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.prompt_sheet import PromptSheetChatResponse
     from schemas.learning_assets import LearningAssetOrganizeRequest
     from schemas.learning_assets import LearningAssetOrganizeResponse
+    from schemas.vocabulary_card import VocabularyCardGenerationRequest
+    from schemas.vocabulary_card import VocabularyCardGenerationResponse
     from services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from services.prompt_sheet_workflow import PromptSheetWorkflowService
     from services.learning_asset_copilot import LearningAssetCopilotConfigError
     from services.learning_asset_copilot import LearningAssetCopilotService
     from services.assistant_request_validator import AssistantRequestValidationError
+    from services.vocabulary_card_generation import VocabularyCardGenerationError
+    from services.vocabulary_card_generation import VocabularyCardGenerationService
 
 
 load_orchestrator_env()
@@ -65,6 +74,7 @@ app.add_middleware(
 service = AssistantAgentService.from_env()
 prompt_sheet_service = PromptSheetWorkflowService.from_env()
 learning_asset_copilot_service = LearningAssetCopilotService.from_env()
+vocabulary_card_generation_service = VocabularyCardGenerationService.from_env()
 
 
 @app.get("/health")
@@ -74,9 +84,108 @@ def health() -> dict[str, object]:
         "configured": service.is_configured(),
         "promptSheetConfigured": prompt_sheet_service.is_configured(),
         "learningAssetCopilotConfigured": learning_asset_copilot_service.is_configured(),
+        "vocabularyCardGenerationConfigured": (
+            vocabulary_card_generation_service.is_configured()
+            and bool(getattr(vocabulary_card_generation_service, "internal_token", ""))
+        ),
         "model": service.model,
         "langfuseTracing": observability_status.configured,
     }
+
+
+def _vocabulary_generation_http_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _require_vocabulary_generation_internal_token(authorization: str | None) -> None:
+    expected_token = getattr(vocabulary_card_generation_service, "internal_token", "")
+    if not expected_token:
+        raise _vocabulary_generation_http_error(
+            503,
+            "VOCABULARY_GENERATION_NOT_CONFIGURED",
+            "Vocabulary generation is unavailable.",
+        )
+
+    scheme, _, provided_token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not provided_token:
+        raise _vocabulary_generation_http_error(
+            401,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+    if not hmac.compare_digest(provided_token, expected_token):
+        raise _vocabulary_generation_http_error(
+            403,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+
+
+def _vocabulary_generation_error_to_http_exception(
+    error: VocabularyCardGenerationError,
+) -> HTTPException:
+    if error.code in {
+        "INVALID_GENERATION_REQUEST",
+        "UNSUPPORTED_CONTRACT_VERSION",
+        "UNSUPPORTED_CONTENT_FORMAT_VERSION",
+        "UNSUPPORTED_PROMPT_STRATEGY",
+    }:
+        return _vocabulary_generation_http_error(
+            400,
+            error.code,
+            "The vocabulary generation request is invalid.",
+        )
+    if error.code == "INTERNAL_AUTH_MISSING":
+        return _vocabulary_generation_http_error(
+            401,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+    if error.code in {"INTERNAL_AUTH_FAILED", "INTERNAL_AUTH_INVALID"}:
+        return _vocabulary_generation_http_error(
+            403,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+    if error.code in {"VOCABULARY_GENERATION_NOT_CONFIGURED", "MODEL_UPSTREAM_UNAVAILABLE"}:
+        return _vocabulary_generation_http_error(
+            503,
+            error.code,
+            "Vocabulary generation is unavailable.",
+        )
+    if error.code == "MODEL_TIMEOUT":
+        return _vocabulary_generation_http_error(
+            504,
+            "MODEL_TIMEOUT",
+            "Vocabulary generation timed out.",
+        )
+    return _vocabulary_generation_http_error(
+        500,
+        "GENERATION_INTERNAL_ERROR",
+        "Vocabulary generation failed.",
+    )
+
+
+@app.post(
+    "/internal/v1/vocabulary/card-generations",
+    response_model=VocabularyCardGenerationResponse,
+)
+async def generate_vocabulary_card(
+    request: VocabularyCardGenerationRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> VocabularyCardGenerationResponse:
+    _require_vocabulary_generation_internal_token(authorization)
+    try:
+        result = await vocabulary_card_generation_service.generate(request)
+        return VocabularyCardGenerationResponse.model_validate(result, extra="ignore")
+    except VocabularyCardGenerationError as exc:
+        raise _vocabulary_generation_error_to_http_exception(exc) from exc
+    except Exception as exc:  # pragma: no cover - runtime safety
+        raise _vocabulary_generation_http_error(
+            500,
+            "GENERATION_INTERNAL_ERROR",
+            "Vocabulary generation failed.",
+        ) from exc
 
 
 @app.post("/chat", response_model=ChatResponse)
