@@ -4,32 +4,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.personalenglishai.backend.ai.client.OpenAiClient;
 import com.personalenglishai.backend.dto.dictionary.DictionaryLookupResponse;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupException;
 import com.personalenglishai.backend.service.dictionary.DictionaryLookupService;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
-import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -38,209 +29,173 @@ class VocabularyCardGeneratorTest {
 
     @Mock
     private DictionaryLookupService dictionary;
-    @Mock
-    private OpenAiClient ai;
-    @Mock
-    private VocabularyGenerationCache cache;
-    @Mock
-    private VocabularyCoreFallbackGenerator fallback;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private VocabularyCoreContentCodec codec;
-    private VocabularyCardGenerator generator;
 
     @BeforeEach
     void setUp() {
         codec = new VocabularyCoreContentCodec(objectMapper);
-        generator = new VocabularyCardGenerator(
-                new VocabularyDictionaryEnricher(dictionary), ai, cache, codec, fallback,
-                new VocabularyMarkdownPromptBuilder(objectMapper));
-        lenient().when(cache.key(anyString(), anyInt(), any(JsonNode.class), anyString()))
-                .thenReturn("cache-key");
-        lenient().when(cache.get(anyString())).thenReturn(Optional.empty());
-        lenient().when(ai.getModel()).thenReturn("test-model");
     }
 
     @Test
-    void dictionaryBackedCardUsesOneMarkdownCallAndKeepsDictionaryCore() {
+    void looksUpDictionaryOnceCapturesFirstContextAndPassesDeepCopiedTrustedCore() {
         when(dictionary.lookup("record", "en-gb"))
                 .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-1"), eq(0.2), eq(1200)))
-                .thenReturn("## Usage\n\nKeep a record of your work.");
+        RecordingProvider provider = new RecordingProvider("java") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                observedInput = input;
+                ObjectNode mutableCopy = input.dictionaryCore();
+                ((ObjectNode) mutableCopy.path("senses").get(0).path("meanings").get(0))
+                        .put("definitionEn", "provider mutation");
+                return card(input.dictionaryCore(), input.theme());
+            }
+        };
 
-        GeneratedVocabularyCard result = generator.generate(
+        GeneratedVocabularyCard result = generator("java", provider).generate(
                 VocabularyTestFixtures.generating("record"),
-                List.of(VocabularyTestFixtures.manualSource("The record was complete.")),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-1");
+                Arrays.asList(null, VocabularyTestFixtures.manualSource("  "),
+                        VocabularyTestFixtures.manualSource("first context"),
+                        VocabularyTestFixtures.manualSource("later context")),
+                theme(), "trace id/unsafe");
 
-        assertEquals("record", result.core().path("term").asText());
+        assertEquals("first context", provider.observedInput.sourceContext());
+        assertEquals("trace_id_unsafe", provider.observedInput.traceId());
         assertEquals("a written account", result.core().path("senses").get(0)
                 .path("meanings").get(0).path("definitionEn").asText());
-        assertEquals("## Usage\n\nKeep a record of your work.", result.markdown());
-        assertEquals(1, result.contentFormatVersion());
-        assertFalse(result.partial());
-        verifyNoInteractions(fallback);
-        verify(ai).callWithTraceId(anyString(), anyString(), eq("trace-1"), eq(0.2), eq(1200));
-        verify(cache).put(eq("cache-key"), any(VocabularyGenerationCache.CachedGeneration.class),
-                eq(Duration.ofDays(7)));
+        verify(dictionary, times(1)).lookup("record", "en-gb");
     }
 
     @Test
-    void dictionaryMissingCardUsesOneFallbackAndOneMarkdownCall() throws Exception {
-        when(dictionary.lookup("record", "en-gb")).thenReturn(null);
-        ObjectNode fallbackCore = objectMapper.readValue(validCore(), ObjectNode.class);
-        when(fallback.generate("record", "", "trace-2")).thenReturn(fallbackCore);
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-2"), eq(0.2), eq(1200)))
-                .thenReturn("## Usage\n\nRecord the result.");
+    void invokesExactlyTheConfiguredProvider() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        RecordingProvider javaProvider = new RecordingProvider("java");
+        RecordingProvider selectedProvider = new RecordingProvider("selected");
 
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-2");
+        GeneratedVocabularyCard result = generator("selected", javaProvider, selectedProvider).generate(
+                VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-selected");
 
         assertFalse(result.partial());
-        verify(fallback).generate("record", "", "trace-2");
-        verify(ai).callWithTraceId(anyString(), anyString(), eq("trace-2"), eq(0.2), eq(1200));
+        assertEquals(0, javaProvider.calls);
+        assertEquals(1, selectedProvider.calls);
     }
 
     @Test
-    void markdownFailureReturnsValidatedDictionaryCoreAsPartial() {
+    void rejectsUnknownProviderWithoutCallingAnyProvider() {
+        RecordingProvider javaProvider = new RecordingProvider("java");
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> generator("python", javaProvider));
+
+        assertTrue(exception.getMessage().contains("python"));
+        assertEquals(0, javaProvider.calls);
+    }
+
+    @Test
+    void rejectsDuplicateProviderKeys() {
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> generator("java", new RecordingProvider("java"), new RecordingProvider("java")));
+
+        assertTrue(exception.getMessage().contains("Duplicate"));
+    }
+
+    @Test
+    void rejectsInvalidProviderResultAfterGeneration() {
         when(dictionary.lookup("record", "en-gb"))
                 .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-partial"), eq(0.2), eq(1200)))
-                .thenThrow(new RuntimeException("upstream unavailable"));
+        RecordingProvider provider = new RecordingProvider("java") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                ObjectNode invalidCore = input.dictionaryCore();
+                invalidCore.put("term", "replacement");
+                return card(invalidCore, input.theme());
+            }
+        };
 
-        GeneratedVocabularyCard partial = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_custom", 4, "custom-markdown-v1", "exam focus"), "trace-partial");
+        VocabularyGenerationException exception = assertThrows(VocabularyGenerationException.class,
+                () -> generator("java", provider).generate(
+                        VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-invalid"));
 
-        assertTrue(partial.partial());
-        assertEquals("record", partial.core().path("term").asText());
-        assertEquals("", partial.markdown());
-        verify(cache, never()).put(anyString(), any(), any());
+        assertEquals("INVALID_PROVIDER_RESULT", exception.code());
+        assertFalse(exception.retryable());
+        assertEquals(1, provider.calls);
     }
 
     @Test
-    void rawHtmlMarkdownIsRejectedAsPartial() {
+    void rejectsProviderMarkdownOutsideTheValidatedBoundary() {
         when(dictionary.lookup("record", "en-gb"))
                 .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-html"), eq(0.2), eq(1200)))
-                .thenReturn("## Usage\n<script>alert('x')</script>");
+        RecordingProvider provider = new RecordingProvider("java") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                return new GeneratedVocabularyCard(
+                        input.dictionaryCore(), "<section>unsafe</section>", input.theme().contentFormatVersion(),
+                        "test-model", "Generated fixture", false);
+            }
+        };
 
-        GeneratedVocabularyCard partial = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-html");
+        VocabularyGenerationException exception = assertThrows(VocabularyGenerationException.class,
+                () -> generator("java", provider).generate(
+                        VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-markdown"));
 
-        assertTrue(partial.partial());
-        assertEquals("", partial.markdown());
-        verify(cache, never()).put(anyString(), any(), any());
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {
-            "<!-- hidden -->",
-            "<!DOCTYPE html>",
-            "<!ENTITY example 'value'>",
-            "<?xml version='1.0'?>",
-            "<section>",
-            "</section>",
-            "<br />"
-    })
-    void everyRawHtmlFormIsRejectedAsPartial(String rawHtml) {
-        when(dictionary.lookup("record", "en-gb"))
-                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-html-forms"), eq(0.2), eq(1200)))
-                .thenReturn("## Usage\n\n" + rawHtml);
-
-        GeneratedVocabularyCard partial = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""),
-                "trace-html-forms");
-
-        assertTrue(partial.partial());
-        assertEquals("", partial.markdown());
-        verify(cache, never()).put(anyString(), any(), any());
+        assertEquals("INVALID_PROVIDER_RESULT", exception.code());
+        assertFalse(exception.retryable());
     }
 
     @Test
-    void unavailableFallbackCoreRaisesRetryableStableError() {
-        when(dictionary.lookup("record", "en-gb")).thenReturn(null);
-        when(fallback.generate("record", "", "trace-core-fail"))
-                .thenThrow(new IllegalArgumentException("bad model output"));
-
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class,
-                () -> generator.generate(VocabularyTestFixtures.generating("record"), List.of(),
-                        theme("theme_system_basic", 1, "basic-markdown-v1", ""),
-                        "trace-core-fail"));
-
-        assertEquals("CORE_CONTENT_UNAVAILABLE", exception.code());
-        assertTrue(exception.retryable());
-        verifyNoInteractions(ai);
-    }
-
-    @Test
-    void operationalDictionaryFailureDoesNotCallAi() {
+    void dictionaryFailureIsRetryableAndDoesNotCallProvider() {
         when(dictionary.lookup("record", "en-gb"))
                 .thenThrow(new DictionaryLookupException(DictionaryLookupException.Kind.TIMEOUT));
+        RecordingProvider provider = new RecordingProvider("java");
 
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class,
-                () -> generator.generate(VocabularyTestFixtures.generating("record"), List.of(),
-                        theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-dict"));
+        VocabularyGenerationException exception = assertThrows(VocabularyGenerationException.class,
+                () -> generator("java", provider).generate(
+                        VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-dict"));
 
         assertEquals("DICTIONARY_LOOKUP_FAILED", exception.code());
-        verifyNoInteractions(ai, fallback);
+        assertTrue(exception.retryable());
+        assertEquals(0, provider.calls);
     }
 
-    @Test
-    void returnsValidatedCachedCoreAndMarkdownWithoutAiCalls() throws Exception {
-        DictionaryLookupResponse dictionaryTruth = VocabularyTestFixtures.dictionaryLookupWithCoreTruth();
-        ObjectNode core = codec.fromDictionary("record", dictionaryTruth);
-        when(dictionary.lookup("record", "en-gb")).thenReturn(dictionaryTruth);
-        when(cache.get("cache-key")).thenReturn(Optional.of(
-                new VocabularyGenerationCache.CachedGeneration(core, "## Cached")));
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""), "trace-cache");
-
-        assertEquals("## Cached", result.markdown());
-        assertEquals("cache", result.model());
-        verifyNoInteractions(ai, fallback);
+    private VocabularyCardGenerator generator(String providerKey, VocabularyGenerationProvider... providers) {
+        return new VocabularyCardGenerator(
+                new VocabularyDictionaryEnricher(dictionary), codec, List.of(providers), providerKey);
     }
 
-    @Test
-    void validButSemanticallyPoisonedCachedCoreIsEvictedAndCannotReplaceDictionaryTruth() throws Exception {
-        ObjectNode poisonedCore = objectMapper.readValue(validCore(), ObjectNode.class);
-        ((ObjectNode) poisonedCore.path("senses").get(0).path("meanings").get(0))
-                .put("definitionEn", "poisoned cached definition");
-        when(dictionary.lookup("record", "en-gb"))
-                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
-        when(cache.get("cache-key")).thenReturn(Optional.of(
-                new VocabularyGenerationCache.CachedGeneration(poisonedCore, "## Cached")));
-        when(ai.callWithTraceId(anyString(), anyString(), eq("trace-poisoned-cache"), eq(0.2), eq(1200)))
-                .thenReturn("## Fresh Markdown");
-
-        GeneratedVocabularyCard result = generator.generate(
-                VocabularyTestFixtures.generating("record"), List.of(),
-                theme("theme_system_basic", 1, "basic-markdown-v1", ""),
-                "trace-poisoned-cache");
-
-        assertEquals("a written account", result.core().path("senses").get(0)
-                .path("meanings").get(0).path("definitionEn").asText());
-        assertEquals("## Fresh Markdown", result.markdown());
-        verify(cache).evict("cache-key");
+    private ResolvedVocabularyTheme theme() {
+        return new ResolvedVocabularyTheme(
+                "theme_system_basic", 1, "Theme", "", "basic-markdown-v1", 1, "basic");
     }
 
-    private ResolvedVocabularyTheme theme(String uid, int version, String strategy, String purpose) {
-        return new ResolvedVocabularyTheme(uid, version, "Theme", purpose, strategy, 1, "basic");
+    private GeneratedVocabularyCard card(ObjectNode core, ResolvedVocabularyTheme theme) {
+        return new GeneratedVocabularyCard(
+                core, "## Usage", theme.contentFormatVersion(), "test-model", "Generated fixture", false);
     }
 
-    private String validCore() {
-        return """
-                {"schemaVersion":1,"term":"record","phonetics":[],"senses":[
-                  {"partOfSpeech":"noun","meanings":[
-                    {"definitionEn":"a written account","definitionZh":"记录"}]}]}
-                """;
+    private class RecordingProvider implements VocabularyGenerationProvider {
+        private final String key;
+        protected int calls;
+        protected VocabularyGenerationInput observedInput;
+
+        private RecordingProvider(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public String key() {
+            return key;
+        }
+
+        @Override
+        public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+            calls++;
+            observedInput = input;
+            return card(input.dictionaryCore(), input.theme());
+        }
     }
 }

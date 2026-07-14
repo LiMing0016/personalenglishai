@@ -10,7 +10,21 @@ public record GeneratedVocabularyCard(
         String changeSummary,
         boolean partial,
         String generationOutcome,
-        String warning) {
+        String warning,
+        VocabularyGenerationMetadata generationMetadata) {
+
+    public GeneratedVocabularyCard(
+            JsonNode core,
+            String markdown,
+            int contentFormatVersion,
+            String model,
+            String changeSummary,
+            boolean partial,
+            String generationOutcome,
+            String warning) {
+        this(core, markdown, contentFormatVersion, model, changeSummary, partial,
+                generationOutcome, warning, null);
+    }
 
     public GeneratedVocabularyCard(
             JsonNode core,
@@ -21,6 +35,7 @@ public record GeneratedVocabularyCard(
             boolean partial) {
         this(core, markdown, contentFormatVersion, model, changeSummary, partial,
                 partial ? "partial" : "complete",
-                partial ? "markdown_unavailable" : null);
+                partial ? "markdown_unavailable" : null,
+                null);
     }
 }
