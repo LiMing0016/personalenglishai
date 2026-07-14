@@ -1,6 +1,7 @@
 import copy
 import unittest
 
+from markdown_it import MarkdownIt
 from pydantic import ValidationError
 
 from python.ai_orchestrator.schemas.vocabulary_card import (
@@ -387,14 +388,10 @@ class VocabularyCardSchemasTest(unittest.TestCase):
             markdown_with_code_literals,
         )
 
-    def test_markdown_models_check_html_inside_unclosed_code_delimiters(self) -> None:
-        unclosed_code = (
-            "```html\n<script>alert('x')</script>",
-            "~~~xml\n<?xml version=\"1.0\"?>",
-            "Use `<img src=\"card.png\" /> literally.",
-        )
+    def test_markdown_models_reject_html_inside_unclosed_inline_code(self) -> None:
+        unclosed_inline_code = "Use `<img src=\"card.png\" /> literally."
 
-        for markdown in unclosed_code:
+        for markdown in (unclosed_inline_code,):
             with self.subTest(markdown=markdown, model="agent"):
                 with self.assertRaises(ValidationError):
                     VocabularyMarkdownOutput.model_validate({"contentMarkdown": markdown})
@@ -403,6 +400,91 @@ class VocabularyCardSchemasTest(unittest.TestCase):
                     VocabularyCardGenerationResponse.model_validate(
                         response_payload(content_markdown=markdown)
                     )
+
+    def test_markdown_models_allow_html_literals_in_unclosed_commonmark_fences(self) -> None:
+        unclosed_fences = (
+            "```html\n<script>alert('x')</script>",
+            "~~~xml\n<?xml version=\"1.0\"?>",
+        )
+
+        for markdown in unclosed_fences:
+            with self.subTest(markdown=markdown, model="agent"):
+                self.assertEqual(
+                    VocabularyMarkdownOutput.model_validate(
+                        {"contentMarkdown": markdown}
+                    ).content_markdown,
+                    markdown,
+                )
+            with self.subTest(markdown=markdown, model="http"):
+                self.assertEqual(
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=markdown)
+                    ).content_markdown,
+                    markdown,
+                )
+
+    def test_markdown_models_reject_html_after_pseudo_fences(self) -> None:
+        pseudo_fences = (
+            "\t```html\n<script>alert('x')</script>\n\t```",
+            "    ```html\n<script>alert('x')</script>\n    ```",
+        )
+
+        for markdown in pseudo_fences:
+            with self.subTest(markdown=markdown, model="agent"):
+                with self.assertRaises(ValidationError):
+                    VocabularyMarkdownOutput.model_validate({"contentMarkdown": markdown})
+            with self.subTest(markdown=markdown, model="http"):
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=markdown)
+                    )
+
+    def test_markdown_models_honor_backslash_parity_before_code_delimiters(self) -> None:
+        escaped_opener = "\\`<script>alert('x')</script>`"
+        literal_backslash_then_code = "\\\\`<script>alert('x')</script>`"
+
+        for markdown in (escaped_opener,):
+            with self.subTest(markdown=markdown, model="agent"):
+                with self.assertRaises(ValidationError):
+                    VocabularyMarkdownOutput.model_validate({"contentMarkdown": markdown})
+            with self.subTest(markdown=markdown, model="http"):
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=markdown)
+                    )
+
+        self.assertEqual(
+            VocabularyMarkdownOutput.model_validate(
+                {"contentMarkdown": literal_backslash_then_code}
+            ).content_markdown,
+            literal_backslash_then_code,
+        )
+        self.assertEqual(
+            VocabularyCardGenerationResponse.model_validate(
+                response_payload(content_markdown=literal_backslash_then_code)
+            ).content_markdown,
+            literal_backslash_then_code,
+        )
+
+    def test_commonmark_parser_exposes_html_tokens_for_p1_bypass_regressions(self) -> None:
+        parser = MarkdownIt("commonmark")
+        markdown_inputs = (
+            ("\t```html\n<script>alert('x')</script>\n\t```", {"html_block"}),
+            ("    ```html\n<script>alert('x')</script>\n    ```", {"html_block"}),
+            ("\\`<script>alert('x')</script>`", {"html_inline"}),
+            ("\\\\`<script>alert('x')</script>`", {"code_inline"}),
+        )
+
+        for markdown, expected_token_types in markdown_inputs:
+            with self.subTest(markdown=markdown):
+                tokens = parser.parse(markdown)
+                token_types = {token.type for token in tokens}
+                token_types.update(
+                    child.type
+                    for token in tokens
+                    for child in token.children or ()
+                )
+                self.assertTrue(expected_token_types <= token_types)
 
     def test_markdown_output_json_schema_requires_content_markdown(self) -> None:
         schema = VocabularyMarkdownOutput.model_json_schema()

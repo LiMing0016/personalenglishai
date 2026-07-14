@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import re
 from typing import Literal
 
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -19,203 +20,20 @@ MAX_SOURCE_CONTEXT_LENGTH = 10_000
 MAX_SCALAR_LENGTH = 2_000
 MAX_TIMEOUT_BUDGET_MS = 60_000
 MAX_TRACE_ID_LENGTH = 80
-_AUTOLINK_URI_PATTERN = re.compile(
-    r"^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*$",
-)
-_AUTOLINK_EMAIL_PATTERN = re.compile(
-    r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
-    r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
-)
-
-
-def _closed_fenced_code_ranges(value: str) -> list[tuple[int, int]]:
-    lines = value.splitlines(keepends=True)
-    line_offsets: list[int] = []
-    offset = 0
-    for line in lines:
-        line_offsets.append(offset)
-        offset += len(line)
-
-    ranges: list[tuple[int, int]] = []
-    line_index = 0
-    while line_index < len(lines):
-        opening = _fence_opening(lines[line_index])
-        if opening is None:
-            line_index += 1
-            continue
-
-        marker, marker_length = opening
-        closing_index = line_index + 1
-        while closing_index < len(lines):
-            if _is_closing_fence(lines[closing_index], marker, marker_length):
-                ranges.append((line_offsets[line_index], line_offsets[closing_index] + len(lines[closing_index])))
-                line_index = closing_index + 1
-                break
-            closing_index += 1
-        else:
-            # An unclosed fence is ordinary Markdown text so it cannot hide raw HTML.
-            line_index += 1
-
-    return ranges
-
-
-def _fence_opening(line: str) -> tuple[str, int] | None:
-    content = line.rstrip("\r\n")
-    index = 0
-    while index < len(content) and content[index] in " \t" and index < 3:
-        index += 1
-    if index == 3 and len(content) > index and content[index] in " \t":
-        return None
-    if index == len(content) or content[index] not in "`~":
-        return None
-
-    marker = content[index]
-    marker_end = index
-    while marker_end < len(content) and content[marker_end] == marker:
-        marker_end += 1
-    marker_length = marker_end - index
-    if marker_length < 3:
-        return None
-
-    info_string = content[marker_end:]
-    if marker == "`" and "`" in info_string:
-        return None
-    return marker, marker_length
-
-
-def _is_closing_fence(line: str, marker: str, marker_length: int) -> bool:
-    content = line.rstrip("\r\n")
-    index = 0
-    while index < len(content) and content[index] in " \t" and index < 3:
-        index += 1
-    if index == 3 and len(content) > index and content[index] in " \t":
-        return False
-
-    marker_end = index
-    while marker_end < len(content) and content[marker_end] == marker:
-        marker_end += 1
-    return marker_end - index >= marker_length and content[marker_end:].strip(" \t") == ""
-
-
-def _markdown_text_segments(value: str) -> list[str]:
-    segments: list[str] = []
-    segment_start = 0
-    for fence_start, fence_end in _closed_fenced_code_ranges(value):
-        segments.extend(_text_outside_inline_code(value[segment_start:fence_start]))
-        segment_start = fence_end
-    segments.extend(_text_outside_inline_code(value[segment_start:]))
-    return segments
-
-
-def _text_outside_inline_code(value: str) -> list[str]:
-    segments: list[str] = []
-    segment_start = 0
-    index = 0
-    while index < len(value):
-        if value[index] != "`":
-            index += 1
-            continue
-
-        delimiter_end = index
-        while delimiter_end < len(value) and value[delimiter_end] == "`":
-            delimiter_end += 1
-        delimiter_length = delimiter_end - index
-        closing_start = _matching_backtick_run(value, delimiter_end, delimiter_length)
-        if closing_start is None:
-            index = delimiter_end
-            continue
-
-        segments.append(value[segment_start:index])
-        index = closing_start + delimiter_length
-        segment_start = index
-    segments.append(value[segment_start:])
-    return segments
-
-
-def _matching_backtick_run(value: str, start: int, length: int) -> int | None:
-    index = start
-    while index < len(value):
-        next_backtick = value.find("`", index)
-        if next_backtick == -1:
-            return None
-
-        run_end = next_backtick
-        while run_end < len(value) and value[run_end] == "`":
-            run_end += 1
-        if run_end - next_backtick == length:
-            return next_backtick
-        index = run_end
-    return None
+_COMMONMARK = MarkdownIt("commonmark")
 
 
 def _contains_raw_html(value: str) -> bool:
-    return any(_contains_raw_html_construct(segment) for segment in _markdown_text_segments(value))
+    return _token_contains_raw_html(_COMMONMARK.parse(value))
 
 
-def _contains_raw_html_construct(value: str) -> bool:
-    index = 0
-    while index < len(value):
-        if value[index] != "<":
-            index += 1
-            continue
-        if value.startswith("<!", index) or value.startswith("<?", index):
+def _token_contains_raw_html(tokens: list[Token]) -> bool:
+    for token in tokens:
+        if token.type in {"html_inline", "html_block"}:
             return True
-
-        closing_bracket = _closing_angle_bracket(value, index)
-        if closing_bracket is None:
-            index += 1
-            continue
-
-        construct = value[index + 1 : closing_bracket]
-        if not _is_markdown_autolink(construct) and _is_html_tag(construct):
+        if _token_contains_raw_html(token.children or []):
             return True
-        index = closing_bracket + 1
     return False
-
-
-def _closing_angle_bracket(value: str, start: int) -> int | None:
-    quote: str | None = None
-    for index in range(start + 1, len(value)):
-        character = value[index]
-        if quote is not None:
-            if character == quote:
-                quote = None
-            continue
-        if character in "\"'":
-            quote = character
-        elif character == ">":
-            return index
-    return None
-
-
-def _is_markdown_autolink(value: str) -> bool:
-    return bool(_AUTOLINK_URI_PATTERN.fullmatch(value) or _AUTOLINK_EMAIL_PATTERN.fullmatch(value))
-
-
-def _is_html_tag(value: str) -> bool:
-    index = 0
-    closing_tag = value.startswith("/")
-    if closing_tag:
-        index = 1
-    if index == len(value) or not value[index].isascii() or not value[index].isalpha():
-        return False
-
-    name_end = index + 1
-    while name_end < len(value) and _is_html_tag_name_character(value[name_end]):
-        name_end += 1
-    remainder = value[name_end:]
-    if closing_tag:
-        return remainder.strip() == ""
-    if remainder == "":
-        return True
-    if remainder.startswith("/"):
-        return remainder[1:].strip() == ""
-    return remainder[0].isspace()
-
-
-def _is_html_tag_name_character(character: str) -> bool:
-    return character.isascii() and (character.isalnum() or character in ":-")
 
 
 def validate_markdown_content(value: str, *, require_nonempty: bool) -> str:

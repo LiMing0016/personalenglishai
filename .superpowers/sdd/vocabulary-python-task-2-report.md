@@ -144,3 +144,47 @@ Result: 34 tests passed. The re-review baseline command covered 31 tests; this r
 ### Documentation And Merge Assessment
 
 No public architecture, API, configuration, or operating documentation changes are needed: this report records the validator contract and verification evidence. The fix is small and isolated on the existing feature branch, but the branch should remain out of `main` until the wider vocabulary-generation rollout is integrated and verified.
+
+---
+
+## CommonMark Scanner P1 Remediation (2026-07-14)
+
+### Status
+
+DONE. The final Task 2 scanner bypass is resolved with the CommonMark parser instead of extending the hand-written scanner.
+
+### TDD Evidence
+
+Before production changes, added regression coverage for the final-review bypasses and ran the focused cases against the former scanner. The run failed as expected with six rejected-HTML assertions missing:
+
+- tab-indented pseudo-fence followed by an unindented `<script>` block;
+- four-space-indented pseudo-fence followed by an unindented `<script>` block;
+- an odd backslash count before a prospective inline-code opener.
+
+The tests also use `MarkdownIt("commonmark")` directly to assert the parser token contract. One slash yields `html_inline`; two slashes yield `code_inline`, so the odd form is rejected and the even form remains a legitimate code span. The existing closed code-span/fence, multi-backtick, CRLF, ordinary comparison, autolink, comment, doctype, processing-instruction, and tag coverage remains in the schema suite.
+
+During the full suite, the prior expectation for unclosed fenced blocks was corrected to CommonMark semantics: a fence remains a code block until end of document, while an unclosed inline delimiter does not suppress HTML validation.
+
+### Implementation
+
+- Pinned `markdown-it-py==4.2.0` in `python/ai_orchestrator/requirements.txt`.
+- Replaced the custom fence, inline-code, autolink, and tag scanner in `schemas/vocabulary_card.py` with `MarkdownIt("commonmark")`.
+- Recursively inspect parsed tokens and `children` for `html_inline` or `html_block`; either token rejects raw HTML for both schema entry points.
+
+The added small dependency is preferable to continuing a custom parser because CommonMark block indentation, tab stops, fence precedence, escape parity, autolinks, and inline code spans are part of the Markdown grammar. The parser keeps this security boundary aligned with the rendering language while removing 190+ lines of bespoke grammar handling.
+
+### Verification
+
+Installed the pinned dependency into the ignored worktree `.venv` (initially bootstrapped its missing `pip` with `ensurepip`), without adding virtual-environment files to Git.
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest python.ai_orchestrator.tests.test_vocabulary_card_schemas python.ai_orchestrator.tests.test_vocabulary_card_agents python.ai_orchestrator.tests.test_prompt_resolver python.ai_orchestrator.tests.test_assistant_output_format_prompt -v
+```
+
+Result: 38 tests passed.
+
+`pip check` and `git diff --check` are run after this report update before commit.
+
+### Documentation And Merge Assessment
+
+This report is the required documentation update for the validation dependency and contract change; no public API or operating documentation changed. The P1 correction is small, isolated, and suitable for merge on the existing feature branch. The branch itself should remain out of `main` until the wider vocabulary-generation rollout is integrated and verified.
