@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from python.ai_orchestrator.agents.vocabulary_card import (
     create_vocabulary_card_markdown_agent,
@@ -43,6 +45,7 @@ class VocabularyCardAgentsTest(unittest.TestCase):
         agent = create_vocabulary_core_fallback_agent("test-model")
 
         self.assertEqual(agent.model, "test-model")
+        self.assertEqual(agent.name, "VocabularyCoreFallbackAgent")
         self.assertIs(agent.output_type, VocabularyCoreFallbackOutput)
         self.assertEqual(agent.handoffs, [])
         self.assertEqual(agent.tools, [])
@@ -51,9 +54,33 @@ class VocabularyCardAgentsTest(unittest.TestCase):
         agent = create_vocabulary_card_markdown_agent("test-model")
 
         self.assertEqual(agent.model, "test-model")
+        self.assertEqual(agent.name, "VocabularyCardMarkdownAgent")
         self.assertIs(agent.output_type, VocabularyMarkdownOutput)
         self.assertEqual(agent.handoffs, [])
         self.assertEqual(agent.tools, [])
+
+    def test_factories_use_their_remote_prompts_in_hybrid_mode_and_restore_environment(self) -> None:
+        original_environment = dict(os.environ)
+
+        with patch.dict(
+            os.environ,
+            {
+                "AI_ASSISTANT_PROMPT_SOURCE": "hybrid",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "AI_PROMPT_VOCABULARY_CORE_FALLBACK_ID": "pmpt_vocab_core_123",
+                "AI_PROMPT_VOCABULARY_CARD_MARKDOWN_ID": "pmpt_vocab_markdown_456",
+            },
+            clear=True,
+        ):
+            core_agent = create_vocabulary_core_fallback_agent("test-model")
+            markdown_agent = create_vocabulary_card_markdown_agent("test-model")
+
+            self.assertIsNone(core_agent.instructions)
+            self.assertEqual(core_agent.prompt, {"id": "pmpt_vocab_core_123"})
+            self.assertIsNone(markdown_agent.instructions)
+            self.assertEqual(markdown_agent.prompt, {"id": "pmpt_vocab_markdown_456"})
+
+        self.assertEqual(dict(os.environ), original_environment)
 
 
 if __name__ == "__main__":

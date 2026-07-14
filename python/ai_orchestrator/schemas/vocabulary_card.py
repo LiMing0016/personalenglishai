@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 VocabularyPromptStrategyKey = Literal[
@@ -18,6 +19,18 @@ MAX_SOURCE_CONTEXT_LENGTH = 10_000
 MAX_SCALAR_LENGTH = 2_000
 MAX_TIMEOUT_BUDGET_MS = 60_000
 MAX_TRACE_ID_LENGTH = 80
+_RAW_HTML_TAG_PATTERN = re.compile(
+    r"</?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*?)?\s*/?>",
+    re.IGNORECASE,
+)
+
+
+def validate_markdown_content(value: str, *, require_nonempty: bool) -> str:
+    if require_nonempty and not value.strip():
+        raise ValueError("contentMarkdown must be non-empty Markdown")
+    if _RAW_HTML_TAG_PATTERN.search(value):
+        raise ValueError("contentMarkdown must not contain raw HTML")
+    return value
 
 
 class StrictVocabularyModel(BaseModel):
@@ -27,7 +40,7 @@ class StrictVocabularyModel(BaseModel):
 class VocabularyPhonetic(StrictVocabularyModel):
     region: Literal["uk", "us", "other"]
     text: str = Field(max_length=MAX_SCALAR_LENGTH)
-    audio_url: str | None = Field(default=None, alias="audioUrl", max_length=MAX_SCALAR_LENGTH)
+    audio_url: str | None = Field(alias="audioUrl", max_length=MAX_SCALAR_LENGTH)
 
 
 class VocabularyMeaning(StrictVocabularyModel):
@@ -37,14 +50,14 @@ class VocabularyMeaning(StrictVocabularyModel):
 
 class VocabularySense(StrictVocabularyModel):
     part_of_speech: str = Field(alias="partOfSpeech", max_length=MAX_SCALAR_LENGTH)
-    meanings: list[VocabularyMeaning] = Field(default_factory=list, max_length=30)
+    meanings: list[VocabularyMeaning] = Field(max_length=30)
 
 
 class VocabularyCore(StrictVocabularyModel):
     schema_version: Literal[1] = Field(alias="schemaVersion")
     term: str = Field(min_length=1, max_length=MAX_TERM_LENGTH)
-    phonetics: list[VocabularyPhonetic] = Field(default_factory=list, max_length=10)
-    senses: list[VocabularySense] = Field(default_factory=list, max_length=20)
+    phonetics: list[VocabularyPhonetic] = Field(max_length=10)
+    senses: list[VocabularySense] = Field(max_length=20)
 
 
 class VocabularyThemeSnapshot(StrictVocabularyModel):
@@ -92,6 +105,25 @@ class VocabularyCardGenerationResponse(StrictVocabularyModel):
     warning: Literal["markdown_unavailable"] | None = None
     generation: VocabularyGenerationMetadata
 
+    @field_validator("content_markdown")
+    @classmethod
+    def reject_raw_html(cls, value: str) -> str:
+        return validate_markdown_content(value, require_nonempty=False)
+
+    @model_validator(mode="after")
+    def validate_outcome_markdown_state(self) -> "VocabularyCardGenerationResponse":
+        if self.outcome == "complete":
+            validate_markdown_content(self.content_markdown, require_nonempty=True)
+            if self.warning is not None:
+                raise ValueError("complete response must have warning: null")
+            return self
+
+        if self.content_markdown != "":
+            raise ValueError("partial response must have empty contentMarkdown")
+        if self.warning != "markdown_unavailable":
+            raise ValueError("partial response must have warning: markdown_unavailable")
+        return self
+
 
 class VocabularyCoreFallbackOutput(VocabularyCore):
     pass
@@ -104,3 +136,8 @@ class VocabularyMarkdownOutput(StrictVocabularyModel):
         validation_alias="contentMarkdown",
         serialization_alias="contentMarkdown",
     )
+
+    @field_validator("content_markdown")
+    @classmethod
+    def reject_invalid_markdown(cls, value: str) -> str:
+        return validate_markdown_content(value, require_nonempty=True)

@@ -1,3 +1,4 @@
+import copy
 import unittest
 
 from pydantic import ValidationError
@@ -6,7 +7,13 @@ from python.ai_orchestrator.schemas.vocabulary_card import (
     VocabularyCardGenerationRequest,
     VocabularyCardGenerationResponse,
     VocabularyCore,
+    VocabularyCoreFallbackOutput,
     VocabularyGenerationMetadata,
+    VocabularyMarkdownOutput,
+    VocabularyMeaning,
+    VocabularyPhonetic,
+    VocabularySense,
+    VocabularyThemeSnapshot,
 )
 
 
@@ -55,6 +62,30 @@ def complete_core_payload() -> dict[str, object]:
     }
 
 
+def response_payload(
+    *,
+    outcome: str = "complete",
+    content_markdown: str = "## Exam focus\n\nUse **supposed to** accurately.",
+    warning: str | None = None,
+) -> dict[str, object]:
+    return {
+        "contractVersion": 1,
+        "coreSchemaVersion": 1,
+        "core": complete_core_payload(),
+        "contentMarkdown": content_markdown,
+        "contentFormatVersion": 1,
+        "outcome": outcome,
+        "warning": warning,
+        "generation": {
+            "provider": "openai",
+            "model": "configured-model",
+            "promptVersion": "vocabulary-card-markdown-v1",
+            "modelCallCount": 1,
+            "traceId": "vocab-job_123-attempt_1",
+        },
+    }
+
+
 class VocabularyCardSchemasTest(unittest.TestCase):
     def test_request_accepts_camel_case_contract_and_serializes_aliases(self) -> None:
         request = VocabularyCardGenerationRequest.model_validate(request_payload())
@@ -78,6 +109,89 @@ class VocabularyCardSchemasTest(unittest.TestCase):
         core["unexpected"] = True
         with self.assertRaises(ValidationError):
             VocabularyCore.model_validate(core)
+
+    def test_nested_core_models_require_every_wire_field_and_forbid_extras(self) -> None:
+        cases = (
+            (
+                VocabularyPhonetic,
+                complete_core_payload()["phonetics"][0],
+                ("region", "text", "audioUrl"),
+            ),
+            (
+                VocabularyMeaning,
+                complete_core_payload()["senses"][0]["meanings"][0],
+                ("definitionEn", "definitionZh"),
+            ),
+            (
+                VocabularySense,
+                complete_core_payload()["senses"][0],
+                ("partOfSpeech", "meanings"),
+            ),
+            (
+                VocabularyCore,
+                complete_core_payload(),
+                ("schemaVersion", "term", "phonetics", "senses"),
+            ),
+        )
+
+        for model, payload, required_fields in cases:
+            for field in required_fields:
+                with self.subTest(model=model.__name__, missing=field):
+                    missing_field = copy.deepcopy(payload)
+                    del missing_field[field]
+                    with self.assertRaises(ValidationError):
+                        model.model_validate(missing_field)
+
+            with self.subTest(model=model.__name__, extra=True):
+                unexpected_field = copy.deepcopy(payload)
+                unexpected_field["unexpected"] = True
+                with self.assertRaises(ValidationError):
+                    model.model_validate(unexpected_field)
+
+    def test_nested_request_and_response_models_require_every_field_and_forbid_extras(self) -> None:
+        cases = (
+            (
+                VocabularyThemeSnapshot,
+                request_payload()["theme"],
+                ("uid", "version", "name", "purpose", "promptStrategyKey", "contentFormatVersion"),
+            ),
+            (
+                VocabularyGenerationMetadata,
+                response_payload()["generation"],
+                ("provider", "model", "promptVersion", "modelCallCount", "traceId"),
+            ),
+        )
+
+        for model, payload, required_fields in cases:
+            for field in required_fields:
+                with self.subTest(model=model.__name__, missing=field):
+                    missing_field = copy.deepcopy(payload)
+                    del missing_field[field]
+                    with self.assertRaises(ValidationError):
+                        model.model_validate(missing_field)
+
+            with self.subTest(model=model.__name__, extra=True):
+                unexpected_field = copy.deepcopy(payload)
+                unexpected_field["unexpected"] = True
+                with self.assertRaises(ValidationError):
+                    model.model_validate(unexpected_field)
+
+    def test_core_output_json_schema_requires_java_wire_keys(self) -> None:
+        schema = VocabularyCoreFallbackOutput.model_json_schema()
+        definitions = schema["$defs"]
+
+        self.assertTrue(
+            {"schemaVersion", "term", "phonetics", "senses"}.issubset(schema["required"])
+        )
+        self.assertTrue(
+            {"region", "text", "audioUrl"}.issubset(definitions["VocabularyPhonetic"]["required"])
+        )
+        self.assertTrue(
+            {"partOfSpeech", "meanings"}.issubset(definitions["VocabularySense"]["required"])
+        )
+        self.assertTrue(
+            {"definitionEn", "definitionZh"}.issubset(definitions["VocabularyMeaning"]["required"])
+        )
 
     def test_contract_and_core_versions_must_be_exactly_one(self) -> None:
         unsupported_contract = request_payload()
@@ -129,24 +243,7 @@ class VocabularyCardSchemasTest(unittest.TestCase):
             VocabularyCardGenerationRequest.model_validate(unsupported_format)
 
     def test_response_outcome_metadata_and_serialization_aliases_are_strict(self) -> None:
-        response = VocabularyCardGenerationResponse.model_validate(
-            {
-                "contractVersion": 1,
-                "coreSchemaVersion": 1,
-                "core": complete_core_payload(),
-                "contentMarkdown": "## Exam focus\n\nUse **supposed to** accurately.",
-                "contentFormatVersion": 1,
-                "outcome": "complete",
-                "warning": None,
-                "generation": {
-                    "provider": "openai",
-                    "model": "configured-model",
-                    "promptVersion": "vocabulary-card-markdown-v1",
-                    "modelCallCount": 1,
-                    "traceId": "vocab-job_123-attempt_1",
-                },
-            }
-        )
+        response = VocabularyCardGenerationResponse.model_validate(response_payload())
 
         serialized = response.model_dump(by_alias=True)
         self.assertEqual(serialized["contentMarkdown"], response.content_markdown)
@@ -167,6 +264,85 @@ class VocabularyCardSchemasTest(unittest.TestCase):
                     "traceId": "trace",
                 }
             )
+
+    def test_response_requires_exactly_the_complete_or_partial_markdown_state(self) -> None:
+        valid_markdown = "## Valid Markdown"
+        valid_states = (
+            ("complete", valid_markdown, None),
+            ("partial", "", "markdown_unavailable"),
+        )
+        for outcome, content_markdown, warning in valid_states:
+            with self.subTest(outcome=outcome, valid=True):
+                response = VocabularyCardGenerationResponse.model_validate(
+                    response_payload(
+                        outcome=outcome,
+                        content_markdown=content_markdown,
+                        warning=warning,
+                    )
+                )
+                self.assertEqual(response.outcome, outcome)
+
+        for outcome in ("complete", "partial"):
+            for content_markdown in ("", valid_markdown):
+                for warning in (None, "markdown_unavailable"):
+                    state = (outcome, content_markdown, warning)
+                    if state in valid_states:
+                        continue
+                    with self.subTest(outcome=outcome, markdown=content_markdown, warning=warning):
+                        with self.assertRaises(ValidationError):
+                            VocabularyCardGenerationResponse.model_validate(
+                                response_payload(
+                                    outcome=outcome,
+                                    content_markdown=content_markdown,
+                                    warning=warning,
+                                )
+                            )
+
+        with self.assertRaises(ValidationError):
+            VocabularyCardGenerationResponse.model_validate(
+                response_payload(content_markdown="   ")
+            )
+
+    def test_markdown_models_reject_raw_html_without_rejecting_markdown_boundaries(self) -> None:
+        ordinary_markdown = (
+            "## Comparison\n\n"
+            "Keep `a < b` distinct from `c > d`.\n\n"
+            "<https://example.com/guide?q=1>\n\n"
+            "<mailto:study@example.com>"
+        )
+        self.assertEqual(
+            VocabularyMarkdownOutput.model_validate(
+                {"contentMarkdown": ordinary_markdown}
+            ).content_markdown,
+            ordinary_markdown,
+        )
+        self.assertEqual(
+            VocabularyCardGenerationResponse.model_validate(
+                response_payload(content_markdown=ordinary_markdown)
+            ).content_markdown,
+            ordinary_markdown,
+        )
+
+        for raw_html in (
+            "<script>alert('x')</script>",
+            "<SCRIPT>alert('x')</SCRIPT>",
+            "<img src=\"https://example.com/x.png\">",
+            "<DIV class=\"note\">content</DIV>",
+            "before </section> after",
+            "line break<br />",
+        ):
+            with self.subTest(raw_html=raw_html, model="agent"):
+                with self.assertRaises(ValidationError):
+                    VocabularyMarkdownOutput.model_validate({"contentMarkdown": raw_html})
+            with self.subTest(raw_html=raw_html, model="http"):
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=raw_html)
+                    )
+
+    def test_markdown_output_json_schema_requires_content_markdown(self) -> None:
+        schema = VocabularyMarkdownOutput.model_json_schema()
+        self.assertIn("contentMarkdown", schema["required"])
 
 
 if __name__ == "__main__":
