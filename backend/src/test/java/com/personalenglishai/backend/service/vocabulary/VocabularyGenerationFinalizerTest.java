@@ -69,6 +69,7 @@ class VocabularyGenerationFinalizerTest {
     void oldLeaseCannotFinalizeAndMarkSucceededZeroLeavesNoRevision() {
         VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_old", "card_1", null, 0);
         VocabularyCardRevision revision = aiRevision("rev_old", null);
+        revision.setGenerationMetadataJson("{\"provider\":\"python\"}");
         when(cards.findByUidForUpdate("card_1"))
                 .thenReturn(VocabularyTestFixtures.generating("card_1", null));
         when(jobs.markSucceeded("job_old", "lease_old", "rev_old", "complete", null)).thenReturn(0);
@@ -108,6 +109,7 @@ class VocabularyGenerationFinalizerTest {
                 "job_user", "card_1", "rev_ai_old", 0);
         VocabularyCard card = VocabularyTestFixtures.ready("card_1", "rev_user");
         VocabularyCardRevision candidate = aiRevision("rev_candidate", "rev_ai_old");
+        candidate.setGenerationMetadataJson("{\"provider\":\"python\"}");
         when(cards.findByUidForUpdate("card_1")).thenReturn(card);
         when(revisions.findRevision("rev_user"))
                 .thenReturn(VocabularyTestFixtures.userRevision("rev_user"));
@@ -119,6 +121,7 @@ class VocabularyGenerationFinalizerTest {
                 finalizer.finalizeSuccess(job, "lease_1", candidate, "complete", null));
 
         verify(revisions).insertRevision(candidate);
+        assertEquals("{\"provider\":\"python\"}", candidate.getGenerationMetadataJson());
         verify(cards).markConflictCandidate("card_1", "rev_candidate");
         verify(cards, never()).updateActiveRevision(
                 eq(7L), eq("card_1"), anyString(), anyString(), anyString(), anyString(), eq(1),

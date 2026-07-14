@@ -29,6 +29,7 @@ public class VocabularyGenerationWorker {
     private static final int MAX_ATTEMPTS = 3;
     private static final int MAX_ERROR_CODE_LENGTH = 64;
     private static final int MAX_ERROR_MESSAGE_LENGTH = 1_000;
+    private static final int MAX_MARKDOWN_CHARS = 20_000;
 
     private final VocabularyGenerationJobMapper jobs;
     private final VocabularyCardMapper cards;
@@ -157,6 +158,7 @@ public class VocabularyGenerationWorker {
         } catch (IllegalArgumentException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
         }
+        validateGeneratedContent(generated, theme);
 
         VocabularyCardRevision revision = new VocabularyCardRevision();
         revision.setRevisionUid(uid("rev_"));
@@ -172,7 +174,31 @@ public class VocabularyGenerationWorker {
         revision.setContentMarkdown(generated.markdown());
         revision.setContentFormatVersion(generated.contentFormatVersion());
         revision.setChangeSummary(limit(generated.changeSummary(), 255));
+        revision.setGenerationMetadataJson(writeGenerationMetadata(generated.generationMetadata()));
         return revision;
+    }
+
+    private void validateGeneratedContent(GeneratedVocabularyCard generated, ResolvedVocabularyTheme theme) {
+        boolean valid = generated.contentFormatVersion() == theme.contentFormatVersion();
+        if (generated.partial()) {
+            valid = valid
+                    && "partial".equals(generated.generationOutcome())
+                    && "markdown_unavailable".equals(generated.warning())
+                    && generated.markdown() != null
+                    && generated.markdown().isEmpty();
+        } else {
+            String markdown = generated.markdown();
+            valid = valid
+                    && "complete".equals(generated.generationOutcome())
+                    && generated.warning() == null
+                    && markdown != null
+                    && !markdown.isBlank()
+                    && markdown.length() <= MAX_MARKDOWN_CHARS
+                    && !VocabularyMarkdownValidator.containsRawHtml(markdown);
+        }
+        if (!valid) {
+            throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
+        }
     }
 
     private String writeContent(JsonNode core, String markdown) {
@@ -190,6 +216,23 @@ public class VocabularyGenerationWorker {
             return objectMapper.writeValueAsString(core);
         } catch (JsonProcessingException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary core cannot be stored");
+        }
+    }
+
+    private String writeGenerationMetadata(VocabularyGenerationMetadata metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        try {
+            ObjectNode stored = objectMapper.createObjectNode();
+            stored.put("provider", metadata.provider());
+            stored.put("model", metadata.model());
+            stored.put("promptVersion", metadata.promptVersion());
+            stored.put("modelCallCount", metadata.modelCallCount());
+            stored.put("traceId", metadata.traceId());
+            return objectMapper.writeValueAsString(stored);
+        } catch (RuntimeException | JsonProcessingException exception) {
+            throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary metadata is invalid");
         }
     }
 

@@ -313,6 +313,7 @@ class VocabularyCardServiceTest {
         assertEquals("user", revision.getValue().getAuthorType());
         assertEquals("rev_1", revision.getValue().getBaseRevisionUid());
         assertEquals("innovative", objectMapper.readTree(revision.getValue().getContentJson()).get("term").asText());
+        assertNull(revision.getValue().getGenerationMetadataJson());
     }
 
     @Test

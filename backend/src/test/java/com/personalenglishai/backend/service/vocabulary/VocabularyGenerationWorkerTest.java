@@ -2,6 +2,8 @@ package com.personalenglishai.backend.service.vocabulary;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -26,6 +28,7 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -230,6 +233,65 @@ class VocabularyGenerationWorkerTest {
         assertEquals("record", objectMapper.readTree(revision.getValue().getContentJson()).path("term").asText());
         assertEquals("## Exam tips", revision.getValue().getContentMarkdown());
         assertEquals(2, revision.getValue().getContentFormatVersion());
+        assertNull(revision.getValue().getGenerationMetadataJson());
+    }
+
+    @Test
+    void persistsOnlyValidatedTypedGenerationMetadataWithTheAiRevision() throws Exception {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_metadata", "card_1", null, 0);
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        GeneratedVocabularyCard complete = VocabularyTestFixtures.basicGeneratedCard();
+        VocabularyGenerationMetadata metadata = new VocabularyGenerationMetadata(
+                "python", "python-model", "vocabulary-card-markdown-v1", 1, "job_metadata_attempt_1");
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_metadata"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(generator.generate(any(), anyList(), any(), eq("job_metadata")))
+                .thenReturn(new GeneratedVocabularyCard(
+                        complete.core(), complete.markdown(), complete.contentFormatVersion(), complete.model(),
+                        complete.changeSummary(), false, "complete", null, metadata));
+
+        worker.processPendingJobs(10);
+
+        ArgumentCaptor<VocabularyCardRevision> revision = ArgumentCaptor.forClass(VocabularyCardRevision.class);
+        verify(finalizer).finalizeSuccess(
+                eq(job), anyString(), revision.capture(), eq("complete"), eq(null));
+        assertTrue(revision.getValue().getGenerationMetadataJson() != null);
+        var stored = objectMapper.readTree(revision.getValue().getGenerationMetadataJson());
+        java.util.Iterator<String> fieldNames = stored.fieldNames();
+        java.util.Set<String> fields = new java.util.HashSet<>();
+        fieldNames.forEachRemaining(fields::add);
+        assertEquals(Set.of("provider", "model", "promptVersion", "modelCallCount", "traceId"), fields);
+        assertEquals("python", stored.path("provider").asText());
+        assertEquals("python-model", stored.path("model").asText());
+        assertEquals("vocabulary-card-markdown-v1", stored.path("promptVersion").asText());
+        assertEquals(1, stored.path("modelCallCount").asInt());
+        assertEquals("job_metadata_attempt_1", stored.path("traceId").asText());
+    }
+
+    @Test
+    void invalidMarkdownNeverFinalizesOrPersistsGenerationMetadata() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_markdown_invalid", "card_1", null, 0);
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        GeneratedVocabularyCard complete = VocabularyTestFixtures.basicGeneratedCard();
+        VocabularyGenerationMetadata metadata = new VocabularyGenerationMetadata(
+                "python", "python-model", "vocabulary-card-markdown-v1", 1, "job_markdown_invalid");
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_markdown_invalid"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(generator.generate(any(), anyList(), any(), eq("job_markdown_invalid")))
+                .thenReturn(new GeneratedVocabularyCard(
+                        complete.core(), "<!-- unsafe -->", complete.contentFormatVersion(), complete.model(),
+                        complete.changeSummary(), false, "complete", null, metadata));
+
+        worker.processPendingJobs(10);
+
+        verify(finalizer, never()).finalizeSuccess(
+                any(), anyString(), any(), anyString(), any());
+        verify(finalizer).finalizeFailure(
+                eq(job), anyString(), eq("INVALID_GENERATED_CONTENT"), anyString(), any(), eq(true));
     }
 
     @Test
