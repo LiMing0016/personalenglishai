@@ -143,6 +143,14 @@ vocabulary:
 
 本地启用时设置 `vocabulary.generation.scheduler.enabled=true`（或环境变量 `VOCABULARY_GENERATION_SCHEDULER_ENABLED=true`）。`lease-ms` 必须大于一次外部生成的最大端到端时间；需要暂停领取任务时仅将该开关设为 `false`，不要删除队列数据。
 
+### Python generation provider
+
+Java 负责词典、generation job、租约、revision、最终校验、冲突处理和持久化；Python 负责 Prompt、模型调用、缺失 core 回填、Markdown 和 typed trace metadata。Python 是无状态内部服务：不读取或写入单词卡数据库，不领取 job，也不激活 revision。Java 仍会对 Python 返回的 core 和 Markdown 做最终校验后才写入 revision。
+
+`VOCABULARY_GENERATION_PROVIDER` 是唯一的 provider 选择开关，默认必须为 `java`。`python` 仅在运行健康检查、内部契约 smoke 和真实 Basic/custom 主题验收完成后，由操作人员显式启用。Python provider 绕过旧 Java 七天生成缓存；缓存仅属于显式 `java` 回滚 provider。Python 失败时同一个 job attempt 内不允许静默回退到 `java`，错误继续走既有稳定错误码和 job 重试语义。
+
+后端的 `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=60000` 小于默认 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS=300000`，为 finalizer 和数据库写入保留时间。Compose 网络内后端必须通过 `http://assistant-orchestrator:8011` 调用 Python 服务，不能使用容器自身的 `127.0.0.1`。两个容器必须注入同一个非空 `VOCABULARY_GENERATION_INTERNAL_TOKEN`；token 只能从 Secret 注入，不进入日志、文档示例或响应。
+
 ## 写入与版本契约
 
 ### 捕获与来源合并
@@ -198,7 +206,7 @@ vocabulary:
 
 ## 发布与回滚
 
-发布时先迁移数据库，再发布后端，最后发布主题库、主题 shelf 和新详情 UI。迁移完成但前端尚未发布时，旧客户端仍通过 `content_json` 和 legacy template 字段读取兼容内容。
+发布时先迁移数据库，再发布后端，最后发布主题库、主题 shelf 和新详情 UI。迁移完成但前端尚未发布时，旧客户端仍通过 `content_json` 和 legacy template 字段读取兼容内容。历史数据库必须在所有既有 vocabulary migration 之后执行 `migrate_add_vocabulary_generation_metadata.sql`；全新库只执行 `schema.sql`，自动验收绝不对业务 schema 执行 migration。
 
 回滚不删除主题表或新格式 revision，也不批量覆盖 `theme_uid`、`core_json` 或 `content_markdown`。安全回滚顺序是：暂停 generation scheduler，回退 Web；确认旧 API 兼容投影可读后再回退 Backend。新格式内容在旧 UI 无法编辑时保持只读，不得丢弃。恢复新版后重新启用 scheduler，并抽查 ready、needs_review、legacy 三类卡片。
 

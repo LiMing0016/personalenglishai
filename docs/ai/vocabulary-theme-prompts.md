@@ -16,6 +16,12 @@ related_docs:
 
 # 主题化单词卡 Prompt
 
+## Python Prompt ownership and version
+
+`basic-markdown-v1`、`exam-markdown-v1`、`reading-markdown-v1` 和 `custom-markdown-v1` 是主题快照中的策略 key。策略 key 映射到 Python Prompt 资产：`vocabulary_core_fallback` 负责只补齐缺失 core，`vocabulary_card_markdown` 负责按主题生成 Markdown；Java 只冻结主题 UID、版本和策略 key，不持有或拼接 Prompt 正文。
+
+Prompt version 由 Python 返回，Java 不发送 Prompt version。Python 在 generation metadata 中返回 provider、model、Prompt version、模型调用次数和安全 trace ID；Java 仅把已验证的 metadata 保存到 `generation_metadata_json`。不要在日志、测试失败输出或人工验收记录中打印 Prompt 正文、词典 core、sourceContext、生成 Markdown 或原始模型输出。
+
 ## 当前结论
 
 主题化单词卡把稳定的核心词典 JSON 与自由的主题 Markdown 分成两次受控处理。词典结果优先决定 core；只有词典缺少音标和释义时才调用结构化 core fallback。Markdown 调用只能扩展学习内容，不能修改单词身份或覆盖核心事实。

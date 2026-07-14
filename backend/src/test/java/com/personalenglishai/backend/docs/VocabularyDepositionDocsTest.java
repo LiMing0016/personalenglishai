@@ -158,6 +158,47 @@ class VocabularyDepositionDocsTest {
                 () -> assertFalse(vitepressConfig.contains("/superpowers/plans/")));
     }
 
+    @Test
+    void releaseDocsAndComposeKeepPythonVocabularyGenerationOptInAndExplicit() throws Exception {
+        String rootEnvironment = Files.readString(Path.of("../.env.example"));
+        String backendEnvironment = Files.readString(Path.of(".env.example"));
+        String compose = Files.readString(Path.of("../docker-compose.yml"));
+        String architecture = Files.readString(Path.of("../docs/architecture/vocabulary-deposition.md"));
+        String prompts = Files.readString(Path.of("../docs/ai/vocabulary-theme-prompts.md"));
+        String runbook = Files.readString(Path.of("../docs/runbooks/environment-variables.md"));
+
+        assertAll(
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_GENERATION_PROVIDER=java")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_GENERATION_PYTHON_BASE_URL=http://127.0.0.1:8011")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=60000")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_GENERATION_INTERNAL_TOKEN=")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_GENERATION_MODEL=gpt-5.4-mini")),
+                () -> assertTrue(backendEnvironment.contains("VOCABULARY_GENERATION_PROVIDER=java")),
+                () -> assertTrue(backendEnvironment.contains("VOCABULARY_GENERATION_PYTHON_BASE_URL=http://127.0.0.1:8011")),
+                () -> assertTrue(backendEnvironment.contains("VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=60000")),
+                () -> assertTrue(backendEnvironment.contains("VOCABULARY_GENERATION_INTERNAL_TOKEN=")),
+                () -> assertTrue(compose.contains("AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8011}")),
+                () -> assertTrue(compose.contains("VOCABULARY_GENERATION_PROVIDER=${VOCABULARY_GENERATION_PROVIDER:-java}")),
+                () -> assertTrue(compose.contains("VOCABULARY_GENERATION_PYTHON_BASE_URL=http://assistant-orchestrator:8011")),
+                () -> assertTrue(compose.contains("VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=${VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS:-60000}")),
+                () -> assertEquals(2, countOccurrences(compose, "VOCABULARY_GENERATION_INTERNAL_TOKEN=${VOCABULARY_GENERATION_INTERNAL_TOKEN:?")),
+                () -> assertTrue(compose.contains("VOCABULARY_GENERATION_MODEL=${VOCABULARY_GENERATION_MODEL:-gpt-5.4-mini}")),
+                () -> assertTrue(architecture.contains("Java 负责词典、generation job、租约、revision")),
+                () -> assertTrue(architecture.contains("Python 负责 Prompt、模型调用、缺失 core 回填、Markdown 和 typed trace metadata")),
+                () -> assertTrue(architecture.contains("Python provider 绕过旧 Java 七天生成缓存")),
+                () -> assertTrue(architecture.contains("同一个 job attempt 内不允许静默回退")),
+                () -> assertTrue(prompts.contains("策略 key 映射到 Python Prompt 资产")),
+                () -> assertTrue(prompts.contains("Prompt version 由 Python 返回，Java 不发送")),
+                () -> assertTrue(runbook.contains("`java` -> `python`")),
+                () -> assertTrue(runbook.contains("`VOCABULARY_GENERATION_PROVIDER=java`")),
+                () -> assertTrue(runbook.contains("`VOCABULARY_GENERATION_PROVIDER=python`")),
+                () -> assertTrue(runbook.contains("partial")),
+                () -> assertTrue(runbook.contains("generation_metadata_json")),
+                () -> assertTrue(runbook.contains("不会静默回退到 `java`")),
+                () -> assertTrue(runbook.contains("不会使用旧 Java 七天缓存")),
+                () -> assertTrue(runbook.contains("`migrate_add_vocabulary_generation_metadata.sql`")));
+    }
+
     private static void assertHistoricalUpgradeOrder(
             String document,
             String reviewStepTitle,
@@ -189,6 +230,10 @@ class VocabularyDepositionDocsTest {
 
     private static String mysqlMigrationCommand(String migration) {
         return "mysql -u <user> -p <database> < backend/src/main/resources/db/" + migration;
+    }
+
+    private static int countOccurrences(String value, String needle) {
+        return value.split(Pattern.quote(needle), -1).length - 1;
     }
 
     private record HistoricalUpgradeStep(int position, String command) {

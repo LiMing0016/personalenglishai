@@ -203,6 +203,28 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | `AI_CONTEXT_CONVERSATION_PYTHON_TIMEOUT_MS` | Python context sidecar 超时。 |
 | `AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED` | Python 处理失败时是否降级。 |
 
+## 单词卡 Python 生成发布
+
+| 变量 | 默认值 | 责任与约束 |
+| --- | --- | --- |
+| `VOCABULARY_GENERATION_PROVIDER` | `java` | 后端 provider 选择。只有显式设为 `python` 才调用 Python；不会静默回退到 `java`。 |
+| `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。Compose 中必须为 `http://assistant-orchestrator:8011`，不得使用容器内 `127.0.0.1`。 |
+| `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS` | `60000` | 后端单次 Python HTTP timeout，必须小于 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS` 的 `300000` 默认值。 |
+| `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | backend 和 Python orchestrator 必须收到同一个非空专用 token。不得提交、打印或回传。 |
+| `VOCABULARY_GENERATION_MODEL` | `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
+
+Java 继续拥有词典查询、generation job、租约、revision、冲突和持久化；Python 只拥有 Prompt、模型调用、缺失 core 回填、Markdown 及 typed trace metadata。Python provider 不会使用旧 Java 七天缓存，且同一个 job attempt 内不会静默回退到 `java`。因此 Python 的 4xx 作为稳定配置/契约错误处理，5xx、连接失败和 timeout 继续由既有 job 重试处理；有效 core 的 Markdown 失败保存为 `partial`/`markdown_unavailable`，不会伪造 complete，也不会丢弃 core。
+
+### 发布顺序与回滚
+
+1. 对历史数据库先完成既有 vocabulary migration，再执行 `migrate_add_vocabulary_generation_metadata.sql`；全新数据库只初始化 `schema.sql`。自动化验收只能连接显式命名的 disposable MySQL schema，绝不对业务 schema 执行 migration 或 `DROP DATABASE`。
+2. 部署 Python orchestrator，设置 `VOCABULARY_GENERATION_MODEL`、现有 OpenAI 凭据和共享 internal token；确认 `/health` 只显示 configured 状态，不暴露 token。
+3. 部署后端，保持 `VOCABULARY_GENERATION_PROVIDER=java`，并配置 Python base URL、timeout 和同一个 token。先运行内部契约 smoke；发布切换顺序是显式的 `java` -> `python`，不是自动故障转移。
+4. 用真实 Basic dictionary core 和自定义主题完成验收，检查 complete/partial、稳定 retry 行为、lease 和冲突行为未改变，并在 revision 的 `generation_metadata_json` 查看 provider、model、Prompt version、调用次数和安全 trace ID。
+5. 仅在上述检查完成后显式切换 `VOCABULARY_GENERATION_PROVIDER=python` 并重启后端。回滚只把 `VOCABULARY_GENERATION_PROVIDER=java` 后重启；不要删除 metadata 列、Python endpoint 或 Python 已生成的 revision。
+
+真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。它不打印 token、Prompt、词典 core、sourceContext、生成 Markdown 或原始模型输出；未满足前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
+
 ## Prompt 与 AI 调试
 
 | 变量 | 说明 |

@@ -54,7 +54,12 @@ services:
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
 
       # Python OpenAI Agents SDK orchestrator
-      - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8002}
+      - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8011}
+      # Vocabulary Python provider is opt-in; service DNS is required inside the Compose network.
+      - VOCABULARY_GENERATION_PROVIDER=${VOCABULARY_GENERATION_PROVIDER:-java}
+      - VOCABULARY_GENERATION_PYTHON_BASE_URL=http://assistant-orchestrator:8011
+      - VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=${VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS:-60000}
+      - VOCABULARY_GENERATION_INTERNAL_TOKEN=${VOCABULARY_GENERATION_INTERNAL_TOKEN:?Set VOCABULARY_GENERATION_INTERNAL_TOKEN}
     networks:
       - app-network
     healthcheck:
@@ -127,12 +132,15 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - AI_ASSISTANT_MODEL=${AI_ASSISTANT_MODEL:-gpt-5.4-mini}
       - AI_ASSISTANT_SESSION_DB_PATH=/data/assistant_sessions.db
+      - VOCABULARY_GENERATION_MODEL=${VOCABULARY_GENERATION_MODEL:-gpt-5.4-mini}
+      - VOCABULARY_GENERATION_INTERNAL_TOKEN=${VOCABULARY_GENERATION_INTERNAL_TOKEN:?Set VOCABULARY_GENERATION_INTERNAL_TOKEN}
       - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}
     ports:
-      - "8002:8002"
+      - "8011:8011"
+    command: ["uvicorn", "python.ai_orchestrator.app:app", "--host", "0.0.0.0", "--port", "8011"]
     volumes:
       - peai_assistant_data:/data
     networks:
