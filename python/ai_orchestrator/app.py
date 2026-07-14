@@ -4,7 +4,7 @@ import hmac
 import json
 from typing import Annotated, Any
 
-from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
@@ -97,7 +97,9 @@ def _vocabulary_generation_http_error(status_code: int, code: str, message: str)
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
-def _require_vocabulary_generation_internal_token(authorization: str | None) -> None:
+def _require_vocabulary_generation_internal_token(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
     expected_token = getattr(vocabulary_card_generation_service, "internal_token", "")
     if not expected_token:
         raise _vocabulary_generation_http_error(
@@ -169,12 +171,11 @@ def _vocabulary_generation_error_to_http_exception(
 @app.post(
     "/internal/v1/vocabulary/card-generations",
     response_model=VocabularyCardGenerationResponse,
+    dependencies=[Depends(_require_vocabulary_generation_internal_token)],
 )
 async def generate_vocabulary_card(
     request: VocabularyCardGenerationRequest,
-    authorization: Annotated[str | None, Header()] = None,
 ) -> VocabularyCardGenerationResponse:
-    _require_vocabulary_generation_internal_token(authorization)
     try:
         result = await vocabulary_card_generation_service.generate(request)
         return VocabularyCardGenerationResponse.model_validate(result, extra="ignore")

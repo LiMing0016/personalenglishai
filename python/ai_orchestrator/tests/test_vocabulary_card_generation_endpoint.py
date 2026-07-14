@@ -101,7 +101,8 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
 
     def post(self, client: TestClient, *, payload: dict | None = None, token: str | None = "internal-test-token"):
         headers = {} if token is None else {"Authorization": f"Bearer {token}"}
-        return client.post(self.endpoint, json=payload or request_payload(), headers=headers)
+        body = request_payload() if payload is None else payload
+        return client.post(self.endpoint, json=body, headers=headers)
 
     def test_missing_internal_token_is_unauthorized(self) -> None:
         client = TestClient(app)
@@ -124,6 +125,20 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"]["code"], "INTERNAL_AUTH_FAILED")
         self.assertIsNone(service.received)
+
+    def test_authentication_precedes_body_validation(self) -> None:
+        client = TestClient(app)
+        service = CapturingVocabularyGenerationService()
+
+        for token, expected_status in ((None, 401), ("wrong-token", 403)):
+            with self.subTest(token=token), patch(
+                "python.ai_orchestrator.app.vocabulary_card_generation_service", service
+            ):
+                response = self.post(client, payload={}, token=token)
+
+            self.assertEqual(response.status_code, expected_status)
+            self.assertEqual(response.json()["detail"]["code"], "INTERNAL_AUTH_FAILED")
+            self.assertIsNone(service.received)
 
     def test_valid_token_forwards_a_typed_request_and_returns_complete_response(self) -> None:
         client = TestClient(app)
