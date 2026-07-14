@@ -79,7 +79,10 @@ public final class VocabularyGenerationPythonClient {
                         if (response.statusCode().is2xxSuccessful()) {
                             return response.bodyToMono(String.class);
                         }
-                        return response.releaseBody().then(reactor.core.publisher.Mono.error(statusFailure(response.statusCode())));
+                        return response.bodyToMono(String.class)
+                                .defaultIfEmpty("")
+                                .flatMap(errorBody -> reactor.core.publisher.Mono.error(
+                                        statusFailure(response.statusCode(), errorBody)));
                     })
                     .timeout(requestTimeout)
                     .block();
@@ -105,7 +108,8 @@ public final class VocabularyGenerationPythonClient {
         }
     }
 
-    private VocabularyGenerationException statusFailure(org.springframework.http.HttpStatusCode status) {
+    private VocabularyGenerationException statusFailure(
+            org.springframework.http.HttpStatusCode status, String body) {
         int value = status.value();
         if (value == HttpStatus.BAD_REQUEST.value() || value == HttpStatus.UNPROCESSABLE_ENTITY.value()) {
             return failure("PYTHON_GENERATION_REQUEST_REJECTED", false, "Python generation request was rejected");
@@ -116,9 +120,27 @@ public final class VocabularyGenerationPythonClient {
         if (value == HttpStatus.INTERNAL_SERVER_ERROR.value()
                 || value == HttpStatus.SERVICE_UNAVAILABLE.value()
                 || value == HttpStatus.GATEWAY_TIMEOUT.value()) {
+            if (value == HttpStatus.SERVICE_UNAVAILABLE.value()
+                    && hasErrorCode(body, "VOCABULARY_GENERATION_NOT_CONFIGURED")) {
+                return failure(
+                        "PYTHON_GENERATION_NOT_CONFIGURED", false,
+                        "Python generation service is not configured");
+            }
             return failure("PYTHON_GENERATION_UPSTREAM_UNAVAILABLE", true, "Python generation service is unavailable");
         }
         return failure("PYTHON_GENERATION_UPSTREAM_FAILURE", false, "Python generation service returned an unexpected status");
+    }
+
+    private boolean hasErrorCode(String body, String expectedCode) {
+        if (body == null || body.isBlank() || body.length() > 4_096) {
+            return false;
+        }
+        try {
+            return expectedCode.equals(
+                    OBJECT_MAPPER.readTree(body).path("detail").path("code").asText());
+        } catch (JsonProcessingException exception) {
+            return false;
+        }
     }
 
     private VocabularyGenerationException transportFailure(RuntimeException exception) {

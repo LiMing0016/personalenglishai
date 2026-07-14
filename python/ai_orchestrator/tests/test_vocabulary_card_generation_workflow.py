@@ -90,6 +90,30 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("session", run.call_args.kwargs)
         self.assertEqual(__import__("json").loads(agent_input)["term"], "supposed")
 
+    async def test_remote_markdown_prompt_version_is_persisted_from_the_resolved_prompt(self) -> None:
+        markdown = VocabularyMarkdownOutput(contentMarkdown="## Remote prompt")
+        with patch.dict(
+            os.environ,
+            {
+                "AI_ASSISTANT_PROMPT_SOURCE": "hybrid",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "AI_PROMPT_VOCABULARY_CARD_MARKDOWN_ID": "pmpt_vocab_markdown_456",
+                "AI_PROMPT_VOCABULARY_CARD_MARKDOWN_VERSION": "7",
+            },
+            clear=False,
+        ):
+            with patch(
+                "agents.Runner.run",
+                new_callable=AsyncMock,
+                return_value=SimpleNamespace(final_output=markdown),
+            ):
+                response = await self.service().generate(request())
+
+        self.assertEqual(
+            response.generation.prompt_version,
+            "openai:pmpt_vocab_markdown_456@7",
+        )
+
     async def test_incomplete_core_uses_fallback_then_markdown_without_mutating_dictionary_truth(self) -> None:
         original = core_payload(
             phonetics=[],

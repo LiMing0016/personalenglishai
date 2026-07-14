@@ -178,6 +178,22 @@ class VocabularyGenerationPythonClientTest {
     }
 
     @Test
+    void preserves_non_retryable_not_configured_error_from_python() {
+        String body = """
+                {"detail":{"code":"VOCABULARY_GENERATION_NOT_CONFIGURED","message":"private configuration detail"}}
+                """;
+
+        VocabularyGenerationException exception = assertThrows(
+                VocabularyGenerationException.class,
+                () -> client(new CapturingExchange(HttpStatus.SERVICE_UNAVAILABLE, body), Duration.ofSeconds(1))
+                        .generate(request()));
+
+        assertEquals("PYTHON_GENERATION_NOT_CONFIGURED", exception.code());
+        assertFalse(exception.retryable());
+        assertFalse(exception.getMessage().contains("private configuration detail"));
+    }
+
+    @Test
     void maps_connection_failures_and_client_timeouts_to_retryable_generation_errors() {
         ExchangeFunction connectionFailure = request -> Mono.error(new WebClientRequestException(
                 new IOException("connection failed"), HttpMethod.POST, URI.create("http://python.test"), HttpHeaders.EMPTY));

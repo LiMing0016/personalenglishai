@@ -11,6 +11,7 @@ from agents import RunConfig, Runner
 from ..agents.vocabulary_card import (
     create_vocabulary_card_markdown_agent,
     create_vocabulary_core_fallback_agent,
+    resolved_prompt_audit_version,
 )
 from ..schemas.vocabulary_card import (
     MAX_MEANING_COUNT,
@@ -29,7 +30,8 @@ from ..schemas.vocabulary_card import (
 
 
 WORKFLOW_NAME = "PEAI Vocabulary Card Generation"
-PROMPT_VERSION = "vocabulary-card-markdown-v1"
+CORE_PROMPT_VERSION = "vocabulary-core-fallback-v1"
+MARKDOWN_PROMPT_VERSION = "vocabulary-card-markdown-v1"
 SUPPORTED_PROMPT_STRATEGIES = frozenset(
     {
         "basic-markdown-v1",
@@ -338,6 +340,12 @@ class VocabularyCardGenerationWorkflow:
         self._clock = monotonic_clock or time.monotonic
         self._core_fallback_agent = create_vocabulary_core_fallback_agent(model)
         self._markdown_agent = create_vocabulary_card_markdown_agent(model)
+        self._core_prompt_version = resolved_prompt_audit_version(
+            self._core_fallback_agent, CORE_PROMPT_VERSION
+        )
+        self._markdown_prompt_version = resolved_prompt_audit_version(
+            self._markdown_agent, MARKDOWN_PROMPT_VERSION
+        )
 
     async def generate(
         self,
@@ -565,10 +573,16 @@ class VocabularyCardGenerationWorkflow:
         request: VocabularyCardGenerationRequest,
         model_call_count: int,
     ) -> VocabularyGenerationMetadata:
+        prompt_version = self._markdown_prompt_version
+        if model_call_count == 2:
+            prompt_version = (
+                f"core={self._core_prompt_version};"
+                f"markdown={self._markdown_prompt_version}"
+            )
         return VocabularyGenerationMetadata(
             provider="openai",
             model=self._model,
-            promptVersion=PROMPT_VERSION,
+            promptVersion=prompt_version,
             modelCallCount=model_call_count,
             traceId=request.trace_id,
         )

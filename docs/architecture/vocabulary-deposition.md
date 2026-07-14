@@ -149,7 +149,7 @@ Java 负责词典、generation job、租约、revision、最终校验、冲突�
 
 `VOCABULARY_GENERATION_PROVIDER` 是唯一的 provider 选择开关，默认必须为 `java`。`python` 仅在运行健康检查、内部契约 smoke 和真实 Basic/custom 主题验收完成后，由操作人员显式启用。Python provider 绕过旧 Java 七天生成缓存；缓存仅属于显式 `java` 回滚 provider。Python 失败时同一个 job attempt 内不允许静默回退到 `java`，错误继续走既有稳定错误码和 job 重试语义。
 
-后端的 `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=60000` 小于默认 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS=300000`，为 finalizer 和数据库写入保留时间。Compose 网络内后端必须通过 `http://assistant-orchestrator:8011` 调用 Python 服务，不能使用容器自身的 `127.0.0.1`。两个容器必须注入同一个非空 `VOCABULARY_GENERATION_INTERNAL_TOKEN`；token 只能从 Secret 注入，不进入日志、文档示例或响应。
+后端的 `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=60000` 小于默认 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS=300000`，为 finalizer 和数据库写入保留时间。本地宿主机默认通过 `http://127.0.0.1:8011` 访问 Python；根 Compose 保留 orchestrator 既有容器端口，后端必须通过 `http://assistant-orchestrator:8002` 调用，不能使用容器自身的 `127.0.0.1`。两个容器必须注入同一个非空 `VOCABULARY_GENERATION_INTERNAL_TOKEN`；token 只能从 Secret 注入，不进入日志、文档示例或响应。
 
 ## 写入与版本契约
 

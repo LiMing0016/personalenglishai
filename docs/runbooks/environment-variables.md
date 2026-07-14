@@ -223,7 +223,7 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | 变量 | 默认值 | 责任与约束 |
 | --- | --- | --- |
 | `VOCABULARY_GENERATION_PROVIDER` | `java` | 后端 provider 选择。只有显式设为 `python` 才调用 Python；不会静默回退到 `java`。 |
-| `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。Compose 中必须为 `http://assistant-orchestrator:8011`，不得使用容器内 `127.0.0.1`。 |
+| `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。根 Compose 保留既有容器端口，必须为 `http://assistant-orchestrator:8002`，不得使用容器内 `127.0.0.1`。 |
 | `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS` | `60000` | 后端单次 Python HTTP timeout，必须小于 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS` 的 `300000` 默认值。 |
 | `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | backend 和 Python orchestrator 必须收到同一个非空专用 token。不得提交、打印或回传。 |
 | `VOCABULARY_GENERATION_MODEL` | Compose 默认 `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用；服务代码本身没有模型默认值，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
