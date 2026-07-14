@@ -108,9 +108,6 @@ public final class VocabularyCardGenerator {
                 throw new IllegalArgumentException("Provider result is incomplete");
             }
             coreCodec.validate(expectedTerm, generated.core());
-            if (!coreCodec.isComplete(expectedTerm, generated.core())) {
-                throw new IllegalArgumentException("Provider core is incomplete");
-            }
             coreCodec.validatePreservesTrustedFields(expectedTerm, trustedCore, generated.core());
             validateProviderContent(generated);
         } catch (RuntimeException exception) {

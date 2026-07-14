@@ -87,6 +87,21 @@ class VocabularyCardGeneratorTest {
     }
 
     @Test
+    void keepsLegacyJavaProviderSenseOnlyCoreCompatible() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookup(
+                        "record", "noun", "a written account"));
+        RecordingProvider javaProvider = new RecordingProvider("java");
+
+        GeneratedVocabularyCard result = generator("java", javaProvider).generate(
+                VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-java-rollback");
+
+        assertTrue(result.core().path("phonetics").isEmpty());
+        assertEquals("a written account", result.core().path("senses").get(0)
+                .path("meanings").get(0).path("definitionEn").asText());
+    }
+
+    @Test
     void rejectsUnknownProviderWithoutCallingAnyProvider() {
         RecordingProvider javaProvider = new RecordingProvider("java");
 
