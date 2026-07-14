@@ -108,3 +108,39 @@ These assertions cover existing `router.md` and `polish.md` wording. This remedi
 ### Merge Assessment
 
 This is a small, isolated Task 2 contract correction and is ready to commit on the existing feature branch. Keep the branch out of `main` until the remaining vocabulary-generation rollout tasks are integrated and verified together.
+
+---
+
+## HTML Validator P1 Remediation (2026-07-14)
+
+### Status
+
+DONE. The final Task 2 P1 Markdown HTML-validator finding from the re-review is resolved.
+
+### TDD Evidence
+
+Added the following test-first schema cases before changing production code:
+
+- Reject HTML comments, declarations and doctypes, processing instructions, and opening, closing, and self-closing tags with case variants and attributes.
+- Allow tag-shaped literals in closed backtick and tilde fenced code blocks with language identifiers, and in closed inline code.
+- Treat unclosed fenced and inline code delimiters as ordinary Markdown text, so they cannot hide raw HTML from validation.
+
+The focused RED command failed as expected against the prior validator: it accepted comments, `<!...>` declarations, and processing instructions, and it rejected tag literals in closed code. After the implementation change, the same three focused tests passed.
+
+### Implementation
+
+Replaced the single raw-tag regular expression with a small standard-library scanner. It skips only verified closed code fences and inline-code spans, then checks the remaining Markdown text for declarations, processing instructions, comments, and tag forms while retaining valid comparisons and Markdown autolinks. Unmatched backtick runs and fences are deliberately not skipped.
+
+### Verification
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest python.ai_orchestrator.tests.test_vocabulary_card_schemas python.ai_orchestrator.tests.test_vocabulary_card_agents python.ai_orchestrator.tests.test_prompt_resolver python.ai_orchestrator.tests.test_assistant_output_format_prompt -v
+```
+
+Result: 34 tests passed. The re-review baseline command covered 31 tests; this remediation adds three schema test methods.
+
+`git diff --check` is run after this report update before commit.
+
+### Documentation And Merge Assessment
+
+No public architecture, API, configuration, or operating documentation changes are needed: this report records the validator contract and verification evidence. The fix is small and isolated on the existing feature branch, but the branch should remain out of `main` until the wider vocabulary-generation rollout is integrated and verified.

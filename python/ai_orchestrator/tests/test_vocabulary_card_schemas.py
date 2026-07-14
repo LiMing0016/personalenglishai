@@ -340,6 +340,70 @@ class VocabularyCardSchemasTest(unittest.TestCase):
                         response_payload(content_markdown=raw_html)
                     )
 
+    def test_markdown_models_reject_comments_declarations_processing_instructions_and_tags(self) -> None:
+        prohibited_html = (
+            "<!-- hidden note -->",
+            "<!DOCTYPE html>",
+            "<!doctype vocabulary>",
+            "<!ENTITY author \"student\">",
+            "<?xml version=\"1.0\"?>",
+            "<SCRIPT data-topic=\"grammar\">alert('x')</SCRIPT>",
+            "</DiV>",
+            "<img src=\"https://example.com/card.png\" />",
+        )
+
+        for raw_html in prohibited_html:
+            with self.subTest(raw_html=raw_html, model="agent"):
+                with self.assertRaises(ValidationError):
+                    VocabularyMarkdownOutput.model_validate({"contentMarkdown": raw_html})
+            with self.subTest(raw_html=raw_html, model="http"):
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=raw_html)
+                    )
+
+    def test_markdown_models_allow_tag_literals_in_closed_fenced_and_inline_code(self) -> None:
+        markdown_with_code_literals = (
+            "```html\n"
+            "<SCRIPT data-topic=\"grammar\">alert('x')</SCRIPT>\n"
+            "```\n\n"
+            "~~~xml\n"
+            "<!DOCTYPE vocabulary>\n"
+            "<?xml version=\"1.0\"?>\n"
+            "~~~\n\n"
+            "Use `<img src=\"card.png\" />` literally."
+        )
+
+        self.assertEqual(
+            VocabularyMarkdownOutput.model_validate(
+                {"contentMarkdown": markdown_with_code_literals}
+            ).content_markdown,
+            markdown_with_code_literals,
+        )
+        self.assertEqual(
+            VocabularyCardGenerationResponse.model_validate(
+                response_payload(content_markdown=markdown_with_code_literals)
+            ).content_markdown,
+            markdown_with_code_literals,
+        )
+
+    def test_markdown_models_check_html_inside_unclosed_code_delimiters(self) -> None:
+        unclosed_code = (
+            "```html\n<script>alert('x')</script>",
+            "~~~xml\n<?xml version=\"1.0\"?>",
+            "Use `<img src=\"card.png\" /> literally.",
+        )
+
+        for markdown in unclosed_code:
+            with self.subTest(markdown=markdown, model="agent"):
+                with self.assertRaises(ValidationError):
+                    VocabularyMarkdownOutput.model_validate({"contentMarkdown": markdown})
+            with self.subTest(markdown=markdown, model="http"):
+                with self.assertRaises(ValidationError):
+                    VocabularyCardGenerationResponse.model_validate(
+                        response_payload(content_markdown=markdown)
+                    )
+
     def test_markdown_output_json_schema_requires_content_markdown(self) -> None:
         schema = VocabularyMarkdownOutput.model_json_schema()
         self.assertIn("contentMarkdown", schema["required"])
