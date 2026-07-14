@@ -3,7 +3,6 @@ package com.personalenglishai.backend.service.vocabulary;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 public record VocabularyGenerationPythonResponse(
         int contractVersion,
@@ -15,8 +14,6 @@ public record VocabularyGenerationPythonResponse(
         String warning,
         VocabularyGenerationMetadata generation) {
 
-    private static final Pattern RAW_HTML = Pattern.compile("<\\/?[A-Za-z][^>]*>");
-
     public VocabularyGenerationPythonResponse {
         if (contractVersion != VocabularyGenerationPythonRequest.VERSION
                 || coreSchemaVersion != VocabularyGenerationPythonRequest.VERSION
@@ -24,7 +21,7 @@ public record VocabularyGenerationPythonResponse(
             throw invalid("response versions must be 1");
         }
         if (core == null || generation == null || contentMarkdown == null || contentMarkdown.length() > 20_000
-                || RAW_HTML.matcher(contentMarkdown).find()) {
+                || VocabularyMarkdownValidator.containsRawHtml(contentMarkdown)) {
             throw invalid("response content is invalid");
         }
         if ("complete".equals(outcome)) {

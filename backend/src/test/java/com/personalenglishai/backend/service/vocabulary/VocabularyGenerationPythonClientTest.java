@@ -99,6 +99,45 @@ class VocabularyGenerationPythonClientTest {
     }
 
     @Test
+    void uses_commonmark_html_boundaries_for_response_markdown() {
+        String fencedLiteral = completeResponse().replace(
+                "## Exam focus\\n\\nUseful collocation.",
+                "```html\\n<div>literal</div>\\n```");
+        VocabularyGenerationPythonResponse accepted = client(
+                new CapturingExchange(HttpStatus.OK, fencedLiteral), Duration.ofSeconds(1))
+                .generate(request());
+
+        assertEquals("```html\n<div>literal</div>\n```", accepted.contentMarkdown());
+        assertInvalidResponse(completeResponse().replace(
+                "## Exam focus\\n\\nUseful collocation.",
+                "<!-- hidden -->"));
+    }
+
+    @Test
+    void rejects_response_trace_id_that_does_not_match_request() {
+        assertInvalidResponse(completeResponse().replace("trace_123", "trace_other"));
+    }
+
+    @Test
+    void requires_http_timeout_to_be_strictly_below_generation_lease() {
+        WebClient webClient = WebClient.builder()
+                .baseUrl("http://python.test")
+                .exchangeFunction(new CapturingExchange(HttpStatus.OK, completeResponse()))
+                .build();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new VocabularyGenerationPythonClient(
+                        webClient, INTERNAL_TOKEN, Duration.ofSeconds(1), Duration.ofSeconds(1)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new VocabularyGenerationPythonClient(
+                        webClient, INTERNAL_TOKEN, Duration.ofSeconds(2), Duration.ofSeconds(1)));
+        new VocabularyGenerationPythonClient(
+                webClient, INTERNAL_TOKEN, Duration.ofMillis(999), Duration.ofSeconds(1));
+    }
+
+    @Test
     void maps_client_rejections_to_non_retryable_generation_errors_without_body_leakage() {
         for (HttpStatus status : List.of(HttpStatus.BAD_REQUEST, HttpStatus.UNPROCESSABLE_ENTITY)) {
             VocabularyGenerationException exception = assertThrows(

@@ -29,17 +29,31 @@ public final class VocabularyGenerationPythonClient {
     public VocabularyGenerationPythonClient(
             @Value("${vocabulary.generation.python.base-url:http://127.0.0.1:8011}") String baseUrl,
             @Value("${vocabulary.generation.python.internal-token:}") String internalToken,
-            @Value("${vocabulary.generation.python.timeout-ms:60000}") long timeoutMs) {
-        this(WebClient.builder().baseUrl(requireBaseUrl(baseUrl)).build(), internalToken, Duration.ofMillis(timeoutMs));
+            @Value("${vocabulary.generation.python.timeout-ms:60000}") long timeoutMs,
+            @Value("${vocabulary.generation.scheduler.lease-ms:300000}") long leaseMs) {
+        this(WebClient.builder().baseUrl(requireBaseUrl(baseUrl)).build(), internalToken,
+                Duration.ofMillis(timeoutMs), Duration.ofMillis(leaseMs));
     }
 
     public VocabularyGenerationPythonClient(WebClient webClient, String internalToken, Duration timeout) {
+        this(webClient, internalToken, timeout, Duration.ofMillis(300_000));
+    }
+
+    public VocabularyGenerationPythonClient(
+            WebClient webClient,
+            String internalToken,
+            Duration timeout,
+            Duration generationLease) {
         if (webClient == null) {
             throw new IllegalArgumentException("webClient is required");
         }
         if (timeout == null || timeout.isNegative() || timeout.isZero()
                 || timeout.toMillis() > VocabularyGenerationPythonRequest.MAX_TIMEOUT_BUDGET_MS) {
             throw new IllegalArgumentException("Python generation timeout must be between 1 and 60000ms");
+        }
+        if (generationLease == null || generationLease.isNegative() || generationLease.isZero()
+                || timeout.compareTo(generationLease) >= 0) {
+            throw new IllegalArgumentException("Python generation timeout must be below the generation lease");
         }
         this.webClient = webClient;
         this.internalToken = internalToken == null ? "" : internalToken;
@@ -68,7 +82,8 @@ public final class VocabularyGenerationPythonClient {
                     .timeout(timeout)
                     .block();
             VocabularyGenerationPythonResponse response = parseResponse(body);
-            if (!request.term().equals(response.core().term())) {
+            if (!request.term().equals(response.core().term())
+                    || !request.traceId().equals(response.generation().traceId())) {
                 throw failure("PYTHON_GENERATION_INVALID_RESPONSE", false, "Python generation response is invalid");
             }
             return response;
