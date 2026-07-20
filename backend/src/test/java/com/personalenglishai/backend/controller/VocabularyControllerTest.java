@@ -70,7 +70,14 @@ class VocabularyControllerTest {
                 "private OCR review text",
                 List.of(),
                 List.of(new VocabularyImageRecognitionResponse.Item(
-                        "item-1", "colour", "colour", "accepted", List.of(), "context", 0.95)));
+                        "item-1", "colour", "colour", "accepted", List.of(), "context", 0.95)),
+                new VocabularyImageRecognitionResponse.Generation(
+                        "openai",
+                        "gpt-image",
+                        "vocabulary-image-recognition-v1",
+                        1,
+                        "vocab-image-0123456789abcdef0123456789abcdef",
+                        new VocabularyImageRecognitionResponse.Usage(11, 5)));
         when(imageRecognitionService.recognize(eq(7L), any())).thenReturn(response);
 
         mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
@@ -78,7 +85,9 @@ class VocabularyControllerTest {
                         .requestAttr("userId", 7L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rawText").value("private OCR review text"))
-                .andExpect(jsonPath("$.data.items[0].status").value("accepted"));
+                .andExpect(jsonPath("$.data.items[0].status").value("accepted"))
+                .andExpect(jsonPath("$.data.generation.provider").value("openai"))
+                .andExpect(jsonPath("$.data.generation.usage.inputTokens").value(11));
 
         verify(imageRecognitionService).recognize(7L, file);
     }
@@ -91,6 +100,34 @@ class VocabularyControllerTest {
         mockMvc.perform(multipart("/api/vocabulary/image-recognitions").file(file))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("401001"));
+
+        verifyNoInteractions(imageRecognitionService);
+    }
+
+    @Test
+    void rejectsDuplicateVocabularyImageFilePartsWithoutCallingService() throws Exception {
+        MockMultipartFile first = new MockMultipartFile(
+                "file", "first.png", "image/png", new byte[] {1});
+        MockMultipartFile second = new MockMultipartFile(
+                "file", "second.png", "image/png", new byte[] {2});
+
+        mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .file(first)
+                        .file(second)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400052"));
+
+        verifyNoInteractions(imageRecognitionService);
+    }
+
+    @Test
+    void rejectsMissingVocabularyImageFilePartWithStableBadRequest() throws Exception {
+                mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400001"))
+                .andExpect(jsonPath("$.message").value("参数验证失败"));
 
         verifyNoInteractions(imageRecognitionService);
     }

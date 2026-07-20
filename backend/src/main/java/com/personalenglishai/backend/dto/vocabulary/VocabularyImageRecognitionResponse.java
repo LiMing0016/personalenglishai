@@ -7,7 +7,8 @@ public record VocabularyImageRecognitionResponse(
         String traceId,
         String rawText,
         List<String> warnings,
-        List<Item> items) {
+        List<Item> items,
+        Generation generation) {
 
     public VocabularyImageRecognitionResponse {
         warnings = List.copyOf(warnings);
@@ -29,5 +30,17 @@ public record VocabularyImageRecognitionResponse(
     }
 
     public record Suggestion(String term, boolean dictionaryVerified) {
+    }
+
+    public record Generation(
+            String provider,
+            String model,
+            String promptVersion,
+            int modelCallCount,
+            String traceId,
+            Usage usage) {
+    }
+
+    public record Usage(Integer inputTokens, Integer outputTokens) {
     }
 }

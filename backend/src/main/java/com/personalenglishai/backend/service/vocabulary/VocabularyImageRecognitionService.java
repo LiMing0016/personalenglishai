@@ -84,48 +84,70 @@ public final class VocabularyImageRecognitionService {
 
     private VocabularyImageRecognitionResponse enrich(VocabularyImageRecognitionPythonResponse response) {
         LinkedHashSet<String> warnings = new LinkedHashSet<>(response.warnings());
-        List<VocabularyImageRecognitionResponse.Item> items = new ArrayList<>(response.items().size());
-        boolean dictionaryAvailable = true;
-        for (VocabularyImageRecognitionPythonResponse.Item item : response.items()) {
-            EnrichedItem enriched = enrichItem(item, dictionaryAvailable);
-            items.add(enriched.item());
-            if (!enriched.dictionaryAvailable()) {
-                dictionaryAvailable = false;
-                warnings.add(DICTIONARY_WARNING);
+        List<VocabularyImageRecognitionResponse.Item> items;
+        try {
+            items = new ArrayList<>(response.items().size());
+            for (VocabularyImageRecognitionPythonResponse.Item item : response.items()) {
+                items.add(enrichItem(item));
             }
+        } catch (DictionaryLookupException exception) {
+            warnings.add(DICTIONARY_WARNING);
+            items = response.items().stream()
+                    .map(this::toOriginalPublicItem)
+                    .toList();
         }
         return new VocabularyImageRecognitionResponse(
-                response.contractVersion(), response.traceId(), response.rawText(), List.copyOf(warnings), items);
+                response.contractVersion(),
+                response.traceId(),
+                response.rawText(),
+                List.copyOf(warnings),
+                items,
+                toPublicGeneration(response.generation()));
     }
 
-    private EnrichedItem enrichItem(
-            VocabularyImageRecognitionPythonResponse.Item item, boolean dictionaryAvailable) {
+    private VocabularyImageRecognitionResponse.Generation toPublicGeneration(
+            VocabularyImageRecognitionPythonResponse.Generation generation) {
+        VocabularyImageRecognitionPythonResponse.Usage usage = generation.usage();
+        return new VocabularyImageRecognitionResponse.Generation(
+                generation.provider(),
+                generation.model(),
+                generation.promptVersion(),
+                generation.modelCallCount(),
+                generation.traceId(),
+                usage == null
+                        ? null
+                        : new VocabularyImageRecognitionResponse.Usage(
+                                usage.inputTokens(), usage.outputTokens()));
+    }
+
+    private VocabularyImageRecognitionResponse.Item enrichItem(
+            VocabularyImageRecognitionPythonResponse.Item item) {
         if (!"suspected_typo".equals(item.status())) {
-            return new EnrichedItem(toPublicItem(item, item.status(), List.of()), dictionaryAvailable);
-        }
-        if (!dictionaryAvailable) {
-            return new EnrichedItem(toPublicItem(item, item.status(), unverified(item.suggestions())), false);
+            return toOriginalPublicItem(item);
         }
 
-        try {
-            DictionaryLookupResponse original = dictionary.lookupWithoutUserState(
-                    item.normalizedTerm(), DICTIONARY_LANGUAGE);
-            if (original != null) {
-                return new EnrichedItem(toPublicItem(item, "accepted", List.of()), true);
-            }
-
-            List<VocabularyImageRecognitionResponse.Suggestion> verified = new ArrayList<>();
-            List<VocabularyImageRecognitionResponse.Suggestion> unverified = new ArrayList<>();
-            for (String suggestion : item.suggestions()) {
-                boolean hit = dictionary.lookupWithoutUserState(suggestion, DICTIONARY_LANGUAGE) != null;
-                (hit ? verified : unverified).add(
-                        new VocabularyImageRecognitionResponse.Suggestion(suggestion, hit));
-            }
-            verified.addAll(unverified);
-            return new EnrichedItem(toPublicItem(item, item.status(), verified), true);
-        } catch (DictionaryLookupException exception) {
-            return new EnrichedItem(toPublicItem(item, item.status(), unverified(item.suggestions())), false);
+        DictionaryLookupResponse original = dictionary.lookupWithoutUserState(
+                item.normalizedTerm(), DICTIONARY_LANGUAGE);
+        if (original != null) {
+            return toPublicItem(item, "accepted", List.of());
         }
+
+        List<VocabularyImageRecognitionResponse.Suggestion> verified = new ArrayList<>();
+        List<VocabularyImageRecognitionResponse.Suggestion> unverified = new ArrayList<>();
+        for (String suggestion : item.suggestions()) {
+            boolean hit = dictionary.lookupWithoutUserState(suggestion, DICTIONARY_LANGUAGE) != null;
+            (hit ? verified : unverified).add(
+                    new VocabularyImageRecognitionResponse.Suggestion(suggestion, hit));
+        }
+        verified.addAll(unverified);
+        return toPublicItem(item, item.status(), verified);
+    }
+
+    private VocabularyImageRecognitionResponse.Item toOriginalPublicItem(
+            VocabularyImageRecognitionPythonResponse.Item item) {
+        List<VocabularyImageRecognitionResponse.Suggestion> suggestions =
+                "suspected_typo".equals(item.status()) ? unverified(item.suggestions()) : List.of();
+        return toPublicItem(item, item.status(), suggestions);
     }
 
     private List<VocabularyImageRecognitionResponse.Suggestion> unverified(List<String> suggestions) {
@@ -177,10 +199,5 @@ public final class VocabularyImageRecognitionService {
             case "PYTHON_IMAGE_TIMEOUT" -> new BizException(ErrorCode.VOCABULARY_IMAGE_TIMEOUT);
             default -> new BizException(ErrorCode.VOCABULARY_IMAGE_UNAVAILABLE);
         };
-    }
-
-    private record EnrichedItem(
-            VocabularyImageRecognitionResponse.Item item,
-            boolean dictionaryAvailable) {
     }
 }

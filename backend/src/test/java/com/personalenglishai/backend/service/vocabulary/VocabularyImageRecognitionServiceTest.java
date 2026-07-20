@@ -145,6 +145,14 @@ class VocabularyImageRecognitionServiceTest {
 
         assertNull(AiUsageContextHolder.current());
         assertEquals("private review text", response.rawText());
+        assertEquals(new VocabularyImageRecognitionResponse.Generation(
+                        "openai",
+                        "gpt-image",
+                        "vocabulary-image-recognition-v1",
+                        1,
+                        response.traceId(),
+                        new VocabularyImageRecognitionResponse.Usage(11, 5)),
+                response.generation());
         InOrder order = inOrder(subscriptionService, client, usageRecorder, dictionary);
         order.verify(subscriptionService).assertAiTokenQuotaAvailable(USER_ID);
         order.verify(client).recognize(anyString(), any(MultipartFile.class));
@@ -238,6 +246,29 @@ class VocabularyImageRecognitionServiceTest {
         verify(dictionary).lookupWithoutUserState("teh", "en");
         verify(dictionary, never()).lookupWithoutUserState("recieve", "en");
         verify(dictionary, never()).lookupWithoutUserState("receive", "en");
+    }
+
+    @Test
+    void later_dictionary_failure_rolls_back_all_earlier_enrichment() {
+        when(client.recognize(anyString(), any())).thenAnswer(invocation -> {
+            String traceId = invocation.getArgument(0);
+            return response(traceId, "private review text", List.of(), List.of(
+                    pythonItem("item-1", "colour", "colour", "suspected_typo", List.of("color")),
+                    pythonItem("item-2", "teh", "teh", "suspected_typo", List.of("the"))));
+        });
+        when(dictionary.lookupWithoutUserState("colour", "en")).thenReturn(dictionaryHit("colour"));
+        when(dictionary.lookupWithoutUserState("teh", "en"))
+                .thenThrow(new DictionaryLookupException(DictionaryLookupException.Kind.UPSTREAM_ERROR));
+
+        VocabularyImageRecognitionResponse response = service.recognize(USER_ID, png("words.png", 20));
+
+        assertThat(response.warnings()).containsExactly("DICTIONARY_VERIFICATION_UNAVAILABLE");
+        assertThat(response.items()).extracting(VocabularyImageRecognitionResponse.Item::status)
+                .containsExactly("suspected_typo", "suspected_typo");
+        assertThat(response.items().get(0).suggestions())
+                .containsExactly(new VocabularyImageRecognitionResponse.Suggestion("color", false));
+        assertThat(response.items().get(1).suggestions())
+                .containsExactly(new VocabularyImageRecognitionResponse.Suggestion("the", false));
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.personalenglishai.backend.controller;
 
+import com.personalenglishai.backend.common.error.BizException;
+import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.common.response.ApiResponse;
 import com.personalenglishai.backend.dto.admin.AdminPageResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
@@ -21,6 +23,7 @@ import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 @RestController
 @RequestMapping("/api/vocabulary")
@@ -59,9 +63,14 @@ public class VocabularyController {
     @PostMapping(value = "/image-recognitions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<VocabularyImageRecognitionResponse>> recognizeImage(
             @RequestAttribute(value = "userId", required = false) Long userId,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            HttpServletRequest request) {
         if (userId == null) {
             return unauthorized();
+        }
+        if (!(request instanceof MultipartHttpServletRequest multipartRequest)
+                || multipartRequest.getFiles("file").size() != 1) {
+            throw new BizException(ErrorCode.VOCABULARY_IMAGE_INVALID);
         }
         return ResponseEntity.ok(ApiResponse.success(imageRecognitionService.recognize(userId, file)));
     }

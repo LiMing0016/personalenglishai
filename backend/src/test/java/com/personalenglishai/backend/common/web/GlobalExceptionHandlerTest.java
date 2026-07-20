@@ -4,6 +4,7 @@ import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.io.IOException;
 import java.net.SocketTimeoutException;
@@ -53,6 +54,18 @@ class GlobalExceptionHandlerTest {
         assertThat(timeout.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
         assertThat(outputInvalid.getBody().getCode()).isEqualTo("502050");
         assertThat(timeout.getBody().getCode()).isEqualTo("504050");
+    }
+
+    @Test
+    void handleMissingServletRequestPart_mapsMissingPartToStableHttp400() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var response = handler.handleMissingServletRequestPart(
+                new MissingServletRequestPartException("file"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getCode()).isEqualTo("400001");
+        assertThat(response.getBody().getMessage()).isEqualTo("参数验证失败");
     }
 
     @Test

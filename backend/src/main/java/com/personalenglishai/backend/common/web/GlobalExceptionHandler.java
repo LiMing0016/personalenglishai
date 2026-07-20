@@ -16,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.net.SocketTimeoutException;
 import java.util.Locale;
@@ -59,6 +60,13 @@ public class GlobalExceptionHandler {
         log.warn("业务异常: {} - {}", e.getErrorCode().getCode(), e.getMessage());
         HttpStatus status = resolveStatus(e.getErrorCode());
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMissingServletRequestPart(
+        MissingServletRequestPartException e) {
+        log.warn("请求缺少 multipart part: {}", e.getRequestPartName());
+        return body(ErrorCode.COMMON_VALIDATION_ERROR, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
