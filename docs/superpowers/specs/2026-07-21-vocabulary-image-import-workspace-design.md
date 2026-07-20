@@ -204,6 +204,7 @@ Python 成功响应：
   "contractVersion": 1,
   "traceId": "vocab-image-abc123",
   "rawText": "recieve\npackage\n...",
+  "warnings": [],
   "items": [
     {
       "itemId": "item-1",
@@ -247,6 +248,7 @@ Python 成功响应：
 - `contextText` 只返回图片中与该词直接相关的短句，不允许扩写。
 - `confidence` 范围为 0 到 1，仅用于提示和诊断，不直接决定是否生成。
 - 单次最多返回 30 个候选词；超出时按提取优先级截断并返回稳定 warning `CANDIDATE_LIMIT_REACHED`。
+- `warnings` 是顶层字符串数组；Python 可以返回 `CANDIDATE_LIMIT_REACHED`，Java 可以追加 `DICTIONARY_VERIFICATION_UNAVAILABLE`，未知 warning 必须被跨服务契约拒绝。
 - `rawText` 最大 20,000 字符，只用于用户展开核对，不进入卡片生成 Prompt。
 - `generation.usage` 记录 provider 可用的输入与输出 token；provider 不返回用量时字段为 `null`，不得估算后伪装成真实值。
 
@@ -262,6 +264,8 @@ Java 只对模型标记为 `suspected_typo` 的项目执行词典查询，避免
 
 词典结果不能证明图片识别一定正确，因此即使建议命中，仍由用户确认。词典不可用时不阻断整个识别响应，保留模型状态并返回 warning `DICTIONARY_VERIFICATION_UNAVAILABLE`。
 
+Python 内部响应继续使用 `suggestions: string[]`。Java 的公开响应把每个建议转换为 `{ "term": string, "dictionaryVerified": boolean }`，从而让前端可以区分已命中词典与仅由模型提出的建议，同时不把 Java 的词典职责反向泄漏到 Python contract。
+
 ## 沉淀与来源记录
 
 图片候选词确认完成后，前端继续调用现有：
@@ -272,6 +276,8 @@ POST /api/vocabulary/captures
 
 每批请求使用用户选定主题，来源类型新增 `ocr_image`。`VocabularyCaptureRequest.Source.type`、Java 支持类型集合和相关校验正则同步增加该枚举值。
 
+为保证批量沉淀中的每个词都能保留自己的上下文和决策，`VocabularyCaptureRequest` 增加可选 `itemSources` 数组。数组存在时必须与 `terms` 等长；每项只包含该词的 `contextText` 和 `metadata`。Java 在创建 `VocabularyCardSource` 时把批次级 `source.metadata` 与对应的 `itemSources[index].metadata` 合并，并优先使用该项的 `contextText`。文本录入不发送 `itemSources`，保持现有请求兼容。
+
 来源 metadata 至少记录：
 
 - `recognitionTraceId`
@@ -281,6 +287,8 @@ POST /api/vocabulary/captures
 - `promptVersion`
 - `observedText`
 - `resolution`：`accepted`、`suggestion_applied` 或 `original_kept`
+
+当用户把图片候选词显式编辑为不同于 `observedText` 的终稿时，记录为 `suggestion_applied`；该值表示用户采用了纠正后的词形，不要求终稿必须来自模型建议数组。`accepted` 仅表示终稿与正常识别结果一致，`original_kept` 仅表示用户明确保留疑似错误原词。
 
 metadata 不保存图片 base64、完整原始识别文本或模型原始响应。卡片去重、来源合并、异步生成、主题版本和 revision 冲突逻辑继续使用现有实现。
 
@@ -339,6 +347,8 @@ metadata 不保存图片 base64、完整原始识别文本或模型原始响应�
 - `vocabulary_capture_submitted`
 - `vocabulary_cards_ready`
 - `vocabulary_learning_started`
+
+事件写入 Java 管理的产品事件表，使用客户端生成的幂等 `eventUid`、页面会话 `sessionId`、业务 `traceId` 和可选 `cardUid` 关联，不保存文件名、原词、识别原文或卡片正文。`vocabulary_capture_submitted` 与 `vocabulary_cards_ready` 由 Java 在真实业务状态变化后记录；其余交互事件由前端批量上报。当前产品中首次打开一张已经可读的持久化单词卡详情，定义为该卡的 `vocabulary_learning_started`，不得在尚未进入具体卡片内容的静态“开始学习”按钮上提前记录。
 
 核心指标定义为：
 
