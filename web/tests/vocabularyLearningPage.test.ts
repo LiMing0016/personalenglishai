@@ -29,9 +29,10 @@ for (const requiredText of [
   '背词模式',
   '单词沉淀',
   '学习统计',
-  '单词卡中心',
-  '手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入',
-  '批量录入',
+  '导入单词',
+  '文本录入',
+  '图片识别',
+  '生成卡片',
   '全部来源',
   'A-Z',
   '最近沉淀',
@@ -70,6 +71,13 @@ assert.ok(
   !composedSource.includes('从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里'),
   'the page should not promise sources that are not connected',
 )
+for (const obsoleteText of [
+  '单词卡中心',
+  '手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入',
+  '批量录入',
+]) {
+  assert.ok(!composedSource.includes(obsoleteText), `vocabulary learning page should remove ${obsoleteText}`)
+}
 assert.ok(
   !composedSource.includes('单词端数据源验收标记'),
   'the page should not expose backend integration markers to students',

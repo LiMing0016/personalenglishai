@@ -726,7 +726,8 @@ test('legacy word URL stays keyword-filtered collection and does not fetch detai
 
   await page.goto('/app/vocabulary/cards/supposed')
   await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/supposed$/)
-  await expect(page.getByRole('heading', { name: '单词卡中心' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '单词沉淀', level: 1 })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '输入要沉淀的单词' })).toBeVisible()
   await expect(page.getByRole('searchbox', { name: '搜索单词' })).toHaveValue('supposed')
   await expect(page.locator('.vocabulary-card-page')).toHaveCount(0)
   await expect.poll(() => requestCount('GET', '/cards')).toBe(1)

@@ -87,7 +87,11 @@ test('capture workspace has one error live region and locks image controls while
   assert.match(captureSource, /:disabled="captureBusy"/)
   assert.match(captureSource, /:disabled="captureBusy"[\s\S]*文本录入/)
   assert.match(captureSource, /图片识别/)
-  assert.match(captureSource, /imageCaptureRef\.value\?\.deactivate\(\)/)
+  assert.match(
+    captureSource,
+    /function leaveImageMode\(\) \{[\s\S]*imageCaptureRef\.value\?\.deactivate\(\)[\s\S]*requestError\.value = ''[\s\S]*\}/,
+  )
+  assert.match(captureSource, /previousMode === 'image'[\s\S]*leaveImageMode\(\)/)
 })
 
 test('vocabulary view owns the server theme query and passes its states to capture', () => {

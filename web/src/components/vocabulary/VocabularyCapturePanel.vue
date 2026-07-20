@@ -208,12 +208,17 @@ watch(
 )
 
 watch(mode, (nextMode, previousMode) => {
-  if (previousMode === 'image' && nextMode !== 'image') imageCaptureRef.value?.deactivate()
+  if (previousMode === 'image' && nextMode !== 'image') leaveImageMode()
 })
 
 watch(() => props.imageRecognitionEnabled, (enabled) => {
   if (!enabled && mode.value === 'image') mode.value = 'text'
 })
+
+function leaveImageMode() {
+  imageCaptureRef.value?.deactivate()
+  requestError.value = ''
+}
 
 function selectTheme(themeUid: string) {
   if (activeThemes.value.some((theme) => theme.themeUid === themeUid)) selectedThemeUid.value = themeUid
