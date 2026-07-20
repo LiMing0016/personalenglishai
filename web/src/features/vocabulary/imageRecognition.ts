@@ -46,6 +46,14 @@ export interface RecognitionCandidateState {
   warnings: VocabularyRecognitionWarning[]
 }
 
+export interface ImageRequestLifecycle {
+  replacePreview: (file: File) => string
+  beginRequest: () => { requestId: number, signal: AbortSignal }
+  isLatest: (requestId: number) => boolean
+  deactivate: () => void
+  previewUrl: () => string
+}
+
 export class UnresolvedVocabularyCandidatesError extends Error {
   readonly code = 'UNRESOLVED_SELECTED_CANDIDATES'
   readonly candidateIds: string[]
@@ -73,6 +81,154 @@ export function isVocabularyImageRecognitionEnabled(
 
 function termKey(term: string): string {
   return term.trim().toLocaleLowerCase('en-US')
+}
+
+export function reconcileManualCandidates(
+  candidates: readonly ImportCandidate[],
+  terms: readonly string[],
+  createCandidateId: () => string,
+): ImportCandidate[] {
+  const imageCandidates = candidates.filter((candidate) => candidate.source === 'ocr_image')
+  const imageTermKeys = new Set(imageCandidates.map((candidate) => termKey(candidate.term)))
+  const existingManualByTerm = new Map<string, ImportCandidate>()
+  for (const candidate of candidates) {
+    if (candidate.source !== 'manual') continue
+    const key = termKey(candidate.term)
+    if (key && !imageTermKeys.has(key) && !existingManualByTerm.has(key)) {
+      existingManualByTerm.set(key, candidate)
+    }
+  }
+
+  const usedIds = new Set(imageCandidates.map((candidate) => candidate.id))
+  const seenTerms = new Set<string>()
+  const manualCandidates: ImportCandidate[] = []
+
+  for (const rawTerm of terms) {
+    const normalizedInput = rawTerm.trim()
+    const key = termKey(normalizedInput)
+    if (!key || imageTermKeys.has(key) || seenTerms.has(key)) continue
+    seenTerms.add(key)
+
+    const existing = existingManualByTerm.get(key)
+    if (existing) {
+      const id = uniqueCandidateId(existing.id, usedIds)
+      usedIds.add(id)
+      manualCandidates.push(id === existing.id ? existing : { ...existing, id })
+      continue
+    }
+
+    const id = uniqueCandidateId(createCandidateId(), usedIds)
+    usedIds.add(id)
+    manualCandidates.push({
+      id,
+      source: 'manual',
+      sourceBatchId: 'manual',
+      observedText: normalizedInput,
+      normalizedTerm: normalizedInput,
+      term: normalizedInput,
+      status: 'accepted',
+      resolution: 'accepted',
+      selected: true,
+      suggestions: [],
+      contextText: null,
+    })
+  }
+
+  return [...manualCandidates, ...imageCandidates]
+}
+
+function uniqueCandidateId(preferredId: string, usedIds: ReadonlySet<string>): string {
+  const baseId = preferredId.trim() || 'manual'
+  if (!usedIds.has(baseId)) return baseId
+  let suffix = 2
+  while (usedIds.has(`${baseId}-${suffix}`)) suffix += 1
+  return `${baseId}-${suffix}`
+}
+
+export function createImageRequestLifecycle({
+  createObjectUrl = (file) => URL.createObjectURL(file),
+  revokeObjectUrl = (url) => URL.revokeObjectURL(url),
+  createAbortController = () => new AbortController(),
+}: {
+  createObjectUrl?: (file: File) => string
+  revokeObjectUrl?: (url: string) => void
+  createAbortController?: () => AbortController
+} = {}): ImageRequestLifecycle {
+  let currentPreviewUrl = ''
+  let latestRequestId = 0
+  let controller: AbortController | null = null
+
+  function cancelRequest() {
+    latestRequestId += 1
+    controller?.abort()
+    controller = null
+  }
+
+  function releasePreview() {
+    if (currentPreviewUrl) revokeObjectUrl(currentPreviewUrl)
+    currentPreviewUrl = ''
+  }
+
+  return {
+    replacePreview(file) {
+      cancelRequest()
+      releasePreview()
+      currentPreviewUrl = createObjectUrl(file)
+      return currentPreviewUrl
+    },
+    beginRequest() {
+      cancelRequest()
+      controller = createAbortController()
+      const requestId = ++latestRequestId
+      return { requestId, signal: controller.signal }
+    },
+    isLatest(requestId) {
+      return requestId === latestRequestId
+    },
+    deactivate() {
+      cancelRequest()
+      releasePreview()
+    },
+    previewUrl() {
+      return currentPreviewUrl
+    },
+  }
+}
+
+export async function orchestrateCaptureBatches<
+  TPayload,
+  TResponse extends { items: unknown[] },
+>({
+  batches,
+  capture,
+  isComplete,
+  onBatchComplete,
+  onAllComplete,
+}: {
+  batches: ReadonlyArray<{ candidateIds: string[], payload: TPayload }>
+  capture: (payload: TPayload) => Promise<TResponse>
+  isComplete: (response: TResponse) => boolean
+  onBatchComplete?: (candidateIds: string[], response: TResponse) => void
+  onAllComplete?: (response: { items: TResponse['items'] }) => void
+}): Promise<{ items: TResponse['items'], failed: boolean, error: unknown | null }> {
+  const items = [] as TResponse['items']
+  let failed = false
+  let error: unknown | null = null
+
+  for (const batch of batches) {
+    try {
+      const response = await capture(batch.payload)
+      items.push(...response.items)
+      if (isComplete(response)) onBatchComplete?.(batch.candidateIds, response)
+      else failed = true
+    } catch (captureError) {
+      failed = true
+      error = captureError
+    }
+  }
+
+  if (!failed) onAllComplete?.({ items })
+  return { items, failed, error }
 }
 
 export function mergeRecognitionCandidates(

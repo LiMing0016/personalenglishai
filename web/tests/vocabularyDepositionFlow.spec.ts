@@ -538,7 +538,7 @@ test('all Inspector dialogs provide keyboard focus trap inert background Escape 
   )
 })
 
-test('creates a custom default theme, selects it from the shelf, and captures two words', async ({ page }) => {
+test('creates a custom default theme, selects it, and captures two words', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   const { requests } = await installApiMocks(page, [])
 
@@ -555,10 +555,11 @@ test('creates a custom default theme, selects it from the shelf, and captures tw
   await expect(themeCard.getByText('默认')).toBeVisible()
 
   await page.goto('/app/vocabulary?tab=collection')
-  const shelfTheme = page.getByRole('button', { name: /产品英语.*默认主题/ })
-  await expect(shelfTheme).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('textbox', { name: '批量录入单词' }).fill('resilient\npragmatic')
-  await page.getByRole('button', { name: '按「产品英语」生成 2 张卡片' }).click()
+  const themeSelect = page.getByLabel('生成主题')
+  await expect(themeSelect).toHaveValue('theme_user_1')
+  await themeSelect.selectOption('theme_user_1')
+  await page.getByRole('textbox', { name: '输入要沉淀的单词' }).fill('resilient\npragmatic')
+  await page.getByRole('button', { name: '生成 2 张卡片' }).click()
   await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/card_capture_1$/)
   await expect(page.locator('.card-inspector__heading h2')).toHaveText('resilient')
 
@@ -698,7 +699,7 @@ test('hard refresh on a persisted card route renders detail only', async ({ page
   await expect(page.getByRole('heading', { name: '学习提示' })).toBeVisible()
   await expect(page.getByLabel('Markdown 内容')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '单词卡中心' })).toHaveCount(0)
-  await expect(page.getByRole('textbox', { name: '批量录入单词' })).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: '输入要沉淀的单词' })).toHaveCount(0)
   expect(requestCount('GET', '/cards/card_ready')).toBeGreaterThanOrEqual(1)
   expect(requestCount('GET', '/templates')).toBe(0)
 })

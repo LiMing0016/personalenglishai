@@ -26,9 +26,8 @@
                 :aria-label="`选择 ${candidate.observedText}`"
                 @change="toggleCandidate(candidate.id, $event)"
               >
-              <strong>{{ candidate.observedText }}</strong>
+                <strong>{{ candidate.observedText }}</strong>
             </label>
-            <span v-if="candidate.suggestions.some((item) => item.dictionaryVerified)">词典已验证</span>
           </div>
           <p>疑似拼写错误，请明确处理后再生成卡片。</p>
           <div class="term-review__suggestions">
@@ -38,7 +37,8 @@
               type="button"
               @click="emit('command', { type: 'apply_suggestion', candidateId: candidate.id, suggestion: suggestion.term })"
             >
-              采用 {{ suggestion.term }}
+              <span>采用 {{ suggestion.term }}</span>
+              <small v-if="suggestion.dictionaryVerified">词典已验证</small>
             </button>
             <button type="button" @click="emit('command', { type: 'keep_original', candidateId: candidate.id })">保留原词</button>
             <button type="button" class="term-review__delete" @click="emit('command', { type: 'remove', candidateId: candidate.id })">删除</button>
@@ -131,10 +131,10 @@ function updateTerm(candidateId: string, event: Event) {
 .term-review__item:has(.term-review__typo-heading) { grid-template-columns: 1fr; align-items: stretch; background: #fffbeb; }
 .term-review__typo-heading { justify-content: space-between; }
 .term-review__typo-heading strong { color: #0f172a; overflow-wrap: anywhere; }
-.term-review__typo-heading > span { border-radius: 999px; background: #dcfce7; color: #047857; font-size: 11px; font-weight: 800; padding: 3px 7px; }
 .term-review__item > p { margin: 0; color: #92400e; font-size: 12px; }
 .term-review__suggestions { flex-wrap: wrap; }
 .term-review__suggestions button { border-color: #a7c7b8; color: #047857; }
+.term-review__suggestions button small { margin-left: 6px; border-radius: 999px; background: #dcfce7; color: #047857; font-size: 10px; font-weight: 800; padding: 2px 5px; }
 .term-review__suggestions .term-review__delete, .term-review__delete { border-color: #fecaca; color: #b91c1c; }
 .term-review__empty { margin: 0; border: 1px dashed #dce7e1; border-radius: 6px; color: #64748b; font-size: 13px; padding: 18px; text-align: center; }
 @media (max-width: 520px) { .term-review__item { grid-template-columns: minmax(0, 1fr) auto; }.term-review__source { display: none; }.term-review header { align-items: flex-start; }.term-review__suggestions button { flex: 1 1 auto; } }

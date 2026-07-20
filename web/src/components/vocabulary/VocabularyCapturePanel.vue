@@ -6,14 +6,22 @@
         <span>{{ candidates.length }} 个候选词</span>
       </div>
       <div class="capture-mode" role="group" aria-label="导入方式">
-        <button type="button" :aria-pressed="mode === 'text'" @click="mode = 'text'">输入</button>
+        <button
+          type="button"
+          :disabled="captureBusy"
+          :aria-pressed="mode === 'text'"
+          @click="mode = 'text'"
+        >
+          文本录入
+        </button>
         <button
           v-if="imageRecognitionEnabled"
           type="button"
+          :disabled="captureBusy"
           :aria-pressed="mode === 'image'"
           @click="mode = 'image'"
         >
-          图片
+          图片识别
         </button>
       </div>
     </header>
@@ -37,8 +45,10 @@
         v-show="mode === 'image'"
         ref="imageCaptureRef"
         :mutation="imageRecognitionMutation"
+        :disabled="captureBusy"
         @recognized="mergeImageCandidates"
         @failed="requestError = $event"
+        @clear-error="requestError = ''"
         @recognizing="imageRecognizing = $event"
       />
 
@@ -95,6 +105,8 @@ import {
   clearCandidateSelection,
   keepOriginal,
   mergeRecognitionCandidateState,
+  orchestrateCaptureBatches,
+  reconcileManualCandidates,
   removeCandidate,
   selectAllReadyCandidates,
   selectedReadyCandidates,
@@ -135,12 +147,12 @@ const candidates = ref<ImportCandidate[]>([])
 const warnings = ref<VocabularyRecognitionWarning[]>([])
 const sourceContext = ref('')
 const selectedThemeUid = ref('')
-const requestId = ref(0)
 const outcomes = ref<VocabularyCaptureResponse['items']>([])
 const requestError = ref('')
 const submitting = ref(false)
 const imageRecognizing = ref(false)
-const imageCaptureRef = ref<{ cancelRecognition: () => void } | null>(null)
+const imageCaptureRef = ref<{ deactivate: () => void } | null>(null)
+let manualCandidateSequence = 0
 
 const activeThemes = computed(() => {
   const catalog = props.themeCatalog
@@ -196,14 +208,11 @@ watch(
 )
 
 watch(mode, (nextMode, previousMode) => {
-  if (previousMode === 'image' && nextMode !== 'image') imageCaptureRef.value?.cancelRecognition()
+  if (previousMode === 'image' && nextMode !== 'image') imageCaptureRef.value?.deactivate()
 })
 
 watch(() => props.imageRecognitionEnabled, (enabled) => {
-  if (!enabled && mode.value === 'image') {
-    imageCaptureRef.value?.cancelRecognition()
-    mode.value = 'text'
-  }
+  if (!enabled && mode.value === 'image') mode.value = 'text'
 })
 
 function selectTheme(themeUid: string) {
@@ -211,28 +220,14 @@ function selectTheme(themeUid: string) {
 }
 
 function syncManualCandidates(terms: string[]) {
-  const imageCandidates = candidates.value.filter((candidate) => candidate.source === 'ocr_image')
-  const occupiedTerms = new Set(imageCandidates.map((candidate) => candidate.term.trim().toLocaleLowerCase('en-US')))
-  const manualCandidates = terms
-    .filter((term) => !occupiedTerms.has(term.trim().toLocaleLowerCase('en-US')))
-    .map((term) => ({
-      id: `manual:${term.trim().toLocaleLowerCase('en-US')}`,
-      source: 'manual' as const,
-      sourceBatchId: 'manual',
-      observedText: term,
-      normalizedTerm: term,
-      term,
-      status: 'accepted' as const,
-      resolution: 'accepted' as const,
-      selected: true,
-      suggestions: [],
-      contextText: null,
-    }))
-  candidates.value = [...manualCandidates, ...imageCandidates]
+  candidates.value = reconcileManualCandidates(
+    candidates.value,
+    terms,
+    () => `manual:${++manualCandidateSequence}`,
+  )
 }
 
 function mergeImageCandidates(payload: { response: VocabularyImageRecognitionResponse, file: File }) {
-  requestId.value += 1
   requestError.value = ''
   const merged = mergeRecognitionCandidateState(candidates.value, payload.response, payload.file.name)
   candidates.value = merged.candidates
@@ -274,8 +269,6 @@ async function submitCapture() {
   requestError.value = ''
   outcomes.value = []
   submitting.value = true
-  let failed = false
-  const completedItems: VocabularyCaptureResponse['items'] = []
 
   try {
     const batches = buildCaptureBatches({
@@ -284,30 +277,27 @@ async function submitCapture() {
       sourceContext: sourceContext.value,
     })
 
-    for (const batch of batches) {
-      try {
-        const response = await props.captureMutation.mutateAsync(batch.payload)
-        outcomes.value.push(...response.items)
-        completedItems.push(...response.items)
-        if (isVocabularyCaptureComplete(response)) {
-          const completedIds = new Set(batch.candidateIds)
-          candidates.value = candidates.value.filter((candidate) => !completedIds.has(candidate.id))
-        } else {
-          failed = true
-        }
-      } catch (error) {
-        failed = true
-        requestError.value = publicCaptureMessage(error)
-      }
-    }
+    const result = await orchestrateCaptureBatches({
+      batches,
+      capture: (payload) => props.captureMutation.mutateAsync(payload),
+      isComplete: isVocabularyCaptureComplete,
+      onBatchComplete: (candidateIds) => {
+        const completedIds = new Set(candidateIds)
+        candidates.value = candidates.value.filter((candidate) => !completedIds.has(candidate.id))
+      },
+      onAllComplete: (response) => {
+        sourceContext.value = ''
+        warnings.value = []
+        emit('captured', response)
+      },
+    })
 
+    outcomes.value = result.items
     syncRawTermsFromCandidates()
-    if (!failed) {
-      emit('captured', { items: completedItems })
-      sourceContext.value = ''
-      warnings.value = []
-    } else if (!requestError.value) {
-      requestError.value = '部分单词未能沉淀，未完成的候选词已保留'
+    if (result.failed) {
+      requestError.value = result.error
+        ? publicCaptureMessage(result.error)
+        : '部分单词未能沉淀，未完成的候选词已保留'
     }
   } catch (error) {
     requestError.value = publicCaptureMessage(error)
@@ -346,6 +336,7 @@ function outcomeLabel(action: string) {
 .capture-header span { color: #64748b; font-size: 12px; }
 .capture-mode { flex: 0 0 auto; padding: 3px; border: 1px solid #dce7e1; border-radius: 7px; background: #f8fafc; }
 .capture-mode button { min-width: 58px; min-height: 30px; border: 0; border-radius: 5px; background: transparent; color: #64748b; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.capture-mode button:disabled { cursor: not-allowed; opacity: .55; }
 .capture-mode button[aria-pressed='true'] { background: #fff; color: #047857; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
 form { display: grid; min-width: 0; gap: 14px; margin-top: 14px; }
 .capture-context { border-top: 1px solid #edf2f7; padding-top: 10px; }

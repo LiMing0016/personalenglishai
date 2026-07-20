@@ -2,25 +2,27 @@
   <section class="image-capture" aria-label="图片识别">
     <input
       ref="uploadInput"
-      class="image-capture__input"
+      hidden
       type="file"
       accept="image/jpeg,image/png,image/webp"
+      :disabled="disabled"
       @change="selectFile"
     >
     <input
       ref="cameraInput"
-      class="image-capture__input"
+      hidden
       type="file"
       accept="image/jpeg,image/png,image/webp"
       capture="environment"
+      :disabled="disabled"
       @change="selectFile"
     >
 
     <div v-if="!file" class="image-capture__empty">
       <p>上传单词表、笔记或教材照片</p>
       <div>
-        <button type="button" @click="uploadInput?.click()">选择图片</button>
-        <button type="button" @click="cameraInput?.click()">拍照识别</button>
+        <button type="button" :disabled="disabled" @click="uploadInput?.click()">选择图片上传</button>
+        <button type="button" :disabled="disabled" @click="cameraInput?.click()">使用相机拍照识别</button>
       </div>
       <small>支持 JPG、PNG、WEBP，最大 10 MB</small>
     </div>
@@ -31,20 +33,20 @@
       </div>
       <div class="image-capture__summary">
         <strong :title="displayFileName">{{ displayFileName }}</strong>
-        <p v-if="response">
+        <p v-if="response?.items.length">
           识别到 {{ response.items.length }} 个候选词，{{ unresolvedCount }} 个拼写待确认
         </p>
+        <p v-else-if="response">未识别到可导入单词</p>
         <p v-else>图片已就绪</p>
         <div>
-          <button type="button" :disabled="recognizing" @click="recognize">
+          <button type="button" :disabled="disabled || recognizing" @click="recognize">
             {{ recognizing ? '识别中...' : response ? '重新识别' : '开始识别' }}
           </button>
-          <button type="button" :disabled="recognizing" @click="uploadInput?.click()">更换图片</button>
+          <button type="button" :disabled="disabled || recognizing" @click="uploadInput?.click()">更换图片</button>
         </div>
       </div>
     </div>
 
-    <p v-if="errorMessage" class="image-capture__error" role="alert">{{ errorMessage }}</p>
     <p class="image-capture__status" role="status" aria-live="polite">
       {{ recognizing ? '正在识别图片中的单词' : '' }}
     </p>
@@ -60,7 +62,10 @@
 import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
 
 import type { VocabularyImageRecognitionResponse } from '@/api/vocabulary'
-import { getVocabularyImageFileError } from '@/features/vocabulary/imageRecognition'
+import {
+  createImageRequestLifecycle,
+  getVocabularyImageFileError,
+} from '@/features/vocabulary/imageRecognition'
 
 type ImageRecognitionMutation = {
   isPending: Ref<boolean>
@@ -69,11 +74,13 @@ type ImageRecognitionMutation = {
 
 const props = defineProps<{
   mutation: ImageRecognitionMutation
+  disabled: boolean
 }>()
 
 const emit = defineEmits<{
   recognized: [payload: { response: VocabularyImageRecognitionResponse, file: File }]
   failed: [message: string]
+  'clear-error': []
   recognizing: [active: boolean]
 }>()
 
@@ -83,9 +90,7 @@ const file = ref<File | null>(null)
 const previewUrl = ref('')
 const response = ref<VocabularyImageRecognitionResponse | null>(null)
 const recognizing = ref(false)
-const errorMessage = ref('')
-let latestRequestId = 0
-let controller: AbortController | null = null
+const lifecycle = createImageRequestLifecycle()
 
 const displayFileName = computed(() => cleanFileName(file.value?.name ?? ''))
 const unresolvedCount = computed(() => response.value?.items.filter(
@@ -93,6 +98,7 @@ const unresolvedCount = computed(() => response.value?.items.filter(
 ).length ?? 0)
 
 function selectFile(event: Event) {
+  if (props.disabled) return
   const input = event.target as HTMLInputElement
   const nextFile = input.files?.[0] ?? null
   input.value = ''
@@ -100,61 +106,56 @@ function selectFile(event: Event) {
 
   const validationError = getVocabularyImageFileError(nextFile)
   if (validationError) {
-    errorMessage.value = validationError
     emit('failed', validationError)
     return
   }
 
-  cancelRecognition()
-  releasePreview()
+  stopRecognizing()
   file.value = nextFile
-  previewUrl.value = URL.createObjectURL(nextFile)
+  previewUrl.value = lifecycle.replacePreview(nextFile)
   response.value = null
-  errorMessage.value = ''
+  emit('clear-error')
 }
 
 async function recognize() {
   const selectedFile = file.value
-  if (!selectedFile || recognizing.value) return
+  if (!selectedFile || recognizing.value || props.disabled) return
 
-  controller?.abort()
-  controller = new AbortController()
-  const requestId = ++latestRequestId
+  const { requestId, signal } = lifecycle.beginRequest()
   recognizing.value = true
-  errorMessage.value = ''
+  emit('clear-error')
   emit('recognizing', true)
 
   try {
-    const nextResponse = await props.mutation.mutateAsync({ file: selectedFile, signal: controller.signal })
-    if (requestId !== latestRequestId) return
+    const nextResponse = await props.mutation.mutateAsync({ file: selectedFile, signal })
+    if (!lifecycle.isLatest(requestId)) return
     response.value = nextResponse
     emit('recognized', { response: nextResponse, file: selectedFile })
   } catch (error) {
-    if (requestId !== latestRequestId || isAbortError(error)) return
+    if (!lifecycle.isLatest(requestId) || isAbortError(error)) return
     const message = publicMessage(error)
-    errorMessage.value = message
     emit('failed', message)
   } finally {
-    if (requestId === latestRequestId) {
+    if (lifecycle.isLatest(requestId)) {
       recognizing.value = false
       emit('recognizing', false)
     }
   }
 }
 
-function cancelRecognition() {
-  latestRequestId += 1
-  controller?.abort()
-  controller = null
+function stopRecognizing() {
   if (recognizing.value) {
     recognizing.value = false
     emit('recognizing', false)
   }
 }
 
-function releasePreview() {
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+function deactivate() {
+  lifecycle.deactivate()
+  stopRecognizing()
   previewUrl.value = ''
+  file.value = null
+  response.value = null
 }
 
 function cleanFileName(value: string) {
@@ -171,16 +172,14 @@ function publicMessage(error: unknown) {
 }
 
 onBeforeUnmount(() => {
-  cancelRecognition()
-  releasePreview()
+  deactivate()
 })
 
-defineExpose({ cancelRecognition })
+defineExpose({ deactivate })
 </script>
 
 <style scoped>
 .image-capture { display: grid; min-width: 0; gap: 10px; }
-.image-capture__input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; }
 .image-capture__empty { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 10px; border: 1px dashed #a7c7b8; border-radius: 6px; background: #f8fafc; color: #475569; padding: 16px; text-align: center; }
 .image-capture__empty p, .image-capture__empty small { margin: 0; }
 .image-capture__empty p { color: #0f172a; font-size: 14px; font-weight: 800; }
@@ -195,7 +194,6 @@ defineExpose({ cancelRecognition })
 .image-capture__summary { display: grid; min-width: 0; gap: 7px; }
 .image-capture__summary strong { overflow: hidden; color: #0f172a; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .image-capture__summary p { margin: 0; color: #64748b; font-size: 13px; }
-.image-capture__error { margin: 0; color: #b91c1c; font-size: 13px; }
 .image-capture__status { min-height: 18px; margin: 0; color: #047857; font-size: 12px; }
 .image-capture__raw-text { border-top: 1px solid #edf2f7; color: #475569; font-size: 12px; padding-top: 8px; }
 .image-capture__raw-text summary { color: #047857; cursor: pointer; font-weight: 800; }

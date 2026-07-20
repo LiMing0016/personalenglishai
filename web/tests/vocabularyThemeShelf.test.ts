@@ -10,6 +10,7 @@ function readSource(path: string) {
 const selectSource = readSource('../src/components/vocabulary/VocabularyThemeSelect.vue')
 const textCaptureSource = readSource('../src/components/vocabulary/VocabularyTextCapture.vue')
 const imageCaptureSource = readSource('../src/components/vocabulary/VocabularyImageCapture.vue')
+const imageRecognitionSource = readSource('../src/features/vocabulary/imageRecognition.ts')
 const reviewSource = readSource('../src/components/vocabulary/VocabularyTermReview.vue')
 const captureSource = readSource('../src/components/vocabulary/VocabularyCapturePanel.vue')
 const viewSource = readSource('../src/views/VocabularyView.vue')
@@ -33,12 +34,19 @@ test('text adapter parses terms without owning candidate state', () => {
 test('image capture uses upload and camera inputs with stable preview lifecycle', () => {
   assert.equal((imageCaptureSource.match(/accept="image\/jpeg,image\/png,image\/webp"/g) ?? []).length, 2)
   assert.match(imageCaptureSource, /capture="environment"/)
-  assert.match(imageCaptureSource, /URL\.createObjectURL/)
-  assert.match(imageCaptureSource, /URL\.revokeObjectURL/)
+  assert.match(imageRecognitionSource, /URL\.createObjectURL/)
+  assert.match(imageRecognitionSource, /URL\.revokeObjectURL/)
   assert.match(imageCaptureSource, /aspect-ratio/)
   assert.match(imageCaptureSource, /object-fit:\s*contain/)
   assert.match(imageCaptureSource, /<details/)
   assert.match(imageCaptureSource, /recognizing \? '识别中\.\.\.' : response \? '重新识别' : '开始识别'/)
+  assert.equal((imageCaptureSource.match(/\shidden(?:\s|>)/g) ?? []).length, 2)
+  assert.match(imageCaptureSource, /:disabled="disabled"/)
+  assert.match(imageCaptureSource, /:disabled="disabled \|\| recognizing"/)
+  assert.match(imageCaptureSource, /未识别到可导入单词/)
+  assert.match(imageCaptureSource, /emit\('clear-error'\)/)
+  assert.match(imageCaptureSource, /createImageRequestLifecycle/)
+  assert.match(imageCaptureSource, /defineExpose\(\{ deactivate \}\)/)
 })
 
 test('term review requires explicit typo decisions and emits reducer commands', () => {
@@ -46,6 +54,8 @@ test('term review requires explicit typo decisions and emits reducer commands', 
   assert.match(reviewSource, /词典已验证/)
   assert.match(reviewSource, /emit\('command'/)
   assert.doesNotMatch(reviewSource, /props\.candidates\.(push|splice)/)
+  assert.doesNotMatch(reviewSource, /candidate\.suggestions\.some/)
+  assert.match(reviewSource, /v-for="suggestion in candidate\.suggestions"[\s\S]*v-if="suggestion\.dictionaryVerified"[\s\S]*词典已验证/)
 })
 
 test('keeps selection in the capture draft and falls back when it becomes unavailable', () => {
@@ -55,6 +65,7 @@ test('keeps selection in the capture draft and falls back when it becomes unavai
   assert.match(captureSource, /watch\(/)
   assert.match(captureSource, /VocabularyThemeSelect/)
   assert.doesNotMatch(captureSource, /syncManualCandidates\(parseCaptureTerms\(rawTerms\.value\)\)/)
+  assert.match(captureSource, /reconcileManualCandidates/)
 })
 
 test('submits the selected theme explicitly and explains every unavailable state', () => {
@@ -66,6 +77,17 @@ test('submits the selected theme explicitly and explains every unavailable state
   assert.match(captureSource, /主题加载失败/)
   assert.match(captureSource, /暂无可用主题/)
   assert.match(captureSource, /captureMutation\.isPending\.value/)
+  assert.match(captureSource, /orchestrateCaptureBatches/)
+})
+
+test('capture workspace has one error live region and locks image controls while capturing', () => {
+  assert.equal(((captureSource + imageCaptureSource).match(/role="alert"/g) ?? []).length, 1)
+  assert.doesNotMatch(imageCaptureSource, /const errorMessage = ref/)
+  assert.match(captureSource, /@clear-error="requestError = ''"/)
+  assert.match(captureSource, /:disabled="captureBusy"/)
+  assert.match(captureSource, /:disabled="captureBusy"[\s\S]*文本录入/)
+  assert.match(captureSource, /图片识别/)
+  assert.match(captureSource, /imageCaptureRef\.value\?\.deactivate\(\)/)
 })
 
 test('vocabulary view owns the server theme query and passes its states to capture', () => {

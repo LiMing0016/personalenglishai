@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import * as imageRecognitionState from '../src/features/vocabulary/imageRecognition'
 import { http } from '../src/api/http'
 import {
   recognizeVocabularyImage,
@@ -406,4 +407,146 @@ test('excludes unselected candidates while preserving per-item context', () => {
     contextText: 'I received a package.',
     metadata: { observedText: 'package', resolution: 'accepted' },
   })
+})
+
+test('reconciles manual candidates incrementally without changing OCR candidates', () => {
+  const reconcile = (imageRecognitionState as Record<string, unknown>).reconcileManualCandidates
+  assert.equal(typeof reconcile, 'function')
+
+  const originalHello = { ...manualCandidate('Hello', 'manual-1'), selected: false }
+  const duplicateHello = manualCandidate('hello', 'manual-duplicate')
+  const imageCandidate = acceptedImageCandidate('Photo', 'trace-image')
+  let nextId = 1
+  const createId = () => `manual-new-${nextId++}`
+
+  const first = (reconcile as (
+    candidates: readonly ImportCandidate[],
+    terms: readonly string[],
+    createId: () => string,
+  ) => ImportCandidate[])(
+    [originalHello, duplicateHello, imageCandidate],
+    ['hello', 'World', 'WORLD', 'photo'],
+    createId,
+  )
+
+  assert.deepEqual(first.filter((candidate) => candidate.source === 'manual').map((candidate) => ({
+    id: candidate.id,
+    term: candidate.term,
+    selected: candidate.selected,
+  })), [
+    { id: 'manual-1', term: 'Hello', selected: false },
+    { id: 'manual-new-1', term: 'World', selected: true },
+  ])
+  assert.equal(first.filter((candidate) => candidate.id === 'manual-1').length, 1)
+  assert.equal(new Set(first.map((candidate) => candidate.id)).size, first.length)
+  assert.equal(first.find((candidate) => candidate.source === 'ocr_image'), imageCandidate)
+  assert.equal(first.some((candidate) => candidate.source === 'manual' && candidate.term === 'photo'), false)
+
+  const second = (reconcile as (
+    candidates: readonly ImportCandidate[],
+    terms: readonly string[],
+    createId: () => string,
+  ) => ImportCandidate[])(first, ['world'], createId)
+  assert.deepEqual(second.filter((candidate) => candidate.source === 'manual').map((candidate) => ({
+    id: candidate.id,
+    selected: candidate.selected,
+  })), [{ id: 'manual-new-1', selected: true }])
+  assert.equal(second.find((candidate) => candidate.source === 'ocr_image'), imageCandidate)
+})
+
+test('image request lifecycle keeps only the latest request and releases previews on deactivation', () => {
+  const createLifecycle = (imageRecognitionState as Record<string, unknown>).createImageRequestLifecycle
+  assert.equal(typeof createLifecycle, 'function')
+
+  const revoked: string[] = []
+  const controllers: Array<{ signal: AbortSignal, abort: () => void, aborted: boolean }> = []
+  let previewIndex = 0
+  const lifecycle = (createLifecycle as (dependencies: {
+    createObjectUrl: (file: File) => string
+    revokeObjectUrl: (url: string) => void
+    createAbortController: () => AbortController
+  }) => {
+    replacePreview: (file: File) => string
+    beginRequest: () => { requestId: number, signal: AbortSignal }
+    isLatest: (requestId: number) => boolean
+    deactivate: () => void
+    previewUrl: () => string
+  })({
+    createObjectUrl: () => `blob:preview-${++previewIndex}`,
+    revokeObjectUrl: (url) => revoked.push(url),
+    createAbortController: () => {
+      const controller = {
+        signal: {} as AbortSignal,
+        aborted: false,
+        abort() { this.aborted = true },
+      }
+      controllers.push(controller)
+      return controller as AbortController
+    },
+  })
+
+  assert.equal(lifecycle.replacePreview({ name: 'first.png' } as File), 'blob:preview-1')
+  const first = lifecycle.beginRequest()
+  const second = lifecycle.beginRequest()
+  assert.equal(controllers[0]?.aborted, true)
+  assert.equal(lifecycle.isLatest(first.requestId), false)
+  assert.equal(lifecycle.isLatest(second.requestId), true)
+
+  assert.equal(lifecycle.replacePreview({ name: 'second.png' } as File), 'blob:preview-2')
+  assert.equal(controllers[1]?.aborted, true)
+  assert.deepEqual(revoked, ['blob:preview-1'])
+  const third = lifecycle.beginRequest()
+  lifecycle.deactivate()
+  assert.equal(controllers[2]?.aborted, true)
+  assert.equal(lifecycle.isLatest(third.requestId), false)
+  assert.equal(lifecycle.previewUrl(), '')
+  assert.deepEqual(revoked, ['blob:preview-1', 'blob:preview-2'])
+})
+
+test('capture orchestration removes only complete batches and announces captured after every batch completes', async () => {
+  const orchestrate = (imageRecognitionState as Record<string, unknown>).orchestrateCaptureBatches
+  assert.equal(typeof orchestrate, 'function')
+
+  const batches = [
+    { candidateIds: ['a'], payload: { marker: 'a' } },
+    { candidateIds: ['b'], payload: { marker: 'b' } },
+    { candidateIds: ['c'], payload: { marker: 'c' } },
+  ]
+  const completed: string[][] = []
+  const announced: string[] = []
+  const firstResult = await (orchestrate as Function)({
+    batches,
+    capture: async (payload: { marker: string }) => {
+      if (payload.marker === 'c') throw new Error('network failed')
+      return {
+        items: [{
+          term: payload.marker,
+          cardUid: payload.marker === 'a' ? 'card-a' : null,
+          action: payload.marker === 'a' ? 'created' : 'rejected',
+          status: payload.marker === 'a' ? 'generating' : 'failed',
+        }],
+      }
+    },
+    isComplete: (response: { items: Array<{ action: string }> }) => response.items.every((item) => item.action !== 'rejected'),
+    onBatchComplete: (candidateIds: string[]) => completed.push(candidateIds),
+    onAllComplete: () => announced.push('captured'),
+  })
+
+  assert.deepEqual(completed, [['a']])
+  assert.deepEqual(announced, [])
+  assert.equal(firstResult.failed, true)
+  assert.deepEqual(firstResult.items.map((item: { term: string }) => item.term), ['a', 'b'])
+
+  const order: string[] = []
+  await (orchestrate as Function)({
+    batches: batches.slice(0, 2),
+    capture: async (payload: { marker: string }) => {
+      order.push(`capture-${payload.marker}`)
+      return { items: [{ term: payload.marker, cardUid: `card-${payload.marker}`, action: 'created', status: 'generating' }] }
+    },
+    isComplete: () => true,
+    onBatchComplete: (candidateIds: string[]) => order.push(`remove-${candidateIds[0]}`),
+    onAllComplete: () => order.push('captured'),
+  })
+  assert.deepEqual(order, ['capture-a', 'remove-a', 'capture-b', 'remove-b', 'captured'])
 })
