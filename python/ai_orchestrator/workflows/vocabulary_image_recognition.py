@@ -27,7 +27,7 @@ from ..schemas.vocabulary_image_recognition import (
     VocabularyImageRecognitionResponse,
     VocabularyImageRecognitionUsage,
 )
-from ..services.agent_session_runner import extract_usage
+from ..services.agent_session_runner import AgentSessionUsage, extract_usage
 
 
 WORKFLOW_NAME = "Vocabulary Image Recognition"
@@ -71,27 +71,44 @@ class VocabularyImageRecognitionWorkflow:
     ) -> VocabularyImageRecognitionResponse:
         self._validate_request(request)
         started_at = self._clock()
+        deadline = started_at + self._timeout_seconds
+        input_items = self._input_items(request)
+        run_config = self._run_config(request)
         terminal_error: VocabularyImageRecognitionError | None = None
+        model_call_count = 0
 
         for call_number in range(1, MAX_MODEL_CALLS + 1):
+            remaining_timeout = deadline - self._clock()
+            if remaining_timeout <= 0:
+                terminal_error = VocabularyImageRecognitionError("MODEL_TIMEOUT", True)
+                self._log_error(
+                    request,
+                    terminal_error,
+                    model_call_count,
+                    started_at,
+                )
+                break
+
+            model_call_count += 1
             try:
                 result = await asyncio.wait_for(
                     Runner.run(
                         self._agent,
-                        self._input_items(request),
-                        run_config=self._run_config(request),
+                        input_items,
+                        run_config=run_config,
                     ),
-                    timeout=self._timeout_seconds,
+                    timeout=remaining_timeout,
                 )
                 output = self._require_model_output(result.final_output)
                 items, warnings = self._sanitize_items(output.items)
-                usage = extract_usage(result)
+                usage = self._extract_optional_usage(result)
                 response = self._response(
                     request=request,
+                    raw_text=output.raw_text,
                     items=items,
                     warnings=warnings,
                     usage=usage,
-                    call_number=call_number,
+                    call_number=model_call_count,
                 )
                 self._log_result(
                     request=request,
@@ -99,7 +116,7 @@ class VocabularyImageRecognitionWorkflow:
                     suspected_typo_count=sum(
                         candidate.status == "suspected_typo" for candidate in items
                     ),
-                    call_number=call_number,
+                    call_number=model_call_count,
                     started_at=started_at,
                 )
                 return response
@@ -115,7 +132,12 @@ class VocabularyImageRecognitionWorkflow:
                 terminal_error = self._map_model_error(exc)
 
             if terminal_error is not None:
-                self._log_error(request, terminal_error, call_number, started_at)
+                self._log_error(
+                    request,
+                    terminal_error,
+                    model_call_count,
+                    started_at,
+                )
                 break
 
         if terminal_error is None:  # pragma: no cover - loop invariant
@@ -161,6 +183,13 @@ class VocabularyImageRecognitionWorkflow:
         return VocabularyImageRecognitionModelOutput.model_validate(
             output.model_dump(by_alias=True, mode="json")
         )
+
+    @staticmethod
+    def _extract_optional_usage(result: Any) -> AgentSessionUsage | None:
+        context_wrapper = getattr(result, "context_wrapper", None)
+        if getattr(context_wrapper, "usage", None) is None:
+            return None
+        return extract_usage(result)
 
     def _sanitize_items(
         self,
@@ -221,15 +250,16 @@ class VocabularyImageRecognitionWorkflow:
         self,
         *,
         request: VocabularyImageRecognitionRequest,
+        raw_text: str,
         items: list[VocabularyImageRecognitionItem],
         warnings: list[str],
-        usage: Any,
+        usage: AgentSessionUsage | None,
         call_number: int,
     ) -> VocabularyImageRecognitionResponse:
         return VocabularyImageRecognitionResponse(
             contractVersion=1,
             traceId=request.trace_id,
-            rawText="",
+            rawText=raw_text,
             warnings=warnings,
             items=items,
             generation=VocabularyImageRecognitionGeneration(
@@ -238,9 +268,13 @@ class VocabularyImageRecognitionWorkflow:
                 promptVersion=PROMPT_VERSION,
                 modelCallCount=call_number,
                 traceId=request.trace_id,
-                usage=VocabularyImageRecognitionUsage(
-                    inputTokens=usage.input_tokens,
-                    outputTokens=usage.output_tokens,
+                usage=(
+                    VocabularyImageRecognitionUsage(
+                        inputTokens=usage.input_tokens,
+                        outputTokens=usage.output_tokens,
+                    )
+                    if usage is not None
+                    else None
                 ),
             ),
         )

@@ -4,7 +4,7 @@ import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from agents import ModelBehaviorError
 
@@ -71,10 +71,22 @@ def run_result(output: object, *, input_tokens: int = 120, output_tokens: int = 
     )
 
 
-def workflow(*, timeout_seconds: float = 45.0) -> VocabularyImageRecognitionWorkflow:
+def run_result_without_usage(output: object, *, include_context: bool):
+    result = SimpleNamespace(final_output=output)
+    if include_context:
+        result.context_wrapper = SimpleNamespace(usage=None)
+    return result
+
+
+def workflow(
+    *,
+    timeout_seconds: float = 45.0,
+    monotonic_clock: Mock | None = None,
+) -> VocabularyImageRecognitionWorkflow:
     return VocabularyImageRecognitionWorkflow(
         model="test-model",
         timeout_seconds=timeout_seconds,
+        monotonic_clock=monotonic_clock,
     )
 
 
@@ -144,15 +156,96 @@ class VocabularyImageRecognitionWorkflowTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.generation.usage.input_tokens, 17)
         self.assertEqual(response.generation.usage.output_tokens, 3)
 
-    async def test_response_does_not_expose_complete_raw_text(self) -> None:
-        with patch(
+    async def test_response_preserves_raw_text_without_logging_it(self) -> None:
+        raw_text = "private complete raw text"
+        with self.assertLogs("uvicorn.error", level="INFO") as captured, patch(
             "agents.Runner.run",
             new_callable=AsyncMock,
-            return_value=run_result(model_output(item(), raw_text="private complete raw text")),
+            return_value=run_result(model_output(item(), raw_text=raw_text)),
         ):
             response = await workflow().recognize(request())
 
-        self.assertEqual(response.raw_text, "")
+        self.assertEqual(response.raw_text, raw_text)
+        serialized_logs = repr([record.__dict__ for record in captured.records])
+        self.assertNotIn(raw_text, serialized_logs)
+
+    async def test_retry_uses_only_the_remaining_total_timeout_budget(self) -> None:
+        timeouts: list[float] = []
+        clock = Mock(side_effect=[100.0, 100.0, 130.0, 131.0])
+
+        async def immediate_wait_for(awaitable, *, timeout: float):
+            timeouts.append(timeout)
+            return await awaitable
+
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            side_effect=[
+                run_result(object()),
+                run_result(model_output(item(), raw_text="successful retry")),
+            ],
+        ) as run, patch(
+            "python.ai_orchestrator.workflows.vocabulary_image_recognition.asyncio.wait_for",
+            new=immediate_wait_for,
+        ):
+            response = await workflow(monotonic_clock=clock).recognize(request())
+
+        self.assertEqual(run.await_count, 2)
+        self.assertEqual(timeouts, [45.0, 15.0])
+        self.assertEqual(response.raw_text, "successful retry")
+        self.assertEqual(response.generation.model_call_count, 2)
+
+    async def test_retry_does_not_start_when_total_timeout_budget_is_exhausted(self) -> None:
+        timeouts: list[float] = []
+        clock = Mock(side_effect=[200.0, 200.0, 245.0, 245.0])
+
+        async def immediate_wait_for(awaitable, *, timeout: float):
+            timeouts.append(timeout)
+            return await awaitable
+
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            return_value=run_result(object()),
+        ) as run, patch(
+            "python.ai_orchestrator.workflows.vocabulary_image_recognition.asyncio.wait_for",
+            new=immediate_wait_for,
+        ):
+            with self.assertRaises(VocabularyImageRecognitionError) as raised:
+                await workflow(monotonic_clock=clock).recognize(request())
+
+        self.assertEqual(run.await_count, 1)
+        self.assertEqual(timeouts, [45.0])
+        self.assertEqual(raised.exception.code, "MODEL_TIMEOUT")
+        self.assertTrue(raised.exception.retryable)
+        self.assertIsNone(raised.exception.__cause__)
+        self.assertIsNone(raised.exception.__context__)
+
+    async def test_missing_provider_usage_returns_null(self) -> None:
+        for include_context in (False, True):
+            with self.subTest(include_context=include_context), patch(
+                "agents.Runner.run",
+                new_callable=AsyncMock,
+                return_value=run_result_without_usage(
+                    model_output(item()),
+                    include_context=include_context,
+                ),
+            ):
+                response = await workflow().recognize(request())
+
+            self.assertIsNone(response.generation.usage)
+
+    async def test_explicit_zero_provider_usage_is_preserved(self) -> None:
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            return_value=run_result(model_output(item()), input_tokens=0, output_tokens=0),
+        ):
+            response = await workflow().recognize(request())
+
+        self.assertIsNotNone(response.generation.usage)
+        self.assertEqual(response.generation.usage.input_tokens, 0)
+        self.assertEqual(response.generation.usage.output_tokens, 0)
 
     async def test_invalid_structured_output_retries_only_once(self) -> None:
         invalid_output = object()
