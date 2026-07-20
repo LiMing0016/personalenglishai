@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.service.vocabulary;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -105,7 +106,9 @@ public final class VocabularyImageRecognitionPythonClient {
 
     private VocabularyImageRecognitionPythonResponse parseResponse(String body) {
         try {
-            JsonNode node = OBJECT_MAPPER.readTree(body);
+            JsonNode node = OBJECT_MAPPER.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(body);
             return VocabularyImageRecognitionPythonResponse.fromJson(node);
         } catch (JsonProcessingException | IllegalArgumentException exception) {
             throw failure("PYTHON_IMAGE_OUTPUT_INVALID", false, "Python image recognition response is invalid");

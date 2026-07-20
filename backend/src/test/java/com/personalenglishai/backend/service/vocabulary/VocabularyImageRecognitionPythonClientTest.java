@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
@@ -50,11 +52,9 @@ class VocabularyImageRecognitionPythonClientTest {
         assertEquals("http://python.test/internal/v1/vocabulary/image-recognitions", captured.url().toString());
         assertEquals("Bearer " + INTERNAL_TOKEN, captured.headers().getFirst(HttpHeaders.AUTHORIZATION));
         assertTrue(captured.headers().getContentType().isCompatibleWith(MediaType.MULTIPART_FORM_DATA));
-        assertTrue(exchange.body().contains("name=\"contractVersion\""));
+        assertEquals(List.of("contractVersion", "traceId", "language", "file"), multipartPartNames(exchange.body()));
         assertTrue(exchange.body().contains("\r\n1\r\n"));
-        assertTrue(exchange.body().contains("name=\"traceId\""));
         assertTrue(exchange.body().contains(TRACE_ID));
-        assertTrue(exchange.body().contains("name=\"language\""));
         assertTrue(exchange.body().contains("\r\nen\r\n"));
         assertTrue(exchange.body().contains("name=\"file\"; filename=\"vocabulary.png\""));
         assertFalse(exchange.body().contains("../"));
@@ -84,6 +84,11 @@ class VocabularyImageRecognitionPythonClientTest {
         assertOutputInvalid(response().replace("\"modelCallCount\":1,\"traceId\":\"trace_123\"",
                 "\"modelCallCount\":1,\"traceId\":\"trace_other\""));
         assertOutputInvalid(response().replace("\"traceId\":\"trace_123\",\"rawText\"", "\"traceId\":\"trace_other\",\"rawText\""));
+    }
+
+    @Test
+    void rejects_trailing_json_tokens_after_an_otherwise_valid_response() {
+        assertOutputInvalid(response() + "\n{}");
     }
 
     @Test
@@ -179,6 +184,15 @@ class VocabularyImageRecognitionPythonClientTest {
         return """
                 {"contractVersion":1,"traceId":"trace_123","rawText":"visible source text","warnings":["CANDIDATE_LIMIT_REACHED"],"items":[{"itemId":"item_1","observedText":"receive","normalizedTerm":"receive","status":"accepted","suggestions":[],"contextText":null,"confidence":0.98}],"generation":{"provider":"openai","model":"test-model","promptVersion":"vocabulary-image-recognition-v1","modelCallCount":1,"traceId":"trace_123","usage":{"inputTokens":11,"outputTokens":7}}}
                 """;
+    }
+
+    private List<String> multipartPartNames(String body) {
+        Matcher matcher = Pattern.compile("(?m)^Content-Disposition: form-data; name=\"([^\"]+)\"").matcher(body);
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            names.add(matcher.group(1));
+        }
+        return names;
     }
 
     private static final class CapturingExchange implements ExchangeFunction {
