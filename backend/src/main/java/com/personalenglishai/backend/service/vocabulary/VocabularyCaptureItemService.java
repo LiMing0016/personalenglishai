@@ -137,7 +137,7 @@ public class VocabularyCaptureItemService {
         }
 
         VocabularyCardSource source = newSource(
-                userId, card.getCardUid(), rawTerm, idempotencyKey, request.source(), capturedAt);
+                userId, card.getCardUid(), rawTerm, idempotencyKey, sourceForIndex(request, index), capturedAt);
         try {
             sources.insertSource(source);
         } catch (DuplicateKeyException exception) {
@@ -254,6 +254,34 @@ public class VocabularyCaptureItemService {
         source.setCapturedAt(capturedAt);
         source.setMetadataJson(writeJson(sourceValue.metadata() == null ? Map.of() : sourceValue.metadata()));
         return source;
+    }
+
+    private VocabularyCaptureRequest.Source sourceForIndex(VocabularyCaptureRequest request, int index) {
+        VocabularyCaptureRequest.Source batch = defaultSource(request.source());
+        if (request.itemSources() == null || request.itemSources().isEmpty()) {
+            return batch;
+        }
+        VocabularyCaptureRequest.ItemSource item = request.itemSources().get(index);
+        Map<String, Object> metadata = new LinkedHashMap<>(nullToEmpty(batch.metadata()));
+        metadata.putAll(nullToEmpty(item.metadata()));
+        String contextText = item.contextText() == null ? batch.contextText() : item.contextText();
+        return new VocabularyCaptureRequest.Source(
+                batch.type(),
+                batch.sourceRef(),
+                batch.sourceTitle(),
+                batch.sourceUrl(),
+                contextText,
+                metadata);
+    }
+
+    private VocabularyCaptureRequest.Source defaultSource(VocabularyCaptureRequest.Source source) {
+        return source == null
+                ? new VocabularyCaptureRequest.Source("manual", null, "手动输入", null, null, Map.of())
+                : source;
+    }
+
+    private Map<String, Object> nullToEmpty(Map<String, Object> metadata) {
+        return metadata == null ? Map.of() : metadata;
     }
 
     private VocabularyGenerationJob newJob(

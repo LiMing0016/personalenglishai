@@ -196,6 +196,32 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void acceptsOcrCaptureEnvelopeWithIndexedSources() throws Exception {
+        when(captureService.capture(eq(7L), any())).thenReturn(new VocabularyCaptureResponse(List.of(
+                new VocabularyCaptureResponse.Item("receive", "card_ocr", "created", "generating"))));
+
+        mockMvc.perform(post("/api/vocabulary/captures")
+                        .requestAttr("userId", 7L)
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "clientRequestId":"req-ocr",
+                                  "terms":["receive"],
+                                  "language":"en",
+                                  "templateKey":"basic",
+                                  "source":{"type":"ocr_image","metadata":{"recognitionTraceId":"trace-1","fileName":"words.png","provider":"openai","model":"vision-model","promptVersion":"vocabulary-image-recognition-v1"}},
+                                  "itemSources":[{"contextText":"I receive it","metadata":{"observedText":"recieve","resolution":"suggestion_applied"}}]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].cardUid").value("card_ocr"));
+
+        verify(captureService).capture(eq(7L), argThat(request ->
+                request.itemSources().size() == 1
+                        && "recieve".equals(request.itemSources().get(0).metadata().get("observedText"))));
+    }
+
+    @Test
     void rejectsInvalidCaptureEnvelopeBeforeCallingService() throws Exception {
         mockMvc.perform(post("/api/vocabulary/captures")
                         .requestAttr("userId", 7L)
@@ -335,6 +361,19 @@ class VocabularyControllerTest {
                 .andExpect(jsonPath("$.data.items[0].sourceTypes[0]").value("manual"));
 
         verify(cardService).list(7L, "inno", "ready", "manual", "az", 2, 25);
+    }
+
+    @Test
+    void listsOcrImageCardsWithExistingSourceFilter() throws Exception {
+        when(cardService.list(7L, null, null, "ocr_image", "recent", 1, 20))
+                .thenReturn(new AdminPageResponse<>(List.of(), 0, 1, 20));
+
+        mockMvc.perform(get("/api/vocabulary/cards")
+                        .requestAttr("userId", 7L)
+                        .param("sourceType", "ocr_image"))
+                .andExpect(status().isOk());
+
+        verify(cardService).list(7L, null, null, "ocr_image", "recent", 1, 20);
     }
 
     @Test

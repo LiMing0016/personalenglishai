@@ -1,5 +1,6 @@
 package com.personalenglishai.backend.service.vocabulary;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
@@ -14,11 +15,13 @@ import org.springframework.dao.DataAccessResourceFailureException;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -147,6 +150,61 @@ class VocabularyCaptureServiceTest {
     }
 
     @Test
+    void keepsLegacyJsonAndSixArgumentConstructorCompatible() throws Exception {
+        VocabularyCaptureRequest fromJson = new ObjectMapper().readValue("""
+                {"clientRequestId":"req-json","terms":["word"],"language":"en","source":{"type":"manual"}}
+                """, VocabularyCaptureRequest.class);
+        VocabularyCaptureRequest fromConstructor = new VocabularyCaptureRequest(
+                "req-java", List.of("word"), "en", null, "basic",
+                new VocabularyCaptureRequest.Source("manual", null, null, null, null, Map.of()));
+
+        assertNull(fromJson.itemSources());
+        assertEquals(List.of(), fromConstructor.itemSources());
+    }
+
+    @Test
+    void rejectsIncompleteOrMisalignedOcrItemSourcesBeforeStartingItems() {
+        VocabularyCaptureRequest missing = new VocabularyCaptureRequest(
+                "req-missing", List.of("receive"), "en", null, "basic", ocrSource(), List.of());
+        VocabularyCaptureRequest misaligned = new VocabularyCaptureRequest(
+                "req-misaligned", List.of("receive", "package"), "en", null, "basic", ocrSource(),
+                List.of(itemSource("context", "receive", "accepted")));
+
+        assertThrows(IllegalArgumentException.class, () -> service.capture(7L, missing));
+        assertThrows(IllegalArgumentException.class, () -> service.capture(7L, misaligned));
+        verifyNoInteractions(itemService);
+    }
+
+    @Test
+    void rejectsUnknownNonScalarOversizedAndInvalidOcrMetadataBeforeStartingItems() {
+        List<VocabularyCaptureRequest> invalidRequests = List.of(
+                ocrRequest(Map.of("rawText", "private"), itemMetadata("receive", "accepted")),
+                ocrRequest(Map.of("imageBase64", "private"), itemMetadata("receive", "accepted")),
+                ocrRequest(Map.of("recognitionTraceId", List.of("trace-1")), itemMetadata("receive", "accepted")),
+                ocrRequest(Map.of("recognitionTraceId", "x".repeat(129)), itemMetadata("receive", "accepted")),
+                ocrRequest(batchMetadata(), Map.of("unknown", "value")),
+                ocrRequest(batchMetadata(), Map.of("observedText", Map.of("nested", true), "resolution", "accepted")),
+                ocrRequest(batchMetadata(), Map.of("observedText", "receive", "resolution", "automatic")));
+
+        for (VocabularyCaptureRequest request : invalidRequests) {
+            assertThrows(IllegalArgumentException.class, () -> service.capture(7L, request));
+        }
+        verifyNoInteractions(itemService);
+    }
+
+    @Test
+    void acceptsCompleteOcrSourcesWithStrictMetadata() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome("receive", "card_1", "created", "generating", true, "theme_system_basic"));
+        VocabularyCaptureRequest request = ocrRequest(batchMetadata(), itemMetadata("recieve", "suggestion_applied"));
+
+        VocabularyCaptureResponse response = service.capture(7L, request);
+
+        assertEquals("created", response.items().get(0).action());
+        verify(itemService).captureOne(eq(7L), eq(request), any(), eq(0));
+    }
+
+    @Test
     void dictionaryFavoriteUsesCanonicalLanguageAndStableSourceReference() {
         when(itemService.captureOneInCallerTransaction(eq(7L), any(), any(), eq(0)))
                 .thenReturn(outcome("innovative", "card_1", "created", "generating", true, "theme_system_basic"));
@@ -221,5 +279,38 @@ class VocabularyCaptureServiceTest {
             String term, String cardUid, String action, String status, boolean mutated, String themeUid) {
         return new VocabularyCaptureItemService.CaptureOutcome(
                 new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, themeUid);
+    }
+
+    private VocabularyCaptureRequest ocrRequest(
+            Map<String, Object> batchMetadata, Map<String, Object> itemMetadata) {
+        return new VocabularyCaptureRequest(
+                "req-ocr", List.of("receive"), "en", null, "basic",
+                new VocabularyCaptureRequest.Source(
+                        "ocr_image", null, "图片识别", null, "batch context", batchMetadata),
+                List.of(new VocabularyCaptureRequest.ItemSource("item context", itemMetadata)));
+    }
+
+    private VocabularyCaptureRequest.Source ocrSource() {
+        return new VocabularyCaptureRequest.Source(
+                "ocr_image", null, "图片识别", null, null, batchMetadata());
+    }
+
+    private VocabularyCaptureRequest.ItemSource itemSource(
+            String contextText, String observedText, String resolution) {
+        return new VocabularyCaptureRequest.ItemSource(
+                contextText, itemMetadata(observedText, resolution));
+    }
+
+    private Map<String, Object> batchMetadata() {
+        return Map.of(
+                "recognitionTraceId", "trace-1",
+                "fileName", "words.png",
+                "provider", "openai",
+                "model", "vision-model",
+                "promptVersion", "vocabulary-image-recognition-v1");
+    }
+
+    private Map<String, Object> itemMetadata(String observedText, String resolution) {
+        return Map.of("observedText", observedText, "resolution", resolution);
     }
 }

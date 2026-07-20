@@ -14,15 +14,29 @@ public record VocabularyCaptureRequest(
         @Size(max = 16) String language,
         String themeUid,
         @Pattern(regexp = "basic|exam|reading") String templateKey,
-        @Valid Source source) {
+        @Valid Source source,
+        @Valid List<ItemSource> itemSources) {
+
+    public VocabularyCaptureRequest(
+            String clientRequestId,
+            List<String> terms,
+            String language,
+            String themeUid,
+            String templateKey,
+            Source source) {
+        this(clientRequestId, terms, language, themeUid, templateKey, source, List.of());
+    }
 
     public record Source(
-            @NotBlank @Pattern(regexp = "manual|dictionary") String type,
+            @NotBlank @Pattern(regexp = "manual|dictionary|ocr_image") String type,
             @Size(max = 128) String sourceRef,
             @Size(max = 255) String sourceTitle,
             @Size(max = 1024) String sourceUrl,
             String contextText,
             Map<String, Object> metadata) {
+    }
+
+    public record ItemSource(String contextText, Map<String, Object> metadata) {
     }
 
     public static VocabularyCaptureRequest manual(

@@ -23,7 +23,12 @@ import java.util.function.Supplier;
 @Service
 public class VocabularyCaptureService {
     private static final Logger log = LoggerFactory.getLogger(VocabularyCaptureService.class);
-    private static final Set<String> SUPPORTED_SOURCE_TYPES = Set.of("manual", "dictionary");
+    private static final Set<String> SUPPORTED_SOURCE_TYPES = Set.of("manual", "dictionary", "ocr_image");
+    private static final Set<String> OCR_BATCH_METADATA_KEYS = Set.of(
+            "recognitionTraceId", "fileName", "provider", "model", "promptVersion");
+    private static final Set<String> OCR_ITEM_METADATA_KEYS = Set.of("observedText", "resolution");
+    private static final Set<String> OCR_RESOLUTIONS = Set.of(
+            "accepted", "suggestion_applied", "original_kept");
 
     private final VocabularyCaptureItemService itemService;
     private final VocabularyThemeService themeService;
@@ -118,6 +123,56 @@ public class VocabularyCaptureService {
         if (!SUPPORTED_SOURCE_TYPES.contains(sourceType)) {
             throw new IllegalArgumentException("unsupported source type");
         }
+        List<VocabularyCaptureRequest.ItemSource> itemSources = request.itemSources();
+        if (itemSources != null && !itemSources.isEmpty() && itemSources.size() != request.terms().size()) {
+            throw new IllegalArgumentException("itemSources must match terms");
+        }
+        if ("ocr_image".equals(sourceType)) {
+            validateOcrSources(request, itemSources);
+        }
+    }
+
+    private void validateOcrSources(
+            VocabularyCaptureRequest request,
+            List<VocabularyCaptureRequest.ItemSource> itemSources) {
+        if (itemSources == null || itemSources.size() != request.terms().size()) {
+            throw new IllegalArgumentException("ocr_image requires one itemSource per term");
+        }
+        Map<String, Object> batchMetadata = request.source().metadata();
+        validateMetadataKeys(batchMetadata, OCR_BATCH_METADATA_KEYS, "source metadata");
+        requireString(batchMetadata, "recognitionTraceId", 128);
+        requireString(batchMetadata, "fileName", 255);
+        requireString(batchMetadata, "provider", 128);
+        requireString(batchMetadata, "model", 255);
+        requireString(batchMetadata, "promptVersion", 128);
+
+        for (VocabularyCaptureRequest.ItemSource itemSource : itemSources) {
+            if (itemSource == null) {
+                throw new IllegalArgumentException("ocr_image itemSource is required");
+            }
+            Map<String, Object> itemMetadata = itemSource.metadata();
+            validateMetadataKeys(itemMetadata, OCR_ITEM_METADATA_KEYS, "itemSource metadata");
+            requireString(itemMetadata, "observedText", 200);
+            String resolution = requireString(itemMetadata, "resolution", 32);
+            if (!OCR_RESOLUTIONS.contains(resolution)) {
+                throw new IllegalArgumentException("unsupported OCR resolution");
+            }
+        }
+    }
+
+    private void validateMetadataKeys(
+            Map<String, Object> metadata, Set<String> allowedKeys, String fieldName) {
+        if (metadata == null || !allowedKeys.containsAll(metadata.keySet())) {
+            throw new IllegalArgumentException(fieldName + " contains unsupported keys");
+        }
+    }
+
+    private String requireString(Map<String, Object> metadata, String key, int maxLength) {
+        Object value = metadata.get(key);
+        if (!(value instanceof String text) || text.isBlank() || text.length() > maxLength) {
+            throw new IllegalArgumentException(key + " must be a non-blank bounded string");
+        }
+        return text;
     }
 
     private String canonicalLanguage(String language) {

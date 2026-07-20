@@ -341,6 +341,43 @@ class VocabularyCaptureItemServiceTest {
     }
 
     @Test
+    void ocrCaptureMergesBatchAndIndexedSourceMetadataAndContext() throws Exception {
+        VocabularyCaptureRequest request = new VocabularyCaptureRequest(
+                "req-ocr", List.of("receive", "package"), "en", null, "basic",
+                new VocabularyCaptureRequest.Source(
+                        "ocr_image", "recognition:trace-1", "图片识别", null, "batch context",
+                        Map.of(
+                                "recognitionTraceId", "trace-1",
+                                "fileName", "words.png",
+                                "provider", "openai",
+                                "model", "vision-model",
+                                "promptVersion", "vocabulary-image-recognition-v1")),
+                List.of(
+                        new VocabularyCaptureRequest.ItemSource(
+                                "I receive it",
+                                Map.of("observedText", "recieve", "resolution", "suggestion_applied")),
+                        new VocabularyCaptureRequest.ItemSource(
+                                null,
+                                Map.of("observedText", "package", "resolution", "accepted"))));
+        ArgumentCaptor<VocabularyCardSource> sourceCaptor = ArgumentCaptor.forClass(VocabularyCardSource.class);
+
+        service.captureOne(7L, request, this::basicTheme, 0);
+        service.captureOne(7L, request, this::basicTheme, 1);
+
+        verify(sources, org.mockito.Mockito.times(2)).insertSource(sourceCaptor.capture());
+        List<VocabularyCardSource> inserted = sourceCaptor.getAllValues();
+        assertEquals("ocr_image", inserted.get(0).getSourceType());
+        assertEquals("I receive it", inserted.get(0).getContextText());
+        assertEquals("batch context", inserted.get(1).getContextText());
+        Map<?, ?> firstMetadata = new ObjectMapper().readValue(inserted.get(0).getMetadataJson(), Map.class);
+        assertEquals("trace-1", firstMetadata.get("recognitionTraceId"));
+        assertEquals("recieve", firstMetadata.get("observedText"));
+        assertEquals("suggestion_applied", firstMetadata.get("resolution"));
+        verify(jobs).insertJob(argThat(job -> job.getRequestJson().contains("\"index\":0")));
+        verify(jobs).insertJob(argThat(job -> job.getRequestJson().contains("\"index\":1")));
+    }
+
+    @Test
     void usesResolvedThemeWhenRequestOmitsTemplate() {
         service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-default", List.of("innovative"), "en", null),
