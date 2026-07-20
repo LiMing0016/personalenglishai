@@ -8,6 +8,18 @@ const router = fs.readFileSync(new URL('../src/router/index.ts', import.meta.url
 const capture = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCapturePanel.vue', import.meta.url), 'utf8')
 const list = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCardList.vue', import.meta.url), 'utf8')
 
+test('collection page has one concise heading and the compact import workspace', () => {
+  assert.match(view, /<h1>单词沉淀<\/h1>/)
+  assert.equal((view.match(/<h1>单词沉淀<\/h1>/g) ?? []).length, 1)
+  assert.doesNotMatch(view, /Word Cards|单词卡中心|更多来源后续接入/)
+  assert.match(capture, /VocabularyTextCapture/)
+  assert.match(capture, /VocabularyImageCapture/)
+  assert.match(capture, /VocabularyTermReview/)
+  assert.match(capture, /VocabularyThemeSelect/)
+  assert.doesNotMatch(capture, /VocabularyThemeShelf/)
+  assert.doesNotMatch(capture, /所选主题仅用于本次沉淀/)
+})
+
 test('vocabulary view composes durable capture and list components', () => {
   assert.match(view, /VocabularyCapturePanel/)
   assert.match(view, /VocabularyCardList/)
@@ -16,12 +28,14 @@ test('vocabulary view composes durable capture and list components', () => {
 })
 
 test('capture panel exposes theme choice and bulk submission states', () => {
-  assert.match(capture, /VocabularyThemeShelf/)
+  assert.match(capture, /VocabularyThemeSelect/)
   assert.match(capture, /selectedThemeUid/)
   assert.match(capture, /themeUid/)
   assert.doesNotMatch(capture, /template-control/)
   assert.match(capture, /captureMutation/)
   assert.match(capture, /已存在，已追加来源/)
+  assert.match(capture, /生成 N 张卡片|生成 \$\{selectedCount\.value\} 张卡片/)
+  assert.doesNotMatch(capture, /按「.*」生成/)
 })
 
 test('list renders every persisted status and filters', () => {

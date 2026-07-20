@@ -7,38 +7,45 @@ function readSource(path: string) {
   return existsSync(url) ? readFileSync(url, 'utf8') : ''
 }
 
-const shelfSource = readSource('../src/components/vocabulary/VocabularyThemeShelf.vue')
+const selectSource = readSource('../src/components/vocabulary/VocabularyThemeSelect.vue')
+const textCaptureSource = readSource('../src/components/vocabulary/VocabularyTextCapture.vue')
+const imageCaptureSource = readSource('../src/components/vocabulary/VocabularyImageCapture.vue')
+const reviewSource = readSource('../src/components/vocabulary/VocabularyTermReview.vue')
 const captureSource = readSource('../src/components/vocabulary/VocabularyCapturePanel.vue')
 const viewSource = readSource('../src/views/VocabularyView.vue')
 
-test('shows at most three active themes before the fixed create action', () => {
-  assert.match(shelfSource, /defaultThemeUid/)
-  assert.match(shelfSource, /recentThemeUids/)
-  assert.match(shelfSource, /status === 'active'/)
-  assert.match(shelfSource, /slice\(0, 3\)/)
-  assert.match(shelfSource, /新建主题/)
-  assert.match(shelfSource, /管理全部主题/)
+test('theme selector lists active themes and links to theme management', () => {
+  assert.match(selectSource, /<select/)
+  assert.match(selectSource, /status === 'active'/)
+  assert.match(selectSource, /to="\/app\/vocabulary\/themes"/)
+  assert.match(selectSource, /管理主题/)
+  assert.match(selectSource, /主题加载中/)
+  assert.match(selectSource, /主题加载失败/)
+  assert.match(selectSource, /暂无可用主题/)
 })
 
-test('deduplicates the default and recent themes while keeping the default first', () => {
-  assert.match(shelfSource, /new Set<string>/)
-  assert.match(shelfSource, /catalog\.defaultThemeUid/)
-  assert.match(shelfSource, /catalog\.recentThemeUids/)
-  assert.match(shelfSource, /selectedThemeUid === theme\.themeUid/)
-  assert.match(shelfSource, /emit\('select', theme\.themeUid\)/)
+test('text adapter parses terms without owning candidate state', () => {
+  assert.match(textCaptureSource, /parseCaptureTerms/)
+  assert.match(textCaptureSource, /emit\('terms'/)
+  assert.doesNotMatch(textCaptureSource, /ImportCandidate\[\]|candidates\s*=\s*ref/)
 })
 
-test('routes both theme management actions without pretending to select through query state', () => {
-  assert.ok(
-    (shelfSource.match(/to="\/app\/vocabulary\/themes"/g) ?? []).length >= 2,
-    'create and manage actions should open the theme library',
-  )
-  assert.doesNotMatch(shelfSource, /query\s*:/)
+test('image capture uses upload and camera inputs with stable preview lifecycle', () => {
+  assert.equal((imageCaptureSource.match(/accept="image\/jpeg,image\/png,image\/webp"/g) ?? []).length, 2)
+  assert.match(imageCaptureSource, /capture="environment"/)
+  assert.match(imageCaptureSource, /URL\.createObjectURL/)
+  assert.match(imageCaptureSource, /URL\.revokeObjectURL/)
+  assert.match(imageCaptureSource, /aspect-ratio/)
+  assert.match(imageCaptureSource, /object-fit:\s*contain/)
+  assert.match(imageCaptureSource, /<details/)
+  assert.match(imageCaptureSource, /recognizing \? '识别中\.\.\.' : response \? '重新识别' : '开始识别'/)
 })
 
-test('keeps the fixed create action reachable in loading, error, and empty states', () => {
-  assert.doesNotMatch(shelfSource, /v-else class="theme-shelf__items"/)
-  assert.match(shelfSource, /class="theme-shelf__items"/)
+test('term review requires explicit typo decisions and emits reducer commands', () => {
+  for (const label of ['采用', '保留原词', '删除', '全选', '清空']) assert.match(reviewSource, new RegExp(label))
+  assert.match(reviewSource, /词典已验证/)
+  assert.match(reviewSource, /emit\('command'/)
+  assert.doesNotMatch(reviewSource, /props\.candidates\.(push|splice)/)
 })
 
 test('keeps selection in the capture draft and falls back when it becomes unavailable', () => {
@@ -46,13 +53,15 @@ test('keeps selection in the capture draft and falls back when it becomes unavai
   assert.match(captureSource, /selectedThemeUid\.value = catalog\.defaultThemeUid/)
   assert.match(captureSource, /selectedThemeIsActive/)
   assert.match(captureSource, /watch\(/)
-  assert.match(captureSource, /VocabularyThemeShelf/)
+  assert.match(captureSource, /VocabularyThemeSelect/)
+  assert.doesNotMatch(captureSource, /syncManualCandidates\(parseCaptureTerms\(rawTerms\.value\)\)/)
 })
 
 test('submits the selected theme explicitly and explains every unavailable state', () => {
   assert.match(captureSource, /themeUid: selectedThemeUid\.value/)
   assert.doesNotMatch(captureSource, /templateKey: templateKey\.value/)
-  assert.match(captureSource, /按「.*」生成/)
+  assert.doesNotMatch(captureSource, /按「.*」生成/)
+  assert.match(captureSource, /生成中\.\.\.|生成卡片/)
   assert.match(captureSource, /主题加载中/)
   assert.match(captureSource, /主题加载失败/)
   assert.match(captureSource, /暂无可用主题/)
@@ -64,6 +73,8 @@ test('vocabulary view owns the server theme query and passes its states to captu
   assert.match(viewSource, /:theme-catalog="themesQuery\.data\.value"/)
   assert.match(viewSource, /:themes-loading="themesQuery\.isLoading\.value"/)
   assert.match(viewSource, /:themes-error="themesBlockingError"/)
+  assert.match(viewSource, /:image-recognition-enabled="imageRecognitionEnabled"/)
+  assert.match(viewSource, /:image-recognition-mutation="imageRecognitionMutation"/)
 })
 
 test('blocks only a theme query error without cached catalog data', () => {

@@ -197,17 +197,15 @@
       aria-label="单词沉淀"
     >
       <header class="collection-header">
-        <section class="page-heading">
-          <p>Word Cards</p>
-          <h1>单词卡中心</h1>
-          <span>手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入</span>
-        </section>
+        <h1>单词沉淀</h1>
       </header>
       <VocabularyCapturePanel
         :theme-catalog="themesQuery.data.value"
         :themes-loading="themesQuery.isLoading.value"
         :themes-error="themesBlockingError"
         :capture-mutation="captureMutation"
+        :image-recognition-enabled="imageRecognitionEnabled"
+        :image-recognition-mutation="imageRecognitionMutation"
         @captured="handleVocabularyCaptured"
       />
       <VocabularyCardList
@@ -343,6 +341,7 @@ import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspe
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
+import { isVocabularyImageRecognitionEnabled } from '@/features/vocabulary/imageRecognition'
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
@@ -420,6 +419,7 @@ const {
   detailQuery,
   revisionsQuery,
   captureMutation,
+  imageRecognitionMutation,
   updateMutation,
   deleteMutation,
   regenerateMutation,
@@ -428,6 +428,7 @@ const {
 } = useVocabularyCards(vocabularyFilters, selectedCardUid)
 const { themesQuery } = useVocabularyThemes()
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
+const imageRecognitionEnabled = isVocabularyImageRecognitionEnabled()
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
