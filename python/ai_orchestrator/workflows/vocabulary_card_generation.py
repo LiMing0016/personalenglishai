@@ -501,7 +501,7 @@ class VocabularyCardGenerationWorkflow:
                     trace_metadata={
                         "request_id": request.request_id,
                         "trace_id": request.trace_id,
-                        "model_call_number": model_call_number,
+                        "model_call_number": str(model_call_number),
                     },
                 ),
             )

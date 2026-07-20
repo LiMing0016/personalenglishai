@@ -624,7 +624,7 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
             {
                 "request_id": "job_123:attempt_1",
                 "trace_id": "vocab-job_123-attempt_1",
-                "model_call_number": 1,
+                "model_call_number": "1",
             },
         )
 
