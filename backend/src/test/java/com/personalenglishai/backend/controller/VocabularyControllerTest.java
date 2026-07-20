@@ -13,12 +13,14 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
 import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyTemplateRegistry;
+import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +29,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -35,11 +38,13 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,9 +55,93 @@ class VocabularyControllerTest {
     @MockBean VocabularyCaptureService captureService;
     @MockBean VocabularyCardService cardService;
     @MockBean VocabularyThemeService themeService;
+    @MockBean VocabularyImageRecognitionService imageRecognitionService;
     @MockBean VocabularyTemplateRegistry templateRegistry;
     @MockBean JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean JwtInterceptor jwtInterceptor;
+
+    @Test
+    void recognizesVocabularyImageByDelegatingMultipartToService() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "words.png", "image/png", new byte[] {1, 2, 3});
+        var response = new VocabularyImageRecognitionResponse(
+                1,
+                "vocab-image-0123456789abcdef0123456789abcdef",
+                "private OCR review text",
+                List.of(),
+                List.of(new VocabularyImageRecognitionResponse.Item(
+                        "item-1", "colour", "colour", "accepted", List.of(), "context", 0.95)));
+        when(imageRecognitionService.recognize(eq(7L), any())).thenReturn(response);
+
+        mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .file(file)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rawText").value("private OCR review text"))
+                .andExpect(jsonPath("$.data.items[0].status").value("accepted"));
+
+        verify(imageRecognitionService).recognize(7L, file);
+    }
+
+    @Test
+    void rejectsAnonymousVocabularyImageWithoutCallingService() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "words.png", "image/png", new byte[] {1});
+
+        mockMvc.perform(multipart("/api/vocabulary/image-recognitions").file(file))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"));
+
+        verifyNoInteractions(imageRecognitionService);
+    }
+
+    @Test
+    void mapsEmptyAndInvalidVocabularyImagesToBadRequest() throws Exception {
+        MockMultipartFile empty = new MockMultipartFile("file", "words.png", "image/png", new byte[0]);
+        MockMultipartFile invalid = new MockMultipartFile("file", "words.gif", "image/gif", new byte[] {1});
+        doThrow(new BizException(ErrorCode.VOCABULARY_IMAGE_INVALID))
+                .when(imageRecognitionService).recognize(eq(7L), any());
+
+        mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .file(empty)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400052"));
+        mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .file(invalid)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400052"));
+    }
+
+    @Test
+    void mapsVocabularyImageQuotaAndUpstreamFailuresToStableStatusesWithoutPrivateBody() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "private-path.png", "image/png", "private file body".getBytes());
+
+        assertImageError(file, ErrorCode.SUBSCRIPTION_TOKEN_QUOTA_EXCEEDED, 429, "429010");
+        assertImageError(file, ErrorCode.VOCABULARY_IMAGE_OUTPUT_INVALID, 502, "502050");
+        assertImageError(file, ErrorCode.VOCABULARY_IMAGE_UNAVAILABLE, 503, "503050");
+        assertImageError(file, ErrorCode.VOCABULARY_IMAGE_TIMEOUT, 504, "504050");
+    }
+
+    private void assertImageError(
+            MockMultipartFile file, ErrorCode errorCode, int statusCode, String responseCode) throws Exception {
+        org.mockito.Mockito.reset(imageRecognitionService);
+        doThrow(new BizException(errorCode)).when(imageRecognitionService).recognize(eq(7L), any());
+
+        String responseBody = mockMvc.perform(multipart("/api/vocabulary/image-recognitions")
+                        .file(file)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().is(statusCode))
+                .andExpect(jsonPath("$.code").value(responseCode))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertFalse(responseBody.contains("private file body"));
+        assertFalse(responseBody.contains("private-path.png"));
+    }
 
     @Test
     void capturesManualTerms() throws Exception {

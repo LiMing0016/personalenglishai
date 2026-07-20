@@ -14,13 +14,16 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyRevisionListRespon
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
 import com.personalenglishai.backend.dto.vocabulary.CreateVocabularyThemeRequest;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyThemeRequest;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/vocabulary")
@@ -39,14 +43,27 @@ public class VocabularyController {
     private final VocabularyCaptureService captureService;
     private final VocabularyCardService cardService;
     private final VocabularyThemeService themeService;
+    private final VocabularyImageRecognitionService imageRecognitionService;
 
     public VocabularyController(
             VocabularyCaptureService captureService,
             VocabularyCardService cardService,
-            VocabularyThemeService themeService) {
+            VocabularyThemeService themeService,
+            VocabularyImageRecognitionService imageRecognitionService) {
         this.captureService = captureService;
         this.cardService = cardService;
         this.themeService = themeService;
+        this.imageRecognitionService = imageRecognitionService;
+    }
+
+    @PostMapping(value = "/image-recognitions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<VocabularyImageRecognitionResponse>> recognizeImage(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestParam("file") MultipartFile file) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(imageRecognitionService.recognize(userId, file)));
     }
 
     @PostMapping("/captures")

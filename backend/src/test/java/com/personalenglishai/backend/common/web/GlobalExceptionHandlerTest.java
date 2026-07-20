@@ -43,6 +43,19 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleBiz_mapsVocabularyImageGatewayErrorsByNumericPrefix() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var outputInvalid = handler.handleBiz(new BizException(ErrorCode.VOCABULARY_IMAGE_OUTPUT_INVALID));
+        var timeout = handler.handleBiz(new BizException(ErrorCode.VOCABULARY_IMAGE_TIMEOUT));
+
+        assertThat(outputInvalid.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(timeout.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
+        assertThat(outputInvalid.getBody().getCode()).isEqualTo("502050");
+        assertThat(timeout.getBody().getCode()).isEqualTo("504050");
+    }
+
+    @Test
     void handleIllegalArgument_mapsClientInputToHttp400WithoutCatchingInfrastructureFailures() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
