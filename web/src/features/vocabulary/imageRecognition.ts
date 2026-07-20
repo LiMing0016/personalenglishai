@@ -3,6 +3,7 @@ import type {
   VocabularyImageRecognitionResponse,
   VocabularyImageRecognitionSuggestion,
   VocabularyRecognitionStatus,
+  VocabularyRecognitionWarning,
 } from '@/api/vocabulary'
 import { createClientRequestId } from '@/features/vocabulary/captureTerms'
 
@@ -40,6 +41,22 @@ export interface CaptureBatch {
   payload: VocabularyCaptureRequest
 }
 
+export interface RecognitionCandidateState {
+  candidates: ImportCandidate[]
+  warnings: VocabularyRecognitionWarning[]
+}
+
+export class UnresolvedVocabularyCandidatesError extends Error {
+  readonly code = 'UNRESOLVED_SELECTED_CANDIDATES'
+  readonly candidateIds: string[]
+
+  constructor(candidateIds: readonly string[]) {
+    super('Selected vocabulary candidates require review')
+    this.name = 'UnresolvedVocabularyCandidatesError'
+    this.candidateIds = [...candidateIds]
+  }
+}
+
 export function getVocabularyImageFileError(file: Pick<File, 'size' | 'type'>): string | null {
   if (!SUPPORTED_IMAGE_TYPES.has(file.type)) return '仅支持 JPG、PNG 或 WEBP 图片'
   if (file.size <= 0) return '图片不能为空'
@@ -63,8 +80,17 @@ export function mergeRecognitionCandidates(
   response: VocabularyImageRecognitionResponse,
   fileName: string,
 ): ImportCandidate[] {
+  return mergeRecognitionCandidateState(candidates, response, fileName).candidates
+}
+
+export function mergeRecognitionCandidateState(
+  candidates: readonly ImportCandidate[],
+  response: VocabularyImageRecognitionResponse,
+  fileName: string,
+): RecognitionCandidateState {
   const merged = [...candidates]
   const existingTerms = new Set(candidates.map((candidate) => termKey(candidate.term)))
+  const normalizedFileName = normalizeImageFileName(fileName)
 
   for (const item of response.items.slice(0, MAX_RECOGNITION_CANDIDATES)) {
     const key = termKey(item.normalizedTerm)
@@ -85,12 +111,25 @@ export function mergeRecognitionCandidates(
       recognition: {
         ...response.generation,
         traceId: response.traceId,
-        fileName,
+        fileName: normalizedFileName,
       },
     })
   }
 
-  return merged
+  return {
+    candidates: merged,
+    warnings: [...response.warnings],
+  }
+}
+
+function normalizeImageFileName(fileName: string): string {
+  const pathSegments = fileName.split(/[\\/]/u)
+  const baseName = pathSegments[pathSegments.length - 1] ?? ''
+  const cleaned = baseName.replace(/[\u0000-\u001f\u007f]/gu, '').trim() || 'image'
+  if (cleaned.length <= 255) return cleaned
+
+  const extension = cleaned.match(/(\.[A-Za-z0-9]{1,15})$/u)?.[1] ?? ''
+  return `${cleaned.slice(0, 255 - extension.length)}${extension}`
 }
 
 function updateCandidate(
@@ -188,6 +227,13 @@ export function buildCaptureBatches({
   sourceContext: string
   createRequestId?: () => string
 }): CaptureBatch[] {
+  const unresolvedCandidateIds = candidates
+    .filter((candidate) => candidate.selected && candidate.resolution === 'unresolved')
+    .map((candidate) => candidate.id)
+  if (unresolvedCandidateIds.length) {
+    throw new UnresolvedVocabularyCandidatesError(unresolvedCandidateIds)
+  }
+
   const groups = new Map<string, ImportCandidate[]>()
   for (const candidate of selectedReadyCandidates(candidates)) {
     const groupKey = candidate.source === 'manual' ? 'manual' : `ocr:${candidate.sourceBatchId}`

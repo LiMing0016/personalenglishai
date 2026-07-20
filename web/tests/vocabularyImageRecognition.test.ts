@@ -8,12 +8,14 @@ import {
 } from '../src/api/vocabulary'
 import {
   VOCABULARY_IMAGE_MAX_BYTES,
+  UnresolvedVocabularyCandidatesError,
   applySuggestion,
   buildCaptureBatches,
   clearCandidateSelection,
   getVocabularyImageFileError,
   isVocabularyImageRecognitionEnabled,
   keepOriginal,
+  mergeRecognitionCandidateState,
   mergeRecognitionCandidates,
   removeCandidate,
   selectAllReadyCandidates,
@@ -90,11 +92,15 @@ function manualCandidate(term: string, id = `manual-${term}`): ImportCandidate {
   }
 }
 
-function acceptedImageCandidate(term: string, traceId = 'trace-1'): ImportCandidate {
+function acceptedImageCandidate(
+  term: string,
+  traceId = 'trace-1',
+  fileName = 'words.png',
+): ImportCandidate {
   return mergeRecognitionCandidates(
     [],
     { ...recognitionResponse([recognitionItem(term)]), traceId },
-    'words.png',
+    fileName,
   )[0]!
 }
 
@@ -182,16 +188,17 @@ test('keeps first occurrence order while deduplicating candidates without case s
   assert.equal(candidates[0], existing[0])
 })
 
-test('limits each recognition result to 30 candidates and preserves the limit warning', () => {
+test('limits each recognition result to 30 candidates and exposes the limit warning in merge state', () => {
   const response = recognitionResponse(
     Array.from({ length: 35 }, (_, index) => recognitionItem(`word-${index + 1}`)),
     ['CANDIDATE_LIMIT_REACHED'],
   )
 
-  const candidates = mergeRecognitionCandidates([], response, 'many.png')
+  const result = mergeRecognitionCandidateState([], response, 'many.png')
 
-  assert.equal(candidates.length, 30)
-  assert.deepEqual(response.warnings, ['CANDIDATE_LIMIT_REACHED'])
+  assert.equal(result.candidates.length, 30)
+  assert.deepEqual(result.warnings, ['CANDIDATE_LIMIT_REACHED'])
+  assert.equal(JSON.stringify(result).includes('rawText'), false)
 })
 
 test('requires an explicit decision before selected typo candidates become ready', () => {
@@ -310,7 +317,74 @@ test('groups mixed candidates into source-safe capture batches', () => {
   assert.equal(JSON.stringify(batches).includes('rawText'), false)
 })
 
-test('excludes unselected and unresolved candidates while preserving per-item context', () => {
+test('fails closed when any unresolved candidate is selected', () => {
+  const accepted = acceptedImageCandidate('package')
+  const [unresolved] = mergeRecognitionCandidates([], recognitionResponse([
+    recognitionItem('recieve', {
+      status: 'suspected_typo',
+      suggestions: [{ term: 'receive', dictionaryVerified: true }],
+    }),
+  ]), 'words.png')
+  let requestIdCalls = 0
+
+  assert.throws(
+    () => buildCaptureBatches({
+      candidates: [accepted, unresolved!],
+      themeUid: 'theme_system_basic',
+      sourceContext: '',
+      createRequestId: () => {
+        requestIdCalls += 1
+        return `request-${requestIdCalls}`
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof UnresolvedVocabularyCandidatesError)
+      assert.equal(error.code, 'UNRESOLVED_SELECTED_CANDIDATES')
+      assert.deepEqual(error.candidateIds, [unresolved!.id])
+      return true
+    },
+  )
+  assert.equal(requestIdCalls, 0)
+})
+
+test('does not let an unselected unresolved candidate block ready batches', () => {
+  const accepted = acceptedImageCandidate('package')
+  const [unresolved] = mergeRecognitionCandidates([], recognitionResponse([
+    recognitionItem('recieve', {
+      status: 'suspected_typo',
+      suggestions: [{ term: 'receive', dictionaryVerified: true }],
+    }),
+  ]), 'words.png')
+
+  const batches = buildCaptureBatches({
+    candidates: [accepted, { ...unresolved!, selected: false }],
+    themeUid: 'theme_system_basic',
+    sourceContext: '',
+    createRequestId: () => 'request-1',
+  })
+
+  assert.deepEqual(batches.map((batch) => batch.payload.terms), [['package']])
+})
+
+test('stores a path-free file name within 255 characters while preserving a reasonable extension', () => {
+  const originalName = `C:\\private\\notes\\${'a'.repeat(300)}.png`
+  const candidate = acceptedImageCandidate('package', 'trace-1', originalName)
+  const batches = buildCaptureBatches({
+    candidates: [candidate],
+    themeUid: 'theme_system_basic',
+    sourceContext: '',
+    createRequestId: () => 'request-1',
+  })
+  const fileName = String(batches[0]?.payload.source.metadata.fileName)
+
+  assert.equal(fileName.length, 255)
+  assert.equal(fileName.endsWith('.png'), true)
+  assert.equal(fileName.includes('private'), false)
+  assert.equal(fileName.includes('\\'), false)
+  assert.equal(fileName.includes('/'), false)
+})
+
+test('excludes unselected candidates while preserving per-item context', () => {
   const accepted = {
     ...acceptedImageCandidate('package'),
     contextText: 'I received a package.',
@@ -321,13 +395,13 @@ test('excludes unselected and unresolved candidates while preserving per-item co
   ]), 'words.png')
 
   const batches = buildCaptureBatches({
-    candidates: [accepted, unselected, unresolved!],
+    candidates: [accepted, unselected, { ...unresolved!, selected: false }],
     themeUid: 'theme_system_basic',
     sourceContext: '',
     createRequestId: () => 'request-1',
   })
 
-  assert.equal(selectedReadyCandidates([accepted, unselected, unresolved!]).length, 1)
+  assert.equal(selectedReadyCandidates([accepted, unselected, { ...unresolved!, selected: false }]).length, 1)
   assert.deepEqual(batches[0]?.payload.itemSources?.[0], {
     contextText: 'I received a package.',
     metadata: { observedText: 'package', resolution: 'accepted' },
