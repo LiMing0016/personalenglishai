@@ -21,6 +21,14 @@ def test_prompt_contains_required_extraction_and_output_rules() -> None:
     assert "3. Other visible English words only when they are clearly intended for study" in instructions
     assert "visible evidence" in instructions
     assert "Do not silently correct" in instructions
+    assert (
+        "normalizedTerm may only normalize casing, leading/trailing whitespace, and boundary punctuation"
+        in instructions
+    )
+    assert (
+        "When status is `suspected_typo`, `normalizedTerm` must remain the normalized `observedText`; never replace it with an unconfirmed suggestion"
+        in instructions
+    )
     assert "Do not generate definitions" in instructions
     assert "Do not output Markdown" in instructions
     assert "at most 30 candidates" in instructions

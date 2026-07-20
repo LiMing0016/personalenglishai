@@ -136,6 +136,14 @@ def test_suspected_typo_requires_one_to_three_suggestions() -> None:
     assert item.suggestions == ["receive"]
 
 
+def test_suggestions_reject_empty_or_whitespace_only_values() -> None:
+    for suggestion in ("", "   ", "\t"):
+        with pytest.raises(ValidationError):
+            VocabularyImageRecognitionModelItem(
+                **model_item_payload(status="suspected_typo", suggestions=[suggestion])
+            )
+
+
 def test_accepted_item_must_not_include_suggestions() -> None:
     with pytest.raises(ValidationError):
         VocabularyImageRecognitionItem(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -15,6 +15,7 @@ OPAQUE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 
 RecognitionStatus = Literal["accepted", "suspected_typo"]
 PythonRecognitionWarning = Literal["CANDIDATE_LIMIT_REACHED"]
+NonBlankSuggestion = Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
 
 
 class StrictRecognitionModel(BaseModel):
@@ -25,7 +26,7 @@ class VocabularyImageRecognitionModelItem(StrictRecognitionModel):
     observed_text: str = Field(alias="observedText", min_length=1, max_length=200)
     normalized_term: str = Field(alias="normalizedTerm", min_length=1, max_length=200)
     status: RecognitionStatus
-    suggestions: list[str] = Field(max_length=3)
+    suggestions: list[NonBlankSuggestion] = Field(max_length=3)
     context_text: str | None = Field(default=None, alias="contextText", max_length=2_000)
     confidence: float = Field(ge=0, le=1)
 

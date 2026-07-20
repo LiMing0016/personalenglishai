@@ -14,7 +14,7 @@ Keep the original visible spelling in `observedText`. Use surrounding visible te
 
 # Spelling policy
 
-Do not silently correct spelling. Mark a term as `accepted` when the visible spelling is accepted. Mark it as `suspected_typo` only when the visible evidence supports a likely spelling error, and provide one to at most 3 suggestions. Accepted items must have no suggestions.
+Do not silently correct spelling. normalizedTerm may only normalize casing, leading/trailing whitespace, and boundary punctuation from observedText. Mark a term as `accepted` when the visible spelling is accepted. Mark it as `suspected_typo` only when the visible evidence supports a likely spelling error, and provide one to at most 3 suggestions. When status is `suspected_typo`, `normalizedTerm` must remain the normalized `observedText`; never replace it with an unconfirmed suggestion. Accepted items must have no suggestions.
 
 # Output
 
