@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
+from pathlib import PurePath
 from typing import Annotated, Any
 
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -25,6 +27,9 @@ try:
     from .schemas.learning_assets import LearningAssetOrganizeResponse
     from .schemas.vocabulary_card import VocabularyCardGenerationRequest
     from .schemas.vocabulary_card import VocabularyCardGenerationResponse
+    from .schemas.vocabulary_image_recognition import MAX_IMAGE_BYTES
+    from .schemas.vocabulary_image_recognition import VocabularyImageRecognitionRequest
+    from .schemas.vocabulary_image_recognition import VocabularyImageRecognitionResponse
     from .services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from .services.prompt_sheet_workflow import PromptSheetWorkflowService
     from .services.learning_asset_copilot import LearningAssetCopilotConfigError
@@ -32,6 +37,8 @@ try:
     from .services.assistant_request_validator import AssistantRequestValidationError
     from .services.vocabulary_card_generation import VocabularyCardGenerationError
     from .services.vocabulary_card_generation import VocabularyCardGenerationService
+    from .services.vocabulary_image_recognition import VocabularyImageRecognitionError
+    from .services.vocabulary_image_recognition import VocabularyImageRecognitionService
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
     from env_loader import load_orchestrator_env
@@ -48,6 +55,9 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.learning_assets import LearningAssetOrganizeResponse
     from schemas.vocabulary_card import VocabularyCardGenerationRequest
     from schemas.vocabulary_card import VocabularyCardGenerationResponse
+    from schemas.vocabulary_image_recognition import MAX_IMAGE_BYTES
+    from schemas.vocabulary_image_recognition import VocabularyImageRecognitionRequest
+    from schemas.vocabulary_image_recognition import VocabularyImageRecognitionResponse
     from services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from services.prompt_sheet_workflow import PromptSheetWorkflowService
     from services.learning_asset_copilot import LearningAssetCopilotConfigError
@@ -55,6 +65,8 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.assistant_request_validator import AssistantRequestValidationError
     from services.vocabulary_card_generation import VocabularyCardGenerationError
     from services.vocabulary_card_generation import VocabularyCardGenerationService
+    from services.vocabulary_image_recognition import VocabularyImageRecognitionError
+    from services.vocabulary_image_recognition import VocabularyImageRecognitionService
 
 
 load_orchestrator_env()
@@ -75,6 +87,9 @@ service = AssistantAgentService.from_env()
 prompt_sheet_service = PromptSheetWorkflowService.from_env()
 learning_asset_copilot_service = LearningAssetCopilotService.from_env()
 vocabulary_card_generation_service = VocabularyCardGenerationService.from_env()
+vocabulary_image_recognition_service = VocabularyImageRecognitionService.from_env()
+
+log = logging.getLogger("uvicorn.error")
 
 
 @app.get("/health")
@@ -87,6 +102,10 @@ def health() -> dict[str, object]:
         "vocabularyCardGenerationConfigured": (
             vocabulary_card_generation_service.is_configured()
             and bool(getattr(vocabulary_card_generation_service, "internal_token", ""))
+        ),
+        "vocabularyImageRecognitionConfigured": (
+            vocabulary_image_recognition_service.is_configured()
+            and bool(getattr(vocabulary_image_recognition_service, "internal_token", ""))
         ),
         "model": service.model,
         "langfuseTracing": observability_status.configured,
@@ -166,6 +185,151 @@ def _vocabulary_generation_error_to_http_exception(
         "GENERATION_INTERNAL_ERROR",
         "Vocabulary generation failed.",
     )
+
+
+def _image_recognition_http_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _require_vocabulary_image_recognition_internal_token(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    expected_token = getattr(vocabulary_image_recognition_service, "internal_token", "")
+    if not expected_token:
+        raise _image_recognition_http_error(
+            503,
+            "IMAGE_RECOGNITION_NOT_CONFIGURED",
+            "Vocabulary image recognition is unavailable.",
+        )
+
+    scheme, _, provided_token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not provided_token:
+        raise _image_recognition_http_error(
+            401,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+    if not hmac.compare_digest(provided_token, expected_token):
+        raise _image_recognition_http_error(
+            403,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+
+
+def _image_recognition_error_to_http_exception(
+    error: VocabularyImageRecognitionError,
+) -> HTTPException:
+    if error.code in {
+        "INVALID_IMAGE_REQUEST",
+        "UNSUPPORTED_IMAGE_TYPE",
+        "IMAGE_TOO_LARGE",
+    }:
+        return _image_recognition_http_error(
+            400,
+            error.code,
+            "The vocabulary image recognition request is invalid.",
+        )
+    if error.code == "MODEL_OUTPUT_INVALID":
+        return _image_recognition_http_error(
+            502,
+            error.code,
+            "Vocabulary image recognition returned an invalid result.",
+        )
+    if error.code in {
+        "IMAGE_RECOGNITION_NOT_CONFIGURED",
+        "MODEL_UPSTREAM_UNAVAILABLE",
+    }:
+        return _image_recognition_http_error(
+            503,
+            error.code,
+            "Vocabulary image recognition is unavailable.",
+        )
+    if error.code == "MODEL_TIMEOUT":
+        return _image_recognition_http_error(
+            504,
+            error.code,
+            "Vocabulary image recognition timed out.",
+        )
+    return _image_recognition_http_error(
+        500,
+        "IMAGE_RECOGNITION_INTERNAL_ERROR",
+        "Vocabulary image recognition failed.",
+    )
+
+
+def _validate_image_upload(file_name: str, content_type: str, content: bytes) -> None:
+    if not content:
+        raise VocabularyImageRecognitionError("INVALID_IMAGE_REQUEST", False)
+    if len(content) > MAX_IMAGE_BYTES:
+        raise VocabularyImageRecognitionError("IMAGE_TOO_LARGE", False)
+
+    extensions = {
+        "image/jpeg": frozenset({".jpg", ".jpeg"}),
+        "image/png": frozenset({".png"}),
+        "image/webp": frozenset({".webp"}),
+    }.get(content_type)
+    if extensions is None or PurePath(file_name).suffix.casefold() not in extensions:
+        raise VocabularyImageRecognitionError("UNSUPPORTED_IMAGE_TYPE", False)
+
+
+@app.post(
+    "/internal/v1/vocabulary/image-recognitions",
+    response_model=VocabularyImageRecognitionResponse,
+    dependencies=[Depends(_require_vocabulary_image_recognition_internal_token)],
+)
+async def recognize_vocabulary_image(
+    contract_version: Annotated[int, Form(alias="contractVersion")],
+    trace_id: Annotated[str, Form(alias="traceId")],
+    language: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+) -> VocabularyImageRecognitionResponse:
+    content = await file.read(MAX_IMAGE_BYTES + 1)
+    file_name = file.filename or "image"
+    content_type = file.content_type or "application/octet-stream"
+    http_error: HTTPException | None = None
+    try:
+        _validate_image_upload(file_name, content_type, content)
+        request = VocabularyImageRecognitionRequest(
+            contractVersion=contract_version,
+            traceId=trace_id,
+            language=language,
+            fileName=file_name,
+            contentType=content_type,
+            content=content,
+        )
+        result = await vocabulary_image_recognition_service.recognize(request)
+        return VocabularyImageRecognitionResponse.model_validate(result)
+    except ValidationError:
+        http_error = _image_recognition_http_error(
+            422,
+            "INVALID_IMAGE_REQUEST",
+            "The vocabulary image recognition request is invalid.",
+        )
+    except VocabularyImageRecognitionError as exc:
+        http_error = _image_recognition_error_to_http_exception(exc)
+    except Exception:  # pragma: no cover - runtime safety
+        log.warning(
+            "Vocabulary image recognition endpoint failed",
+            extra={
+                "trace_id": trace_id,
+                "image_bytes": len(content),
+                "error_code": "IMAGE_RECOGNITION_INTERNAL_ERROR",
+            },
+        )
+        http_error = _image_recognition_http_error(
+            500,
+            "IMAGE_RECOGNITION_INTERNAL_ERROR",
+            "Vocabulary image recognition failed.",
+        )
+
+    if http_error is None:  # pragma: no cover - try/except invariant
+        http_error = _image_recognition_http_error(
+            500,
+            "IMAGE_RECOGNITION_INTERNAL_ERROR",
+            "Vocabulary image recognition failed.",
+        )
+    raise http_error
 
 
 @app.post(
