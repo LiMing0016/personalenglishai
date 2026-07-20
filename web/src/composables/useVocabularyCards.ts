@@ -8,6 +8,7 @@ import {
   getVocabularyCard,
   listVocabularyCards,
   listVocabularyRevisions,
+  recognizeVocabularyImage,
   regenerateVocabularyCard,
   resolveVocabularyConflict,
   retryVocabularyCard,
@@ -190,6 +191,12 @@ export function useVocabularyCards(
     },
   })
 
+  const imageRecognitionMutation = useMutation({
+    mutationFn: ({ file, signal }: { file: File, signal: AbortSignal }) => (
+      recognizeVocabularyImage({ file, signal })
+    ),
+  })
+
   const updateMutation = useMutation({
     mutationFn: ({ cardUid, payload }: { cardUid: string, payload: UpdateVocabularyCardRequest }) => updateVocabularyCard(cardUid, payload),
     onSuccess: async (_, variables) => invalidateCardQueries(variables.cardUid),
@@ -226,6 +233,7 @@ export function useVocabularyCards(
     detailQuery,
     revisionsQuery,
     captureMutation,
+    imageRecognitionMutation,
     updateMutation,
     deleteMutation,
     regenerateMutation,

@@ -7,6 +7,10 @@ export type VocabularyCardStatus = 'captured' | 'generating' | 'ready' | 'needs_
 export type VocabularyTemplateKey = 'basic' | 'exam' | 'reading'
 export type VocabularyConflictStatus = 'none' | 'needs_review'
 export type VocabularyGenerationOutcome = 'complete' | 'partial' | 'failed'
+export type VocabularyRecognitionStatus = 'accepted' | 'suspected_typo'
+export type VocabularyRecognitionWarning =
+  | 'CANDIDATE_LIMIT_REACHED'
+  | 'DICTIONARY_VERIFICATION_UNAVAILABLE'
 
 export interface VocabularyTemplate {
   key: VocabularyTemplateKey
@@ -71,10 +75,15 @@ export interface CreateVocabularyThemeRequest {
 export type UpdateVocabularyThemeRequest = CreateVocabularyThemeRequest
 
 export interface VocabularyCaptureSource {
-  type: 'manual'
+  type: 'manual' | 'ocr_image'
   sourceRef?: string
   sourceTitle: string
   sourceUrl?: string
+  contextText?: string
+  metadata: Record<string, unknown>
+}
+
+export interface VocabularyCaptureItemSource {
   contextText?: string
   metadata: Record<string, unknown>
 }
@@ -86,6 +95,43 @@ export interface VocabularyCaptureRequest {
   themeUid?: string
   templateKey?: VocabularyTemplateKey
   source: VocabularyCaptureSource
+  itemSources?: VocabularyCaptureItemSource[]
+}
+
+export interface VocabularyImageRecognitionSuggestion {
+  term: string
+  dictionaryVerified: boolean
+}
+
+export interface VocabularyImageRecognitionItem {
+  itemId: string
+  observedText: string
+  normalizedTerm: string
+  status: VocabularyRecognitionStatus
+  suggestions: VocabularyImageRecognitionSuggestion[]
+  contextText: string | null
+  confidence: number
+}
+
+export interface VocabularyImageRecognitionGeneration {
+  provider: string
+  model: string
+  promptVersion: string
+  modelCallCount: number
+  traceId: string
+  usage: {
+    inputTokens: number
+    outputTokens: number
+  } | null
+}
+
+export interface VocabularyImageRecognitionResponse {
+  contractVersion: 1
+  traceId: string
+  rawText: string
+  warnings: VocabularyRecognitionWarning[]
+  items: VocabularyImageRecognitionItem[]
+  generation: VocabularyImageRecognitionGeneration
 }
 
 export interface VocabularyCaptureItem {
@@ -304,6 +350,20 @@ export const deleteVocabularyTheme = (themeUid: string) =>
 
 export const captureVocabulary = (payload: VocabularyCaptureRequest) =>
   unwrap<VocabularyCaptureResponse>(http.post('/vocabulary/captures', payload))
+
+export const recognizeVocabularyImage = ({
+  file,
+  signal,
+}: {
+  file: File
+  signal: AbortSignal
+}) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return unwrap<VocabularyImageRecognitionResponse>(
+    http.post('/vocabulary/image-recognitions', formData, { timeout: 60_000, signal }),
+  )
+}
 
 export const listVocabularyCards = (params: VocabularyCardFilters) =>
   unwrap<VocabularyCardPage>(http.get('/vocabulary/cards', { params }))
