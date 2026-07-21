@@ -7,11 +7,13 @@ import type {
   LearningBlockDefinition,
   RenderableAssistantBlock,
   SentenceAnalysisData,
+  SentenceReorderData,
   StudyPlanData,
   VocabCardData,
 } from './contracts.ts'
 import { grammarTreeFallback, normalizeGrammarTreeData } from './grammar-tree/schema.ts'
 import { normalizeSentenceAnalysisData, sentenceAnalysisFallback } from './sentence-analysis/schema.ts'
+import { normalizeSentenceReorderData, sentenceReorderFallback } from './sentence-reorder/schema.ts'
 import { normalizeStudyPlanData, studyPlanFallback } from './study-plan/schema.ts'
 import { normalizeVocabCardData, vocabCardFallback } from './vocab-card/schema.ts'
 
@@ -47,6 +49,14 @@ const definitions: readonly LearningBlockDefinition[] = [
     normalizeData: normalizeSentenceAnalysisData,
     buildFallbackMarkdown: (data) => sentenceAnalysisFallback(data as SentenceAnalysisData),
     loadComponent: () => import('../blocks/SentenceAnalysisBlock.vue'),
+  },
+  {
+    type: 'sentence_reorder',
+    version: 1,
+    kind: 'interactive',
+    normalizeData: normalizeSentenceReorderData,
+    buildFallbackMarkdown: (data) => sentenceReorderFallback(data as SentenceReorderData),
+    loadComponent: () => import('./sentence-reorder/SentenceReorderBlock.vue'),
   },
 ]
 

@@ -5,6 +5,7 @@ export type AssistantBlockType =
   | 'grammar_tree'
   | 'study_plan'
   | 'sentence_analysis'
+  | 'sentence_reorder'
 
 export interface AssistantBlockAction {
   id: string
@@ -92,16 +93,39 @@ export interface SentenceAnalysisData {
   improvedVersions?: string[]
 }
 
+export interface SentenceReorderToken {
+  id: string
+  text: string
+}
+
+export interface SentenceReorderItem {
+  id: string
+  instruction: string
+  translation?: string
+  tokens: SentenceReorderToken[]
+  initialOrder: string[]
+  acceptedOrders: string[][]
+  explanation?: string
+  hint?: string
+}
+
+export interface SentenceReorderData {
+  activityId: string
+  items: SentenceReorderItem[]
+}
+
 export type VocabCardBlock = AssistantBlockBase<'vocab_card', VocabCardData>
 export type GrammarTreeBlock = AssistantBlockBase<'grammar_tree', GrammarTreeData>
 export type StudyPlanBlock = AssistantBlockBase<'study_plan', StudyPlanData>
 export type SentenceAnalysisBlock = AssistantBlockBase<'sentence_analysis', SentenceAnalysisData>
+export type SentenceReorderBlock = AssistantBlockBase<'sentence_reorder', SentenceReorderData>
 
 export type AssistantBlock =
   | VocabCardBlock
   | GrammarTreeBlock
   | StudyPlanBlock
   | SentenceAnalysisBlock
+  | SentenceReorderBlock
 
 export interface FallbackAssistantBlock {
   id: string
@@ -122,4 +146,3 @@ export interface LearningBlockDefinition {
   buildFallbackMarkdown(data: AssistantBlock['data']): string
   loadComponent: () => Promise<{ default: Component }>
 }
-

@@ -109,3 +109,33 @@ test('preserves valid legacy prompt actions and drops malformed actions', () => 
     { id: 'practice', label: '练一题', prompt: '请出一道练习题' },
   ])
 })
+
+test('registers sentence reorder version 1 as an interactive block', () => {
+  const [block] = normalizeAssistantBlocks([
+    {
+      id: 'reorder-1',
+      type: 'sentence_reorder',
+      version: 1,
+      data: {
+        activityId: 'activity-1',
+        items: [
+          {
+            id: 'item-1',
+            instruction: '组成句子',
+            tokens: [
+              { id: 'hello', text: 'Hello' },
+              { id: 'world', text: 'world' },
+            ],
+            initialOrder: ['world', 'hello'],
+            acceptedOrders: [['hello', 'world']],
+          },
+        ],
+      },
+    },
+  ])
+
+  assert.ok(block && !isFallbackAssistantBlock(block))
+  if (!block || isFallbackAssistantBlock(block)) return
+  assert.equal(block.type, 'sentence_reorder')
+  assert.equal(definitionFor(block)?.kind, 'interactive')
+})
