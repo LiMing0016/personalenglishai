@@ -194,18 +194,17 @@ interface AssistantLearningBlock<TData = unknown> {
 
 ```text
 idle
-  → preparing
   → awaitingAnswer
   → submitting
   → reviewing
-  → preparing | completed
+  → awaitingAnswer | completed
 
 任意活动状态
   → cancelled
 
-异步失败
+判分失败
   → error
-  → retry | cancelled
+  → awaitingAnswer | cancelled
 ```
 
 ### 核心事件
@@ -213,8 +212,6 @@ idle
 ```ts
 type LearningActivityEvent =
   | { type: 'START'; block: AssistantLearningBlock }
-  | { type: 'LOAD_SUCCESS'; payload: unknown }
-  | { type: 'LOAD_ERROR'; error: ActivityError }
   | { type: 'ANSWER_CHANGE'; answer: unknown }
   | { type: 'REQUEST_HINT' }
   | { type: 'SUBMIT' }
@@ -232,10 +229,8 @@ type LearningActivityEvent =
 ```ts
 interface LearningActivityContext {
   activityId: string
-  blockType: string
-  blockVersion: number
+  block?: InteractiveLearningBlock
   questionIndex: number
-  payload: unknown
   draftAnswer?: unknown
   result?: ActivityResult
   error?: ActivityError
@@ -273,7 +268,7 @@ interface LearningActivityContext {
 - 用户在主输入框提出无关问题时，按普通对话处理；活动保持可返回状态。
 - 用户点击结束或明确说“不练了”时发送 `EXIT`。
 
-第一阶段不要求持久化活动快照。刷新页面后允许活动结束，但组件必须安全回到普通对话。
+第一阶段不持久化活动快照。刷新或重新加载会话后，结构化卡片仍存在，但活动安全回到第一题初始状态。
 
 ## 前后端与模型边界
 
@@ -305,13 +300,13 @@ interface LearningActivityContext {
 ### 流式显示
 
 1. `message.delta` 持续显示普通文本，使用户立即看到回答。
-2. `message.completed` 返回经过后端校验的 `parts`。
+2. `message.completed` 返回根节点经后端规范化、块内容由前端注册表校验的 `parts`。
 3. 前端在完成事件后挂载学习块，避免不完整 JSON 导致卡片抖动。
 4. 卡片主导的回答只保留简短过渡文本，避免内容重复。
 
 ### 历史消息
 
-- 长期目标是历史消息同时保存 `content` 和 `parts`。
+- 历史消息已经同时保存 `content` 和 `parts`；数据库列为 `assistant_message.parts_json`。
 - 第一阶段如果旧历史没有 `parts`，继续使用 Markdown，不进行客户端猜测或重建。
 - 未知版本使用块内 `fallbackMarkdown`。
 
@@ -331,7 +326,7 @@ interface LearningActivityContext {
 用户点击“练一题”
 → 发送 uiIntent=start_practice
 → 返回 sentence_reorder 块
-→ XState: preparing → awaitingAnswer
+→ XState: idle → awaitingAnswer
 → 用户排列词块并提交
 → 本地确定性判分
 → XState: submitting → reviewing
@@ -413,6 +408,8 @@ interface LearningActivityContext {
 - 实现确定性本地判分、反馈、下一题和退出。
 - 不持久化尝试和分数。
 
+实施状态（2026-07-22）：以上 Phase 1 代码与自动化合同测试已完成。手工浏览器矩阵和真实数据库迁移验证仍属于发布前检查。
+
 ### Phase 2：互动题型扩展
 
 - 选择、填空、配对和图片选择。
@@ -437,13 +434,13 @@ interface LearningActivityContext {
 - XState 活动事件和状态定义。
 - 新题型接入指南与测试要求。
 
-本设计文档只确认产品和技术方向，不修改现有 API 或运行行为。
+本设计已经进入 Phase 1 实施状态；当前 API 行为与扩展步骤以 `docs/ai/assistant-output-format.md` 和 `docs/ai/learning-blocks-and-activities.md` 为准。
 
 ## 完成标准
 
 - 普通问题保持 Markdown，不自动进入互动活动。
 - 显式“练一题”能够创建并完成一次重组成句活动。
-- XState 覆盖准备、作答、提交、反馈、下一题、退出和错误路径。
+- XState 覆盖作答、提交、反馈、下一题、退出和错误路径；题目生成发生在卡片挂载之前。
 - 学习块通过注册表解析，未知块安全降级。
 - 模型输出失败不影响普通对话。
 - 前后端协议、可访问性、自动化测试和视觉回归达到上述要求。

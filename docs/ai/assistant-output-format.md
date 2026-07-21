@@ -2,10 +2,13 @@
 title: 学习助手 Markdown 主题与英语输出规范方案
 status: active
 owner: ai
-last_updated: 2026-06-24
+last_updated: 2026-07-22
 review_cycle: monthly
 related_code:
   - web/src/components/assistant/AssistantChatView.vue
+  - web/src/components/assistant/learning-blocks/registry.ts
+  - python/ai_orchestrator/schemas/learning_blocks.py
+  - backend/src/main/resources/db/migration_add_assistant_message_parts.sql
   - web/src/components/assistant/LearningAssetCanvas.vue
   - backend/src/main/java/com/personalenglishai/backend/service/learning/LearningCanvasOrganizeService.java
 related_docs:
@@ -709,8 +712,7 @@ python/ai_orchestrator/tests
 - 不引入完整 Milkdown 编辑器。
 - 不做 Markdown 编辑器。
 - 不做富文本所见即所得输入框。
-- 不改变后端消息存储结构。
-- 不改变 AI 返回内容的数据库格式。
+- Markdown 主题本身不改变普通文本回复格式；互动学习块另行使用本页第 13 节的 `parts` 协议。
 - 不要求第一版支持复杂流式 Mermaid 渲染。
 - 不要求第一版支持复杂流式数学公式渲染。
 - 不要求第一版实现可编辑 Markdown block。
@@ -857,3 +859,76 @@ AI 整理接口返回：
 4. 用户点击 `取消候选` 时，当前正文不变。
 
 这个规则用于保护用户正在编辑的学习笔记。
+
+## 13. 结构化学习块协议
+
+普通问题继续只返回 Markdown。只有用户通过明确入口请求互动学习时，前端才附带 `interaction`：
+
+```json
+{
+  "clientMessageId": "client-123",
+  "mode": "daily_explain",
+  "intent": "free_chat",
+  "scope": "message_only",
+  "message": { "text": "开始重组成句练习" },
+  "interaction": {
+    "source": "quick_action",
+    "uiIntent": "start_practice",
+    "context": {
+      "exerciseType": "sentence_reorder",
+      "difficulty": "easy"
+    }
+  }
+}
+```
+
+`source` 当前允许 `composer`、`quick_action`、`response_action`、`activity_action`。`uiIntent` 当前允许 `start_practice`、`show_learning_card`、`activity_action`。Phase 1 只实现 `start_practice + sentence_reorder`。
+
+流式完成事件同时携带正文和块数组。结构化 JSON 不通过 `message.delta` 分片：
+
+```json
+{
+  "type": "message.completed",
+  "runId": "run_123",
+  "messageId": "msg_123",
+  "content": "把下面的词块排成正确句子。",
+  "parts": [
+    {
+      "id": "sentence-reorder-client-123",
+      "type": "sentence_reorder",
+      "version": 1,
+      "title": "重组成句",
+      "fallbackMarkdown": "### 把下面的词块排成正确句子。\n\n1. I like English",
+      "data": {
+        "activityId": "activity-client-123",
+        "items": [
+          {
+            "id": "q1",
+            "instruction": "组成句子",
+            "translation": "我喜欢英语。",
+            "tokens": [
+              { "id": "q1-t1", "text": "I" },
+              { "id": "q1-t2", "text": "like" },
+              { "id": "q1-t3", "text": "English" }
+            ],
+            "initialOrder": ["q1-t3", "q1-t1", "q1-t2"],
+            "acceptedOrders": [["q1-t1", "q1-t2", "q1-t3"]],
+            "hint": "先找主语。",
+            "explanation": "英语陈述句通常按主语、谓语、宾语排列。"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+非流式回复和历史消息使用同一个 `parts` 数组。Java 后端将其序列化到 `assistant_message.parts_json`；旧行保持 `NULL`。后端只接受非空数组作为消息级 `parts`，前端仍会通过注册表逐块校验，不直接信任历史 JSON。
+
+兼容规则：
+
+- 没有 `parts`：只显示 Markdown 正文。
+- 根节点不是数组：忽略块，保留正文；开发环境记录 `parts_not_array`。
+- 未知 `type` 或 `version` 且有 `fallbackMarkdown`：显示安全 Markdown 降级卡片。
+- 块数据非法且没有可用 fallback：跳过该块，正文仍然可读。
+- `fallbackMarkdown` 继续走统一 Markdown AST、HTML 清洗和链接协议白名单。
