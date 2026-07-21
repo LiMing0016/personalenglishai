@@ -160,6 +160,12 @@ const menuOpen = ref(false)
 const draggingOver = ref(false)
 const previewUrls = new Map<string, string>()
 
+function focusTextarea() {
+  textareaRef.value?.focus()
+}
+
+defineExpose({ focus: focusTextarea })
+
 const activeModeLabel = computed(() => {
   if (props.assistantMode === 'learning') return '学习模式 ✦'
   if (props.assistantMode === 'exam') return '考试模式'

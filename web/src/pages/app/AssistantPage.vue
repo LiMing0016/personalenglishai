@@ -68,43 +68,45 @@
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
         <div class="header-spacer"></div>
-        <div class="markdown-theme-control" aria-label="助手输出风格">
-          <button
-            type="button"
-            class="markdown-theme-button"
-            :class="{ 'markdown-theme-button--active': markdownTheme === 'marktext' }"
-            @click="setMarkdownTheme('marktext')"
-          >
-            MarkText
-          </button>
-          <button
-            type="button"
-            class="markdown-theme-button"
-            :class="{ 'markdown-theme-button--active': markdownTheme === 'milkdown' }"
-            @click="setMarkdownTheme('milkdown')"
-          >
-            Milkdown
-          </button>
-        </div>
       </header>
 
       <AssistantChatView
         :messages="activeConversation.messages"
         :error-message="errorMessage"
         :can-retry="canRetry"
-      :empty-title="emptyTitle"
-      :empty-subtitle="emptySubtitle"
-      :markdown-theme="markdownTheme"
-      :can-append-to-learning-asset="Boolean(learningAssetDraft)"
-      @choose-starter="applyStarter"
-      @copy-message="handleCopyMessage"
-      @retry-message="handleRetryAssistantMessage"
-      @retry="retryLastMessage"
-      @create-learning-asset="handleCreateLearningAsset"
-      @append-to-learning-asset="handleAppendToLearningAsset"
-      />
+        :empty-title="emptyTitle"
+        :empty-subtitle="emptySubtitle"
+        :markdown-theme="markdownTheme"
+        :can-append-to-learning-asset="Boolean(learningAssetDraft)"
+        :selected-goal="selectedStarterGoal"
+        @choose-starter="handleChooseStarter"
+        @select-goal="handleSelectStarterGoal"
+        @copy-message="handleCopyMessage"
+        @retry-message="handleRetryAssistantMessage"
+        @retry="retryLastMessage"
+        @create-learning-asset="handleCreateLearningAsset"
+        @append-to-learning-asset="handleAppendToLearningAsset"
+      >
+        <template #empty-composer>
+          <AssistantComposer
+            v-if="activeConversation.messages.length === 0"
+            ref="emptyComposerRef"
+            class="empty-state-composer"
+            :model-value="composerText"
+            :loading="isSending"
+            :attachments="composerAttachments"
+            :assistant-mode="assistantMode"
+            :placeholder="learningCanvasOpen ? '' : undefined"
+            @update:model-value="composerText = $event"
+            @add-files="handleFileSelect"
+            @remove-attachment="removeAttachment"
+            @set-assistant-mode="handleSetAssistantMode"
+            @send="sendMessage"
+          />
+        </template>
+      </AssistantChatView>
 
-      <div class="composer-dock" :class="{ composerDocked }">
+      <div v-if="activeConversation.messages.length > 0" class="composer-dock" :class="{ composerDocked }">
         <AssistantComposer
           :model-value="composerText"
           :loading="isSending"
@@ -168,11 +170,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
+import type { AssistantStarterGoalId } from '@/components/assistant/AssistantStarterCards.vue'
 import LearningAssetCanvas from '@/components/assistant/LearningAssetCanvas.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
@@ -196,7 +199,6 @@ import {
 } from './assistantMessageActions.ts'
 import {
   readAssistantMarkdownTheme,
-  writeAssistantMarkdownTheme,
   type AssistantMarkdownTheme,
 } from './assistantMarkdownTheme.ts'
 import {
@@ -254,8 +256,8 @@ const {
 } = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
-const emptyTitle = '今天想练什么？'
-const emptySubtitle = '我可以陪你做英语评价、表达润色、题目设计和词句讲解。'
+const emptyTitle = '今天想完成什么？'
+const emptySubtitle = '先选一个学习目标，再把内容发给我。'
 const composerDocked = true
 const LEARNING_ASSET_CANVAS_WIDTH_KEY = 'peai:assistant:learning-asset-canvas-width'
 const LEARNING_NOTE_QUERY_KEY = 'learningNote'
@@ -291,6 +293,8 @@ const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
 const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
+const selectedStarterGoal = ref<AssistantStarterGoalId | null>(null)
+const emptyComposerRef = ref<InstanceType<typeof AssistantComposer> | null>(null)
 const archiveSettings = ref<AssistantArchiveSettingsDto | null>(null)
 const archiveDirDraft = ref('')
 const isSavingArchiveDir = ref(false)
@@ -351,9 +355,18 @@ function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
   addAttachments(files, source)
 }
 
-function setMarkdownTheme(theme: AssistantMarkdownTheme) {
-  markdownTheme.value = theme
-  writeAssistantMarkdownTheme(theme)
+function focusEmptyComposer() {
+  void nextTick(() => emptyComposerRef.value?.focus())
+}
+
+function handleSelectStarterGoal(goalId: AssistantStarterGoalId) {
+  selectedStarterGoal.value = goalId
+  focusEmptyComposer()
+}
+
+function handleChooseStarter(prompt: string) {
+  applyStarter(prompt)
+  focusEmptyComposer()
 }
 
 function handleSetAssistantMode(mode: AssistantMode) {
@@ -841,6 +854,7 @@ onBeforeUnmount(() => {
 })
 
 watch(activeConversationId, (conversationId) => {
+  selectedStarterGoal.value = null
   if (readRouteLearningNoteUid(route.query[LEARNING_NOTE_QUERY_KEY])) return
   restoreLearningAssetDraft(conversationId)
 }, { immediate: true })
@@ -1193,39 +1207,6 @@ const folderConversationGroups = computed(() =>
   flex: 1;
 }
 
-.markdown-theme-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #dbe3ea;
-  border-radius: 999px;
-  background: #ffffff;
-}
-
-.markdown-theme-button {
-  min-width: 78px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: #64748b;
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.markdown-theme-button:hover,
-.markdown-theme-button:focus-visible {
-  color: #0f172a;
-  outline: none;
-}
-
-.markdown-theme-button--active {
-  background: #dcfce7;
-  color: #047857;
-}
-
 .composer-dock {
   position: fixed;
   left: calc(var(--app-rail-width) + var(--assistant-sidebar-current-width) + 1px);
@@ -1244,15 +1225,6 @@ const folderConversationGroups = computed(() =>
 
   .main-header {
     padding: 0 18px;
-  }
-
-  .markdown-theme-control {
-    gap: 2px;
-  }
-
-  .markdown-theme-button {
-    min-width: auto;
-    padding: 7px 9px;
   }
 
   .composer-dock {

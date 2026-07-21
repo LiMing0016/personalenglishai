@@ -5,10 +5,17 @@
     @scroll.passive="handleScroll"
   >
     <div v-if="messages.length === 0" class="empty-state">
-      <p class="eyebrow">学习助手</p>
       <h1 class="empty-title">{{ emptyTitle }}</h1>
       <p class="empty-subtitle">{{ emptySubtitle }}</p>
-      <AssistantStarterCards @choose="$emit('chooseStarter', $event)" />
+      <AssistantStarterCards
+        :selected-goal="selectedGoal"
+        @select-goal="$emit('selectGoal', $event)"
+        @choose="$emit('chooseStarter', $event)"
+      >
+        <template #composer>
+          <slot name="empty-composer"></slot>
+        </template>
+      </AssistantStarterCards>
     </div>
 
     <div v-else class="message-list">
@@ -128,6 +135,7 @@ import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
 import AssistantStarterCards from './AssistantStarterCards.vue'
+import type { AssistantStarterGoalId } from './AssistantStarterCards.vue'
 import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
@@ -148,6 +156,7 @@ const props = defineProps<{
   emptySubtitle: string
   markdownTheme: 'marktext' | 'milkdown'
   canAppendToLearningAsset: boolean
+  selectedGoal: AssistantStarterGoalId | null
 }>()
 
 const emit = defineEmits<{
@@ -157,6 +166,7 @@ const emit = defineEmits<{
   retry: []
   createLearningAsset: [selection: AssistantLearningAssetSelection]
   appendToLearningAsset: [selection: AssistantLearningAssetSelection]
+  selectGoal: [goalId: AssistantStarterGoalId]
 }>()
 
 const previewUrls = new Map<string, string>()
@@ -347,20 +357,11 @@ onBeforeUnmount(() => {
   flex: 1;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 0;
   max-width: 920px;
-  margin: 0 auto;
+  margin: clamp(72px, 10vh, 118px) auto 0;
   text-align: center;
-}
-
-.eyebrow {
-  margin: 0 0 10px;
-  color: #6ee7b7;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .empty-title {
@@ -373,7 +374,7 @@ onBeforeUnmount(() => {
 
 .empty-subtitle {
   max-width: 620px;
-  margin: 14px 0 32px;
+  margin: 12px 0 24px;
   color: #475569;
   font-size: 17px;
   line-height: 1.65;
