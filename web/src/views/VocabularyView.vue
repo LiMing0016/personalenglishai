@@ -1,17 +1,6 @@
 <template>
   <main class="vocabulary-shell">
     <header class="vocabulary-topbar">
-      <div class="brand-lockup" aria-label="词启 Vocabulary">
-        <div class="brand-mark" aria-hidden="true">
-          <span></span>
-          <span></span>
-        </div>
-        <div>
-          <strong>词启</strong>
-          <small>Vocabulary</small>
-        </div>
-      </div>
-
       <nav class="vocabulary-nav" aria-label="单词学习页面">
         <button
           v-for="view in views"
@@ -24,11 +13,6 @@
           {{ view.label }}
         </button>
       </nav>
-
-      <div class="topbar-actions" aria-label="用户操作">
-        <button type="button" class="icon-button" aria-label="通知">!</button>
-        <div class="avatar" aria-label="当前用户"></div>
-      </div>
     </header>
 
     <section v-if="activeView === 'search'" class="vocabulary-page search-page" aria-label="搜索单词">
@@ -196,9 +180,6 @@
       class="vocabulary-page collection-page"
       aria-label="单词沉淀"
     >
-      <header class="collection-header">
-        <h1>单词沉淀</h1>
-      </header>
       <VocabularyCapturePanel
         :theme-catalog="themesQuery.data.value"
         :themes-loading="themesQuery.isLoading.value"
@@ -1234,8 +1215,7 @@ function normalizeError(err: unknown) {
 
 .vocabulary-topbar {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) 96px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   min-height: 68px;
   padding: 0 24px;
@@ -1245,10 +1225,7 @@ function normalizeError(err: unknown) {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
-.brand-lockup,
-.brand-mark,
 .vocabulary-nav,
-.topbar-actions,
 .result-row,
 .collection-tools,
 .filter-row,
@@ -1260,45 +1237,6 @@ function normalizeError(err: unknown) {
 .milestone-track {
   display: flex;
   align-items: center;
-}
-
-.brand-lockup {
-  gap: 10px;
-}
-
-.brand-mark {
-  position: relative;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: #ecfdf5;
-}
-
-.brand-mark span {
-  position: absolute;
-  width: 9px;
-  height: 18px;
-  border-radius: 10px 10px 2px 10px;
-  background: #059669;
-  transform: rotate(-28deg) translateX(-4px);
-}
-
-.brand-mark span + span {
-  transform: rotate(28deg) translateX(4px);
-}
-
-.brand-lockup strong {
-  display: block;
-  color: #047857;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.brand-lockup small {
-  color: #334155;
-  font-size: 11px;
-  font-weight: 800;
 }
 
 .vocabulary-nav {
@@ -1343,29 +1281,6 @@ function normalizeError(err: unknown) {
 .vocabulary-nav button.active {
   color: #047857;
   box-shadow: inset 0 -3px 0 #059669;
-}
-
-.topbar-actions {
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.icon-button {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: #f8fafc;
-  color: #475569;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 28%, #14532d 0 14%, transparent 15%),
-    radial-gradient(circle at 50% 78%, #14532d 0 32%, transparent 33%),
-    #bbf7d0;
 }
 
 .vocabulary-page {
@@ -2228,7 +2143,6 @@ function normalizeError(err: unknown) {
 
 .compact-panel header,
 .results-panel header,
-.collection-header,
 .today-plan-card header,
 .word-preview-card header {
   display: flex;
@@ -3833,10 +3747,6 @@ function normalizeError(err: unknown) {
   font-weight: 900;
 }
 
-.collection-header {
-  align-items: center;
-}
-
 .collection-tools {
   gap: 10px;
 }
@@ -4344,19 +4254,6 @@ function normalizeError(err: unknown) {
     padding: 12px;
   }
 
-  .vocabulary-topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 10px;
-    min-width: 0;
-    padding: 14px;
-    overflow: hidden;
-  }
-
-  .brand-lockup,
-  .topbar-actions {
-    flex: 0 0 auto;
-  }
-
   .dictionary-search,
   .search-meta-grid,
   .mode-grid,
@@ -4449,7 +4346,6 @@ function normalizeError(err: unknown) {
     display: none;
   }
 
-  .collection-header,
   .collection-tools,
   .milestone-track {
     align-items: stretch;
@@ -4458,15 +4354,6 @@ function normalizeError(err: unknown) {
 }
 
 @media (max-width: 720px) {
-  .vocabulary-topbar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-  }
-
-  .topbar-actions {
-    justify-content: flex-end;
-  }
-
   .vocabulary-nav {
     display: grid;
     grid-column: 1 / -1;

@@ -8,9 +8,12 @@ const router = fs.readFileSync(new URL('../src/router/index.ts', import.meta.url
 const capture = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCapturePanel.vue', import.meta.url), 'utf8')
 const list = fs.readFileSync(new URL('../src/components/vocabulary/VocabularyCardList.vue', import.meta.url), 'utf8')
 
-test('collection page has one concise heading and the compact import workspace', () => {
-  assert.match(view, /<h1>单词沉淀<\/h1>/)
-  assert.equal((view.match(/<h1>单词沉淀<\/h1>/g) ?? []).length, 1)
+test('collection page keeps the compact import workspace without redundant chrome', () => {
+  assert.doesNotMatch(view, /<h1>单词沉淀<\/h1>/)
+  assert.doesNotMatch(view, /collection-header|brand-lockup|topbar-actions/)
+  assert.doesNotMatch(view, /aria-label="通知"|aria-label="当前用户"/)
+  assert.match(view, /vocabulary-nav/)
+  assert.match(view, /aria-label="单词沉淀"/)
   assert.doesNotMatch(view, /Word Cards|单词卡中心|更多来源后续接入/)
   assert.match(capture, /VocabularyTextCapture/)
   assert.match(capture, /VocabularyImageCapture/)

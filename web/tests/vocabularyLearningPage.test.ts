@@ -24,7 +24,6 @@ const inspectorSource = readFileSync(
 const composedSource = [pageSource, captureSource, listSource, inspectorSource].join('\n')
 
 for (const requiredText of [
-  '词启',
   '搜索单词',
   '背词模式',
   '单词沉淀',
@@ -42,6 +41,12 @@ for (const requiredText of [
 ]) {
   assert.ok(composedSource.includes(requiredText), `vocabulary learning page should render ${requiredText}`)
 }
+
+for (const navigationLabel of ['搜索单词', '背词模式', '单词沉淀', '学习统计']) {
+  assert.ok(pageSource.includes(navigationLabel), `vocabulary navigation should keep ${navigationLabel}`)
+}
+assert.ok(!pageSource.includes('brand-lockup'), 'vocabulary navigation should remove the redundant brand lockup')
+assert.ok(!pageSource.includes('topbar-actions'), 'vocabulary navigation should remove the redundant topbar actions')
 
 assert.ok(pageSource.includes('lookupDictionary'), 'top search should keep dictionary lookup integration')
 assert.ok(pageSource.includes('useVocabularyCards'), 'collection should use the persisted vocabulary query layer')
