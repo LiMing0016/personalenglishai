@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from python.ai_orchestrator.app import app
 from python.ai_orchestrator.schemas.assistant_request import AssistantRunMetadata
 from python.ai_orchestrator.schemas.chat import AssistantReply
+from python.ai_orchestrator.schemas.learning_blocks import SentenceReorderBlock
 from python.ai_orchestrator.schemas.routing import RoutingDecision
 
 
@@ -30,6 +31,7 @@ class CapturingRunService:
                 intent=request.intent,
                 scope=request.scope or "message_only",
             ),
+            parts=[sentence_reorder_block()],
         )
 
     async def stream_assistant_request(self, request, authorization=None):
@@ -38,7 +40,13 @@ class CapturingRunService:
         yield {"type": "message.created", "runId": "run-1", "messageId": "msg-1", "role": "assistant"}
         yield {"type": "message.delta", "runId": "run-1", "messageId": "msg-1", "delta": "he"}
         yield {"type": "message.delta", "runId": "run-1", "messageId": "msg-1", "delta": "llo"}
-        yield {"type": "message.completed", "runId": "run-1", "messageId": "msg-1", "content": "hello"}
+        yield {
+            "type": "message.completed",
+            "runId": "run-1",
+            "messageId": "msg-1",
+            "content": "hello",
+            "parts": [sentence_reorder_block().model_dump(by_alias=True)],
+        }
         yield {"type": "run.completed", "runId": "run-1"}
 
     async def route_assistant_request(self, request, authorization=None) -> RoutingDecision:
@@ -82,6 +90,7 @@ class AssistantRunEndpointTest(unittest.TestCase):
         self.assertEqual(body["run"]["runId"], "run-1")
         self.assertEqual(body["run"]["agentName"], "Translation Agent")
         self.assertEqual(body["run"]["intent"], "translate")
+        self.assertEqual(body["parts"][0]["type"], "sentence_reorder")
         self.assertEqual(fake_service.received["authorization"], "Bearer token")
 
     def test_assistant_run_rejects_missing_input(self) -> None:
@@ -125,6 +134,7 @@ class AssistantRunEndpointTest(unittest.TestCase):
         self.assertIn('"type": "message.delta"', body)
         self.assertIn('"delta": "he"', body)
         self.assertIn('"type": "message.completed"', body)
+        self.assertIn('"type": "sentence_reorder"', body)
         self.assertEqual(fake_service.received["authorization"], "Bearer token")
 
     def test_assistant_route_debug_returns_routing_decision_json(self) -> None:
@@ -153,6 +163,25 @@ class AssistantRunEndpointTest(unittest.TestCase):
         self.assertEqual(body["target_agent"], "writing_evaluation")
         self.assertEqual(body["confidence"], 0.91)
         self.assertEqual(fake_service.received["authorization"], "Bearer token")
+
+
+def sentence_reorder_block() -> SentenceReorderBlock:
+    return SentenceReorderBlock.model_validate(
+        {
+            "id": "block-1",
+            "fallbackMarkdown": "### 练习",
+            "data": {
+                "activityId": "activity-1",
+                "items": [{
+                    "id": "q1",
+                    "instruction": "组成句子",
+                    "tokens": [{"id": "t1", "text": "Hello"}, {"id": "t2", "text": "world"}],
+                    "initialOrder": ["t2", "t1"],
+                    "acceptedOrders": [["t1", "t2"]],
+                }],
+            },
+        }
+    )
 
 
 if __name__ == "__main__":

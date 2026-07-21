@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypedDict, Union
 
 from pydantic import BaseModel, Field
 
 try:
     from .assistant_request import AssistantRunMetadata
+    from .learning_blocks import AssistantLearningBlock
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_request import AssistantRunMetadata
+    from learning_blocks import AssistantLearningBlock
 
 
 class UploadedAttachment(TypedDict):
@@ -22,6 +24,7 @@ class AssistantReply:
     reply: str
     agent_name: str | None
     run: AssistantRunMetadata | None = None
+    parts: list[AssistantLearningBlock] = field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +40,7 @@ class AssistantRunResponse(BaseModel):
     conversation_id: str = Field(alias="conversationId")
     agent_name: str | None = Field(default=None, alias="agentName")
     run: AssistantRunMetadata
+    parts: list[AssistantLearningBlock] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
@@ -89,6 +93,7 @@ class MessageCompletedEvent(BaseModel):
     run_id: str = Field(alias="runId")
     message_id: str = Field(alias="messageId")
     content: str
+    parts: list[AssistantLearningBlock] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 

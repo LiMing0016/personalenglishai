@@ -40,6 +40,27 @@ WritingCoachAction = Literal["coach", "analyze", "outline", "next", "topic", "po
 WritingMode = Literal["free", "exam"]
 
 
+class AssistantInteractionPayload(BaseModel):
+    exercise_type: Literal["sentence_reorder"] | None = Field(default=None, alias="exerciseType")
+    topic: str | None = None
+    difficulty: Literal["easy", "medium", "hard"] | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class AssistantInteractionContext(BaseModel):
+    source: Literal["composer", "quick_action", "response_action", "activity_action"]
+    ui_intent: Literal["start_practice", "show_learning_card", "activity_action"] | None = Field(
+        default=None,
+        alias="uiIntent",
+    )
+    active_activity_id: str | None = Field(default=None, alias="activeActivityId")
+    action_id: str | None = Field(default=None, alias="actionId")
+    context: AssistantInteractionPayload = Field(default_factory=AssistantInteractionPayload)
+
+    model_config = {"populate_by_name": True}
+
+
 class AssistantAttachmentProcessing(BaseModel):
     status: AttachmentProcessingStatus
     error_code: str | None = Field(default=None, alias="errorCode")
@@ -161,6 +182,7 @@ class AssistantRequest(BaseModel):
     intent: AssistantIntent
     scope: InputScope | None = None
     message: AssistantRequestMessage = Field(default_factory=AssistantRequestMessage)
+    interaction: AssistantInteractionContext | None = None
     selection: AssistantSelection | None = None
     attachments: list[AssistantAttachmentRef] = Field(default_factory=list)
     study_context: AssistantStudyContext | None = Field(default=None, alias="studyContext")

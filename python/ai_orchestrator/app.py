@@ -146,6 +146,7 @@ async def assistant_run(
         conversationId=request.app_conversation_id or request.client_message_id,
         agentName=result.agent_name,
         run=result.run,
+        parts=result.parts,
     )
 
 
