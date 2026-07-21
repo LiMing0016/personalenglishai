@@ -61,6 +61,7 @@ interface PersistedAssistantConversation {
   projectId?: number | null
   title: string
   summary: string
+  createdAt?: number
   updatedAt: number
   pinned?: boolean
   archived?: boolean
@@ -82,12 +83,14 @@ function createId(prefix: string) {
 }
 
 function createEmptyConversation(): AssistantConversation {
+  const now = Date.now()
   return {
     id: createId('conv'),
     projectId: null,
     title: '新对话',
     summary: '',
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
     pinned: false,
     archived: false,
     messages: [],
@@ -137,6 +140,7 @@ function toPersistedConversation(conversation: AssistantConversation): Persisted
     projectId: conversation.projectId ?? null,
     title: conversation.title,
     summary: conversation.summary,
+    createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     pinned: Boolean(conversation.pinned),
     archived: Boolean(conversation.archived),
@@ -203,31 +207,38 @@ function restoreConversation(value: unknown): AssistantConversation | null {
         .filter((message): message is AssistantMessage => Boolean(message))
     : []
 
+  const updatedAt = typeof conversation.updatedAt === 'number' ? conversation.updatedAt : Date.now()
+  const createdAt = typeof conversation.createdAt === 'number' ? conversation.createdAt : updatedAt
+
   return {
     id: conversation.id,
     projectId: typeof conversation.projectId === 'number' ? conversation.projectId : null,
     title: typeof conversation.title === 'string' && conversation.title.trim() ? conversation.title : '新对话',
     summary: typeof conversation.summary === 'string' ? conversation.summary : '',
-    updatedAt: typeof conversation.updatedAt === 'number' ? conversation.updatedAt : Date.now(),
+    createdAt,
+    updatedAt,
     pinned: Boolean(conversation.pinned),
     archived: Boolean(conversation.archived),
     messages,
   }
 }
 
-function parseRemoteTime(value: string | null | undefined) {
-  if (!value) return Date.now()
+function parseRemoteTime(value: string | null | undefined, fallback: number) {
+  if (!value) return fallback
   const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? Date.now() : parsed
+  return Number.isNaN(parsed) ? fallback : parsed
 }
 
 function fromRemoteConversation(dto: AssistantConversationDto): AssistantConversation {
+  const now = Date.now()
+  const createdAt = parseRemoteTime(dto.createdAt, now)
   return {
     id: dto.id,
     projectId: dto.projectId ?? null,
     title: dto.title || '新对话',
     summary: dto.summary ?? '',
-    updatedAt: parseRemoteTime(dto.updatedAt ?? dto.createdAt),
+    createdAt,
+    updatedAt: parseRemoteTime(dto.updatedAt, createdAt),
     pinned: dto.pinned,
     archived: dto.archived,
     messages: (dto.messages ?? []).map((message) => ({
@@ -410,11 +421,6 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     errorMessage.value = ''
     lastFailedPrompt.value = ''
     persistState()
-    if (remote) {
-      void ensureRemoteConversation(conversation).catch((error) => {
-        errorMessage.value = error instanceof Error ? error.message : '新建对话失败'
-      })
-    }
     return conversation
   }
 

@@ -23,6 +23,7 @@ function conversation(messages: AssistantConversation['messages']): AssistantCon
     id: 'conv-1',
     title: '新对话',
     summary: '',
+    createdAt: 1,
     updatedAt: 1,
     messages,
   }

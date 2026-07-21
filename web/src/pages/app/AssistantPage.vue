@@ -203,6 +203,7 @@ import {
   DEFAULT_ASSISTANT_SIDEBAR_WIDTH,
   MAX_ASSISTANT_SIDEBAR_WIDTH,
   MIN_ASSISTANT_SIDEBAR_WIDTH,
+  buildAssistantConversationGroups,
   clampAssistantSidebarWidth,
   shouldAutoCollapseAssistantSidebar,
 } from './assistantSidebarState.ts'
@@ -1013,30 +1014,6 @@ async function handleSubmitFolderDialog() {
   }
 }
 
-function buildConversationGroups(items: typeof conversations.value) {
-  const now = Date.now()
-  const dayMs = 24 * 60 * 60 * 1000
-
-  const groups = [
-    {
-      label: '今天',
-      conversations: items.filter((conversation) => now - conversation.updatedAt < dayMs),
-    },
-    {
-      label: '最近 7 天',
-      conversations: items.filter(
-        (conversation) => now - conversation.updatedAt >= dayMs && now - conversation.updatedAt < dayMs * 7,
-      ),
-    },
-    {
-      label: '更早',
-      conversations: items.filter((conversation) => now - conversation.updatedAt >= dayMs * 7),
-    },
-  ]
-
-  return groups.filter((group) => group.conversations.length > 0)
-}
-
 function readApiErrorMessage(error: unknown, fallback: string) {
   const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
   if (typeof responseMessage === 'string' && responseMessage.trim()) {
@@ -1064,13 +1041,13 @@ const filteredArchivedConversations = computed(() => {
 })
 
 const conversationGroups = computed(() =>
-  buildConversationGroups(filteredConversations.value.filter((conversation) => (
+  buildAssistantConversationGroups(filteredConversations.value.filter((conversation) => (
     conversation.projectId === null || conversation.projectId === undefined
   ))),
 )
 
 const archivedConversationGroups = computed(() =>
-  buildConversationGroups(filteredArchivedConversations.value),
+  buildAssistantConversationGroups(filteredArchivedConversations.value),
 )
 
 const folderConversationGroups = computed(() =>
@@ -1078,11 +1055,12 @@ const folderConversationGroups = computed(() =>
     const folderConversations = filteredConversations.value.filter(
       (conversation) => conversation.projectId === folder.id,
     )
+    const groups = buildAssistantConversationGroups(folderConversations)
     return {
       id: folder.id,
       name: folder.name,
-      conversationCount: folderConversations.length,
-      groups: buildConversationGroups(folderConversations),
+      conversationCount: groups.reduce((total, group) => total + group.conversations.length, 0),
+      groups,
     }
   }),
 )

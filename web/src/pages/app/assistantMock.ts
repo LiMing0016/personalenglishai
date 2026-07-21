@@ -33,6 +33,7 @@ export interface AssistantConversation {
   projectId?: number | null
   title: string
   summary: string
+  createdAt: number
   updatedAt: number
   pinned?: boolean
   archived?: boolean
