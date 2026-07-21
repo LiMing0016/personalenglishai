@@ -4459,12 +4459,28 @@ function normalizeError(err: unknown) {
 
 @media (max-width: 720px) {
   .vocabulary-topbar {
-    grid-template-columns: 1fr;
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
   }
 
   .topbar-actions {
-    justify-content: flex-start;
+    justify-content: flex-end;
+  }
+
+  .vocabulary-nav {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .vocabulary-nav button {
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    padding: 0 6px;
   }
 }
 

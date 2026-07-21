@@ -90,7 +90,10 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --host 127.0.0.1 --port ${basePort}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    env: {
+      VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED: 'true',
+    },
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === 'true',
     timeout: 120 * 1000,
   },
 });

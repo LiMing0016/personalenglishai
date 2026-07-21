@@ -522,6 +522,99 @@ async function expectNoHorizontalOverflow(page: Page) {
   }))).toEqual({ document: true, body: true })
 }
 
+async function expectCaptureControlsFit(capturePanel: Locator) {
+  const layout = await capturePanel.evaluate((panel) => {
+    const panelRect = panel.getBoundingClientRect()
+    const allControls = [...panel.querySelectorAll('button, select, textarea, a, input:not([type="file"])')]
+      .filter((control): control is HTMLElement => (
+        control instanceof HTMLElement
+        && control.checkVisibility()
+        && control.getClientRects().length > 0
+      ))
+
+    const clippingState = (control: HTMLElement) => {
+      const rectangle = control.getBoundingClientRect()
+      let outsideScrollableViewport = false
+      let horizontallyClipped = false
+      for (let parent = control.parentElement; parent && parent !== panel; parent = parent.parentElement) {
+        const style = getComputedStyle(parent)
+        const parentRect = parent.getBoundingClientRect()
+        if (/(auto|hidden|scroll)/u.test(style.overflowX)
+          && (rectangle.left < parentRect.left || rectangle.right > parentRect.right)) {
+          horizontallyClipped = true
+        }
+        if (/(auto|hidden|scroll)/u.test(style.overflowY)
+          && (rectangle.bottom <= parentRect.top || rectangle.top >= parentRect.bottom)) {
+          outsideScrollableViewport = true
+        }
+      }
+      return { outsideScrollableViewport, horizontallyClipped }
+    }
+    const controlStates = allControls.map((control) => ({ control, ...clippingState(control) }))
+    const exposedControls = controlStates
+      .filter((state) => !state.outsideScrollableViewport)
+      .map((state) => state.control)
+    const horizontallyClippedControls = controlStates
+      .filter((state) => !state.outsideScrollableViewport && state.horizontallyClipped)
+      .map((state) => (
+        state.control.getAttribute('aria-label')
+        || state.control.textContent?.trim()
+        || state.control.tagName
+      ))
+    const controlFitsPanel = (control: HTMLElement) => {
+      const rectangle = control.getBoundingClientRect()
+      return rectangle.width > 0
+        && rectangle.height > 0
+        && rectangle.left >= panelRect.left
+        && rectangle.right <= panelRect.right
+        && rectangle.top >= panelRect.top
+        && rectangle.bottom <= panelRect.bottom
+    }
+    const controlsOutsidePanel = exposedControls
+      .filter((control) => !controlFitsPanel(control))
+      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim() || control.tagName)
+    const separated = (first: DOMRect, second: DOMRect) => (
+      first.right <= second.left
+      || second.right <= first.left
+      || first.bottom <= second.top
+      || second.bottom <= first.top
+    )
+    const groupSelectors = [
+      '.capture-mode',
+      '.theme-select__control',
+      '.image-capture__summary > div',
+      '.term-review header > div:last-child',
+      '.term-review__suggestions',
+      '.capture-actions',
+    ]
+    const groups = [
+      ...groupSelectors.map((selector) => panel.querySelector(selector)),
+      ...[...panel.querySelectorAll('.term-review__item')].slice(0, 2),
+    ].filter((group): group is Element => group instanceof Element)
+    const groupedControlsDoNotOverlap = groups.every((group) => {
+      const rectangles = [...group.querySelectorAll('button, select, textarea, a, input:not([type="file"])')]
+        .filter((control): control is HTMLElement => control instanceof HTMLElement && control.getClientRects().length > 0)
+        .map((control) => control.getBoundingClientRect())
+      return rectangles.every((rectangle, index) => rectangles.slice(index + 1).every(
+        (other) => separated(rectangle, other),
+      ))
+    })
+
+    return {
+      exposedControlCount: exposedControls.length,
+      controlsOutsidePanel,
+      horizontallyClippedControls,
+      groupedControlsDoNotOverlap,
+    }
+  })
+  expect(layout.exposedControlCount).toBeGreaterThan(0)
+  expect(layout).toMatchObject({
+    controlsOutsidePanel: [],
+    horizontallyClippedControls: [],
+    groupedControlsDoNotOverlap: true,
+  })
+}
+
 async function expectDialogKeyboardContract(
   page: Page,
   dialog: Locator,
@@ -669,10 +762,6 @@ test('creates a custom default theme, selects it, and captures two words', async
 })
 
 test('reviews image recognition candidates and captures safe OCR sources', async ({ page }) => {
-  test.skip(
-    process.env.VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED !== 'true',
-    'requires VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED=true before the Vite server starts',
-  )
   const errors = collectRuntimeErrors(page)
   const existingPackage = makeCard({
     cardUid: 'card_existing_package',
@@ -751,7 +840,7 @@ test('reviews image recognition candidates and captures safe OCR sources', async
   })
   await page.getByRole('button', { name: '开始识别' }).click()
   const candidateReview = page.locator('.term-review')
-  await expect(candidateReview.getByText('package', { exact: true })).toBeVisible()
+  await expect(candidateReview.getByRole('textbox', { name: '编辑词条 package' })).toBeVisible()
   await expect(candidateReview.getByText('recieve', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /采用 receive.*词典已验证/ }).click()
   await expect(page.getByRole('textbox', { name: '编辑词条 receive' })).toBeVisible()
@@ -759,7 +848,7 @@ test('reviews image recognition candidates and captures safe OCR sources', async
   releaseDelayedImageRecognition()
   await expect.poll(imageRecognitionResponseCount).toBe(2)
   await expect(candidateReview.getByText('obsolete', { exact: true })).toHaveCount(0)
-  await expect(candidateReview.getByText('package', { exact: true })).toBeVisible()
+  await expect(candidateReview.getByRole('textbox', { name: '编辑词条 package' })).toBeVisible()
 
   await page.getByLabel('生成主题').selectOption(productTheme.themeUid)
   await page.getByText('来源语境（可选）').click()
@@ -802,6 +891,151 @@ test('reviews image recognition candidates and captures safe OCR sources', async
   expect(capturePayload).not.toContain('base64')
   expect(cards.filter((card) => card.normalizedTerm === 'package')).toHaveLength(1)
   expect(cards.find((card) => card.cardUid === existingPackage.cardUid)?.sourceTypes).toContain('ocr_image')
+  await expectCleanRuntime(page, errors)
+})
+
+test('image import workspace stays usable across desktop and mobile viewports', async ({ page }, testInfo) => {
+  const errors = collectRuntimeErrors(page)
+  const response = makeImageRecognitionResponse('trace-responsive', [
+    {
+      itemId: 'item-recieve',
+      observedText: 'recieve',
+      normalizedTerm: 'recieve',
+      status: 'suspected_typo',
+      suggestions: [{ term: 'receive', dictionaryVerified: true }],
+      contextText: 'receive customer feedback',
+      confidence: 0.74,
+    },
+    ...Array.from({ length: 29 }, (_, index): ImageRecognitionItem => ({
+      itemId: `item-word-${index + 1}`,
+      observedText: `word${index + 1}`,
+      normalizedTerm: `word${index + 1}`,
+      status: 'accepted',
+      suggestions: [],
+      contextText: null,
+      confidence: 0.9,
+    })),
+  ])
+  response.warnings = ['CANDIDATE_LIMIT_REACHED']
+  await installApiMocks(page, [], {}, [], {}, {}, undefined, { responses: [response] })
+
+  for (const viewport of [
+    { name: 'desktop', width: 1280, height: 800 },
+    { name: 'mobile', width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/app/vocabulary?tab=collection')
+
+    const vocabularyNavigation = page.getByRole('navigation', { name: '单词学习页面' })
+    const navigationButtons = vocabularyNavigation.getByRole('button')
+    await expect(navigationButtons).toHaveCount(4)
+    for (let index = 0; index < 4; index += 1) await expect(navigationButtons.nth(index)).toBeVisible()
+    if (viewport.width === 390) {
+      const navigationLayout = await vocabularyNavigation.evaluate((navigation) => {
+        const navigationRect = navigation.getBoundingClientRect()
+        const buttons = [...navigation.querySelectorAll('button')]
+        const rectangles = buttons.map((button) => button.getBoundingClientRect())
+        const withinNavigation = rectangles.every((rectangle) => (
+          rectangle.left >= navigationRect.left
+          && rectangle.right <= navigationRect.right
+          && rectangle.top >= navigationRect.top
+          && rectangle.bottom <= navigationRect.bottom
+        ))
+        const doNotOverlap = rectangles.every((rectangle, index) => rectangles.slice(index + 1).every((other) => (
+          rectangle.right <= other.left
+          || other.right <= rectangle.left
+          || rectangle.bottom <= other.top
+          || other.bottom <= rectangle.top
+        )))
+        return {
+          display: getComputedStyle(navigation).display,
+          columns: new Set(rectangles.map((rectangle) => rectangle.left)).size,
+          rows: new Set(rectangles.map((rectangle) => rectangle.top)).size,
+          withinNavigation,
+          doNotOverlap,
+        }
+      })
+      expect(navigationLayout).toEqual({
+        display: 'grid',
+        columns: 2,
+        rows: 2,
+        withinNavigation: true,
+        doNotOverlap: true,
+      })
+    }
+
+    const capturePanel = page.getByRole('region', { name: '导入单词' })
+    await expect(capturePanel.getByRole('textbox', { name: '输入要沉淀的单词' })).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await expectCaptureControlsFit(capturePanel)
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.name}-text-import.png`), fullPage: true })
+
+    await page.getByRole('button', { name: '图片识别' }).click()
+    const imageInput = page.getByLabel('选择图片')
+    await imageInput.setInputFiles('public/nav-icons/reading.png')
+    await expect(page.getByAltText('待识别图片：reading.png')).toBeVisible()
+    await expectCaptureControlsFit(capturePanel)
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.name}-image-preview.png`), fullPage: true })
+
+    await page.getByRole('button', { name: '开始识别' }).click()
+    const candidateReview = page.getByRole('region', { name: '候选词' })
+    await expect(candidateReview.getByText('30 个', { exact: true })).toBeVisible()
+    await expect(candidateReview.getByText('单次最多保留 30 个图片候选词，请先处理当前结果。')).toBeVisible()
+    await expect(candidateReview.getByText('recieve', { exact: true })).toBeVisible()
+    await expect(candidateReview.getByRole('button', { name: /采用 receive.*词典已验证/ })).toBeVisible()
+
+    const layout = await capturePanel.evaluate((panel) => {
+      const imageSection = panel.querySelector('.image-capture__selected')
+      const preview = panel.querySelector('.image-capture__preview')
+      const summary = panel.querySelector('.image-capture__summary')
+      const review = panel.querySelector('.term-review__list')
+      const warning = panel.querySelector('.term-review__warning')
+      if (!(imageSection instanceof HTMLElement)
+        || !(preview instanceof HTMLElement)
+        || !(summary instanceof HTMLElement)
+        || !(review instanceof HTMLElement)
+        || !(warning instanceof HTMLElement)) return null
+
+      const panelRect = panel.getBoundingClientRect()
+      const imageRect = imageSection.getBoundingClientRect()
+      const previewRect = preview.getBoundingClientRect()
+      const summaryRect = summary.getBoundingClientRect()
+      const reviewRect = review.getBoundingClientRect()
+      const warningRect = warning.getBoundingClientRect()
+      const withinWidth = (inner: DOMRect, outer: DOMRect) => inner.left >= outer.left && inner.right <= outer.right
+      const separated = (first: DOMRect, second: DOMRect) => (
+        first.right <= second.left
+        || second.right <= first.left
+        || first.bottom <= second.top
+        || second.bottom <= first.top
+      )
+      return {
+        imageWithinPanel: withinWidth(imageRect, panelRect),
+        previewWithinPanel: withinWidth(previewRect, panelRect),
+        summaryWithinPanel: withinWidth(summaryRect, panelRect),
+        reviewWithinPanel: withinWidth(reviewRect, panelRect),
+        warningWithinPanel: withinWidth(warningRect, panelRect),
+        previewAndSummaryDoNotOverlap: separated(previewRect, summaryRect),
+        previewAboveSummary: previewRect.bottom <= summaryRect.top,
+        previewBesideSummary: previewRect.right <= summaryRect.left,
+      }
+    })
+    expect(layout).not.toBeNull()
+    expect(layout).toMatchObject({
+      imageWithinPanel: true,
+      previewWithinPanel: true,
+      summaryWithinPanel: true,
+      reviewWithinPanel: true,
+      warningWithinPanel: true,
+      previewAndSummaryDoNotOverlap: true,
+      previewAboveSummary: viewport.width === 390,
+      previewBesideSummary: viewport.width === 1280,
+    })
+    await expectNoHorizontalOverflow(page)
+    await expectCaptureControlsFit(capturePanel)
+    await page.screenshot({ path: testInfo.outputPath(`${viewport.name}-candidate-review.png`), fullPage: true })
+  }
+
   await expectCleanRuntime(page, errors)
 })
 
