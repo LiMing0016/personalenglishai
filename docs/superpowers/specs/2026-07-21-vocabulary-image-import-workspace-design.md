@@ -18,9 +18,12 @@ related_docs:
   - docs/superpowers/specs/2026-07-10-vocabulary-deposition-core-design.md
   - docs/superpowers/specs/2026-07-12-vocabulary-theme-markdown-card-design.md
   - docs/superpowers/specs/2026-07-14-vocabulary-python-generation-workflow-design.md
+  - docs/superpowers/specs/2026-07-21-vocabulary-import-dialog-design.md
 ---
 
 # 单词沉淀图片识别导入工作区设计
+
+> 前端容器与页面信息层级以后续的《单词沉淀导入对话框设计》为准；本文件继续定义图片识别、候选确认和跨服务契约。
 
 ## 当前结论
 
