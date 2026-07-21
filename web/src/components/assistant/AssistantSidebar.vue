@@ -357,6 +357,7 @@ function resetArchiveDir() {
 .sidebar-panel {
   display: flex;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
   box-sizing: border-box;

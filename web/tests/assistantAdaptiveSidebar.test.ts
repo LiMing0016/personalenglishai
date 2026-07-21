@@ -54,6 +54,17 @@ const sidebarSource = readFileSync(
   'utf8',
 )
 
+const sidebarPanelLayoutStart = sidebarSource.indexOf('.collapsed-sidebar,\n.sidebar-panel {')
+const sidebarPanelLayout = sidebarSource.slice(
+  sidebarPanelLayoutStart,
+  sidebarSource.indexOf('.collapsed-sidebar {', sidebarPanelLayoutStart),
+)
+
+assert.ok(
+  sidebarPanelLayout.includes('min-width: 0;'),
+  'expanded assistant sidebar panel should be allowed to shrink inside the resizable sidebar',
+)
+
 for (const requiredText of [
   'viewportWidth',
   "window.addEventListener('resize'",
