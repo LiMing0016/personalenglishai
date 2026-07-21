@@ -34,16 +34,11 @@ for (const requiredText of [
   'assistant-sidebar--collapsed',
   'collapsed-sidebar',
   'collapsed-sidebar-button',
-  'collapsed-brand-logo',
-  'collapsed-brand-icon',
+  'AppNavigationMenu',
+  '助手空间',
   'sidebar-primary-actions',
   'sidebar-new-chat-button',
-  'workspace-nav-grid',
-  'workspace-nav-link',
-  'workspace-nav-icon',
-  '其他应用',
   '学习助手对话',
-  'PEAI',
   '新聊天',
   '搜索',
   '文件夹',
@@ -55,5 +50,11 @@ for (const requiredText of [
 
 assert.ok(!sidebarSource.includes('AppRailSkillIcon'), 'assistant sidebar expanded app switcher should use quiet line icons')
 assert.ok(!sidebarSource.includes('assistant-workspace-card'), 'assistant sidebar should not show a redundant workspace intro card')
+assert.ok(sidebarSource.includes('flex: 0 0 218px'), 'expanded assistant sidebar should reserve 218px')
+assert.ok(sidebarSource.includes('flex-basis: 72px'), 'compact assistant sidebar should reserve 72px')
+assert.ok(!sidebarSource.includes('appSwitcherOpen'), 'assistant sidebar should remove the PEAI app dropdown state')
+assert.ok(!sidebarSource.includes('collapsed-home-link'), 'assistant sidebar should remove the obsolete home shortcut')
+assert.ok(!sidebarSource.includes('aria-label="返回首页"'), 'assistant sidebar should not expose a home shortcut')
+assert.ok(!sidebarSource.includes('sidebar-app-switcher'), 'assistant sidebar should remove the old app switcher')
 
 console.log('assistant-unified-sidebar-ok')

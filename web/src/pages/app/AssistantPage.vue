@@ -5,6 +5,7 @@
     :class="{
       'assistant-page--drawer-open': assistantDrawerOpen,
       'assistant-page--learning-canvas-open': learningCanvasOpen,
+      'assistant-page--sidebar-constrained': sidebarConstrained,
     }"
   >
     <AssistantSidebar
@@ -34,6 +35,14 @@
       @create-folder-and-move="openCreateFolderDialog"
       @save-archive-dir="handleSaveArchiveDir"
     />
+
+    <button
+      v-if="sidebarConstrained && assistantDrawerOpen"
+      type="button"
+      class="assistant-sidebar-scrim"
+      aria-label="收起侧边栏"
+      @click="closeAssistantDrawer"
+    ></button>
 
     <div class="assistant-main">
       <header class="main-header">
@@ -171,6 +180,7 @@ import {
   writeAssistantMarkdownTheme,
   type AssistantMarkdownTheme,
 } from './assistantMarkdownTheme.ts'
+import { shouldAutoCollapseAssistantSidebar } from './assistantSidebarState.ts'
 import { createAssistantState } from './assistantState.ts'
 import { createLearningAssetDraftStore, type LearningAssetWorkspace } from './learningAssetDraftStore.ts'
 import {
@@ -242,6 +252,7 @@ const route = useRoute()
 const router = useRouter()
 const injectedAssistantDrawerOpen = inject<Ref<boolean> | null>('assistantDrawerOpen', null)
 const assistantDrawerOpen = ref(injectedAssistantDrawerOpen?.value ?? false)
+const viewportWidth = ref(readViewportWidth())
 if (injectedAssistantDrawerOpen) {
   watch(injectedAssistantDrawerOpen, (value) => {
     assistantDrawerOpen.value = value
@@ -263,6 +274,10 @@ const learningAssetDraft = computed(() =>
     ?? null,
 )
 const learningCanvasOpen = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
+const sidebarConstrained = computed(() => shouldAutoCollapseAssistantSidebar({
+  learningCanvasOpen: learningCanvasOpen.value,
+  viewportWidth: viewportWidth.value,
+}))
 const learningAssetCandidateMarkdownByDraftId = ref<Record<string, string>>({})
 const learningAssetCandidateMarkdown = computed({
   get() {
@@ -338,6 +353,20 @@ function openAssistantDrawer() {
     injectedAssistantDrawerOpen.value = true
   }
 }
+
+function readViewportWidth() {
+  return typeof window === 'undefined' ? Number.POSITIVE_INFINITY : window.innerWidth
+}
+
+function handleViewportResize() {
+  viewportWidth.value = window.innerWidth
+}
+
+watch(sidebarConstrained, (constrained) => {
+  if (constrained) {
+    closeAssistantDrawer()
+  }
+}, { immediate: true })
 
 function restoreLearningAssetDraft(conversationId: string) {
   clearLearningAssetAutoSaveTimer()
@@ -723,6 +752,7 @@ function clearLearningAssetRouteQuery() {
 }
 
 onMounted(() => {
+  handleViewportResize()
   void loadRemoteState()
   void loadArchiveSettings()
   const routeLearningNoteUid = readRouteLearningNoteUid(route.query[LEARNING_NOTE_QUERY_KEY])
@@ -739,11 +769,13 @@ onMounted(() => {
     sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
   }
   window.addEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+  window.addEventListener('resize', handleViewportResize)
 })
 
 onBeforeUnmount(() => {
   clearLearningAssetAutoSaveTimer()
   window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+  window.removeEventListener('resize', handleViewportResize)
 })
 
 watch(activeConversationId, (conversationId) => {
@@ -998,7 +1030,7 @@ const folderConversationGroups = computed(() =>
 <style scoped>
 .assistant-page {
   --app-rail-width: 0px;
-  --assistant-sidebar-width: 320px;
+  --assistant-sidebar-width: 218px;
   --assistant-sidebar-collapsed-width: 72px;
   --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
   --learning-canvas-width: 420px;
@@ -1013,6 +1045,26 @@ const folderConversationGroups = computed(() =>
 
 .assistant-page--drawer-open {
   --assistant-sidebar-current-width: var(--assistant-sidebar-width);
+}
+
+.assistant-page--sidebar-constrained.assistant-page--drawer-open {
+  --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
+}
+
+.assistant-page--sidebar-constrained.assistant-page--drawer-open :deep(.assistant-sidebar) {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  box-shadow: 20px 0 48px rgba(15, 23, 42, 0.18);
+}
+
+.assistant-sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border: 0;
+  background: rgba(15, 23, 42, 0.24);
+  cursor: default;
 }
 
 .assistant-page--learning-canvas-open {
