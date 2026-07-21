@@ -744,6 +744,27 @@ test('creates a custom default theme, selects it, and captures two words', async
   await expect(themeCard.getByText('默认')).toBeVisible()
 
   await page.goto('/app/vocabulary?tab=collection')
+  const vocabularyNav = page.getByRole('navigation', { name: '单词学习页面' })
+  const searchTab = vocabularyNav.getByRole('button', { name: '搜索单词' })
+  const collectionTab = vocabularyNav.getByRole('button', { name: '单词沉淀' })
+  for (const label of ['搜索单词', '背词模式', '单词沉淀', '学习统计']) {
+    await expect(vocabularyNav.getByRole('button', { name: label })).toBeVisible()
+  }
+  await expect(collectionTab).toHaveClass(/(?:^|\s)active(?:\s|$)/)
+  await expect(page.getByRole('region', { name: '单词沉淀' })).toBeVisible()
+
+  await searchTab.click()
+  await expect(page).toHaveURL((url) => url.pathname === '/app/vocabulary' && !url.searchParams.has('tab'))
+  await expect(page.getByRole('region', { name: '搜索单词' })).toBeVisible()
+  await expect(searchTab).toHaveClass(/(?:^|\s)active(?:\s|$)/)
+  await expect(collectionTab).not.toHaveClass(/(?:^|\s)active(?:\s|$)/)
+
+  await collectionTab.click()
+  await expect(page).toHaveURL((url) => url.pathname === '/app/vocabulary' && url.searchParams.get('tab') === 'collection')
+  await expect(page.getByRole('region', { name: '单词沉淀' })).toBeVisible()
+  await expect(collectionTab).toHaveClass(/(?:^|\s)active(?:\s|$)/)
+  await expect(searchTab).not.toHaveClass(/(?:^|\s)active(?:\s|$)/)
+
   const themeSelect = page.getByLabel('生成主题')
   await expect(themeSelect).toHaveValue('theme_user_1')
   await themeSelect.selectOption('theme_user_1')
@@ -816,7 +837,9 @@ test('reviews image recognition candidates and captures safe OCR sources', async
   )
 
   await page.goto('/app/vocabulary?tab=collection')
-  await expect(page.getByRole('heading', { name: '单词沉淀', level: 1 })).toBeVisible()
+  const collectionRegion = page.getByRole('region', { name: '单词沉淀' })
+  await expect(collectionRegion).toBeVisible()
+  await expect(collectionRegion.getByRole('heading', { name: '单词沉淀', level: 1 })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '单词卡中心' })).toHaveCount(0)
 
   const imageMode = page.getByRole('button', { name: '图片识别' })
@@ -1193,7 +1216,9 @@ test('legacy word URL stays keyword-filtered collection and does not fetch detai
 
   await page.goto('/app/vocabulary/cards/supposed')
   await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/supposed$/)
-  await expect(page.getByRole('heading', { name: '单词沉淀', level: 1 })).toBeVisible()
+  const collectionRegion = page.getByRole('region', { name: '单词沉淀' })
+  await expect(collectionRegion).toBeVisible()
+  await expect(collectionRegion.getByRole('heading', { name: '单词沉淀', level: 1 })).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: '输入要沉淀的单词' })).toBeVisible()
   await expect(page.getByRole('searchbox', { name: '搜索单词' })).toHaveValue('supposed')
   await expect(page.locator('.vocabulary-card-page')).toHaveCount(0)

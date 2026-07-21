@@ -1247,7 +1247,6 @@ function normalizeError(err: unknown) {
 }
 
 .vocabulary-nav button,
-.icon-button,
 .dictionary-search button,
 .compact-panel button,
 .results-panel button,
