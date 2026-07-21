@@ -51,7 +51,25 @@ test('single card route opens persistent cards and maps legacy words into collec
   assert.match(view, /return typeof cardUid === ['"]string['"] \? cardUid\.trim\(\) \|\| null : null/)
   assert.match(view, /keyword:\s*legacyVocabularyCardKeyword\(\)/)
   assert.match(view, /selectedCardUid\.value\s*=\s*null/)
-  assert.match(view, /watch\(\(\)\s*=>\s*\[route\.name,\s*route\.params\.cardUid,\s*route\.query\.tab\]/)
+  assert.match(view, /watch\(\(\)\s*=>\s*route\.fullPath,\s*syncVocabularyRoute\)/)
+})
+
+test('persistent card navigation keeps collection filters across routes and pages', () => {
+  for (const helper of [
+    'buildVocabularyNavigationQuery',
+    'parseVocabularyNavigationQuery',
+    'resolveVocabularyCardSequence',
+  ]) {
+    assert.match(view, new RegExp(helper))
+  }
+
+  assert.match(view, /:navigation="vocabularyCardSequence"/)
+  assert.match(view, /:navigation-pending="vocabularyNavigationPending"/)
+  assert.match(view, /@navigate="navigateVocabularyCard"/)
+  assert.match(view, /query:\s*buildVocabularyNavigationQuery\(vocabularyFilters\.value\)/)
+  assert.match(view, /tab:\s*['"]collection['"],\s*\.\.\.buildVocabularyNavigationQuery/)
+  assert.match(view, /listVocabularyCards\(/)
+  assert.match(view, /parseVocabularyNavigationQuery\(route\.query\)/)
 })
 
 test('collection and persistent card routes render mutually exclusive page states', () => {

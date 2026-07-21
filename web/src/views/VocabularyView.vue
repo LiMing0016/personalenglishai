@@ -229,6 +229,8 @@
       <VocabularyCardInspector
         v-else-if="detailQuery.data.value"
         :card="detailQuery.data.value"
+        :navigation="vocabularyCardSequence"
+        :navigation-pending="vocabularyNavigationPending"
         :list-vocabulary-revisions="revisionsQuery.data.value"
         :update-mutation="updateMutation"
         :delete-mutation="deleteMutation"
@@ -236,6 +238,7 @@
         :retry-vocabulary-card="retryMutation"
         :resolve-conflict-mutation="resolveConflictMutation"
         @back="returnToVocabularyCollection"
+        @navigate="navigateVocabularyCard"
       />
     </section>
 
@@ -316,7 +319,12 @@ import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
 import type { DictionaryEntry, DictionaryLanguage, DictionaryLookupResponse } from '@/api/dictionary'
-import type { VocabularyCardFilters, VocabularyCaptureResponse } from '@/api/vocabulary'
+import {
+  listVocabularyCards,
+  type VocabularyCardFilters,
+  type VocabularyCardPage,
+  type VocabularyCaptureResponse,
+} from '@/api/vocabulary'
 import VocabularyCapturePanel from '@/components/vocabulary/VocabularyCapturePanel.vue'
 import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspector.vue'
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
@@ -324,6 +332,11 @@ import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
 import { isVocabularyImportAnalysisEnabled } from '@/features/vocabulary/importAnalysis'
 import { vocabularyProductEvents } from '@/features/vocabulary/productEvents'
+import {
+  buildVocabularyNavigationQuery,
+  parseVocabularyNavigationQuery,
+  resolveVocabularyCardSequence,
+} from '@/features/vocabulary/vocabularyCardNavigation'
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
@@ -389,13 +402,19 @@ const result = ref<DictionaryLookupResponse | null>(cachedLookup?.result ?? null
 const errorMessage = ref('')
 const debugMessage = ref('')
 const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
-const vocabularyFilters = ref<VocabularyCardFilters>({
+const initialVocabularyNavigationFilters = parseVocabularyNavigationQuery(route.query)
+const vocabularyFilters = ref<VocabularyCardFilters>(initialVocabularyNavigationFilters ?? {
   keyword: legacyVocabularyCardKeyword(),
   sort: 'recent',
   page: 1,
   size: 20,
 })
+const vocabularyNavigationContext = ref(Boolean(initialVocabularyNavigationFilters))
 const selectedCardUid = ref<string | null>(persistentVocabularyCardUid())
+const previousVocabularyPage = ref<VocabularyCardPage | null>(null)
+const nextVocabularyPage = ref<VocabularyCardPage | null>(null)
+const vocabularyNavigationPending = ref(false)
+let vocabularyNavigationRequestId = 0
 const {
   listQuery,
   detailQuery,
@@ -411,6 +430,15 @@ const {
 const { themesQuery } = useVocabularyThemes()
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
 const importAnalysisEnabled = isVocabularyImportAnalysisEnabled()
+const vocabularyCardSequence = computed(() => {
+  if (!vocabularyNavigationContext.value || !selectedCardUid.value || !listQuery.data.value) return null
+  return resolveVocabularyCardSequence(
+    listQuery.data.value,
+    selectedCardUid.value,
+    previousVocabularyPage.value,
+    nextVocabularyPage.value,
+  )
+})
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },
@@ -1097,7 +1125,11 @@ function switchVocabularyView(view: VocabularyViewKey) {
 function updateVocabularyFilters(filters: VocabularyCardFilters) {
   vocabularyFilters.value = filters
   selectedCardUid.value = null
-  if (isVocabularyCardRoute()) void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
+  vocabularyNavigationContext.value = true
+  void router.replace({
+    name: 'Vocabulary',
+    query: { tab: 'collection', ...buildVocabularyNavigationQuery(filters) },
+  })
 }
 
 function handleVocabularyCaptured(response: VocabularyCaptureResponse) {
@@ -1106,14 +1138,26 @@ function handleVocabularyCaptured(response: VocabularyCaptureResponse) {
 }
 
 function selectVocabularyCard(cardUid: string) {
-  void router.push({ name: 'vocabulary-card', params: { cardUid } })
+  vocabularyNavigationContext.value = true
+  void router.push({
+    name: 'vocabulary-card',
+    params: { cardUid },
+    query: buildVocabularyNavigationQuery(vocabularyFilters.value),
+  })
 }
 
 function returnToVocabularyCollection() {
-  void router.replace({ name: 'Vocabulary', query: { tab: 'collection' } })
+  const query = vocabularyNavigationContext.value
+    ? { tab: 'collection', ...buildVocabularyNavigationQuery(vocabularyFilters.value) }
+    : { tab: 'collection' }
+  void router.replace({ name: 'Vocabulary', query })
 }
 
 function syncVocabularyRoute() {
+  const navigationFilters = parseVocabularyNavigationQuery(route.query)
+  vocabularyNavigationContext.value = Boolean(navigationFilters)
+  if (navigationFilters) vocabularyFilters.value = navigationFilters
+
   if (isVocabularyCardRoute()) {
     activeView.value = 'collection'
     const cardUid = persistentVocabularyCardUid()
@@ -1134,7 +1178,80 @@ function syncVocabularyRoute() {
   selectedCardUid.value = null
 }
 
-watch(() => [route.name, route.params.cardUid, route.query.tab], syncVocabularyRoute)
+function navigationPageFilters(page: number): VocabularyCardFilters {
+  return { ...vocabularyFilters.value, page }
+}
+
+async function loadAdjacentVocabularyPages() {
+  const requestId = ++vocabularyNavigationRequestId
+  previousVocabularyPage.value = null
+  nextVocabularyPage.value = null
+  vocabularyNavigationPending.value = false
+
+  const currentPage = listQuery.data.value
+  const cardUid = selectedCardUid.value
+  if (!vocabularyNavigationContext.value || !currentPage || !cardUid) return
+
+  const index = currentPage.items.findIndex((card) => card.cardUid === cardUid)
+  if (index < 0) return
+
+  const shouldLoadPrevious = index === 0 && currentPage.page > 1
+  const shouldLoadNext = index === currentPage.items.length - 1
+    && currentPage.page * currentPage.size < currentPage.total
+  if (!shouldLoadPrevious && !shouldLoadNext) return
+
+  vocabularyNavigationPending.value = true
+  try {
+    const [previousPage, nextPage] = await Promise.all([
+      shouldLoadPrevious
+        ? listVocabularyCards(navigationPageFilters(currentPage.page - 1))
+        : Promise.resolve(null),
+      shouldLoadNext
+        ? listVocabularyCards(navigationPageFilters(currentPage.page + 1))
+        : Promise.resolve(null),
+    ])
+    if (requestId !== vocabularyNavigationRequestId) return
+    previousVocabularyPage.value = previousPage
+    nextVocabularyPage.value = nextPage
+  } catch {
+    if (requestId !== vocabularyNavigationRequestId) return
+    previousVocabularyPage.value = null
+    nextVocabularyPage.value = null
+  } finally {
+    if (requestId === vocabularyNavigationRequestId) vocabularyNavigationPending.value = false
+  }
+}
+
+function navigateVocabularyCard(direction: 'previous' | 'next') {
+  const sequence = vocabularyCardSequence.value
+  const target = direction === 'previous' ? sequence?.previous : sequence?.next
+  const currentPage = listQuery.data.value
+  if (!sequence || !target || !currentPage) return
+
+  const targetOnCurrentPage = currentPage.items.some((card) => card.cardUid === target.cardUid)
+  const targetPage = targetOnCurrentPage
+    ? currentPage.page
+    : direction === 'previous'
+      ? Math.max(1, currentPage.page - 1)
+      : currentPage.page + 1
+  const filters = navigationPageFilters(targetPage)
+
+  vocabularyFilters.value = filters
+  selectedCardUid.value = target.cardUid
+  void router.push({
+    name: 'vocabulary-card',
+    params: { cardUid: target.cardUid },
+    query: buildVocabularyNavigationQuery(filters),
+  })
+}
+
+watch(() => route.fullPath, syncVocabularyRoute)
+
+watch(
+  () => [listQuery.data.value, selectedCardUid.value, vocabularyNavigationContext.value],
+  () => void loadAdjacentVocabularyPages(),
+  { immediate: true },
+)
 
 watch(
   () => detailQuery.data.value,
