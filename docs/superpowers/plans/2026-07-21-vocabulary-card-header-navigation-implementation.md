@@ -46,7 +46,7 @@
 - Produces: `buildVocabularyNavigationQuery(filters): Record<string, string>`
 - Produces: `resolveVocabularyCardSequence(currentPage, cardUid, previousPage?, nextPage?): VocabularyCardSequence | null`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 覆盖默认值、非法页码、全部筛选字段往返、页内相邻项、跨页相邻项、第一张、最后一张和当前卡片不在上下文页的情况。
 
@@ -60,13 +60,13 @@ assert.equal(parseVocabularyNavigationQuery({}), null)
 assert.equal(resolveVocabularyCardSequence(page, 'card_2')?.position, 2)
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `cd web && npx tsx --test tests/vocabularyCardNavigation.test.ts`
 
 Expected: FAIL because `vocabularyCardNavigation.ts` does not exist.
 
-- [ ] **Step 3: Implement the pure helpers**
+- [x] **Step 3: Implement the pure helpers**
 
 Use a `vc=1` marker to distinguish navigation context from unrelated route query values. Clamp `page >= 1` and `1 <= size <= 100`; reject unsupported status and sort values instead of guessing them.
 
@@ -84,13 +84,13 @@ export interface VocabularyCardSequence {
 }
 ```
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `cd web && npx tsx --test tests/vocabularyCardNavigation.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/features/vocabulary/vocabularyCardNavigation.ts web/tests/vocabularyCardNavigation.test.ts
@@ -108,7 +108,7 @@ git commit -m "feat(ui): 增加单词卡连续浏览上下文"
 - Produces: `play({ term, language, audioUrl }): Promise<'audio' | 'speech' | 'failed'>`
 - Produces: reactive `state`, `activeLanguage`, `message` and synchronous `stop()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Inject small audio and speech adapters so Node tests verify real orchestration without browser globals.
 
@@ -122,23 +122,23 @@ assert.equal(playback.state.value, 'idle')
 
 Cover audio rejection falling back to speech, a second play stopping the first source, stale completion not resetting the new state, and unmount cleanup through the exported stop behavior.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `cd web && npx tsx --test tests/vocabularyPronunciation.test.ts`
 
 Expected: FAIL because the composable does not exist.
 
-- [ ] **Step 3: Implement minimal playback orchestration**
+- [x] **Step 3: Implement minimal playback orchestration**
 
 Create one `HTMLAudioElement` at a time. Set `onplaying`, `onended` and `onerror` before `play()`. On failure, call `speechSynthesis.cancel()`, create `SpeechSynthesisUtterance`, set `lang` and `rate = 0.9`, then speak. Guard callbacks with a monotonically increasing request ID.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `cd web && npx tsx --test tests/vocabularyPronunciation.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/composables/useVocabularyPronunciation.ts web/tests/vocabularyPronunciation.test.ts
@@ -160,7 +160,7 @@ git commit -m "feat(ui): 增加单词发音播放控制器"
 - Produces: inspector emit `navigate: ['previous' | 'next']`.
 - Produces: core summary emit `pronounce: [VocabularyCoreContent['phonetics'][number]]`.
 
-- [ ] **Step 1: Write failing component contract tests**
+- [x] **Step 1: Write failing component contract tests**
 
 Require `Volume2`, `LoaderCircle`, `ChevronLeft` and `ChevronRight` imports, a clickable word title, accessible phonetic buttons, stable playback status, navigation position, adjacent word labels and disabled navigation while editing.
 
@@ -170,23 +170,23 @@ assert.match(inspector, /@navigate|emit\('navigate'/)
 assert.match(coreSummary, /emit\('pronounce', phonetic\)/)
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run: `cd web && npx tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts`
 
 Expected: FAIL on the missing playback and navigation contracts.
 
-- [ ] **Step 3: Implement the header and core phonetic controls**
+- [x] **Step 3: Implement the header and core phonetic controls**
 
 The title button and speaker button call the same default pronunciation method. `VocabularyCoreSummary` emits the selected phonetic. The toolbar navigation renders on the right, uses fixed-size icon buttons, and displays adjacent terms only above `1024px`. Playback feedback uses an `aria-live="polite"` region and does not change layout height.
 
-- [ ] **Step 4: Run the focused tests and verify GREEN**
+- [x] **Step 4: Run the focused tests and verify GREEN**
 
 Run: `cd web && npx tsx --test tests/vocabularyCoreSummary.test.ts tests/vocabularyCardInspector.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/components/vocabulary/VocabularyCoreSummary.vue web/src/components/vocabulary/VocabularyCardInspector.vue web/tests/vocabularyCoreSummary.test.ts web/tests/vocabularyCardInspector.test.ts
@@ -203,27 +203,27 @@ git commit -m "feat(ui): 打磨单词卡发音头部"
 - Consumes: Task 1 route helpers and `VocabularyCardSequence`.
 - Produces: `navigateVocabularyCard(direction)` and route-preserving `selectVocabularyCard` / `returnToVocabularyCollection`.
 
-- [ ] **Step 1: Write failing route integration tests**
+- [x] **Step 1: Write failing route integration tests**
 
 Verify list selection serializes the current filters, detail route restores filters, back preserves them, navigation passes the computed model, and crossing a page calls `listVocabularyCards` with the adjacent page before routing.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `cd web && npx tsx --test tests/vocabularyDepositionWorkspace.test.ts`
 
 Expected: FAIL because the view does not preserve navigation context.
 
-- [ ] **Step 3: Implement route and cross-page orchestration**
+- [x] **Step 3: Implement route and cross-page orchestration**
 
 Initialize detail filters from `parseVocabularyNavigationQuery(route.query)`. When the current page boundary has another page, load only that adjacent page on navigation, update `vocabularyFilters`, and route to its first or last item with the new page query. Keep direct links without `vc=1` free of sequence UI.
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run: `cd web && npx tsx --test tests/vocabularyDepositionWorkspace.test.ts`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add web/src/views/VocabularyView.vue web/tests/vocabularyDepositionWorkspace.test.ts
@@ -240,17 +240,17 @@ git commit -m "feat(ui): 接通单词卡跨页浏览"
 - Consumes: Tasks 1-4 completed behavior.
 - Produces: 可复现的验证记录和阶段二实施边界。
 
-- [ ] **Step 1: Update architecture documentation**
+- [x] **Step 1: Update architecture documentation**
 
 Document `vc=1` route context, cross-page navigation, `audioUrl -> Web Speech` stage-one fallback and that Kokoro remains stage two.
 
-- [ ] **Step 2: Run all vocabulary tests**
+- [x] **Step 2: Run all vocabulary tests**
 
 Run: `cd web && npx tsx --test "tests/vocabulary*.test.ts"`
 
 Expected: all vocabulary tests pass with no unhandled rejection.
 
-- [ ] **Step 3: Run the production build**
+- [x] **Step 3: Run the production build**
 
 Run: `cd web && npm run build`
 
@@ -260,12 +260,19 @@ Expected: `vue-tsc` and Vite complete successfully.
 
 At `1440x900`, `1024x768` and `390x844`, verify title audio, phonetic audio, loading/playing feedback, same-page navigation, cross-page navigation, back context, first/last disabled controls, sticky toolbar, long words, and no horizontal overflow. Compare the running page against the approved product-header prototype at the same viewport before accepting the result.
 
-- [ ] **Step 5: Mark the plan complete and commit documentation**
+- [x] **Step 5: Mark the plan complete and commit documentation**
 
 ```powershell
 git add docs/architecture/vocabulary-deposition.md docs/superpowers/plans/2026-07-21-vocabulary-card-header-navigation-implementation.md
 git commit -m "docs(ui): 记录单词卡连续浏览实现"
 ```
+
+## Verification Record
+
+- `npx tsx --test "tests/vocabulary*.test.ts"`: 120 个测试全部通过。
+- `npm run build`: `vue-tsc` 与 Vite 构建成功；仅保留项目已有的大 chunk 警告。
+- 内置浏览器桌面态：已与批准原型同视口对照，并验证列表进入详情、同页前后切换、直接链接不显示伪序列、默认与非默认筛选返回恢复、标题与音标播放入口、首尾禁用和零横向溢出。
+- 1024 与手机真实视口：内置浏览器的临时视口覆盖只作用于对照原型页，未对受控应用页生效；响应式行为由 `vocabularyCardInspector.test.ts` 的窄屏契约覆盖，仍建议发布前补一次真实设备截图验收。
 
 ## Stage Two Handoff
 
