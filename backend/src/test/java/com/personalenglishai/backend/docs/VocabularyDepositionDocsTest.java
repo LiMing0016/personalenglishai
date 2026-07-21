@@ -240,7 +240,7 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(api.contains("`400052` | 图片为空、超过 10 MiB、MIME 不支持、扩展名与 MIME 不匹配，或 `file` part 数量不为 1")),
                 () -> assertTrue(api.contains("`502050` | Python 或模型响应已返回，但无法通过图片识别结构化契约校验")),
                 () -> assertTrue(api.contains("`503050` | Python 服务未配置、不可达、内部鉴权失败，或模型上游不可用")),
-                () -> assertTrue(api.contains("`504050` | 图片识别超过 Java 调用 Python 的超时预算")),
+                () -> assertTrue(api.contains("`504050` | Python 的 45 秒共享模型预算耗尽，或 Java 调用 Python 超时")),
                 () -> assertTrue(api.contains("POST /api/vocabulary/product-events/batch")),
                 () -> assertTrue(api.contains("`events` 必填，必须是包含 1..50 个 `Event` 的数组")),
                 () -> assertTrue(api.contains("| `eventUid` | 是 | string，1..128 字符")),
