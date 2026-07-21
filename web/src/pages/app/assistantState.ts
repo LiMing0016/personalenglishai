@@ -25,6 +25,8 @@ import {
   mergeRemoteConversationListWithTransientAttachments,
   mergeTransientMessageAttachments,
 } from './assistantConversationMerge.ts'
+import { fromRemoteConversation as mapRemoteConversation } from './assistantConversationBlocks.ts'
+import type { AssistantBlockDiagnostic } from '../../components/assistant/learning-blocks/registry.ts'
 import {
   type AssistantAttachment,
   type AssistantAttachmentMetadata,
@@ -46,6 +48,16 @@ interface CreateAssistantStateOptions {
 }
 
 const DEFAULT_STORAGE_KEY = 'peai:assistant:state:v1'
+
+function reportAssistantBlockDiagnostic(diagnostic: AssistantBlockDiagnostic) {
+  if (import.meta.env.DEV) {
+    console.warn('[assistant-learning-block]', diagnostic)
+  }
+}
+
+function fromRemoteConversation(dto: AssistantConversationDto) {
+  return mapRemoteConversation(dto, reportAssistantBlockDiagnostic)
+}
 
 interface PersistedAssistantMessage {
   id: string
@@ -220,34 +232,6 @@ function restoreConversation(value: unknown): AssistantConversation | null {
     pinned: Boolean(conversation.pinned),
     archived: Boolean(conversation.archived),
     messages,
-  }
-}
-
-function parseRemoteTime(value: string | null | undefined, fallback: number) {
-  if (!value) return fallback
-  const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? fallback : parsed
-}
-
-function fromRemoteConversation(dto: AssistantConversationDto): AssistantConversation {
-  const now = Date.now()
-  const createdAt = parseRemoteTime(dto.createdAt, now)
-  return {
-    id: dto.id,
-    projectId: dto.projectId ?? null,
-    title: dto.title || '新对话',
-    summary: dto.summary ?? '',
-    createdAt,
-    updatedAt: parseRemoteTime(dto.updatedAt, createdAt),
-    pinned: dto.pinned,
-    archived: dto.archived,
-    messages: (dto.messages ?? []).map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      status: message.status === 'failed' ? 'done' : 'done',
-      parts: normalizeAssistantBlocks(message.parts),
-    })),
   }
 }
 

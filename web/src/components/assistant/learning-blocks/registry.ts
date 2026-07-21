@@ -63,6 +63,22 @@ const definitions: readonly LearningBlockDefinition[] = [
 
 const definitionByType = new Map(definitions.map((definition) => [definition.type, definition]))
 
+export type AssistantBlockDiagnosticReason =
+  | 'parts_not_array'
+  | 'invalid_block'
+  | 'unknown_type'
+  | 'unknown_version'
+  | 'invalid_data'
+
+export interface AssistantBlockDiagnostic {
+  reason: AssistantBlockDiagnosticReason
+  index?: number
+  type?: string
+  version?: number
+}
+
+export type AssistantBlockDiagnosticReporter = (diagnostic: AssistantBlockDiagnostic) => void
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -102,13 +118,40 @@ function fallbackBlock(block: Record<string, unknown>): FallbackAssistantBlock |
   }
 }
 
-function normalizeBlock(value: unknown): RenderableAssistantBlock | null {
-  if (!isRecord(value) || !hasText(value.id) || !hasText(value.type)) return null
+function normalizeBlock(
+  value: unknown,
+  index: number,
+  report?: AssistantBlockDiagnosticReporter,
+): RenderableAssistantBlock | null {
+  if (!isRecord(value) || !hasText(value.id) || !hasText(value.type)) {
+    report?.({ reason: 'invalid_block', index })
+    return null
+  }
   const definition = definitionByType.get(value.type as AssistantBlockType)
-  if (!definition || value.version !== definition.version) return fallbackBlock(value)
+  if (!definition) {
+    report?.({
+      reason: 'unknown_type',
+      index,
+      type: value.type,
+      version: typeof value.version === 'number' ? value.version : undefined,
+    })
+    return fallbackBlock(value)
+  }
+  if (value.version !== definition.version) {
+    report?.({
+      reason: 'unknown_version',
+      index,
+      type: value.type,
+      version: typeof value.version === 'number' ? value.version : undefined,
+    })
+    return fallbackBlock(value)
+  }
 
   const data = definition.normalizeData(value.data)
-  if (!data) return fallbackBlock(value)
+  if (!data) {
+    report?.({ reason: 'invalid_data', index, type: value.type, version: definition.version })
+    return fallbackBlock(value)
+  }
 
   return {
     id: value.id,
@@ -123,10 +166,16 @@ function normalizeBlock(value: unknown): RenderableAssistantBlock | null {
   } as AssistantBlock
 }
 
-export function normalizeAssistantBlocks(value: unknown): RenderableAssistantBlock[] {
-  if (!Array.isArray(value)) return []
+export function normalizeAssistantBlocks(
+  value: unknown,
+  report?: AssistantBlockDiagnosticReporter,
+): RenderableAssistantBlock[] {
+  if (!Array.isArray(value)) {
+    if (value !== null && value !== undefined) report?.({ reason: 'parts_not_array' })
+    return []
+  }
   return value
-    .map(normalizeBlock)
+    .map((block, index) => normalizeBlock(block, index, report))
     .filter((block): block is RenderableAssistantBlock => block !== null)
 }
 

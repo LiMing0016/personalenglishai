@@ -45,7 +45,7 @@ export interface AssistantMessageDto {
   id: string
   role: 'user' | 'assistant'
   content: string
-  parts?: AssistantBlock[]
+  parts?: unknown
   status: 'done' | 'failed'
   createdAt?: string | null
 }
@@ -160,8 +160,8 @@ function latestAssistantParts(conversation: AssistantConversationDto) {
   const messages = conversation.messages ?? []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
-    if (message?.role === 'assistant' && message.parts?.length) {
-      return message.parts
+    if (message?.role === 'assistant' && Array.isArray(message.parts) && message.parts.length) {
+      return message.parts as AssistantBlock[]
     }
   }
   return undefined
