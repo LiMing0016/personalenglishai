@@ -135,7 +135,7 @@
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
-import AssistantStarterCards from './AssistantStarterCards.vue'
+import AssistantStarterCards, { type AssistantStarterChoice } from './AssistantStarterCards.vue'
 import type { AssistantStarterGoalId } from './AssistantStarterCards.vue'
 import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
@@ -161,7 +161,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  chooseStarter: [prompt: string]
+  chooseStarter: [choice: AssistantStarterChoice]
   copyMessage: [content: string]
   retryMessage: [messageId: string]
   retry: []

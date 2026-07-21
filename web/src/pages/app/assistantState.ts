@@ -20,7 +20,7 @@ import {
 } from './assistantAttachmentStore.ts'
 import { type AssistantAttachmentSource, validateAssistantFiles } from './assistantAttachmentRules.ts'
 import { findRetryUserMessage } from './assistantMessageActions.ts'
-import type { AssistantSelection } from '../../types/assistantRequest.ts'
+import type { AssistantInteractionContext, AssistantSelection } from '../../types/assistantRequest.ts'
 import {
   mergeRemoteConversationListWithTransientAttachments,
   mergeTransientMessageAttachments,
@@ -295,6 +295,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const errorMessage = ref('')
   const lastFailedPrompt = ref('')
   const lastFailedAttachments = ref<AssistantAttachment[]>([])
+  const lastFailedInteraction = ref<AssistantInteractionContext>()
   const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => {
     const response = await assistantChatStream(request, stream)
     return response.reply
@@ -490,7 +491,11 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     assistantMode.value = mode
   }
 
-  async function sendPrompt(prompt: string, attachments: AssistantAttachment[] = composerAttachments.value) {
+  async function sendPrompt(
+    prompt: string,
+    attachments: AssistantAttachment[] = composerAttachments.value,
+    interaction?: AssistantInteractionContext,
+  ) {
     if (isSending.value) {
       return
     }
@@ -505,6 +510,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     errorMessage.value = ''
     lastFailedPrompt.value = ''
     lastFailedAttachments.value = []
+    lastFailedInteraction.value = undefined
 
     let conversation = activeConversation.value
     try {
@@ -515,6 +521,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       return
     }
     const userMessage = createMessage('user', trimmed, 'done')
+    userMessage.interaction = interaction
     userMessage.attachments = attachments.map((attachment) => ({ ...attachment }))
     userMessage.attachmentMetadata = attachments.map(createAttachmentMetadata)
     const loadingMessage = createMessage('assistant', '正在思考...', 'loading')
@@ -561,6 +568,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           ? (trimmed ? 'selection_and_message' : 'selection')
           : 'message_only',
         selection: selectionForRequest ?? undefined,
+        interaction,
         attachments,
       }, {
         onDelta: (delta) => {
@@ -596,6 +604,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       errorMessage.value = error instanceof Error ? error.message : '学习助手暂时不可用'
       lastFailedPrompt.value = trimmed
       lastFailedAttachments.value = attachments.map((attachment) => ({ ...attachment }))
+      lastFailedInteraction.value = interaction
       persistState()
     } finally {
       isSending.value = false
@@ -615,7 +624,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     if (!lastFailedPrompt.value && lastFailedAttachments.value.length === 0) {
       return
     }
-    await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value)
+    await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value, lastFailedInteraction.value)
   }
 
   async function retryAssistantMessage(messageId: string) {
@@ -623,7 +632,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     if (!retryMessage) {
       throw new Error('没有找到可重试的上一条用户消息')
     }
-    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [])
+    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [], retryMessage.interaction)
   }
 
   async function renameConversation(id: string, title: string) {
@@ -810,6 +819,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     shareConversation,
     createProject,
     sendMessage,
+    sendPrompt,
     retryLastMessage,
     retryAssistantMessage,
   }

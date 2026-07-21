@@ -11,6 +11,7 @@ import type {
   StudyPlanData,
   VocabCardData,
 } from './contracts.ts'
+import type { AssistantInteractionContext } from '@/types/assistantRequest.ts'
 import { grammarTreeFallback, normalizeGrammarTreeData } from './grammar-tree/schema.ts'
 import { normalizeSentenceAnalysisData, sentenceAnalysisFallback } from './sentence-analysis/schema.ts'
 import { normalizeSentenceReorderData, sentenceReorderFallback } from './sentence-reorder/schema.ts'
@@ -74,8 +75,16 @@ function normalizeActions(value: unknown): AssistantBlockAction[] | undefined {
   if (!Array.isArray(value)) return undefined
   const actions = value.flatMap((action): AssistantBlockAction[] => {
     if (!isRecord(action)) return []
-    if (!hasText(action.id) || !hasText(action.label) || !hasText(action.prompt)) return []
-    return [{ id: action.id, label: action.label, prompt: action.prompt }]
+    if (!hasText(action.id) || !hasText(action.label)) return []
+    if (hasText(action.prompt)) return [{ id: action.id, label: action.label, prompt: action.prompt }]
+    if (!hasText(action.displayText) || !isRecord(action.interaction)) return []
+    if (!hasText(action.interaction.source)) return []
+    return [{
+      id: action.id,
+      label: action.label,
+      displayText: action.displayText,
+      interaction: action.interaction as unknown as AssistantInteractionContext,
+    } as AssistantBlockAction]
   })
   return actions.length ? actions : undefined
 }

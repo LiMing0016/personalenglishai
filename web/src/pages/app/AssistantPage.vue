@@ -198,7 +198,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
-import type { AssistantStarterGoalId } from '@/components/assistant/AssistantStarterCards.vue'
+import type {
+  AssistantStarterChoice,
+  AssistantStarterGoalId,
+} from '@/components/assistant/AssistantStarterCards.vue'
 import LearningAssetCanvas from '@/components/assistant/LearningAssetCanvas.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
@@ -274,6 +277,7 @@ const {
   shareConversation,
   createProject,
   sendMessage,
+  sendPrompt,
   retryLastMessage,
   retryAssistantMessage,
   setPendingSelection,
@@ -396,9 +400,13 @@ function handleSelectStarterGoal(goalId: AssistantStarterGoalId) {
   focusEmptyComposer()
 }
 
-function handleChooseStarter(prompt: string) {
-  applyStarter(prompt)
-  focusEmptyComposer()
+function handleChooseStarter(choice: AssistantStarterChoice) {
+  if (typeof choice === 'string') {
+    applyStarter(choice)
+    focusEmptyComposer()
+    return
+  }
+  void sendPrompt(choice.displayText, [], choice.interaction)
 }
 
 function handleSetAssistantMode(mode: AssistantMode) {

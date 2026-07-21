@@ -24,7 +24,7 @@
           :key="action.id"
           type="button"
           class="assistant-block-action"
-          @click="$emit('action', action.prompt)"
+          @click="emitAction(action)"
         >
           {{ action.label }}
         </button>
@@ -39,13 +39,15 @@ import { defineAsyncComponent, type Component } from 'vue'
 import { definitionFor, isFallbackAssistantBlock } from './learning-blocks/registry.ts'
 import { renderAssistantMarkdown } from './markdown.ts'
 import type { RenderableAssistantBlock } from '@/types/assistantBlocks.ts'
+import type { AssistantBlockAction } from '@/types/assistantBlocks.ts'
+import type { AssistantInteractionTrigger } from '@/types/assistantRequest.ts'
 
 defineProps<{
   blocks: RenderableAssistantBlock[]
 }>()
 
-defineEmits<{
-  action: [prompt: string]
+const emit = defineEmits<{
+  action: [choice: string | AssistantInteractionTrigger]
 }>()
 
 const componentCache = new Map<string, Component>()
@@ -63,6 +65,14 @@ function componentForBlock(block: RenderableAssistantBlock) {
 
 function actionsFor(block: RenderableAssistantBlock) {
   return isFallbackAssistantBlock(block) ? undefined : block.actions
+}
+
+function emitAction(action: AssistantBlockAction) {
+  if ('prompt' in action) {
+    emit('action', action.prompt)
+    return
+  }
+  emit('action', { displayText: action.displayText, interaction: action.interaction })
 }
 </script>
 

@@ -2,6 +2,29 @@ import type { AssistantBlock } from './assistantBlocks.ts'
 
 export type LearningMode = 'daily_explain' | 'exam_boost'
 
+export type AssistantInteractionSource =
+  | 'composer'
+  | 'quick_action'
+  | 'response_action'
+  | 'activity_action'
+
+export interface AssistantInteractionContext {
+  source: AssistantInteractionSource
+  uiIntent?: 'start_practice' | 'show_learning_card' | 'activity_action'
+  activeActivityId?: string
+  actionId?: string
+  context?: {
+    exerciseType?: 'sentence_reorder'
+    topic?: string
+    difficulty?: 'easy' | 'medium' | 'hard'
+  }
+}
+
+export interface AssistantInteractionTrigger {
+  displayText: string
+  interaction: AssistantInteractionContext
+}
+
 export type AssistantIntent =
   | 'free_chat'
   | 'explain'
@@ -179,6 +202,7 @@ export interface AssistantRequest {
   message: {
     text?: string
   }
+  interaction?: AssistantInteractionContext
   selection?: AssistantSelection
   attachments?: AssistantAttachmentRef[]
   studyContext?: {

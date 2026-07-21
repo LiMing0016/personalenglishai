@@ -1,5 +1,10 @@
 import type { RenderableAssistantBlock } from '../../types/assistantBlocks.ts'
-import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
+import type {
+  AssistantInteractionContext,
+  AssistantIntent,
+  AssistantSelection,
+  InputScope,
+} from '../../types/assistantRequest.ts'
 
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
@@ -26,6 +31,7 @@ export interface AssistantMessage {
   parts?: RenderableAssistantBlock[]
   attachments?: AssistantAttachment[]
   attachmentMetadata?: AssistantAttachmentMetadata[]
+  interaction?: AssistantInteractionContext
 }
 
 export interface AssistantConversation {
@@ -55,6 +61,7 @@ export interface AssistantReplyRequest {
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection
+  interaction?: AssistantInteractionContext
   attachments: AssistantAttachment[]
 }
 

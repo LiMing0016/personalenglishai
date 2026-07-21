@@ -20,6 +20,16 @@
 
     <div class="starter-examples" aria-label="示例问题">
       <button
+        v-if="selectedGoal === 'practice'"
+        type="button"
+        class="starter-example starter-example--practice"
+        @click="$emit('choose', practiceAction)"
+      >
+        <span class="starter-example-prompt">{{ practiceAction.displayText }}</span>
+        <span class="starter-example-outcome">点击后直接开始互动练习</span>
+        <span class="starter-example-arrow" aria-hidden="true">→</span>
+      </button>
+      <button
         v-for="example in examples"
         :key="example.prompt"
         type="button"
@@ -35,7 +45,10 @@
 </template>
 
 <script setup lang="ts">
+import type { AssistantInteractionTrigger } from '@/types/assistantRequest.ts'
+
 export type AssistantStarterGoalId = 'check' | 'polish' | 'practice' | 'explain'
+export type AssistantStarterChoice = string | AssistantInteractionTrigger
 
 defineProps<{
   selectedGoal: AssistantStarterGoalId | null
@@ -43,7 +56,7 @@ defineProps<{
 
 defineEmits<{
   selectGoal: [goalId: AssistantStarterGoalId]
-  choose: [prompt: string]
+  choose: [choice: AssistantStarterChoice]
 }>()
 
 const goals = [
@@ -58,6 +71,15 @@ const examples = [
   { prompt: '帮我升级这段表达', outcome: '保留原意，更地道' },
   { prompt: '设计一道写作练习', outcome: '包含题目、思路和反馈' },
 ] as const
+
+const practiceAction: AssistantInteractionTrigger = {
+  displayText: '开始重组成句练习',
+  interaction: {
+    source: 'quick_action',
+    uiIntent: 'start_practice',
+    context: { exerciseType: 'sentence_reorder' },
+  },
+}
 </script>
 
 <style scoped>

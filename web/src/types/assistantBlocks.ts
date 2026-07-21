@@ -1,6 +1,8 @@
 export type {
   AssistantBlock,
   AssistantBlockAction,
+  AssistantBlockInteractionAction,
+  AssistantBlockPromptAction,
   AssistantBlockBase,
   AssistantBlockType,
   FallbackAssistantBlock,

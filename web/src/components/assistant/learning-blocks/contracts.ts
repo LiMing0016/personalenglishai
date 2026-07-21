@@ -1,4 +1,5 @@
 import type { Component } from 'vue'
+import type { AssistantInteractionContext } from '@/types/assistantRequest.ts'
 
 export type AssistantBlockType =
   | 'vocab_card'
@@ -7,11 +8,20 @@ export type AssistantBlockType =
   | 'sentence_analysis'
   | 'sentence_reorder'
 
-export interface AssistantBlockAction {
+export interface AssistantBlockPromptAction {
   id: string
   label: string
   prompt: string
 }
+
+export interface AssistantBlockInteractionAction {
+  id: string
+  label: string
+  displayText: string
+  interaction: AssistantInteractionContext
+}
+
+export type AssistantBlockAction = AssistantBlockPromptAction | AssistantBlockInteractionAction
 
 export interface AssistantBlockBase<TType extends AssistantBlockType, TData> {
   id: string
