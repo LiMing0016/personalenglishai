@@ -14,6 +14,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyImportAnalysisResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchResponse;
 import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
@@ -22,6 +23,8 @@ import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyTemplateRegistry;
 import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyImportAnalysisService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyImportFingerprint;
 import com.personalenglishai.backend.service.vocabulary.VocabularyProductEventService;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
@@ -59,10 +62,51 @@ class VocabularyControllerTest {
     @MockBean VocabularyCardService cardService;
     @MockBean VocabularyThemeService themeService;
     @MockBean VocabularyImageRecognitionService imageRecognitionService;
+    @MockBean VocabularyImportAnalysisService importAnalysisService;
     @MockBean VocabularyProductEventService productEventService;
     @MockBean VocabularyTemplateRegistry templateRegistry;
     @MockBean JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean JwtInterceptor jwtInterceptor;
+
+    @Test
+    void analyzes_text_import_and_returns_verified_fingerprint() throws Exception {
+        String fingerprint = VocabularyImportFingerprint.calculate("package", null);
+        when(importAnalysisService.analyze(7L, "package", null, fingerprint))
+                .thenReturn(new VocabularyImportAnalysisResponse(
+                        1,
+                        "trace_123",
+                        fingerprint,
+                        "package",
+                        List.of(),
+                        List.of(new VocabularyImportAnalysisResponse.Item(
+                                "item_1", "package", "package", "accepted", List.of(), null, 0.98, "text")),
+                        new VocabularyImportAnalysisResponse.Generation(
+                                "openai", "test-model", "vocabulary-import-analysis-v1", 1, "trace_123", null)));
+
+        mockMvc.perform(multipart("/api/vocabulary/import-analyses")
+                        .param("text", "package")
+                        .param("inputFingerprint", fingerprint)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inputFingerprint").value(fingerprint))
+                .andExpect(jsonPath("$.data.items[0].evidence").value("text"));
+
+        verify(importAnalysisService).analyze(7L, "package", null, fingerprint);
+    }
+
+    @Test
+    void maps_import_fingerprint_mismatch_to_stable_bad_request() throws Exception {
+        String fingerprint = "b".repeat(64);
+        doThrow(new BizException(ErrorCode.VOCABULARY_IMPORT_FINGERPRINT_MISMATCH))
+                .when(importAnalysisService).analyze(7L, "package", null, fingerprint);
+
+        mockMvc.perform(multipart("/api/vocabulary/import-analyses")
+                        .param("text", "package")
+                        .param("inputFingerprint", fingerprint)
+                        .requestAttr("userId", 7L))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("400054"));
+    }
 
     @Test
     void acceptsAuthenticatedVocabularyProductEventBatch() throws Exception {

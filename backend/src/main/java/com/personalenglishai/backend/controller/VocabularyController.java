@@ -17,6 +17,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogRes
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyImportAnalysisResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchResponse;
 import com.personalenglishai.backend.dto.vocabulary.CreateVocabularyThemeRequest;
@@ -25,6 +26,7 @@ import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyImportAnalysisService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyProductEventService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -51,6 +53,7 @@ public class VocabularyController {
     private final VocabularyCardService cardService;
     private final VocabularyThemeService themeService;
     private final VocabularyImageRecognitionService imageRecognitionService;
+    private final VocabularyImportAnalysisService importAnalysisService;
     private final VocabularyProductEventService productEventService;
 
     public VocabularyController(
@@ -58,11 +61,13 @@ public class VocabularyController {
             VocabularyCardService cardService,
             VocabularyThemeService themeService,
             VocabularyImageRecognitionService imageRecognitionService,
+            VocabularyImportAnalysisService importAnalysisService,
             VocabularyProductEventService productEventService) {
         this.captureService = captureService;
         this.cardService = cardService;
         this.themeService = themeService;
         this.imageRecognitionService = imageRecognitionService;
+        this.importAnalysisService = importAnalysisService;
         this.productEventService = productEventService;
     }
 
@@ -89,6 +94,24 @@ public class VocabularyController {
             throw new BizException(ErrorCode.VOCABULARY_IMAGE_INVALID);
         }
         return ResponseEntity.ok(ApiResponse.success(imageRecognitionService.recognize(userId, file)));
+    }
+
+    @PostMapping(value = "/import-analyses", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<VocabularyImportAnalysisResponse>> analyzeImport(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestParam(value = "text", defaultValue = "") String text,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam("inputFingerprint") String inputFingerprint,
+            HttpServletRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        if (!(request instanceof MultipartHttpServletRequest multipartRequest)
+                || multipartRequest.getFiles("file").size() > 1) {
+            throw new BizException(ErrorCode.VOCABULARY_IMPORT_INVALID);
+        }
+        return ResponseEntity.ok(ApiResponse.success(
+                importAnalysisService.analyze(userId, text, file, inputFingerprint)));
     }
 
     @PostMapping("/captures")
