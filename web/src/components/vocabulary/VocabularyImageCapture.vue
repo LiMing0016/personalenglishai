@@ -4,6 +4,7 @@
       ref="uploadInput"
       hidden
       type="file"
+      aria-label="选择图片"
       accept="image/jpeg,image/png,image/webp"
       :disabled="disabled"
       @change="selectFile"
@@ -12,6 +13,7 @@
       ref="cameraInput"
       hidden
       type="file"
+      aria-label="拍照识别"
       accept="image/jpeg,image/png,image/webp"
       capture="environment"
       :disabled="disabled"

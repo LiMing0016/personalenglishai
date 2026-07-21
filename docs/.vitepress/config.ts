@@ -126,6 +126,7 @@ export default defineConfig({
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
             { text: 'Learning Notes', link: '/api/learning-notes' },
+            { text: '单词沉淀', link: '/api/vocabulary' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
           ]
         }
@@ -168,6 +169,7 @@ export default defineConfig({
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
             { text: 'Prompt 管理', link: '/ai/prompt-management' },
             { text: '主题化单词卡 Prompt', link: '/ai/vocabulary-theme-prompts' },
+            { text: '单词图片识别', link: '/ai/vocabulary-image-recognition' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
           ]
         }

@@ -36,6 +36,34 @@ type ConflictPayload = {
 type DetailStatusSequences = Record<string, number[]>
 type DetailCardSequences = Record<string, Card[]>
 type BlockedCardOperation = 'regenerate'
+type ImageRecognitionItem = {
+  itemId: string
+  observedText: string
+  normalizedTerm: string
+  status: 'accepted' | 'suspected_typo'
+  suggestions: Array<{ term: string, dictionaryVerified: boolean }>
+  contextText: string | null
+  confidence: number
+}
+type ImageRecognitionResponse = {
+  contractVersion: 1
+  traceId: string
+  rawText: string
+  warnings: string[]
+  items: ImageRecognitionItem[]
+  generation: {
+    provider: string
+    model: string
+    promptVersion: 'vocabulary-image-recognition-v1'
+    modelCallCount: number
+    traceId: string
+    usage: { inputTokens: number, outputTokens: number } | null
+  }
+}
+type ImageRecognitionMockOptions = {
+  responses?: ImageRecognitionResponse[]
+  delayFirstResponse?: boolean
+}
 type Card = {
   cardUid: string
   displayTerm: string
@@ -127,6 +155,28 @@ function makeCard(overrides: Partial<Card> = {}): Card {
   }
 }
 
+function makeImageRecognitionResponse(
+  traceId: string,
+  items: ImageRecognitionItem[],
+  rawText = items.map((item) => item.observedText).join(' '),
+): ImageRecognitionResponse {
+  return {
+    contractVersion: 1,
+    traceId,
+    rawText,
+    warnings: [],
+    items,
+    generation: {
+      provider: 'openai',
+      model: 'mock-vision-model',
+      promptVersion: 'vocabulary-image-recognition-v1',
+      modelCallCount: 1,
+      traceId,
+      usage: { inputTokens: 24, outputTokens: 12 },
+    },
+  }
+}
+
 function collectRuntimeErrors(page: Page, ignoredHttpStatuses: number[] = []) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
@@ -146,6 +196,7 @@ async function installApiMocks(
   detailStatusSequences: DetailStatusSequences = {},
   detailCardSequences: DetailCardSequences = {},
   blockedCardOperation?: BlockedCardOperation,
+  imageRecognitionOptions: ImageRecognitionMockOptions = {},
 ) {
   const cards = initialCards.map((card) => structuredClone(card))
   const systemThemes: Theme[] = [{
@@ -158,8 +209,12 @@ async function installApiMocks(
   let recentThemeUids = userThemes.filter((theme) => theme.recent).map((theme) => theme.themeUid)
   const requests: Array<{ method: string, path: string, body: unknown }> = []
   const detailAttempts = new Map<string, number>()
+  let imageRecognitionAttempt = 0
+  let imageRecognitionResponseCount = 0
   let releaseBlockedOperation = () => {}
   const blockedOperation = new Promise<void>((resolve) => { releaseBlockedOperation = resolve })
+  let releaseDelayedImageRecognition = () => {}
+  const delayedImageRecognition = new Promise<void>((resolve) => { releaseDelayedImageRecognition = resolve })
 
   await page.addInitScript(() => localStorage.setItem('auth_token', 'vocabulary-e2e-token'))
   await page.route('**/users/me/profile', (route) => route.fulfill({ json: { code: '0', data: { studyStage: 'college' } } }))
@@ -168,8 +223,34 @@ async function installApiMocks(
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/\/$/, '')
     const method = route.request().method()
+
+    if (path.endsWith('/image-recognitions') && method === 'POST') {
+      const contentType = route.request().headers()['content-type'] ?? ''
+      expect(contentType).toMatch(/^multipart\/form-data(?:;|$)/i)
+      requests.push({ method, path, body: { contentType } })
+      const attempt = imageRecognitionAttempt++
+      const responses = imageRecognitionOptions.responses ?? []
+      const response = responses[Math.min(attempt, responses.length - 1)]
+      if (!response) {
+        return route.fulfill({ status: 500, json: { code: '500', message: 'missing image mock', data: null } })
+      }
+      if (attempt === 0 && imageRecognitionOptions.delayFirstResponse) await delayedImageRecognition
+      try {
+        return await route.fulfill({ json: { code: '0', data: response } })
+      } catch {
+        return undefined
+      } finally {
+        imageRecognitionResponseCount += 1
+      }
+    }
+
     const body = route.request().postDataJSON?.() ?? null
     requests.push({ method, path, body })
+
+    if (path.endsWith('/product-events/batch') && method === 'POST') {
+      const events = (body as { events?: unknown[] } | null)?.events ?? []
+      return route.fulfill({ json: { code: '0', data: { accepted: events.length, duplicate: 0 } } })
+    }
 
     if (path.endsWith('/themes') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: {
@@ -217,9 +298,15 @@ async function installApiMocks(
       }
     }
     if (path.endsWith('/captures') && method === 'POST') {
-      const payload = body as { terms: string[], themeUid: string }
+      const payload = body as { terms: string[], themeUid: string, source?: { type?: string } }
       const selectedTheme = [...systemThemes, ...userThemes].find((theme) => theme.themeUid === payload.themeUid)!
       const items = payload.terms.map((term, index) => {
+        const existingCard = cards.find((item) => item.normalizedTerm === term.toLocaleLowerCase('en-US'))
+        if (existingCard) {
+          const sourceType = payload.source?.type
+          if (sourceType && !existingCard.sourceTypes.includes(sourceType)) existingCard.sourceTypes.push(sourceType)
+          return { term, cardUid: existingCard.cardUid, action: 'source_merged', status: existingCard.status }
+        }
         const cardUid = `card_capture_${index + 1}`
         cards.push(makeCard({
           cardUid,
@@ -315,7 +402,16 @@ async function installApiMocks(
     request.method === method && request.path.endsWith(pathSuffix)
   )).length
 
-  return { cards, requests, requestCount, releaseBlockedOperation, systemThemes, userThemes }
+  return {
+    cards,
+    requests,
+    requestCount,
+    imageRecognitionResponseCount: () => imageRecognitionResponseCount,
+    releaseBlockedOperation,
+    releaseDelayedImageRecognition,
+    systemThemes,
+    userThemes,
+  }
 }
 
 function makeUserTheme(overrides: Partial<Theme> = {}): Theme {
@@ -569,6 +665,143 @@ test('creates a custom default theme, selects it, and captures two words', async
     themeUid: 'theme_user_1',
   })
   await expectNoHorizontalOverflow(page)
+  await expectCleanRuntime(page, errors)
+})
+
+test('reviews image recognition candidates and captures safe OCR sources', async ({ page }) => {
+  test.skip(
+    process.env.VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED !== 'true',
+    'requires VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED=true before the Vite server starts',
+  )
+  const errors = collectRuntimeErrors(page)
+  const existingPackage = makeCard({
+    cardUid: 'card_existing_package',
+    displayTerm: 'package',
+    normalizedTerm: 'package',
+  })
+  const staleResponse = makeImageRecognitionResponse('trace-stale', [{
+    itemId: 'item-stale',
+    observedText: 'obsolete',
+    normalizedTerm: 'obsolete',
+    status: 'accepted',
+    suggestions: [],
+    contextText: 'obsolete response',
+    confidence: 0.81,
+  }])
+  const currentResponse = makeImageRecognitionResponse('trace-current', [
+    {
+      itemId: 'item-package',
+      observedText: 'package',
+      normalizedTerm: 'package',
+      status: 'accepted',
+      suggestions: [],
+      contextText: 'package release notes',
+      confidence: 0.99,
+    },
+    {
+      itemId: 'item-recieve',
+      observedText: 'recieve',
+      normalizedTerm: 'recieve',
+      status: 'suspected_typo',
+      suggestions: [{ term: 'receive', dictionaryVerified: true }],
+      contextText: 'receive customer feedback',
+      confidence: 0.74,
+    },
+  ], 'package recieve')
+  const productTheme = makeUserTheme()
+  const {
+    cards,
+    requests,
+    requestCount,
+    imageRecognitionResponseCount,
+    releaseDelayedImageRecognition,
+  } = await installApiMocks(
+    page,
+    [existingPackage],
+    {},
+    [productTheme],
+    {},
+    {},
+    undefined,
+    { responses: [staleResponse, currentResponse], delayFirstResponse: true },
+  )
+
+  await page.goto('/app/vocabulary?tab=collection')
+  await expect(page.getByRole('heading', { name: '单词沉淀', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '单词卡中心' })).toHaveCount(0)
+
+  const imageMode = page.getByRole('button', { name: '图片识别' })
+  await imageMode.focus()
+  await page.keyboard.press('Space')
+  await expect(imageMode).toHaveAttribute('aria-pressed', 'true')
+
+  const imageInput = page.getByLabel('选择图片')
+  await imageInput.setInputFiles({
+    name: 'stale.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('stale-image-bytes'),
+  })
+  await page.getByRole('button', { name: '开始识别' }).click()
+  await expect.poll(() => requestCount('POST', '/image-recognitions')).toBe(1)
+
+  await imageInput.setInputFiles({
+    name: 'words.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('mock-image-bytes'),
+  })
+  await page.getByRole('button', { name: '开始识别' }).click()
+  const candidateReview = page.locator('.term-review')
+  await expect(candidateReview.getByText('package', { exact: true })).toBeVisible()
+  await expect(candidateReview.getByText('recieve', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /采用 receive.*词典已验证/ }).click()
+  await expect(page.getByRole('textbox', { name: '编辑词条 receive' })).toBeVisible()
+
+  releaseDelayedImageRecognition()
+  await expect.poll(imageRecognitionResponseCount).toBe(2)
+  await expect(candidateReview.getByText('obsolete', { exact: true })).toHaveCount(0)
+  await expect(candidateReview.getByText('package', { exact: true })).toBeVisible()
+
+  await page.getByLabel('生成主题').selectOption(productTheme.themeUid)
+  await page.getByText('来源语境（可选）').click()
+  await page.getByLabel('记录句子、笔记或材料来源').fill('产品发布图片笔记')
+  await page.getByRole('button', { name: '生成 2 张卡片' }).click()
+  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/card_existing_package$/)
+
+  const captureRequest = requests.find((request) => request.path.endsWith('/captures'))
+  expect(captureRequest?.body).toMatchObject({
+    terms: ['package', 'receive'],
+    themeUid: productTheme.themeUid,
+    source: {
+      type: 'ocr_image',
+      sourceRef: 'recognition:trace-current',
+      sourceTitle: '图片识别',
+      contextText: '产品发布图片笔记',
+      metadata: {
+        recognitionTraceId: 'trace-current',
+        fileName: 'words.png',
+        provider: 'openai',
+        model: 'mock-vision-model',
+        promptVersion: 'vocabulary-image-recognition-v1',
+      },
+    },
+    itemSources: [
+      {
+        contextText: 'package release notes',
+        metadata: { observedText: 'package', resolution: 'accepted' },
+      },
+      {
+        contextText: 'receive customer feedback',
+        metadata: { observedText: 'recieve', resolution: 'suggestion_applied' },
+      },
+    ],
+  })
+  const capturePayload = JSON.stringify(captureRequest?.body)
+  expect(capturePayload).not.toContain('rawText')
+  expect(capturePayload).not.toContain('package recieve')
+  expect(capturePayload).not.toContain('mock-image-bytes')
+  expect(capturePayload).not.toContain('base64')
+  expect(cards.filter((card) => card.normalizedTerm === 'package')).toHaveLength(1)
+  expect(cards.find((card) => card.cardUid === existingPackage.cardUid)?.sourceTypes).toContain('ocr_image')
   await expectCleanRuntime(page, errors)
 })
 

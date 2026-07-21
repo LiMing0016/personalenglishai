@@ -2,7 +2,7 @@
 title: AI
 status: active
 owner: project
-last_updated: 2026-07-13
+last_updated: 2026-07-21
 review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/ai/
@@ -27,4 +27,5 @@ AI 文档记录评分、语法检查、Prompt 组装、助手路由、输出契�
 - [助手输出格式](./assistant-output-format.md)
 - [Prompt 管理与远程发布](./prompt-management.md)
 - [主题化单词卡 Prompt](./vocabulary-theme-prompts.md)
+- [单词图片识别 AI 契约](./vocabulary-image-recognition.md)
 - [OpenAI Agents 请求架构](./openai-agents-request-architecture.md)

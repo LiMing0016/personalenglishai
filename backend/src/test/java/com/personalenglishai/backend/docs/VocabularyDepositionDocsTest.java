@@ -22,8 +22,8 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(docs.contains("migrate_add_vocabulary_generation_job_leases.sql")),
                 () -> assertTrue(docs.contains("migrate_make_vocabulary_identity_exact.sql")),
                 () -> assertTrue(docs.contains("migrate_add_vocabulary_review_semantics.sql")),
-                () -> assertTrue(docs.contains("当前阶段仅支持 `manual` 和 `dictionary`")),
-                () -> assertTrue(docs.contains("PDF、AI 对话、笔记和错题尚未接入")),
+                () -> assertTrue(docs.contains("当前阶段支持 `manual`、`dictionary` 和 `ocr_image`")),
+                () -> assertTrue(docs.contains("PDF、AI 对话、会话自动抽取、笔记同步和错题尚未接入")),
                 () -> assertTrue(docs.contains("初始全量 schema 已包含")),
                 () -> assertTrue(docs.contains("新库无需额外执行租约迁移")),
                 () -> assertTrue(docs.contains("租约迁移只用于历史旧表")),
@@ -195,7 +195,7 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(prompts.contains("未知 strategy key 会在模型调用前永久失败")),
                 () -> assertFalse(prompts.contains("<theme-purpose>")),
                 () -> assertTrue(runbook.startsWith("---\n")),
-                () -> assertTrue(runbook.contains("last_updated: 2026-07-14")),
+                () -> assertTrue(runbook.contains("last_updated: 2026-07-21")),
                 () -> assertTrue(runbook.contains("Compose \u9ed8\u8ba4 `gpt-5.4-mini`")),
                 () -> assertTrue(runbook.contains("\u76f4\u63a5\u8fd0\u884c\u771f\u5b9e\u6a21\u578b smoke \u65f6\u5fc5\u987b\u663e\u5f0f\u8bbe\u7f6e")),
                 () -> assertTrue(runbook.contains("`java` -> `python`")),
@@ -206,6 +206,29 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(runbook.contains("不会静默回退到 `java`")),
                 () -> assertTrue(runbook.contains("不会使用旧 Java 七天缓存")),
                 () -> assertTrue(runbook.contains("`migrate_add_vocabulary_generation_metadata.sql`")));
+    }
+
+    @Test
+    void imageRecognitionDocsDescribeSafeRolloutAndSharedModelContract() throws Exception {
+        String rootEnvironment = Files.readString(Path.of("../.env.example"));
+        String compose = Files.readString(Path.of("../docker-compose.yml"));
+        String architecture = Files.readString(Path.of("../docs/architecture/vocabulary-deposition.md"));
+        String api = Files.readString(Path.of("../docs/api/vocabulary.md"));
+        String ai = Files.readString(Path.of("../docs/ai/vocabulary-image-recognition.md"));
+
+        assertAll(
+                () -> assertTrue(rootEnvironment.contains("VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED=false")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_IMAGE_RECOGNITION_TIMEOUT_MS=45000")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_IMAGE_RECOGNITION_PYTHON_TIMEOUT_MS=55000")),
+                () -> assertEquals(2, countOccurrences(compose,
+                        "VOCABULARY_IMAGE_RECOGNITION_MODEL=${VOCABULARY_IMAGE_RECOGNITION_MODEL:-}")),
+                () -> assertTrue(compose.contains(
+                        "VOCABULARY_IMAGE_RECOGNITION_PYTHON_BASE_URL=http://assistant-orchestrator:8002")),
+                () -> assertTrue(architecture.contains("migrate_create_vocabulary_product_events.sql")),
+                () -> assertTrue(architecture.contains("事件表迁移，再部署 Python，再部署 Java，最后部署 Web")),
+                () -> assertTrue(api.contains("禁止 `rawText`、图片字节、base64")),
+                () -> assertTrue(ai.contains("总调用次数最多 2 次")),
+                () -> assertTrue(ai.contains("共享的单调时钟总预算")));
     }
 
     private static void assertHistoricalUpgradeOrder(

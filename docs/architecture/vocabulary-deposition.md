@@ -2,7 +2,7 @@
 title: 单词沉淀架构
 status: active
 owner: backend
-last_updated: 2026-07-14
+last_updated: 2026-07-21
 review_cycle: on-change
 related_code:
   - backend/src/main/resources/db/schema.sql
@@ -12,24 +12,45 @@ related_code:
   - backend/src/main/resources/db/migrate_add_vocabulary_themes_and_markdown_cards.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_review_semantics.sql
   - backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
+  - backend/src/main/resources/db/migrate_create_vocabulary_product_events.sql
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyThemeService.java
   - backend/src/main/java/com/personalenglishai/backend/service/vocabulary/VocabularyCardGenerator.java
   - web/src/views/VocabularyView.vue
+  - web/src/components/vocabulary/VocabularyCapturePanel.vue
+  - python/ai_orchestrator/workflows/vocabulary_image_recognition.py
 related_docs:
   - docs/architecture/dictionary-oxford.md
   - docs/ai/vocabulary-theme-prompts.md
+  - docs/ai/vocabulary-image-recognition.md
+  - docs/api/vocabulary.md
 ---
 
 # 单词沉淀架构
 
 ## 当前结论
 
-单词卡使用“统一核心 JSON + 主题扩展 Markdown”的版本化模型。词典事实、卡片身份、主题定义和生成任务各自保持独立边界；主题编辑只追加版本，不改写历史卡片，Markdown 失败也不会丢弃已经验证的核心词典数据。
+单词卡使用“统一核心 JSON + 主题扩展 Markdown”的版本化模型。词典事实、卡片身份、主题定义和生成任务各自保持独立边界；图片识别先形成可复核候选，确认后才写入来源并排队生成。主题编辑只追加版本，不改写历史卡片，Markdown 失败也不会丢弃已经验证的核心词典数据。
 
 ## 当前阶段范围
 
-- 当前阶段仅支持 `manual` 和 `dictionary` 两种单词沉淀来源：分别对应手动录入和词典收藏。
-- PDF、AI 对话、笔记和错题尚未接入，当前不会自动沉淀到单词卡中心；这些来源属于后续接入范围。
+- 当前阶段支持 `manual`、`dictionary` 和 `ocr_image`：分别对应手动录入、词典收藏和用户确认后的图片识别候选。
+- `ocr_image` 只保存安全来源元数据和逐词处理结果，不保存图片或完整识别原文。
+- PDF、AI 对话、会话自动抽取、笔记同步和错题尚未接入；这些来源属于后续范围。
+
+## 图片导入调用链
+
+```mermaid
+flowchart LR
+  A["Web 选择图片"] --> B["Java 鉴权、额度、文件校验"]
+  B --> C["Python 多模态结构化识别"]
+  C --> D["Java 词典增强"]
+  D --> E["Web 候选复核"]
+  E --> F["Java 捕获与来源合并"]
+  F --> G["异步生成单词卡"]
+  F --> H["隐私白名单产品事件"]
+```
+
+Python 无状态且不访问业务数据库。Java 生成 trace，掌握配额与公开错误契约。Web 负责取消过期请求、稳定去重和用户决策；未解决的 typo 会阻断整批提交。图片请求与候选状态只存在于当前页面内，最终捕获请求不得携带 `rawText` 或图片编码。
 
 ## 资产边界
 
@@ -84,7 +105,13 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
 ```
 
-全新库只执行 `schema.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量、生成元数据迁移。新库不得执行 `migrate_add_vocabulary_review_semantics.sql` 或 `migrate_add_vocabulary_generation_metadata.sql`，历史库不得省略任一增量。
+历史库第六步创建产品漏斗事件表。脚本使用存在性检查和唯一键，可重复执行：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_product_events.sql
+```
+
+全新库只执行 `schema.sql`；历史库升级顺序是租约迁移、精确身份迁移、主题迁移、审核语义增量、生成元数据迁移、产品事件表迁移。新库不得补跑已合入全量 schema 的历史增量，历史库不得省略任一增量。
 
 迁移后必须从当前 `DATABASE()` 验证：`vocabulary_theme`、`vocabulary_theme_revision`、`user_vocabulary_theme_recent` 共 3 张表；`vocabulary_card_revision` 必须同时具备 `theme_uid`、`theme_version`、`core_json`、`content_markdown`、`content_format_version`、`generation_metadata_json` 共 6 列，其中 `generation_metadata_json` 是 `JSON NULL`。验证只能在明确创建的 disposable schema 中执行，清理前再次精确核对 schema 名称，不得连接开发业务库后执行 `DROP DATABASE`。
 
@@ -161,6 +188,12 @@ Java 负责词典、generation job、租约、revision、最终校验、冲突�
 
 词典详情中的收藏仍先写入 `user_dictionary_word_state`。收藏会额外以 `dictionary` 来源捕获到卡片；取消收藏只更新词典收藏状态，不删除已经存在的单词卡。对已软删除的同一词再次捕获会恢复原卡片和原 `cardUid`，而不是创建新卡。
 
+图片候选以同一个识别 trace 分批提交。批次来源 metadata 只允许 `recognitionTraceId`、安全文件名、provider、model 和 Prompt version；`itemSources` 与 `terms` 按零基索引一一对应，只允许逐词 `observedText`、`resolution` 和可选语境。重复词形继续复用现有卡片并追加 `ocr_image` 来源。
+
+### 产品事件
+
+浏览器记录识别开始/完成、候选确认和捕获提交；服务端在事务提交后记录卡片 ready。事件以 `eventUid` 幂等，属性按事件名精确白名单校验，模型值必须匹配部署的图片模型。事件不保存词条、文件名、上下文、识别全文、图片、base64、卡片 Markdown 或 Prompt。事件写入采用 best-effort，不得回滚业务捕获或卡片生成。
+
 ### 编辑与冲突
 
 编辑使用 `PUT /api/vocabulary/cards/{cardUid}`，请求必须携带当前 `baseRevisionUid`。成功编辑会创建新的用户版本并推进活跃版本；过期的 `baseRevisionUid` 返回版本冲突错误码 `409030`。
@@ -203,12 +236,17 @@ Java 负责词典、generation job、租约、revision、最终校验、冲突�
 | core 有效、Markdown 失败 | 保存 partial revision，状态 `needs_review` | 核心内容可见，主题内容待完善 | 重新生成或人工编辑 Markdown |
 | base revision 已变化 | AI revision 保留为候选 | 显示版本冲突 | `keep_current`、`use_ai` 或 `merge_fields` |
 | worker lease 丢失 | 迟到结果不激活 | 当前卡不受影响 | 由持有新 lease 的 worker 完成 |
+| 图片模型输出无效 | 不写卡片、不保存图片 | 显示识别失败 | 用户重试；最多一次结构重试 |
+| 词典增强不可用 | 保留模型原始 typo 状态 | 显示词典不可用 warning | 用户按未核验建议复核 |
+| 事件表不可用 | 业务结果照常提交 | 用户流程不受阻 | 修复迁移后恢复事件写入 |
 
 ## 发布与回滚
 
-发布时先迁移数据库，再发布后端，最后发布主题库、主题 shelf 和新详情 UI。迁移完成但前端尚未发布时，旧客户端仍通过 `content_json` 和 legacy template 字段读取兼容内容。历史数据库必须在所有既有 vocabulary migration 之后执行 `migrate_add_vocabulary_generation_metadata.sql`；全新库只执行 `schema.sql`，自动验收绝不对业务 schema 执行 migration。
+图片能力的发布顺序固定为：先执行产品事件表迁移，再部署 Python，再部署 Java，最后部署 Web。Python 与 Java 必须共享完全相同的 `VOCABULARY_IMAGE_RECOGNITION_MODEL`，Java 还要配置 Python base URL、55 秒 timeout 和共享 internal token。Web 发布后仍保持 `VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED=false`，完成健康检查和真实冒烟后才构建并发布开启版本。
 
-回滚不删除主题表或新格式 revision，也不批量覆盖 `theme_uid`、`core_json` 或 `content_markdown`。安全回滚顺序是：暂停 generation scheduler，回退 Web；确认旧 API 兼容投影可读后再回退 Backend。新格式内容在旧 UI 无法编辑时保持只读，不得丢弃。恢复新版后重新启用 scheduler，并抽查 ready、needs_review、legacy 三类卡片。
+迁移完成但前端尚未发布时，旧客户端仍通过 `content_json` 和 legacy template 字段读取兼容内容。全新库只执行 `schema.sql`，自动验收绝不对业务 schema 执行 migration。
+
+回滚不删除主题表或新格式 revision。图片功能回滚先把 Web 开关恢复为 `false` 并重新发布前端；必要时再回退 Java 和 Python。不要删除事件表、OCR 来源或已生成 revision，也不要清理迁移数据。单词卡生成整体回滚仍先暂停 generation scheduler，再回退 Web，确认兼容投影可读后回退 Backend。恢复新版后重新启用 scheduler，并抽查 ready、needs_review、legacy 和 ocr_image 四类卡片。
 
 ## 验证
 

@@ -2,7 +2,7 @@
 title: 环境变量说明
 status: active
 owner: ops
-last_updated: 2026-07-14
+last_updated: 2026-07-21
 review_cycle: on-change
 related_code:
   - docker-compose.yml
@@ -11,6 +11,8 @@ related_code:
 related_docs:
   - docs/runbooks/docker-local.md
   - docs/runbooks/local-scripts.md
+  - docs/ai/vocabulary-image-recognition.md
+  - docs/api/vocabulary.md
 ---
 
 # 环境变量说明
@@ -239,6 +241,23 @@ Java 继续拥有词典查询、generation job、租约、revision、冲突和�
 5. 仅在上述检查完成后显式切换 `VOCABULARY_GENERATION_PROVIDER=python` 并重启后端。回滚只把 `VOCABULARY_GENERATION_PROVIDER=java` 后重启；不要删除 metadata 列、Python endpoint 或 Python 已生成的 revision。
 
 真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。直接运行真实模型 smoke 时必须显式设置非空 `VOCABULARY_GENERATION_MODEL`；显式启用后缺少模型配置会失败，不会降级为跳过。smoke 不打印 token、Prompt、词典 core、sourceContext、生成 Markdown 或原始模型输出；未满足三个 opt-in 前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
+
+## 单词图片识别
+
+| 变量 | 默认值 | 注入位置 | 责任与约束 |
+| --- | --- | --- | --- |
+| `VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED` | `false` | Web 构建 | 只有精确字符串 `true` 才显示图片入口；回滚的首要开关。 |
+| `VOCABULARY_IMAGE_RECOGNITION_MODEL` | 无业务默认值 | Python、Java | 支持视觉输入的模型；两端必须完全相同。Python 调用模型，Java 用作事件 model 精确白名单。 |
+| `VOCABULARY_IMAGE_RECOGNITION_TIMEOUT_MS` | `45000` | Python | 一次调用加最多一次结构重试共享的总预算；最大 45 秒。 |
+| `VOCABULARY_IMAGE_RECOGNITION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | Java | Compose 内固定为 `http://assistant-orchestrator:8002`。 |
+| `VOCABULARY_IMAGE_RECOGNITION_PYTHON_TIMEOUT_MS` | `55000` | Java | 必须大于 Python 总预算，为网络和词典增强留出余量。 |
+| `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | Python、Java | 图片识别与卡片生成共用的内部服务鉴权 token；两端相同且非空。 |
+| `RUN_VOCABULARY_IMAGE_RECOGNITION_REAL_SMOKE` | `0` | Python 测试 | 只有 `1` 才允许发起真实模型冒烟。 |
+| `VOCABULARY_IMAGE_RECOGNITION_SMOKE_IMAGE` | 空 | Python 测试 | 本地 opt-in 图片路径；不得写入 Compose 镜像、仓库或日志。 |
+
+部署顺序是事件表迁移、Python、Java、Web。先保持前端开关为 `false`；确认模型配置一致、内部鉴权、日志脱敏和真实冒烟后，最后构建并发布 `true` 版本。Compose 通过同一根变量向 Python 与 Java 注入模型，不能分别维护两个值。
+
+图片与 `rawText` 禁止持久化。产品事件仅允许计数、时延、稳定枚举、安全 ID、provider、已配置 model、Prompt version 和 warning code；文件名、词条、上下文、识别全文、卡片内容、图片和 base64 均禁止写入。
 
 ## Prompt 与 AI 调试
 
