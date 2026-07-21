@@ -81,7 +81,9 @@ public class VocabularyCaptureItemService {
                 return restoreIdempotentCard(userId, rawTerm, existingSource, existingCard, themeResolver);
             }
             String status = existingCard == null ? "captured" : existingCard.getStatus();
-            return outcome(rawTerm, existingSource.getCardUid(), "source_merged", status, false, null);
+            return outcome(
+                    rawTerm, existingSource.getCardUid(), "source_merged", status, false, null,
+                    readyRevisionUid(existingCard, status));
         }
 
         ResolvedVocabularyTheme theme = themeResolver.get();
@@ -146,7 +148,8 @@ public class VocabularyCaptureItemService {
                 throw exception;
             }
             return outcome(
-                    rawTerm, winningSource.getCardUid(), "source_merged", status, true, effectiveTheme.themeUid());
+                    rawTerm, winningSource.getCardUid(), "source_merged", status, true,
+                    effectiveTheme.themeUid(), readyRevisionUid(card, status));
         }
 
         boolean shouldGenerate = !reviewRequired
@@ -160,7 +163,9 @@ public class VocabularyCaptureItemService {
         }
 
         String action = reviewRequired ? "needs_review" : created ? "created" : "source_merged";
-        return outcome(rawTerm, card.getCardUid(), action, status, true, effectiveTheme.themeUid());
+        return outcome(
+                rawTerm, card.getCardUid(), action, status, true, effectiveTheme.themeUid(),
+                readyRevisionUid(card, status));
     }
 
     private CaptureOutcome restoreIdempotentCard(
@@ -176,6 +181,7 @@ public class VocabularyCaptureItemService {
         int restored = cards.restoreAndTouch(
                 userId, card.getCardUid(), normalizedTerm, status, capturedAt);
         ResolvedVocabularyTheme effectiveTheme = null;
+        VocabularyCard outcomeCard = card;
         if (restored == 1) {
             effectiveTheme = cardTheme(card, themeResolver);
         }
@@ -188,6 +194,7 @@ public class VocabularyCaptureItemService {
             if (current == null || current.getDeletedAt() != null) {
                 throw new IllegalStateException("concurrent idempotent card restoration could not be resolved");
             }
+            outcomeCard = current;
             status = current.getStatus();
         }
         return outcome(
@@ -196,7 +203,8 @@ public class VocabularyCaptureItemService {
                 "source_merged",
                 status,
                 restored == 1,
-                effectiveTheme == null ? null : effectiveTheme.themeUid());
+                effectiveTheme == null ? null : effectiveTheme.themeUid(),
+                readyRevisionUid(outcomeCard, status));
     }
 
     private VocabularyTemplateRegistry.TemplateDefinition templateFor(ResolvedVocabularyTheme theme) {
@@ -337,9 +345,17 @@ public class VocabularyCaptureItemService {
             String action,
             String status,
             boolean mutated,
-            String effectiveThemeUid) {
+            String effectiveThemeUid,
+            String readyRevisionUid) {
         return new CaptureOutcome(
-                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, effectiveThemeUid);
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status),
+                mutated,
+                effectiveThemeUid,
+                readyRevisionUid);
+    }
+
+    private String readyRevisionUid(VocabularyCard card, String status) {
+        return card != null && "ready".equals(status) ? card.getActiveRevisionUid() : null;
     }
 
     private String restoredStatus(VocabularyCard card, boolean reviewRequired) {
@@ -376,10 +392,17 @@ public class VocabularyCaptureItemService {
         return prefix + UUID.randomUUID().toString().replace("-", "");
     }
 
-    record CaptureOutcome(VocabularyCaptureResponse.Item response, boolean mutated, String effectiveThemeUid) {
+    record CaptureOutcome(
+            VocabularyCaptureResponse.Item response,
+            boolean mutated,
+            String effectiveThemeUid,
+            String readyRevisionUid) {
         CaptureOutcome {
             if (mutated && (effectiveThemeUid == null || effectiveThemeUid.isBlank())) {
                 throw new IllegalArgumentException("mutated capture outcomes require an effective theme UID");
+            }
+            if (readyRevisionUid != null && !"ready".equals(response.status())) {
+                throw new IllegalArgumentException("ready revision UID requires a ready capture outcome");
             }
         }
     }

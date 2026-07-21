@@ -58,10 +58,12 @@ class VocabularyCaptureItemServiceTest {
     void createsCardSourceAndPendingJobBeforeReturning() {
         var request = VocabularyCaptureRequest.manual("req-1", List.of("In·nova·tive"), "en", "basic");
 
-        VocabularyCaptureResponse.Item result = service.captureOne(7L, request, this::basicTheme, 0).response();
+        var outcome = service.captureOne(7L, request, this::basicTheme, 0);
+        VocabularyCaptureResponse.Item result = outcome.response();
 
         assertEquals("created", result.action());
         assertEquals("generating", result.status());
+        assertEquals(null, outcome.readyRevisionUid());
         InOrder order = inOrder(cards, sources, jobs);
         order.verify(cards).insert(argThat(card ->
                 card.getNormalizedTerm().equals("innovative") && card.getUserId().equals(7L)));
@@ -112,11 +114,13 @@ class VocabularyCaptureItemServiceTest {
         VocabularyCard existing = VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user");
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(existing);
 
-        var result = service.captureOne(7L,
+        var outcome = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-2", List.of("innovative"), "en", "exam"),
-                this::basicTheme, 0).response();
+                this::basicTheme, 0);
+        var result = outcome.response();
 
         assertEquals("source_merged", result.action());
+        assertEquals("rev_user", outcome.readyRevisionUid());
         verify(sources).insertSource(argThat(source -> source.getIdempotencyKey().equals("req-2:0")));
         verify(cards).touch(eq(7L), eq("card_1"), any());
         verifyNoInteractions(jobs);
@@ -162,14 +166,16 @@ class VocabularyCaptureItemServiceTest {
         when(cards.findByUidIncludingDeleted("card_1"))
                 .thenReturn(VocabularyTestFixtures.ready("card_1", 7L, "innovative", "rev_user"));
 
-        var result = service.captureOne(7L,
+        var outcome = service.captureOne(7L,
                 VocabularyCaptureRequest.manual("req-4", List.of("innovative"), "en", "basic"),
                 () -> {
                     throw new AssertionError("idempotent replay must not resolve a theme");
-                }, 0).response();
+                }, 0);
+        var result = outcome.response();
 
         assertEquals("source_merged", result.action());
         assertEquals("card_1", result.cardUid());
+        assertEquals("rev_user", outcome.readyRevisionUid());
         verify(sources, never()).insertSource(any());
         verify(cards, never()).insert(any());
         verifyNoInteractions(jobs);

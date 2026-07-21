@@ -41,6 +41,8 @@ class VocabularyProductEventServiceTest {
     private static final String SESSION_ID = "vocabulary-session:" + HEX_32;
     private static final String CARD_UID = "card_" + HEX_32;
     private static final String REVISION_UID = "rev_" + HEX_32;
+    private static final String ALLOWED_MODEL = "openai/gpt-4.1-mini";
+    private static final String ALLOWED_NAMESPACED_MODEL = "gateway/qwen/qwen2.5-vl-72b-instruct";
 
     @Mock VocabularyProductEventMapper mapper;
     private ObjectMapper objectMapper;
@@ -49,7 +51,8 @@ class VocabularyProductEventServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        service = new VocabularyProductEventService(mapper, objectMapper);
+        service = new VocabularyProductEventService(
+                mapper, objectMapper, Set.of(ALLOWED_MODEL, ALLOWED_NAMESPACED_MODEL));
     }
 
     @Test
@@ -138,6 +141,8 @@ class VocabularyProductEventServiceTest {
                 Map.of("model", "receive"),
                 Map.of("model", "private.png"),
                 Map.of("model", "receive/private.png"),
+                Map.of("model", "private/gpt-4o"),
+                Map.of("model", "test/receive"),
                 Map.of("provider", "receive"),
                 Map.of("promptVersion", "vocabulary-image-recognition-v2"),
                 Map.of("sourceType", "clipboard"),
@@ -282,7 +287,7 @@ class VocabularyProductEventServiceTest {
                         Map.of("sourceType", "ocr_image")),
                 event("event-prod-2", "vocabulary_image_recognition_completed", Map.of(
                         "sourceType", "ocr_image", "durationMs", 250, "candidateCount", 3,
-                        "suspectedCount", 1, "provider", "openai", "model", "openai/gpt-4.1-mini",
+                        "suspectedCount", 1, "provider", "openai", "model", ALLOWED_MODEL,
                         "promptVersion", "vocabulary-image-recognition-v1", "modelCallCount", 1,
                         "warningCodes", List.of("CANDIDATE_LIMIT_REACHED"), "outcome", "success")),
                 event("event-prod-3", "vocabulary_image_candidates_confirmed", Map.of(
@@ -302,12 +307,9 @@ class VocabularyProductEventServiceTest {
     }
 
     @Test
-    void acceptsSupportedVisualModelFamiliesIncludingNamespaces() {
+    void acceptsOnlyExactlyConfiguredImageModelsIncludingNamespacedValues() {
         when(mapper.insertIgnore(any())).thenReturn(1);
-        List<String> models = List.of(
-                "gpt-4.1-mini", "openai/gpt-4o", "qwen/qwen2.5-vl-72b-instruct",
-                "claude-3-7-sonnet", "google/gemini-2.5-flash", "deepseek-vl2",
-                "zhipu/glm-4v-plus", "test-vision", "mock/vision-model");
+        List<String> models = List.of(ALLOWED_MODEL, ALLOWED_NAMESPACED_MODEL);
 
         for (String model : models) {
             service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event(
@@ -316,6 +318,27 @@ class VocabularyProductEventServiceTest {
                     Map.of("provider", "openai", "model", model,
                             "promptVersion", "vocabulary-image-recognition-v1")))));
         }
+    }
+
+    @Test
+    void rejectsModelWhenConfiguredAllowlistIsEmptyOrValueIsNotAnExactMatch() {
+        VocabularyProductEventService emptyAllowlist =
+                new VocabularyProductEventService(mapper, objectMapper, Set.of());
+        VocabularyProductEventService exactAllowlist =
+                new VocabularyProductEventService(mapper, objectMapper, Set.of("openai/gpt-4o"));
+
+        var configuredModel = new VocabularyProductEventBatchRequest(List.of(event(
+                "empty-model", "vocabulary_image_recognition_completed",
+                Map.of("model", "openai/gpt-4o"))));
+        var familyOnlyVariant = new VocabularyProductEventBatchRequest(List.of(event(
+                "variant-model", "vocabulary_image_recognition_completed",
+                Map.of("model", "gpt-4o"))));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> emptyAllowlist.acceptBatch(7L, configuredModel));
+        assertThrows(IllegalArgumentException.class,
+                () -> exactAllowlist.acceptBatch(7L, familyOnlyVariant));
+        verifyNoInteractions(mapper);
     }
 
     @Test

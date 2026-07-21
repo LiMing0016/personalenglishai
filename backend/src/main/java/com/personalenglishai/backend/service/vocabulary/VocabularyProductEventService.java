@@ -6,6 +6,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchR
 import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchResponse;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyProductEvent;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyProductEventMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
@@ -21,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 @Service
@@ -40,8 +42,6 @@ public class VocabularyProductEventService {
     private static final Pattern TRACE_ID = Pattern.compile(
             "(?:vocab-image-[0-9a-f]{32}|capture:[0-9a-f]{64})");
     private static final Pattern CARD_UID = Pattern.compile("card_[0-9a-f]{32}");
-    private static final Pattern VISUAL_MODEL_ID = Pattern.compile(
-            "(?i)(?:[a-z0-9._-]+/)*(?:gpt|qwen|claude|gemini|deepseek|glm|test|mock)[a-z0-9._-]*(?:/[a-z0-9._-]+)*");
     private static final Set<String> EVENT_NAMES = Set.of(
             "vocabulary_image_recognition_started",
             "vocabulary_image_recognition_completed",
@@ -71,10 +71,20 @@ public class VocabularyProductEventService {
 
     private final VocabularyProductEventMapper mapper;
     private final ObjectMapper objectMapper;
+    private final Set<String> allowedImageModels;
 
-    public VocabularyProductEventService(VocabularyProductEventMapper mapper, ObjectMapper objectMapper) {
+    public VocabularyProductEventService(
+            VocabularyProductEventMapper mapper,
+            ObjectMapper objectMapper,
+            @Value("${vocabulary.product-events.allowed-image-models:}") Set<String> allowedImageModels) {
         this.mapper = mapper;
         this.objectMapper = objectMapper;
+        this.allowedImageModels = allowedImageModels == null
+                ? Set.of()
+                : allowedImageModels.stream()
+                        .map(String::trim)
+                        .filter(value -> !value.isEmpty())
+                        .collect(Collectors.toUnmodifiableSet());
     }
 
     @Transactional
@@ -216,7 +226,7 @@ public class VocabularyProductEventService {
         if (!(value instanceof String text)
                 || text.isBlank()
                 || text.length() > 200
-                || !VISUAL_MODEL_ID.matcher(text).matches()) {
+                || !allowedImageModels.contains(text)) {
             throw invalid("Invalid visual model");
         }
         return text;

@@ -177,6 +177,9 @@ learning:
         batch-size: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_BATCH_SIZE:10}
 
 vocabulary:
+  product-events:
+    # 任务 9 的 compose 必须把同一变量同时传给 Java 与 Python，避免合法模型事件被拒绝。
+    allowed-image-models: ${VOCABULARY_IMAGE_RECOGNITION_MODEL:}
   image-recognition:
     python:
       base-url: ${VOCABULARY_IMAGE_RECOGNITION_PYTHON_BASE_URL:${ASSISTANT_ORCHESTRATOR_BASE_URL:http://127.0.0.1:8011}}

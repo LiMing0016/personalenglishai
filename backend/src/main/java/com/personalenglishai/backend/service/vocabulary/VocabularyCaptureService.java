@@ -55,11 +55,14 @@ public class VocabularyCaptureService {
         Supplier<ResolvedVocabularyTheme> themeResolver = batchThemeResolver(userId, request);
 
         List<VocabularyCaptureResponse.Item> items = new ArrayList<>(request.terms().size());
+        List<VocabularyCaptureItemService.CaptureOutcome> successfulOutcomes =
+                new ArrayList<>(request.terms().size());
         Set<String> mutatedThemeUids = new LinkedHashSet<>();
         for (int index = 0; index < request.terms().size(); index++) {
             try {
                 VocabularyCaptureItemService.CaptureOutcome outcome =
                         itemService.captureOne(userId, request, themeResolver, index);
+                successfulOutcomes.add(outcome);
                 items.add(outcome.response());
                 if (outcome.mutated()) {
                     mutatedThemeUids.add(outcome.effectiveThemeUid());
@@ -76,12 +79,15 @@ public class VocabularyCaptureService {
         }
         recordRecentUseAfterMutation(userId, mutatedThemeUids);
         VocabularyCaptureResponse response = new VocabularyCaptureResponse(items);
-        recordCaptureProductEvents(userId, request, response);
+        recordCaptureProductEvents(userId, request, response, successfulOutcomes);
         return response;
     }
 
     private void recordCaptureProductEvents(
-            Long userId, VocabularyCaptureRequest request, VocabularyCaptureResponse response) {
+            Long userId,
+            VocabularyCaptureRequest request,
+            VocabularyCaptureResponse response,
+            List<VocabularyCaptureItemService.CaptureOutcome> successfulOutcomes) {
         String sourceType = request.source() == null ? "manual" : request.source().type();
         String traceId = captureTraceId(request, sourceType);
         int successCount = (int) response.items().stream()
@@ -98,6 +104,18 @@ public class VocabularyCaptureService {
                         "sourceType", sourceType,
                         "successCount", successCount,
                         "failedCount", failedCount)));
+
+        for (VocabularyCaptureItemService.CaptureOutcome outcome : successfulOutcomes) {
+            if (outcome.readyRevisionUid() == null) {
+                continue;
+            }
+            safeRecordProductEvent(userId, new VocabularyProductEventService.ServerEvent(
+                    "vocabulary-cards-ready:" + outcome.readyRevisionUid(),
+                    "vocabulary_cards_ready",
+                    traceId,
+                    outcome.response().cardUid(),
+                    Map.of("sourceType", sourceType)));
+        }
     }
 
     private String captureTraceId(VocabularyCaptureRequest request, String sourceType) {

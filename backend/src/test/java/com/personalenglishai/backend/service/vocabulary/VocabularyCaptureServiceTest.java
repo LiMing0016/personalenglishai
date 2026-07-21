@@ -42,6 +42,10 @@ import static org.mockito.Mockito.when;
 class VocabularyCaptureServiceTest {
     private static final String IMAGE_TRACE_ID =
             "vocab-image-0123456789abcdef0123456789abcdef";
+    private static final String READY_CARD_UID =
+            "card_0123456789abcdef0123456789abcdef";
+    private static final String READY_REVISION_UID =
+            "rev_0123456789abcdef0123456789abcdef";
     @Mock VocabularyCaptureItemService itemService;
     @Mock VocabularyThemeService themeService;
     @Mock VocabularyThemeMapper themeMapper;
@@ -275,9 +279,11 @@ class VocabularyCaptureServiceTest {
     }
 
     @Test
-    void recordsCaptureEventWithoutInventingAReadyRevisionIdentity() {
+    void recordsImmediateReadyEventWithTheExistingCardsRealRevisionAndSafeTrace() {
         when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
-                .thenReturn(outcome("receive", "card_1", "source_merged", "ready", false));
+                .thenReturn(outcome(
+                        "receive", READY_CARD_UID, "source_merged", "ready", false, null,
+                        READY_REVISION_UID));
         VocabularyCaptureRequest request = ocrRequest(
                 batchMetadata(), itemMetadata("recieve", "suggestion_applied"));
 
@@ -286,13 +292,59 @@ class VocabularyCaptureServiceTest {
         assertEquals("ready", response.items().get(0).status());
         ArgumentCaptor<VocabularyProductEventService.ServerEvent> events =
                 ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
-        verify(productEventService).recordServerEvent(eq(7L), events.capture());
+        verify(productEventService, times(2)).recordServerEvent(eq(7L), events.capture());
         assertEquals("vocabulary_capture_submitted", events.getAllValues().get(0).eventName());
         assertEquals(IMAGE_TRACE_ID, events.getAllValues().get(0).traceId());
         assertEquals(Map.of("sourceType", "ocr_image", "successCount", 1, "failedCount", 0),
                 events.getAllValues().get(0).properties());
+        assertEquals("vocabulary_cards_ready", events.getAllValues().get(1).eventName());
+        assertEquals("vocabulary-cards-ready:" + READY_REVISION_UID,
+                events.getAllValues().get(1).eventUid());
+        assertEquals(READY_CARD_UID, events.getAllValues().get(1).cardUid());
+        assertEquals(IMAGE_TRACE_ID, events.getAllValues().get(1).traceId());
+        assertEquals(Map.of("sourceType", "ocr_image"), events.getAllValues().get(1).properties());
         assertTrue(events.getAllValues().stream().noneMatch(event ->
                 event.properties().keySet().stream().anyMatch(key -> key.equalsIgnoreCase("observedText"))));
+    }
+
+    @Test
+    void newCardWithoutActiveRevisionDoesNotRecordImmediateReadyEvent() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome(
+                        "receive", READY_CARD_UID, "created", "generating", true,
+                        "theme_system_basic", null));
+
+        service.capture(7L, ocrRequest(
+                batchMetadata(), itemMetadata("receive", "accepted")));
+
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> event =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEventService).recordServerEvent(eq(7L), event.capture());
+        assertEquals("vocabulary_capture_submitted", event.getValue().eventName());
+    }
+
+    @Test
+    void replayingTheSameReadyRevisionUsesTheSameIdempotentEventUid() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome(
+                        "receive", READY_CARD_UID, "source_merged", "ready", false, null,
+                        READY_REVISION_UID));
+        VocabularyCaptureRequest request = ocrRequest(
+                batchMetadata(), itemMetadata("receive", "accepted"));
+
+        service.capture(7L, request);
+        service.capture(7L, request);
+
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> events =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEventService, times(4)).recordServerEvent(eq(7L), events.capture());
+        assertEquals(List.of(
+                        "vocabulary-cards-ready:" + READY_REVISION_UID,
+                        "vocabulary-cards-ready:" + READY_REVISION_UID),
+                events.getAllValues().stream()
+                        .filter(event -> "vocabulary_cards_ready".equals(event.eventName()))
+                        .map(VocabularyProductEventService.ServerEvent::eventUid)
+                        .toList());
     }
 
     @Test
@@ -332,13 +384,28 @@ class VocabularyCaptureServiceTest {
     private VocabularyCaptureItemService.CaptureOutcome outcome(
             String term, String cardUid, String action, String status, boolean mutated) {
         return new VocabularyCaptureItemService.CaptureOutcome(
-                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, null);
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, null, null);
     }
 
     private VocabularyCaptureItemService.CaptureOutcome outcome(
             String term, String cardUid, String action, String status, boolean mutated, String themeUid) {
         return new VocabularyCaptureItemService.CaptureOutcome(
-                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, themeUid);
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status), mutated, themeUid, null);
+    }
+
+    private VocabularyCaptureItemService.CaptureOutcome outcome(
+            String term,
+            String cardUid,
+            String action,
+            String status,
+            boolean mutated,
+            String themeUid,
+            String readyRevisionUid) {
+        return new VocabularyCaptureItemService.CaptureOutcome(
+                new VocabularyCaptureResponse.Item(term, cardUid, action, status),
+                mutated,
+                themeUid,
+                readyRevisionUid);
     }
 
     private VocabularyCaptureRequest ocrRequest(
