@@ -45,6 +45,16 @@ for (const requiredText of [
 for (const navigationLabel of ['搜索单词', '背词模式', '单词沉淀', '学习统计']) {
   assert.ok(pageSource.includes(navigationLabel), `vocabulary navigation should keep ${navigationLabel}`)
 }
+assert.match(
+  pageSource,
+  /:class="\{\s*active:\s*activeView === view\.key\s*\}"/,
+  'vocabulary navigation should bind active state to activeView',
+)
+assert.match(
+  pageSource,
+  /@click="switchVocabularyView\(view\.key\)"/,
+  'vocabulary navigation should keep its view switch handler',
+)
 assert.ok(!pageSource.includes('brand-lockup'), 'vocabulary navigation should remove the redundant brand lockup')
 assert.ok(!pageSource.includes('topbar-actions'), 'vocabulary navigation should remove the redundant topbar actions')
 
