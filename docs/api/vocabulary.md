@@ -90,12 +90,12 @@ multipart 只允许一个名为 `file` 的 part，不接受客户端指定模型
 | HTTP | 错误码 | 场景 |
 | --- | --- | --- |
 | 400 | `400001` | 缺少 multipart part 或请求格式错误 |
-| 400 | `400052` | 图片为空、超限、类型不支持、扩展名不匹配或 file part 数量不为 1 |
+| 400 | `400052` | 图片为空、超过 10 MiB、MIME 不支持、扩展名与 MIME 不匹配，或 `file` part 数量不为 1 |
 | 401 | `401001` | 未登录或 token 无效 |
-| 429 | 订阅模块额度码 | `vocabulary.image_recognition` AI 配额不足 |
-| 502 | `502050` | Python 或模型返回不符合结构化契约 |
-| 503 | `503050` | Python 未配置、不可达、鉴权失败或上游不可用 |
-| 504 | `504050` | 图片识别超过服务预算 |
+| 429 | `429010` | 本月 AI token 额度已用完；`vocabulary.image_recognition` 不再接受新的模型调用 |
+| 502 | `502050` | Python 或模型响应已返回，但无法通过图片识别结构化契约校验 |
+| 503 | `503050` | Python 服务未配置、不可达、内部鉴权失败，或模型上游不可用 |
+| 504 | `504050` | 图片识别超过 Java 调用 Python 的超时预算 |
 
 ## 捕获与逐词来源
 
@@ -143,22 +143,113 @@ OCR 请求示例：
 
 ## 产品事件
 
+该接口只接收单词沉淀漏斗事件。它不会接收任意埋点，也不能携带图片、识别原文、单词或卡片内容。
+
+### Endpoint 与鉴权
+
 ```http
 POST /api/vocabulary/product-events/batch
 Content-Type: application/json
 Authorization: Bearer <access_token>
 ```
 
-每批最多 50 条，按 `eventUid` 幂等写入，响应为 `{ "accepted": n, "duplicate": n }`。允许事件：
+接口要求有效的 Bearer token。未登录或 token 无效返回 HTTP 401、错误码 `401001`。请求体 `events` 必填，必须是包含 1..50 个 `Event` 的数组；空数组、超过 50 项、数组中包含 `null` 或字段校验失败均返回 HTTP 400。
 
-- `vocabulary_image_recognition_started`
-- `vocabulary_image_recognition_completed`
-- `vocabulary_image_candidates_confirmed`
-- `vocabulary_capture_submitted`
-- `vocabulary_cards_ready`
-- `vocabulary_learning_started`
+### Event 字段
 
-属性按事件名使用精确白名单。通用允许值包括 `sourceType`、计数字段、`durationMs`、`outcome`、`provider`、`model`、`promptVersion`、`modelCallCount` 和 `warningCodes`，但只有对应事件声明的字段才可写。模型必须等于后端配置的 `VOCABULARY_IMAGE_RECOGNITION_MODEL`。禁止文件名、词条、识别原文、上下文、卡片内容、图片和 base64；未知属性、错误类型和非法 ID 返回 400。
+| 字段 | 必填 | 类型与长度 | 格式与语义 |
+| --- | --- | --- | --- |
+| `eventUid` | 是 | string，1..128 字符 | 事件幂等键，只接受下列专属格式 |
+| `eventName` | 是 | string，1..64 字符 | 只能是本文列出的 6 个事件名 |
+| `traceId` | 否 | string，最多 128 字符 | 为空时写入 `null`；非空时只接受图片识别或捕获 trace 格式 |
+| `sessionId` | 是 | string，1..128 字符 | 客户端会话 ID；服务端事件固定使用 `server` |
+| `cardUid` | 否 | string，最多 64 字符 | 为空时写入 `null`；非空时必须是卡片 UID |
+| `occurredAt` | 是 | 不带时区的 ISO-8601 本地日期时间 | 对应 Java `LocalDateTime`，例如 `2026-07-21T15:30:45.123`；不要附加 `Z` 或时区偏移 |
+| `properties` | 否 | JSON object | 省略或传 `null` 时按空对象 `{}` 保存；键和值必须通过对应事件白名单 |
+
+专属 ID 格式中的十六进制字符只能使用 `0-9a-f`：
+
+- `eventUid`：`vocabulary-event:<32 位小写十六进制>`、`vocabulary-event:<小写 UUID>`、`vocabulary-capture-submitted:<64 位小写十六进制>`，或 `vocabulary-cards-ready:rev_<32 位小写十六进制>`。
+- `sessionId`：`server`、`vocabulary-session:<32 位小写十六进制或小写 UUID>`。
+- `traceId`：`vocab-image-<32 位小写十六进制>` 或 `capture:<64 位小写十六进制>`。
+- `cardUid`：`card_<32 位小写十六进制>`。
+
+请求示例：
+
+```json
+{
+  "events": [
+    {
+      "eventUid": "vocabulary-event:0123456789abcdef0123456789abcdef",
+      "eventName": "vocabulary_image_recognition_completed",
+      "traceId": "vocab-image-0123456789abcdef0123456789abcdef",
+      "sessionId": "vocabulary-session:0123456789abcdef0123456789abcdef",
+      "cardUid": null,
+      "occurredAt": "2026-07-21T15:30:45.123",
+      "properties": {
+        "sourceType": "ocr_image",
+        "durationMs": 3200,
+        "candidateCount": 2,
+        "suspectedCount": 1,
+        "provider": "openai",
+        "model": "<VOCABULARY_IMAGE_RECOGNITION_MODEL 的精确值>",
+        "promptVersion": "vocabulary-image-recognition-v1",
+        "modelCallCount": 1,
+        "warningCodes": [],
+        "outcome": "success"
+      }
+    }
+  ]
+}
+```
+
+### 事件与属性白名单
+
+每个事件的 `properties` 字段都可省略；一旦提供，只允许下表中的键：
+
+| `eventName` | 允许的 `properties` 键 |
+| --- | --- |
+| `vocabulary_image_recognition_started` | `sourceType` |
+| `vocabulary_image_recognition_completed` | `sourceType`, `durationMs`, `candidateCount`, `suspectedCount`, `provider`, `model`, `promptVersion`, `modelCallCount`, `warningCodes`, `outcome` |
+| `vocabulary_image_candidates_confirmed` | `sourceType`, `candidateCount`, `suspectedCount`, `selectedCount`, `editedCount`, `removedCount`, `resolutionCount` |
+| `vocabulary_capture_submitted` | `sourceType`, `successCount`, `failedCount` |
+| `vocabulary_cards_ready` | `sourceType` |
+| `vocabulary_learning_started` | `sourceType` |
+
+属性值契约：
+
+| 属性 | 类型与约束 |
+| --- | --- |
+| `sourceType` | string 枚举：`manual`、`dictionary`、`ocr_image` |
+| `candidateCount`、`suspectedCount`、`selectedCount`、`editedCount`、`removedCount`、`resolutionCount`、`successCount`、`failedCount` | 有限非负整数，范围 0..1,000,000 |
+| `durationMs` | 有限非负整数，范围 0..86,400,000 |
+| `modelCallCount` | 有限非负整数，范围 0..100 |
+| `outcome` | string 枚举：`success`、`failed` |
+| `provider` | string，只能是 `openai` |
+| `model` | 非空 string，最多 200 字符；必须与服务端 `VOCABULARY_IMAGE_RECOGNITION_MODEL` 的精确配置值一致，也就是 `vocabulary.product-events.allowed-image-models` 中的一个精确成员 |
+| `promptVersion` | string，只能是 `vocabulary-image-recognition-v1` |
+| `warningCodes` | string 数组，最多 10 项；每项只能是 `CANDIDATE_LIMIT_REACHED`、`DICTIONARY_VERIFICATION_UNAVAILABLE`；重复项按首次出现顺序去重 |
+
+`filename`、`term`、`observedText`、`contextText`、`rawText`、`content`、`markdown`、`image`、`base64` 是大小写不敏感的敏感键，任何事件都禁止携带。除 `warningCodes` 的字符串数组外，不接受 object 或 array 形式的嵌套属性值。未知键、敏感键、嵌套值、错误类型、错误事件名或错误 ID 均返回 HTTP 400；服务端不会忽略或自动修正这些输入。
+
+### Response 与幂等
+
+成功写入返回 HTTP 200，并由通用 `ApiResponse` 的 `data` 包装批次结果：
+
+```json
+{
+  "code": "0",
+  "message": "OK",
+  "data": {
+    "accepted": 1,
+    "duplicate": 1
+  }
+}
+```
+
+当前 `VocabularyProductEventBatchResponse` 的真实字段名是 `accepted` 和 `duplicate`，不是 `acceptedCount` 或 `duplicateCount`。`accepted` 表示本次新写入的事件数，`duplicate` 表示被幂等约束忽略的事件数，两者之和等于请求事件数。
+
+数据库以 `(user_id, event_uid)` 为唯一幂等键。同一用户重复提交相同 `eventUid` 时不新增记录并计入 `duplicate`；不同用户可使用相同 `eventUid`，彼此不冲突。
 
 ## 兼容性约束
 

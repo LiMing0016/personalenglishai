@@ -231,6 +231,55 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(ai.contains("共享的单调时钟总预算")));
     }
 
+    @Test
+    void vocabularyApiDocsLockImageErrorsAndProductEventContract() throws Exception {
+        String api = Files.readString(Path.of("../docs/api/vocabulary.md"));
+
+        assertAll(
+                () -> assertTrue(api.contains("`429010` | 本月 AI token 额度已用完")),
+                () -> assertTrue(api.contains("`400052` | 图片为空、超过 10 MiB、MIME 不支持、扩展名与 MIME 不匹配，或 `file` part 数量不为 1")),
+                () -> assertTrue(api.contains("`502050` | Python 或模型响应已返回，但无法通过图片识别结构化契约校验")),
+                () -> assertTrue(api.contains("`503050` | Python 服务未配置、不可达、内部鉴权失败，或模型上游不可用")),
+                () -> assertTrue(api.contains("`504050` | 图片识别超过 Java 调用 Python 的超时预算")),
+                () -> assertTrue(api.contains("POST /api/vocabulary/product-events/batch")),
+                () -> assertTrue(api.contains("`events` 必填，必须是包含 1..50 个 `Event` 的数组")),
+                () -> assertTrue(api.contains("| `eventUid` | 是 | string，1..128 字符")),
+                () -> assertTrue(api.contains("| `eventName` | 是 | string，1..64 字符")),
+                () -> assertTrue(api.contains("| `traceId` | 否 | string，最多 128 字符")),
+                () -> assertTrue(api.contains("| `sessionId` | 是 | string，1..128 字符")),
+                () -> assertTrue(api.contains("| `cardUid` | 否 | string，最多 64 字符")),
+                () -> assertTrue(api.contains("| `occurredAt` | 是 | 不带时区的 ISO-8601 本地日期时间")),
+                () -> assertTrue(api.contains("| `properties` | 否 | JSON object")),
+                () -> assertTrue(api.contains("`vocabulary-event:<32 位小写十六进制>`")),
+                () -> assertTrue(api.contains("`vocabulary-capture-submitted:<64 位小写十六进制>`")),
+                () -> assertTrue(api.contains("`vocabulary-cards-ready:rev_<32 位小写十六进制>`")),
+                () -> assertTrue(api.contains("`vocabulary-session:<32 位小写十六进制或小写 UUID>`")),
+                () -> assertTrue(api.contains("`vocab-image-<32 位小写十六进制>` 或 `capture:<64 位小写十六进制>`")),
+                () -> assertTrue(api.contains("`card_<32 位小写十六进制>`")),
+                () -> assertTrue(api.contains("| `vocabulary_image_recognition_started` | `sourceType` |")),
+                () -> assertTrue(api.contains("| `vocabulary_image_recognition_completed` | `sourceType`, `durationMs`, `candidateCount`, `suspectedCount`, `provider`, `model`, `promptVersion`, `modelCallCount`, `warningCodes`, `outcome` |")),
+                () -> assertTrue(api.contains("| `vocabulary_image_candidates_confirmed` | `sourceType`, `candidateCount`, `suspectedCount`, `selectedCount`, `editedCount`, `removedCount`, `resolutionCount` |")),
+                () -> assertTrue(api.contains("| `vocabulary_capture_submitted` | `sourceType`, `successCount`, `failedCount` |")),
+                () -> assertTrue(api.contains("| `vocabulary_cards_ready` | `sourceType` |")),
+                () -> assertTrue(api.contains("| `vocabulary_learning_started` | `sourceType` |")),
+                () -> assertTrue(api.contains("`manual`、`dictionary`、`ocr_image`")),
+                () -> assertTrue(api.contains("整数，范围 0..1,000,000")),
+                () -> assertTrue(api.contains("整数，范围 0..86,400,000")),
+                () -> assertTrue(api.contains("整数，范围 0..100")),
+                () -> assertTrue(api.contains("`success`、`failed`")),
+                () -> assertTrue(api.contains("只能是 `openai`")),
+                () -> assertTrue(api.contains("必须与服务端 `VOCABULARY_IMAGE_RECOGNITION_MODEL` 的精确配置值一致")),
+                () -> assertTrue(api.contains("只能是 `vocabulary-image-recognition-v1`")),
+                () -> assertTrue(api.contains("`CANDIDATE_LIMIT_REACHED`、`DICTIONARY_VERIFICATION_UNAVAILABLE`")),
+                () -> assertTrue(api.contains("未知键、敏感键、嵌套值、错误类型、错误事件名或错误 ID 均返回 HTTP 400")),
+                () -> assertTrue(api.contains("\"data\": {")),
+                () -> assertTrue(api.contains("\"accepted\": 1")),
+                () -> assertTrue(api.contains("\"duplicate\": 1")),
+                () -> assertFalse(api.contains("\"acceptedCount\"")),
+                () -> assertFalse(api.contains("\"duplicateCount\"")),
+                () -> assertTrue(api.contains("`(user_id, event_uid)`")));
+    }
+
     private static void assertHistoricalUpgradeOrder(
             String document,
             String reviewStepTitle,
