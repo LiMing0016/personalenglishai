@@ -18,7 +18,32 @@
         <ArrowLeft aria-hidden="true" />
       </button>
       <div class="card-inspector__heading">
-        <h2>{{ card.displayTerm }}</h2>
+        <div class="card-inspector__title-row">
+          <h2>
+            <button
+              type="button"
+              class="card-inspector__term-button"
+              :aria-label="`播放 ${card.displayTerm} 的默认发音`"
+              :disabled="pronunciationState === 'loading'"
+              @click="playDefaultPronunciation"
+            >
+              {{ card.displayTerm }}
+            </button>
+          </h2>
+          <button
+            type="button"
+            class="card-inspector__pronunciation-button"
+            :class="{ 'is-playing': pronunciationState === 'playing' }"
+            :aria-label="`播放 ${card.displayTerm} 的默认发音`"
+            :aria-pressed="pronunciationState === 'playing'"
+            :title="pronunciationState === 'playing' ? '正在播放发音' : '播放发音'"
+            :disabled="pronunciationState === 'loading'"
+            @click="playDefaultPronunciation"
+          >
+            <LoaderCircle v-if="pronunciationState === 'loading'" class="card-inspector__spinner" aria-hidden="true" />
+            <Volume2 v-else aria-hidden="true" />
+          </button>
+        </div>
         <p v-if="headerSummary" class="card-inspector__summary">{{ headerSummary }}</p>
         <div class="card-inspector__metadata">
           <span :class="`card-inspector__status card-inspector__status--${card.status}`">{{ statusLabel(card.status) }}</span>
@@ -78,6 +103,36 @@
           <button type="button" class="card-inspector__danger" :disabled="cardOperationPending" @click="openDeleteDialog">删除</button>
         </div>
       </div>
+
+      <nav v-if="navigation" class="card-inspector__sequence" aria-label="连续浏览单词卡">
+        <span class="card-inspector__sequence-term card-inspector__sequence-term--previous">
+          <template v-if="navigation.previous">上一张 · {{ navigation.previous.displayTerm }}</template>
+        </span>
+        <button
+          type="button"
+          class="card-inspector__sequence-button"
+          :aria-label="navigation.previous ? `上一张：${navigation.previous.displayTerm}` : '上一张单词卡'"
+          :title="navigation.previous ? `上一张：${navigation.previous.displayTerm}` : '上一张单词卡'"
+          :disabled="navigationDisabled || !navigation.hasPrevious"
+          @click="requestNavigation('previous')"
+        >
+          <ChevronLeft aria-hidden="true" />
+        </button>
+        <span class="card-inspector__sequence-position" aria-live="polite">{{ navigation.position }} / {{ navigation.total }}</span>
+        <button
+          type="button"
+          class="card-inspector__sequence-button"
+          :aria-label="navigation.next ? `下一张：${navigation.next.displayTerm}` : '下一张单词卡'"
+          :title="navigation.next ? `下一张：${navigation.next.displayTerm}` : '下一张单词卡'"
+          :disabled="navigationDisabled || !navigation.hasNext"
+          @click="requestNavigation('next')"
+        >
+          <ChevronRight aria-hidden="true" />
+        </button>
+        <span class="card-inspector__sequence-term card-inspector__sequence-term--next">
+          <template v-if="navigation.next">下一张 · {{ navigation.next.displayTerm }}</template>
+        </span>
+      </nav>
     </div>
 
     <div v-if="themesQuery.isLoading.value && !themesQuery.data.value" class="card-inspector__theme-state">主题加载中...</div>
@@ -112,7 +167,7 @@
 
       <main class="card-inspector__document">
         <section id="core-information" class="card-inspector__document-section">
-          <VocabularyCoreSummary :core="displayCore" />
+          <VocabularyCoreSummary :core="displayCore" @pronounce="playPhonetic" />
         </section>
 
         <section v-if="isPartialMarkdown" class="card-inspector__partial-markdown" aria-label="主题内容">
@@ -154,6 +209,7 @@
     </div>
 
     <p class="card-inspector__save-announcement sr-only" aria-live="polite">{{ saveAnnouncement }}</p>
+    <p class="sr-only" aria-live="polite">{{ pronunciationMessage }}</p>
 
     <div v-if="regenerateConfirmationOpen" class="card-inspector__dialog-backdrop" role="presentation" @click.self="closeRegenerateDialog">
       <section ref="regenerateDialog" class="card-inspector__dialog" role="dialog" aria-modal="true" aria-labelledby="regenerate-card-title" aria-describedby="regenerate-card-guidance">
@@ -219,7 +275,7 @@
 
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft, ChevronLeft, ChevronRight, LoaderCircle, Volume2 } from 'lucide-vue-next'
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 import type { MarkdownSection } from '../assistant/markdown'
@@ -240,6 +296,7 @@ import {
   type VocabularyRevisionListResponse,
 } from '@/api/vocabulary'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
+import { useVocabularyPronunciation } from '@/composables/useVocabularyPronunciation'
 import {
   projectLegacyVocabularyCore,
   isVocabularyV1Revision,
@@ -248,6 +305,7 @@ import {
   type VocabularyCardDraftIdentity,
 } from '@/composables/useVocabularyCards'
 import { safeExternalUrl } from '@/features/vocabulary/safeExternalUrl'
+import type { VocabularyCardSequence } from '@/features/vocabulary/vocabularyCardNavigation'
 import { showToast } from '@/utils/toast'
 
 type MutationBridge<T, TResult = unknown> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<TResult> }
@@ -256,6 +314,8 @@ type InspectorDialog = 'regenerate' | 'delete' | 'conflict'
 
 const props = defineProps<{
   card: VocabularyCardDetail
+  navigation?: VocabularyCardSequence | null
+  navigationPending?: boolean
   listVocabularyRevisions?: VocabularyRevisionListResponse
   updateMutation: MutationBridge<{ cardUid: string, payload: UpdateVocabularyCardRequest }, VocabularyCardDetail>
   deleteMutation: MutationBridge<string>
@@ -264,8 +324,17 @@ const props = defineProps<{
   resolveConflictMutation: MutationBridge<{ cardUid: string, revisionUid: string, payload: ResolveVocabularyConflictRequest }>
 }>()
 
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{
+  back: []
+  navigate: [direction: 'previous' | 'next']
+}>()
 const { themesQuery } = useVocabularyThemes()
+const {
+  state: pronunciationState,
+  message: pronunciationMessage,
+  play: playPronunciation,
+  stop: stopPronunciation,
+} = useVocabularyPronunciation()
 const isNarrow = useMediaQuery('(max-width: 767px)')
 const editing = ref(false)
 const editMarkdown = ref('')
@@ -333,6 +402,12 @@ const activeDialog = computed<InspectorDialog | null>(() => {
   if (deleteDialogOpen.value) return 'delete'
   return null
 })
+const navigationDisabled = computed(() => (
+  editing.value
+  || cardOperationPending.value
+  || Boolean(activeDialog.value)
+  || Boolean(props.navigationPending)
+))
 const isPartialMarkdown = computed(() => (
   props.card.generationOutcome === 'partial' && props.card.warning === 'markdown_unavailable'
 ))
@@ -413,6 +488,33 @@ function cardMarkdown(card: VocabularyCardDetail): string {
   if (card.markdown != null) return card.markdown
   const compatibleMarkdown = asRecord(card.content).markdown
   return typeof compatibleMarkdown === 'string' ? compatibleMarkdown : ''
+}
+
+function pronunciationLanguage(region: VocabularyCoreContent['phonetics'][number]['region']) {
+  return region === 'us' ? 'en-US' : 'en-GB'
+}
+
+function playPhonetic(phonetic: VocabularyCoreContent['phonetics'][number]) {
+  void playPronunciation({
+    term: props.card.displayTerm,
+    language: pronunciationLanguage(phonetic.region),
+    audioUrl: phonetic.audioUrl,
+  })
+}
+
+function playDefaultPronunciation() {
+  const phonetics = displayCore.value.phonetics
+  const preferred = phonetics.find((phonetic) => Boolean(phonetic.audioUrl)) ?? phonetics[0]
+  if (preferred) {
+    playPhonetic(preferred)
+    return
+  }
+  void playPronunciation({ term: props.card.displayTerm, language: 'en-GB', audioUrl: null })
+}
+
+function requestNavigation(direction: 'previous' | 'next') {
+  if (navigationDisabled.value) return
+  emit('navigate', direction)
 }
 
 function scrollToSection(id: string) {
@@ -676,6 +778,7 @@ watch(
     if (!shouldResetVocabularyCardDraft(draftIdentity.value, nextIdentity)) return
     const cardChanged = draftIdentity.value?.cardUid !== cardUid
     if (cardChanged) {
+      stopPronunciation()
       focusLifecycleToken += 1
       dialogReturnTarget = null
       conflict.value = null
@@ -766,6 +869,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopPronunciation()
   componentMounted = false
   focusLifecycleToken += 1
   disconnectObserver()
@@ -923,7 +1027,15 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector { min-width: 0; padding: 22px clamp(16px, 3vw, 40px) 56px; background: #fff; color: #334155; }
 .card-inspector__header { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; max-width: 1060px; margin: 0 auto; }
 .card-inspector__heading { min-width: 0; }
-.card-inspector__heading h2 { margin: 0; color: #0f172a; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
+.card-inspector__title-row { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.card-inspector__heading h2 { min-width: 0; margin: 0; color: #0f172a; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
+.card-inspector .card-inspector__term-button { min-width: 0; min-height: 0; border: 0; background: transparent; color: inherit; font-size: inherit; line-height: inherit; padding: 0; text-align: left; overflow-wrap: anywhere; }
+.card-inspector .card-inspector__term-button:hover { color: #047857; }
+.card-inspector .card-inspector__term-button:focus-visible { outline: 2px solid #10b981; outline-offset: 4px; }
+.card-inspector .card-inspector__pronunciation-button { width: 38px; height: 38px; min-height: 38px; display: inline-grid; flex: none; place-items: center; border-color: #a7f3d0; border-radius: 50%; background: #ecfdf5; color: #047857; padding: 0; }
+.card-inspector .card-inspector__pronunciation-button:hover, .card-inspector .card-inspector__pronunciation-button.is-playing { border-color: #10b981; background: #d1fae5; }
+.card-inspector__pronunciation-button svg { width: 18px; height: 18px; }
+.card-inspector__spinner { animation: card-inspector-spin .8s linear infinite; }
 .card-inspector__summary { margin: 6px 0 0; color: #475569; font-size: 14px; overflow-wrap: anywhere; }
 .card-inspector__metadata { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 9px; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
 .card-inspector__status { color: #047857; font-weight: 800; }
@@ -946,6 +1058,13 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__more-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 10; min-width: min(280px, calc(100vw - 32px)); display: grid; gap: 10px; padding: 12px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; box-shadow: 0 12px 26px rgba(15, 23, 42, .14); }
 .card-inspector__more-menu .card-inspector__regenerate-theme { display: grid; }
 .card-inspector__more-menu select, .card-inspector__more-menu button { width: 100%; max-width: none; }
+.card-inspector__sequence { min-width: 0; display: grid; grid-template-columns: minmax(0, 120px) 34px auto 34px minmax(0, 120px); align-items: center; gap: 6px; margin-left: auto; padding-left: 14px; border-left: 1px solid #dce7e1; }
+.card-inspector .card-inspector__sequence-button { width: 34px; height: 34px; min-height: 34px; display: inline-grid; place-items: center; padding: 0; }
+.card-inspector__sequence-button svg { width: 17px; height: 17px; }
+.card-inspector__sequence-position { min-width: 52px; color: #475569; font-size: 12px; font-weight: 800; text-align: center; }
+.card-inspector__sequence-term { min-width: 0; overflow: hidden; color: #64748b; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.card-inspector__sequence-term--previous { text-align: right; }
+.card-inspector__sequence-term--next { text-align: left; }
 .card-inspector__theme-state, .card-inspector__generation { min-width: 0; max-width: 1060px; display: flex; align-items: center; gap: 8px; margin: 10px auto 0; color: #64748b; font-size: 13px; overflow-wrap: anywhere; }
 .card-inspector__conflict-action { min-width: 0; max-width: 1060px; margin: 10px auto 0; }
 .card-inspector__theme-state--error { color: #b91c1c; }
@@ -991,12 +1110,16 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__merge-fields label { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); gap: 8px; align-items: center; font-size: 13px; }
 .card-inspector__merge-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #0f172a; }
 
+@keyframes card-inspector-spin { to { transform: rotate(360deg); } }
+
 @media (min-width: 1024px) {
   .card-inspector__notebook { display: grid; grid-template-columns: 180px minmax(0, 840px); gap: 40px; align-items: start; }
   .card-inspector__chapters { position: sticky; top: 86px; display: grid; gap: 4px; }
 }
 
 @media (min-width: 768px) and (max-width: 1023px) {
+  .card-inspector__sequence { grid-template-columns: 34px auto 34px; }
+  .card-inspector__sequence-term { display: none; }
   .card-inspector__notebook { display: grid; grid-template-columns: 1fr; gap: 22px; }
   .card-inspector__chapters { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; }
   .card-inspector__chapters button { width: auto; flex: none; white-space: nowrap; }
@@ -1009,6 +1132,8 @@ function statusLabel(status: VocabularyCardStatus) {
   .card-inspector__toolbar { align-items: stretch; }
   .card-inspector__mode { flex: 1 1 130px; }
   .card-inspector__more { position: static; margin-left: 0; }
+  .card-inspector__sequence { width: 100%; grid-template-columns: 34px minmax(52px, auto) 34px; justify-content: end; margin-left: 0; padding: 8px 0 0; border-top: 1px solid #edf2f7; border-left: 0; }
+  .card-inspector__sequence-term { display: none; }
   .card-inspector__more-menu { box-sizing: border-box; left: 0; right: 0; width: auto; min-width: 0; }
   .card-inspector__generation { align-items: flex-start; flex-direction: column; }
   .card-inspector__notebook { display: grid; grid-template-columns: 1fr; gap: 20px; margin-top: 20px; }

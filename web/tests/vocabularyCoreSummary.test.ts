@@ -31,6 +31,15 @@ test('core summary has neutral states for empty phonetics senses and meanings', 
   assert.match(coreSummarySource, /暂无双语释义/)
 })
 
+test('core summary exposes accessible pronunciation controls for every phonetic', () => {
+  assert.match(coreSummarySource, /import\s*\{\s*Volume2\s*\}\s*from\s*'lucide-vue-next'/)
+  assert.match(coreSummarySource, /defineEmits<\{\s*pronounce:/)
+  assert.match(coreSummarySource, /class="core-summary__phonetic-button"/)
+  assert.match(coreSummarySource, /:aria-label="`播放\$\{regionLabel\(phonetic\.region\)\}式发音`"/)
+  assert.match(coreSummarySource, /@click="emit\('pronounce', phonetic\)"/)
+  assert.match(coreSummarySource, /<Volume2\s+aria-hidden="true"\s*\/>/)
+})
+
 test('markdown editor preserves source in a bounded textarea without rendering HTML', () => {
   assert.match(markdownEditorSource, /<textarea/)
   assert.match(markdownEditorSource, /Markdown 内容/)

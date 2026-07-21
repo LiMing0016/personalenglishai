@@ -10,8 +10,17 @@
       <p v-if="!core.phonetics.length" class="core-summary__empty">暂无音标</p>
       <ul v-else class="core-summary__phonetics">
         <li v-for="phonetic in core.phonetics" :key="`${phonetic.region}-${phonetic.text}`">
-          <span>{{ regionLabel(phonetic.region) }}</span>
-          <strong>{{ phonetic.text }}</strong>
+          <button
+            type="button"
+            class="core-summary__phonetic-button"
+            :aria-label="`播放${regionLabel(phonetic.region)}式发音`"
+            :title="`播放${regionLabel(phonetic.region)}式发音`"
+            @click="emit('pronounce', phonetic)"
+          >
+            <Volume2 aria-hidden="true" />
+            <span>{{ regionLabel(phonetic.region) }}</span>
+            <strong>{{ phonetic.text }}</strong>
+          </button>
         </li>
       </ul>
     </div>
@@ -36,9 +45,14 @@
 </template>
 
 <script setup lang="ts">
+import { Volume2 } from 'lucide-vue-next'
+
 import type { VocabularyCoreContent } from '@/api/vocabulary'
 
 defineProps<{ core: VocabularyCoreContent }>()
+const emit = defineEmits<{
+  pronounce: [phonetic: VocabularyCoreContent['phonetics'][number]]
+}>()
 
 function regionLabel(region: VocabularyCoreContent['phonetics'][number]['region']) {
   return ({ uk: '英', us: '美', other: '其他' } as const)[region]
@@ -53,9 +67,13 @@ function regionLabel(region: VocabularyCoreContent['phonetics'][number]['region'
 .core-summary__section h4 { margin: 0 0 8px; }
 .core-summary__empty { margin: 0; color: #64748b; font-size: 13px; }
 .core-summary__phonetics { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.core-summary__phonetics li { min-width: 0; display: flex; gap: 7px; align-items: baseline; padding: 7px 9px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; }
-.core-summary__phonetics span { color: #047857; font-size: 11px; font-weight: 800; }
-.core-summary__phonetics strong { color: #334155; font-size: 14px; overflow-wrap: anywhere; }
+.core-summary__phonetics li { min-width: 0; }
+.core-summary__phonetic-button { min-width: 0; min-height: 34px; display: inline-flex; gap: 7px; align-items: center; padding: 7px 9px; border: 1px solid #dce7e1; border-radius: 6px; background: #f8fafc; color: #334155; font: inherit; cursor: pointer; }
+.core-summary__phonetic-button:hover { border-color: #6ee7b7; background: #ecfdf5; }
+.core-summary__phonetic-button:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+.core-summary__phonetic-button svg { width: 14px; height: 14px; flex: none; color: #059669; }
+.core-summary__phonetic-button span { color: #047857; font-size: 11px; font-weight: 800; }
+.core-summary__phonetic-button strong { color: #334155; font-size: 14px; overflow-wrap: anywhere; }
 .core-summary__senses { display: grid; gap: 10px; }
 .core-summary__senses section { min-width: 0; padding-left: 10px; border-left: 2px solid #a7f3d0; }
 .core-summary__senses h5 { margin: 0 0 6px; color: #0f172a; font-size: 13px; }
