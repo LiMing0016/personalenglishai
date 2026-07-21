@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const appLayoutSource = readFileSync(
   new URL('../src/layouts/AppLayout.vue', import.meta.url),
@@ -14,6 +14,7 @@ const routerSource = readFileSync(
   new URL('../src/router/index.ts', import.meta.url),
   'utf8',
 )
+const legacyDashboardUrl = new URL('../src/views/DashboardView.vue', import.meta.url)
 const assistantRouteBlock = routerSource.slice(
   routerSource.indexOf("path: 'assistant'"),
   routerSource.indexOf("path: 'vocabulary'"),
@@ -41,6 +42,19 @@ assert.ok(
 assert.ok(
   !defaultAppRouteBlock.includes('component:'),
   '/app should not render a second homepage component',
+)
+assert.ok(
+  !routerSource.includes('DashboardView.vue'),
+  'router should not import the legacy dashboard page',
+)
+assert.ok(
+  !routerSource.includes("name: 'Dashboard'"),
+  'router should not register the legacy Dashboard route name',
+)
+assert.equal(
+  existsSync(legacyDashboardUrl),
+  false,
+  'legacy DashboardView.vue should be deleted',
 )
 assert.ok(
   routerSource.includes("path: 'stage-setup'"),
