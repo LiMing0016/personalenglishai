@@ -134,6 +134,22 @@ export interface VocabularyImageRecognitionResponse {
   generation: VocabularyImageRecognitionGeneration
 }
 
+export type VocabularyImportEvidence = 'text' | 'image' | 'text_image'
+
+export interface VocabularyImportAnalysisItem extends VocabularyImageRecognitionItem {
+  evidence: VocabularyImportEvidence
+}
+
+export interface VocabularyImportAnalysisResponse {
+  contractVersion: 1
+  traceId: string
+  inputFingerprint: string
+  rawText: string
+  warnings: VocabularyRecognitionWarning[]
+  items: VocabularyImportAnalysisItem[]
+  generation: VocabularyImageRecognitionGeneration
+}
+
 export interface VocabularyCaptureItem {
   term: string
   cardUid: string | null
@@ -392,6 +408,26 @@ export const recognizeVocabularyImage = ({
   formData.append('file', file)
   return unwrap<VocabularyImageRecognitionResponse>(
     http.post('/vocabulary/image-recognitions', formData, { timeout: 60_000, signal }),
+  )
+}
+
+export const analyzeVocabularyImport = ({
+  text,
+  file,
+  inputFingerprint,
+  signal,
+}: {
+  text: string
+  file: File | null
+  inputFingerprint: string
+  signal: AbortSignal
+}) => {
+  const formData = new FormData()
+  formData.append('text', text)
+  formData.append('inputFingerprint', inputFingerprint)
+  if (file) formData.append('file', file)
+  return unwrap<VocabularyImportAnalysisResponse>(
+    http.post('/vocabulary/import-analyses', formData, { timeout: 60_000, signal }),
   )
 }
 
