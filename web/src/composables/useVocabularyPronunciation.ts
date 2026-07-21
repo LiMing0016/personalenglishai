@@ -55,8 +55,25 @@ function browserSpeechAdapter(): VocabularySpeechAdapter {
   }
 }
 
+function browserAudioAdapter(url: string): VocabularyAudioLike {
+  const element = new Audio(url)
+  const adapter: VocabularyAudioLike = {
+    get currentTime() { return element.currentTime },
+    set currentTime(value: number) { element.currentTime = value },
+    onplaying: null,
+    onended: null,
+    onerror: null,
+    play: () => element.play(),
+    pause: () => element.pause(),
+  }
+  element.onplaying = () => adapter.onplaying?.()
+  element.onended = () => adapter.onended?.()
+  element.onerror = () => adapter.onerror?.()
+  return adapter
+}
+
 export function useVocabularyPronunciation(options: VocabularyPronunciationOptions = {}) {
-  const createAudio = options.createAudio ?? ((url: string) => new Audio(url))
+  const createAudio = options.createAudio ?? browserAudioAdapter
   const speech = options.speech ?? browserSpeechAdapter()
   const state = ref<VocabularyPronunciationState>('idle')
   const activeLanguage = ref<string | null>(null)

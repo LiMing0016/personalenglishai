@@ -89,7 +89,7 @@ export function resolveVocabularyCardSequence(
   const position = (currentPage.page - 1) * currentPage.size + index + 1
   const previous = index > 0
     ? target(currentPage.items[index - 1])
-    : target(previousPage?.items.at(-1))
+    : target(previousPage?.items[previousPage.items.length - 1])
   const next = index < currentPage.items.length - 1
     ? target(currentPage.items[index + 1])
     : target(nextPage?.items[0])
