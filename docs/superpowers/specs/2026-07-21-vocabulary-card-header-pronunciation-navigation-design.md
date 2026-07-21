@@ -1,6 +1,6 @@
 ---
 title: 单词卡头部、连续浏览与发音设计
-status: proposed
+status: approved
 owner: product
 last_updated: 2026-07-21
 review_cycle: on-change
