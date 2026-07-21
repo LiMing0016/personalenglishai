@@ -106,12 +106,12 @@
           <AssistantComposer
             v-if="activeConversation.messages.length === 0"
             ref="emptyComposerRef"
-            class="empty-state-composer"
+            class="empty-state-composer assistant-composer--entry"
             :model-value="composerText"
             :loading="isSending"
             :attachments="composerAttachments"
             :assistant-mode="assistantMode"
-            :placeholder="learningCanvasAvailable ? '' : undefined"
+            :placeholder="learningCanvasAvailable ? '' : emptyComposerPlaceholder"
             @update:model-value="composerText = $event"
             @add-files="handleFileSelect"
             @remove-attachment="removeAttachment"
@@ -282,6 +282,7 @@ const {
 const pageTitle = '学习助手'
 const emptyTitle = '今天想完成什么？'
 const emptySubtitle = '先选一个学习目标，再把内容发给我。'
+const emptyComposerPlaceholder = '把你的句子、段落或问题发给我…'
 const composerDocked = true
 const LEARNING_ASSET_CANVAS_WIDTH_KEY = 'peai:assistant:learning-asset-canvas-width'
 const LEARNING_NOTE_QUERY_KEY = 'learningNote'

@@ -309,6 +309,19 @@ function formatAttachmentMeta(size: number, kind: AssistantAttachment['kind']) {
   box-shadow: 0 24px 54px rgba(4, 120, 87, 0.18);
 }
 
+.assistant-composer--entry {
+  min-height: 138px;
+}
+
+.assistant-composer--entry .composer-shell,
+.assistant-composer--entry .composer-input-zone {
+  flex: 1;
+}
+
+.assistant-composer--entry .composer-shell {
+  justify-content: space-between;
+}
+
 .file-input {
   display: none;
 }

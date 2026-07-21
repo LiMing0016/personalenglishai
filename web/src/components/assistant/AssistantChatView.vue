@@ -2,6 +2,7 @@
   <section
     ref="scrollContainerRef"
     class="assistant-chat-view"
+    :class="{ 'assistant-chat-view--empty': messages.length === 0 }"
     @scroll.passive="handleScroll"
   >
     <div v-if="messages.length === 0" class="empty-state">
@@ -358,10 +359,15 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
+  width: min(920px, 100%);
   min-height: 0;
   max-width: 920px;
   margin: clamp(72px, 10vh, 118px) auto 0;
   text-align: center;
+}
+
+.assistant-chat-view--empty {
+  padding-bottom: 48px;
 }
 
 .empty-title {
@@ -421,6 +427,7 @@ onBeforeUnmount(() => {
   color: #0f172a;
   font-size: 15px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .message-content--plain {
@@ -775,13 +782,27 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .assistant-chat-view {
-    padding: 24px 18px 226px;
+    padding: 20px 18px 210px;
+  }
+
+  .assistant-chat-view--empty {
+    padding-bottom: 36px;
   }
 
   .message-bubble {
     max-width: 100%;
+  }
+
+  .message-row--user .message-bubble {
+    max-width: min(620px, 88%);
+  }
+
+  .message-content--markdown :deep(pre),
+  .message-content--markdown :deep(code) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 </style>

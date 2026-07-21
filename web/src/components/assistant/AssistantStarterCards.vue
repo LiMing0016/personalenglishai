@@ -65,7 +65,7 @@ const examples = [
   display: flex;
   width: min(680px, 100%);
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
 }
 
 .starter-goals {
@@ -76,7 +76,7 @@ const examples = [
 }
 
 .starter-goal {
-  min-height: 36px;
+  min-height: 40px;
   padding: 8px 15px;
   border: 1px solid #dbe3ea;
   border-radius: 999px;
@@ -114,7 +114,7 @@ const examples = [
   grid-template-columns: minmax(0, 1fr) minmax(160px, auto) 20px;
   align-items: center;
   gap: 16px;
-  min-height: 58px;
+  min-height: 62px;
   padding: 14px 18px;
   border: none;
   border-bottom: 1px solid #e2e8f0;

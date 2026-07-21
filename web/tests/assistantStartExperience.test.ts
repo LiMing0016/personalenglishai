@@ -39,5 +39,16 @@ assert.ok(page.includes('<template #empty-composer>'))
 assert.ok(page.includes('v-if="activeConversation.messages.length === 0"'))
 assert.ok(page.includes('v-if="activeConversation.messages.length > 0" class="composer-dock"'))
 assert.ok(!page.includes('markdown-theme-control'))
+assert.ok(chat.includes('overflow-wrap: anywhere'))
+assert.ok(chat.includes('.message-content--markdown :deep(.markdown-table-scroll)'))
+assert.ok(chat.includes('max-width: 100%'))
+const emptyStateStyles = chat.slice(
+  chat.indexOf('.empty-state {'),
+  chat.indexOf('.empty-title {'),
+)
+assert.ok(emptyStateStyles.includes('width: min(920px, 100%)'))
+assert.ok(page.includes("'把你的句子、段落或问题发给我…'"))
+assert.ok(composer.includes('.assistant-composer--entry'))
+assert.ok(composer.includes('min-height: 138px'))
 
 console.log('assistant-start-experience-ok')
