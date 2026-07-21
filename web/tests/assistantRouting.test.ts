@@ -70,7 +70,7 @@ assert.ok(
 )
 assert.ok(routerSource.includes("path: 'assistant'"), 'router should register /app/assistant child path')
 assert.ok(
-  routerSource.includes("name: 'LearningAssistant'"),
+  assistantRouteBlock.includes("name: 'LearningAssistant'"),
   'router should register LearningAssistant route name',
 )
 assert.ok(

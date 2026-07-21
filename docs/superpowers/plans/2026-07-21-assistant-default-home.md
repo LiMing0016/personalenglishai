@@ -255,10 +255,10 @@ Run:
 
 ```powershell
 cd F:\personalenglishai
-rg -n "DashboardView|name: 'Dashboard'" web/src web/tests
+rg -n "DashboardView|name: 'Dashboard'" web/src
 ```
 
-Expected: 无匹配，`rg` 退出码为 1 仅表示搜索结果为空。
+Expected: 运行时源码中无匹配，`rg` 退出码为 1 仅表示搜索结果为空。
 
 - [ ] **Step 4: 在已登录且已有学段的浏览器会话中验证 `/app`**
 
