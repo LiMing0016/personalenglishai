@@ -170,8 +170,8 @@ assistant_message:
   sensitivity: high
   adminRoute: /admin/users
   timeColumn: created_at
-  description: 存储学习助手会话中的用户消息、助手回复和运行结果。
-  sensitiveColumns: [content, metadata_json]
+  description: 存储学习助手会话中的用户消息、助手回复及版本化结构化学习块。
+  sensitiveColumns: [content, parts_json]
   securityNotes:
     - 消息正文和模型输出属于高敏内容，数据地图只展示表结构。
 

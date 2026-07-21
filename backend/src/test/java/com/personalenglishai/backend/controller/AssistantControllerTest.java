@@ -147,6 +147,11 @@ class AssistantControllerTest {
                                   "intent": "explain",
                                   "scope": "selection_and_message",
                                   "message": { "text": "请解释" },
+                                  "interaction": {
+                                    "source": "quick_action",
+                                    "uiIntent": "start_practice",
+                                    "context": { "exerciseType": "sentence_reorder" }
+                                  },
                                   "selection": {
                                     "text": "The rapid development of AI.",
                                     "source": "page_selection"
@@ -168,6 +173,8 @@ class AssistantControllerTest {
         assertThat(requestCaptor.getValue().getClientMessageId()).isEqualTo("client-1");
         assertThat(requestCaptor.getValue().getIntent()).isEqualTo("explain");
         assertThat(requestCaptor.getValue().getMessage().getText()).isEqualTo("请解释");
+        assertThat(requestCaptor.getValue().getInteraction().getUiIntent()).isEqualTo("start_practice");
+        assertThat(requestCaptor.getValue().getInteraction().getContext().getExerciseType()).isEqualTo("sentence_reorder");
         assertThat(requestCaptor.getValue().getSelection().getText()).isEqualTo("The rapid development of AI.");
     }
 
@@ -176,7 +183,7 @@ class AssistantControllerTest {
         doAnswer(invocation -> {
             java.io.OutputStream outputStream = invocation.getArgument(4);
             outputStream.write("data: {\"type\":\"message.delta\",\"delta\":\"he\"}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            outputStream.write("data: {\"type\":\"message.completed\",\"content\":\"hello\"}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            outputStream.write("data: {\"type\":\"message.completed\",\"content\":\"hello\",\"parts\":[{\"type\":\"sentence_reorder\",\"version\":1,\"data\":{}}]}\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             outputStream.flush();
             return null;
         }).when(assistantConversationService).writeAgentMessageStream(
@@ -207,6 +214,7 @@ class AssistantControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
                 .andExpect(content().string(containsString("\"type\":\"message.delta\"")))
-                .andExpect(content().string(containsString("\"content\":\"hello\"")));
+                .andExpect(content().string(containsString("\"content\":\"hello\"")))
+                .andExpect(content().string(containsString("\"parts\":[{\"type\":\"sentence_reorder\"")));
     }
 }

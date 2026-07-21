@@ -1,5 +1,7 @@
 package com.personalenglishai.backend.controller.dto.assistant;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.Map;
 
 public class AssistantStreamEventResponse {
@@ -14,6 +16,7 @@ public class AssistantStreamEventResponse {
     private String role;
     private String delta;
     private String content;
+    private JsonNode parts;
     private AssistantErrorPayload error;
     private Map<String, Object> usage;
     private Map<String, Object> openai;
@@ -104,6 +107,14 @@ public class AssistantStreamEventResponse {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public JsonNode getParts() {
+        return parts;
+    }
+
+    public void setParts(JsonNode parts) {
+        this.parts = parts;
     }
 
     public AssistantErrorPayload getError() {

@@ -9,6 +9,7 @@ public class AssistantMessage {
     private Long userId;
     private String role;
     private String content;
+    private String partsJson;
     private String status;
     private Integer sortOrder;
     private LocalDateTime createdAt;
@@ -59,6 +60,14 @@ public class AssistantMessage {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getPartsJson() {
+        return partsJson;
+    }
+
+    public void setPartsJson(String partsJson) {
+        this.partsJson = partsJson;
     }
 
     public String getStatus() {
