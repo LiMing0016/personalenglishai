@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import type { AxiosError } from 'axios'
 
 import {
+  analyzeVocabularyImport,
   captureVocabulary,
   deleteVocabularyCard,
   getVocabularyCard,
   listVocabularyCards,
   listVocabularyRevisions,
-  recognizeVocabularyImage,
   regenerateVocabularyCard,
   resolveVocabularyConflict,
   retryVocabularyCard,
@@ -191,10 +191,8 @@ export function useVocabularyCards(
     },
   })
 
-  const imageRecognitionMutation = useMutation({
-    mutationFn: ({ file, signal }: { file: File, signal: AbortSignal }) => (
-      recognizeVocabularyImage({ file, signal })
-    ),
+  const importAnalysisMutation = useMutation({
+    mutationFn: analyzeVocabularyImport,
   })
 
   const updateMutation = useMutation({
@@ -233,7 +231,7 @@ export function useVocabularyCards(
     detailQuery,
     revisionsQuery,
     captureMutation,
-    imageRecognitionMutation,
+    importAnalysisMutation,
     updateMutation,
     deleteMutation,
     regenerateMutation,

@@ -15,12 +15,10 @@ test('collection page keeps the compact import workspace without redundant chrom
   assert.match(view, /vocabulary-nav/)
   assert.match(view, /aria-label="单词沉淀"/)
   assert.doesNotMatch(view, /Word Cards|单词卡中心|更多来源后续接入/)
-  assert.match(capture, /VocabularyTextCapture/)
-  assert.match(capture, /VocabularyImageCapture/)
-  assert.match(capture, /VocabularyTermReview/)
-  assert.match(capture, /VocabularyThemeSelect/)
+  assert.match(capture, /VocabularyImportDialog/)
   assert.doesNotMatch(capture, /VocabularyThemeShelf/)
   assert.doesNotMatch(capture, /所选主题仅用于本次沉淀/)
+  assert.doesNotMatch(capture, /来源语境/)
 })
 
 test('vocabulary view composes durable capture and list components', () => {
@@ -30,15 +28,11 @@ test('vocabulary view composes durable capture and list components', () => {
   assert.doesNotMatch(view, /const\s+savedWords\s*=\s*ref/)
 })
 
-test('capture panel exposes theme choice and bulk submission states', () => {
-  assert.match(capture, /VocabularyThemeSelect/)
-  assert.match(capture, /selectedThemeUid/)
-  assert.match(capture, /themeUid/)
-  assert.doesNotMatch(capture, /template-control/)
-  assert.match(capture, /captureMutation/)
+test('capture panel exposes one compact modal entry and durable outcomes', () => {
+  assert.match(capture, /VocabularyImportDialog/)
+  assert.match(capture, /dialogOpen/)
   assert.match(capture, /已存在，已追加来源/)
-  assert.match(capture, /生成 N 张卡片|生成 \$\{selectedCount\.value\} 张卡片/)
-  assert.doesNotMatch(capture, /按「.*」生成/)
+  assert.doesNotMatch(capture, /capture-mode|文本录入|图片识别/)
 })
 
 test('list renders every persisted status and filters', () => {

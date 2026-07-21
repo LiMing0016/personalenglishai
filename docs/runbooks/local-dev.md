@@ -74,6 +74,8 @@ $env:VOCABULARY_IMAGE_RECOGNITION_SMOKE_IMAGE='<local-image-path>'
 
 延迟验收至少记录图片识别 `elapsed_ms`，在同一受控流量窗口计算 P50/P95；同时确认取消或换图后的旧响应不会渲染。产品事件表只应出现白名单计数、时延和稳定枚举。
 
+统一导入分析的验收目标是 P50 不超过 8 秒、P95 不超过 20 秒，前端硬超时为 60 秒。连续发起两次分析时应取消第一次；分析期间修改文本或替换图片后，旧候选显示“输入已变化，请重新分析”且生成按钮保持禁用。超时或失败后文本、图片预览和已确认候选不得被清空。
+
 ## 回滚与恢复
 
 1. 将 `VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED=false`，重新构建或重启 Web。

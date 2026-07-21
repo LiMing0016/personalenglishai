@@ -185,8 +185,8 @@
         :themes-loading="themesQuery.isLoading.value"
         :themes-error="themesBlockingError"
         :capture-mutation="captureMutation"
-        :image-recognition-enabled="imageRecognitionEnabled"
-        :image-recognition-mutation="imageRecognitionMutation"
+        :import-analysis-enabled="importAnalysisEnabled"
+        :import-analysis-mutation="importAnalysisMutation"
         @captured="handleVocabularyCaptured"
       />
       <VocabularyCardList
@@ -322,7 +322,7 @@ import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspe
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
-import { isVocabularyImageRecognitionEnabled } from '@/features/vocabulary/imageRecognition'
+import { isVocabularyImportAnalysisEnabled } from '@/features/vocabulary/importAnalysis'
 import { vocabularyProductEvents } from '@/features/vocabulary/productEvents'
 import { showToast } from '@/utils/toast'
 
@@ -401,7 +401,7 @@ const {
   detailQuery,
   revisionsQuery,
   captureMutation,
-  imageRecognitionMutation,
+  importAnalysisMutation,
   updateMutation,
   deleteMutation,
   regenerateMutation,
@@ -410,7 +410,7 @@ const {
 } = useVocabularyCards(vocabularyFilters, selectedCardUid)
 const { themesQuery } = useVocabularyThemes()
 const themesBlockingError = computed(() => themesQuery.isError.value && !themesQuery.data.value)
-const imageRecognitionEnabled = isVocabularyImageRecognitionEnabled()
+const importAnalysisEnabled = isVocabularyImportAnalysisEnabled()
 
 const views: Array<{ key: VocabularyViewKey; label: string; icon: string }> = [
   { key: 'search', label: '搜索单词', icon: '⌕' },

@@ -2,6 +2,7 @@ import type {
   VocabularyCaptureRequest,
   VocabularyImageRecognitionResponse,
   VocabularyImageRecognitionSuggestion,
+  VocabularyImportEvidence,
   VocabularyRecognitionStatus,
   VocabularyRecognitionWarning,
 } from '@/api/vocabulary'
@@ -30,6 +31,7 @@ export interface ImportCandidate {
   selected: boolean
   suggestions: VocabularyImageRecognitionSuggestion[]
   contextText: string | null
+  evidence?: VocabularyImportEvidence
   recognition?: VocabularyImageRecognitionResponse['generation'] & {
     traceId: string
     fileName: string

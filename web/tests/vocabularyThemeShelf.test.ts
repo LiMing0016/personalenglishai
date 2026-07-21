@@ -8,9 +8,8 @@ function readSource(path: string) {
 }
 
 const selectSource = readSource('../src/components/vocabulary/VocabularyThemeSelect.vue')
-const textCaptureSource = readSource('../src/components/vocabulary/VocabularyTextCapture.vue')
-const imageCaptureSource = readSource('../src/components/vocabulary/VocabularyImageCapture.vue')
-const imageRecognitionSource = readSource('../src/features/vocabulary/imageRecognition.ts')
+const composerSource = readSource('../src/components/vocabulary/VocabularyImportComposer.vue')
+const dialogSource = readSource('../src/components/vocabulary/VocabularyImportDialog.vue')
 const reviewSource = readSource('../src/components/vocabulary/VocabularyTermReview.vue')
 const captureSource = readSource('../src/components/vocabulary/VocabularyCapturePanel.vue')
 const viewSource = readSource('../src/views/VocabularyView.vue')
@@ -20,93 +19,64 @@ test('theme selector lists active themes and links to theme management', () => {
   assert.match(selectSource, /status === 'active'/)
   assert.match(selectSource, /to="\/app\/vocabulary\/themes"/)
   assert.match(selectSource, /管理主题/)
-  assert.match(selectSource, /主题加载中/)
-  assert.match(selectSource, /主题加载失败/)
-  assert.match(selectSource, /暂无可用主题/)
 })
 
-test('text adapter parses terms without owning candidate state', () => {
-  assert.match(textCaptureSource, /parseCaptureTerms/)
-  assert.match(textCaptureSource, /emit\('terms'/)
-  assert.doesNotMatch(textCaptureSource, /ImportCandidate\[\]|candidates\s*=\s*ref/)
+test('capture panel is a compact entry instead of a page-sized form', () => {
+  assert.match(captureSource, /VocabularyImportDialog/)
+  assert.match(captureSource, /打开导入单词对话框|导入单词/)
+  assert.doesNotMatch(captureSource, /VocabularyTextCapture|VocabularyImageCapture|capture-mode/)
+  assert.doesNotMatch(captureSource, /来源语境/)
 })
 
-test('image capture uses upload and camera inputs with stable preview lifecycle', () => {
-  assert.equal((imageCaptureSource.match(/accept="image\/jpeg,image\/png,image\/webp"/g) ?? []).length, 2)
-  assert.match(imageCaptureSource, /capture="environment"/)
-  assert.match(imageRecognitionSource, /URL\.createObjectURL/)
-  assert.match(imageRecognitionSource, /URL\.revokeObjectURL/)
-  assert.match(imageCaptureSource, /aspect-ratio/)
-  assert.match(imageCaptureSource, /object-fit:\s*contain/)
-  assert.match(imageCaptureSource, /<details/)
-  assert.match(imageCaptureSource, /recognizing \? '识别中\.\.\.' : response \? '重新识别' : '开始识别'/)
-  assert.equal((imageCaptureSource.match(/\shidden(?:\s|>)/g) ?? []).length, 2)
-  assert.match(imageCaptureSource, /:disabled="disabled"/)
-  assert.match(imageCaptureSource, /:disabled="disabled \|\| recognizing"/)
-  assert.match(imageCaptureSource, /未识别到可导入单词/)
-  assert.match(imageCaptureSource, /emit\('clear-error'\)/)
-  assert.match(imageCaptureSource, /createImageRequestLifecycle/)
-  assert.match(imageCaptureSource, /defineExpose\(\{ deactivate \}\)/)
+test('composer accepts text, selected images, and pasted clipboard images in one input', () => {
+  assert.match(composerSource, /<textarea/)
+  assert.match(composerSource, /@paste="handlePaste"/)
+  assert.match(composerSource, /clipboardData\?\.items/)
+  assert.match(composerSource, /accept="image\/jpeg,image\/png,image\/webp"/)
+  assert.match(composerSource, /type="file"/)
+  assert.match(composerSource, /aria-label="添加图片"/)
+  assert.match(composerSource, /URL\.createObjectURL|previewUrl/)
+  assert.match(composerSource, /URL\.revokeObjectURL/)
+  assert.doesNotMatch(composerSource, /文本录入|图片识别/)
 })
 
-test('term review requires explicit typo decisions and emits reducer commands', () => {
-  for (const label of ['采用', '保留原词', '删除', '全选', '清空']) assert.match(reviewSource, new RegExp(label))
-  assert.match(reviewSource, /词典已验证/)
+test('dialog owns latest-wins analysis and stale result protection', () => {
+  assert.match(dialogSource, /createImportAnalysisLifecycle/)
+  assert.match(dialogSource, /calculateVocabularyImportFingerprint/)
+  assert.match(dialogSource, /lifecycle\.invalidate\(\)/)
+  assert.match(dialogSource, /lifecycle\.isCurrent/)
+  assert.match(dialogSource, /lastSuccessfulFingerprint/)
+  assert.match(dialogSource, /currentFingerprint/)
+  assert.match(dialogSource, /输入已变化，请重新分析/)
+  assert.match(dialogSource, /分析中/)
+  assert.match(dialogSource, /AI 分析/)
+  assert.match(dialogSource, /canGenerateFromCurrentAnalysis/)
+  assert.doesNotMatch(dialogSource, /来源语境/)
+})
+
+test('term review supports explicit typo decisions and stable view sorting', () => {
+  for (const label of ['采用', '保留原词', '删除', '全选', '清空', '录入顺序', 'A-Z']) {
+    assert.match(reviewSource, new RegExp(label))
+  }
+  assert.match(reviewSource, /sortImportCandidates/)
   assert.match(reviewSource, /emit\('command'/)
-  assert.doesNotMatch(reviewSource, /props\.candidates\.(push|splice)/)
-  assert.doesNotMatch(reviewSource, /candidate\.suggestions\.some/)
-  assert.match(reviewSource, /v-for="suggestion in candidate\.suggestions"[\s\S]*v-if="suggestion\.dictionaryVerified"[\s\S]*词典已验证/)
+  assert.doesNotMatch(reviewSource, /props\.candidates\.(push|splice|sort)/)
 })
 
-test('keeps selection in the capture draft and falls back when it becomes unavailable', () => {
-  assert.match(captureSource, /const selectedThemeUid = ref\(''\)/)
-  assert.match(captureSource, /selectedThemeUid\.value = catalog\.defaultThemeUid/)
-  assert.match(captureSource, /selectedThemeIsActive/)
-  assert.match(captureSource, /watch\(/)
-  assert.match(captureSource, /VocabularyThemeSelect/)
-  assert.doesNotMatch(captureSource, /syncManualCandidates\(parseCaptureTerms\(rawTerms\.value\)\)/)
-  assert.match(captureSource, /reconcileManualCandidates/)
+test('dialog submits the selected theme only for a current successful analysis', () => {
+  assert.match(dialogSource, /VocabularyThemeSelect/)
+  assert.match(dialogSource, /themeUid: selectedThemeUid\.value/)
+  assert.match(dialogSource, /canGenerateFromCurrentAnalysis/)
+  assert.match(dialogSource, /orchestrateCaptureBatches/)
+  assert.match(dialogSource, /captureMutation\.isPending\.value/)
 })
 
-test('submits the selected theme explicitly and explains every unavailable state', () => {
-  assert.match(captureSource, /themeUid: selectedThemeUid\.value/)
-  assert.doesNotMatch(captureSource, /templateKey: templateKey\.value/)
-  assert.doesNotMatch(captureSource, /按「.*」生成/)
-  assert.match(captureSource, /生成中\.\.\.|生成卡片/)
-  assert.match(captureSource, /主题加载中/)
-  assert.match(captureSource, /主题加载失败/)
-  assert.match(captureSource, /暂无可用主题/)
-  assert.match(captureSource, /captureMutation\.isPending\.value/)
-  assert.match(captureSource, /orchestrateCaptureBatches/)
-})
-
-test('capture workspace has one error live region and locks image controls while capturing', () => {
-  assert.equal(((captureSource + imageCaptureSource).match(/role="alert"/g) ?? []).length, 1)
-  assert.doesNotMatch(imageCaptureSource, /const errorMessage = ref/)
-  assert.match(captureSource, /@clear-error="requestError = ''"/)
-  assert.match(captureSource, /:disabled="captureBusy"/)
-  assert.match(captureSource, /:disabled="captureBusy"[\s\S]*文本录入/)
-  assert.match(captureSource, /图片识别/)
-  assert.match(
-    captureSource,
-    /function leaveImageMode\(\) \{[\s\S]*imageCaptureRef\.value\?\.deactivate\(\)[\s\S]*requestError\.value = ''[\s\S]*\}/,
-  )
-  assert.match(captureSource, /previousMode === 'image'[\s\S]*leaveImageMode\(\)/)
-})
-
-test('vocabulary view owns the server theme query and passes its states to capture', () => {
+test('vocabulary view owns theme and unified analysis mutations', () => {
   assert.match(viewSource, /useVocabularyThemes/)
   assert.match(viewSource, /:theme-catalog="themesQuery\.data\.value"/)
   assert.match(viewSource, /:themes-loading="themesQuery\.isLoading\.value"/)
   assert.match(viewSource, /:themes-error="themesBlockingError"/)
-  assert.match(viewSource, /:image-recognition-enabled="imageRecognitionEnabled"/)
-  assert.match(viewSource, /:image-recognition-mutation="imageRecognitionMutation"/)
-})
-
-test('blocks only a theme query error without cached catalog data', () => {
-  assert.match(
-    viewSource,
-    /const themesBlockingError = computed\(\(\) => themesQuery\.isError\.value && !themesQuery\.data\.value\)/,
-  )
-  assert.doesNotMatch(viewSource, /:themes-error="themesQuery\.isError\.value"/)
+  assert.match(viewSource, /:import-analysis-enabled="importAnalysisEnabled"/)
+  assert.match(viewSource, /:import-analysis-mutation="importAnalysisMutation"/)
+  assert.doesNotMatch(viewSource, /:image-recognition-mutation=/)
 })

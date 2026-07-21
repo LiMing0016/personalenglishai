@@ -13,6 +13,14 @@ const captureSource = readFileSync(
   new URL('../src/components/vocabulary/VocabularyCapturePanel.vue', import.meta.url),
   'utf8',
 )
+const importDialogSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyImportDialog.vue', import.meta.url),
+  'utf8',
+)
+const importComposerSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyImportComposer.vue', import.meta.url),
+  'utf8',
+)
 const listSource = readFileSync(
   new URL('../src/components/vocabulary/VocabularyCardList.vue', import.meta.url),
   'utf8',
@@ -21,7 +29,14 @@ const inspectorSource = readFileSync(
   new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
   'utf8',
 )
-const composedSource = [pageSource, captureSource, listSource, inspectorSource].join('\n')
+const composedSource = [
+  pageSource,
+  captureSource,
+  importDialogSource,
+  importComposerSource,
+  listSource,
+  inspectorSource,
+].join('\n')
 
 for (const requiredText of [
   '搜索单词',
@@ -29,8 +44,8 @@ for (const requiredText of [
   '单词沉淀',
   '学习统计',
   '导入单词',
-  '文本录入',
-  '图片识别',
+  '输入、粘贴或添加图片',
+  'AI 分析',
   '生成卡片',
   '全部来源',
   'A-Z',

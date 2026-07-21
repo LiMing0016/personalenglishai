@@ -18,7 +18,77 @@ related_docs:
 
 ## 当前结论
 
-单词沉淀由“图片识别、候选复核、批量捕获、异步生成”组成。图片识别只返回候选，不直接写卡片；用户确认后再调用捕获接口。所有公开接口都要求当前登录用户，卡片、主题、来源与事件均按 `userId` 隔离。
+单词沉淀由“统一导入分析、候选复核、批量捕获、异步生成”组成。导入分析接受文本、图片或混合输入，只返回候选，不直接写卡片；用户确认后再调用捕获接口。所有公开接口都要求当前登录用户，卡片、主题、来源与事件均按 `userId` 隔离。
+
+## 统一导入分析
+
+### Endpoint
+
+```http
+POST /api/vocabulary/import-analyses
+Content-Type: multipart/form-data
+Authorization: Bearer <access_token>
+```
+
+### Request
+
+multipart 字段：
+
+| 字段 | 必填 | 约束 |
+| --- | --- | --- |
+| `text` | 与 `file` 至少一个 | 最多 20,000 字符；服务端统一换行为 `\n` 并 trim |
+| `file` | 与 `text` 至少一个 | 最多一个；JPG、PNG 或 WEBP；非空且不超过 10 MiB |
+| `inputFingerprint` | 是 | 64 位小写 SHA-256 十六进制字符串 |
+
+输入指纹由 Web 和 Java 独立计算：`normalizedText UTF-8 + 0x00 + 原始图片字节`。Java 在额度检查和 Python 调用前重新计算；不一致立即拒绝，防止界面当前输入与提交候选错位。
+
+### Response
+
+```json
+{
+  "code": "0",
+  "data": {
+    "contractVersion": 1,
+    "traceId": "vocab-import-<opaque-id>",
+    "inputFingerprint": "<64 lowercase hex>",
+    "rawText": "package scrutinize",
+    "warnings": [],
+    "items": [
+      {
+        "itemId": "item-1",
+        "observedText": "scrutinize",
+        "normalizedTerm": "scrutinize",
+        "status": "accepted",
+        "suggestions": [],
+        "contextText": null,
+        "confidence": 0.98,
+        "evidence": "text_image"
+      }
+    ],
+    "generation": {
+      "provider": "openai",
+      "model": "<configured-model>",
+      "promptVersion": "vocabulary-import-analysis-v1",
+      "modelCallCount": 1,
+      "traceId": "vocab-import-<opaque-id>",
+      "usage": null
+    }
+  }
+}
+```
+
+`evidence` 只能是 `text`、`image` 或 `text_image`。Web 只有在响应指纹、请求起始指纹和当前输入指纹全部一致时才接收候选；否则丢弃迟到响应并要求重新分析。
+
+### 错误码
+
+| HTTP | 错误码 | 场景 |
+| --- | --- | --- |
+| 400 | `400053` | 文本、图片或 multipart 结构不符合导入约束 |
+| 400 | `400054` | 输入指纹与服务端重新计算结果不一致 |
+| 429 | `429010` | 本月 AI token 额度已用完 |
+| 502 | `502051` | Python 或模型结果无法通过统一导入结构化契约校验 |
+| 503 | `503051` | Python、内部鉴权或模型上游暂时不可用 |
+| 504 | `504051` | Python 的 45 秒共享模型预算耗尽，或 Java 调用 Python 超时 |
 
 ## 图片识别
 

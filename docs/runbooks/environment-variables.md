@@ -259,6 +259,18 @@ Java 继续拥有词典查询、generation job、租约、revision、冲突和�
 
 图片与 `rawText` 禁止持久化。产品事件仅允许计数、时延、稳定枚举、安全 ID、provider、已配置 model、Prompt version 和 warning code；文件名、词条、上下文、识别全文、卡片内容、图片和 base64 均禁止写入。
 
+## 单词统一导入分析
+
+| 变量 | 默认值 | 注入位置 | 责任与约束 |
+| --- | --- | --- | --- |
+| `VITE_VOCABULARY_IMPORT_ANALYSIS_ENABLED` | `false` | Web 构建 | 只有精确字符串 `true` 才启用 AI 分析按钮；回滚时优先关闭。 |
+| `VOCABULARY_IMPORT_ANALYSIS_MODEL` | 无业务默认值 | Python | 支持文本和视觉输入的模型；未设置时兼容读取旧图片识别模型。 |
+| `VOCABULARY_IMPORT_ANALYSIS_TIMEOUT_MS` | `45000` | Python | 初次调用和最多一次结构修复共享的总预算。 |
+| `VOCABULARY_IMPORT_ANALYSIS_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | Java | Compose 内固定为 `http://assistant-orchestrator:8002`。 |
+| `VOCABULARY_IMPORT_ANALYSIS_PYTHON_TIMEOUT_MS` | `55000` | Java | 必须大于 Python 总预算并小于 Web 60 秒硬超时。 |
+
+输入原文和图片只用于当前请求，不进入普通日志、产品事件或卡片 metadata。Web 输入变化时取消旧请求并将候选标记为过期；Java 在额度检查前校验 `inputFingerprint`，指纹不一致返回 `400054`。
+
 ## Prompt 与 AI 调试
 
 | 变量 | 说明 |

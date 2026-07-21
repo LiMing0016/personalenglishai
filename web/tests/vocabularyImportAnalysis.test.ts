@@ -6,6 +6,9 @@ import { analyzeVocabularyImport } from '../src/api/vocabulary'
 import {
   calculateVocabularyImportFingerprint,
   createImportAnalysisLifecycle,
+  importAnalysisStateAfterInputChange,
+  mapVocabularyImportAnalysisCandidates,
+  sortImportCandidates,
 } from '../src/features/vocabulary/importAnalysis'
 
 
@@ -68,6 +71,11 @@ test('only the latest request with matching response, start, and current fingerp
   assert.equal(lifecycle.isCurrent(latest.requestId, 'b'.repeat(64), fingerprint, fingerprint), false)
 })
 
+test('input changes leave a first request idle and make previously successful candidates stale', () => {
+  assert.equal(importAnalysisStateAfterInputChange(''), 'idle')
+  assert.equal(importAnalysisStateAfterInputChange('a'.repeat(64)), 'stale')
+})
+
 test('posts unified multipart input with caller signal and 60 second timeout', async () => {
   const signal = new AbortController().signal
   const file = new File(['image'], 'words.png', { type: 'image/png' })
@@ -117,4 +125,91 @@ test('posts unified multipart input with caller signal and 60 second timeout', a
     signal,
   })
   assert.equal(response.inputFingerprint, fingerprint)
+})
+
+test('maps text and image evidence to capture candidates without losing generation metadata', () => {
+  const response = {
+    contractVersion: 1 as const,
+    traceId: 'trace-1',
+    inputFingerprint: 'a'.repeat(64),
+    rawText: 'package',
+    warnings: [],
+    items: [
+      {
+        itemId: 'item-1',
+        observedText: 'package',
+        normalizedTerm: 'package',
+        status: 'accepted' as const,
+        suggestions: [],
+        contextText: null,
+        confidence: 0.99,
+        evidence: 'text' as const,
+      },
+      {
+        itemId: 'item-2',
+        observedText: 'scrutinize',
+        normalizedTerm: 'scrutinize',
+        status: 'accepted' as const,
+        suggestions: [],
+        contextText: 'reading note',
+        confidence: 0.97,
+        evidence: 'image' as const,
+      },
+    ],
+    generation: {
+      provider: 'openai',
+      model: 'test-model',
+      promptVersion: 'vocabulary-import-analysis-v1',
+      modelCallCount: 1,
+      traceId: 'trace-1',
+      usage: null,
+    },
+  }
+
+  const candidates = mapVocabularyImportAnalysisCandidates(response, 'words.png')
+
+  assert.equal(candidates[0]?.source, 'manual')
+  assert.equal(candidates[1]?.source, 'ocr_image')
+  assert.equal(candidates[1]?.recognition?.fileName, 'words.png')
+  assert.equal(candidates[1]?.recognition?.promptVersion, 'vocabulary-import-analysis-v1')
+})
+
+test('sorts candidates alphabetically without mutating stable input order', () => {
+  const candidates = mapVocabularyImportAnalysisCandidates({
+    contractVersion: 1,
+    traceId: 'trace-1',
+    inputFingerprint: 'a'.repeat(64),
+    rawText: '',
+    warnings: [],
+    items: ['supposed', 'package', 'Scrutinize'].map((term, index) => ({
+      itemId: `item-${index}`,
+      observedText: term,
+      normalizedTerm: term,
+      status: 'accepted' as const,
+      suggestions: [],
+      contextText: null,
+      confidence: 0.99,
+      evidence: 'text' as const,
+    })),
+    generation: {
+      provider: 'openai',
+      model: 'test-model',
+      promptVersion: 'vocabulary-import-analysis-v1',
+      modelCallCount: 1,
+      traceId: 'trace-1',
+      usage: null,
+    },
+  }, null)
+
+  assert.deepEqual(sortImportCandidates(candidates, 'alphabetical').map((item) => item.term), [
+    'package',
+    'Scrutinize',
+    'supposed',
+  ])
+  assert.deepEqual(candidates.map((item) => item.term), ['supposed', 'package', 'Scrutinize'])
+  assert.deepEqual(sortImportCandidates(candidates, 'input').map((item) => item.term), [
+    'supposed',
+    'package',
+    'Scrutinize',
+  ])
 })

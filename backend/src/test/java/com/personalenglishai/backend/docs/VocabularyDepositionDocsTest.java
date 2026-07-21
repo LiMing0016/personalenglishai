@@ -232,6 +232,28 @@ class VocabularyDepositionDocsTest {
     }
 
     @Test
+    void unifiedImportDocsLockFingerprintRaceAndTimeoutContracts() throws Exception {
+        String rootEnvironment = Files.readString(Path.of("../.env.example"));
+        String api = Files.readString(Path.of("../docs/api/vocabulary.md"));
+        String architecture = Files.readString(Path.of("../docs/architecture/vocabulary-deposition.md"));
+        String localDev = Files.readString(Path.of("../docs/runbooks/local-dev.md"));
+
+        assertAll(
+                () -> assertTrue(rootEnvironment.contains("VITE_VOCABULARY_IMPORT_ANALYSIS_ENABLED=false")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_IMPORT_ANALYSIS_TIMEOUT_MS=45000")),
+                () -> assertTrue(rootEnvironment.contains("VOCABULARY_IMPORT_ANALYSIS_PYTHON_TIMEOUT_MS=55000")),
+                () -> assertTrue(api.contains("POST /api/vocabulary/import-analyses")),
+                () -> assertTrue(api.contains("`inputFingerprint`")),
+                () -> assertTrue(api.contains("`400054` | 输入指纹与服务端重新计算结果不一致")),
+                () -> assertTrue(api.contains("`504051` | Python 的 45 秒共享模型预算耗尽，或 Java 调用 Python 超时")),
+                () -> assertTrue(architecture.contains("AbortController + requestId")),
+                () -> assertTrue(architecture.contains("响应指纹、请求起始指纹和当前输入指纹三者一致")),
+                () -> assertTrue(localDev.contains("P50 不超过 8 秒")),
+                () -> assertTrue(localDev.contains("P95 不超过 20 秒")),
+                () -> assertTrue(localDev.contains("前端硬超时为 60 秒")));
+    }
+
+    @Test
     void vocabularyApiDocsLockImageErrorsAndProductEventContract() throws Exception {
         String api = Files.readString(Path.of("../docs/api/vocabulary.md"));
 
