@@ -6,7 +6,17 @@
       :aria-hidden="activeDialog ? 'true' : undefined"
     >
     <header class="card-inspector__header">
-      <button ref="backButton" type="button" class="card-inspector__back" :disabled="cardOperationPending" @click="emit('back')">返回单词库</button>
+      <button
+        ref="backButton"
+        type="button"
+        class="card-inspector__back"
+        aria-label="返回单词库"
+        title="返回单词库"
+        :disabled="cardOperationPending"
+        @click="emit('back')"
+      >
+        <ArrowLeft aria-hidden="true" />
+      </button>
       <div class="card-inspector__heading">
         <h2>{{ card.displayTerm }}</h2>
         <p v-if="headerSummary" class="card-inspector__summary">{{ headerSummary }}</p>
@@ -209,6 +219,7 @@
 
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
+import { ArrowLeft } from 'lucide-vue-next'
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 import type { MarkdownSection } from '../assistant/markdown'
@@ -910,7 +921,7 @@ function statusLabel(status: VocabularyCardStatus) {
 
 <style scoped>
 .card-inspector { min-width: 0; padding: 22px clamp(16px, 3vw, 40px) 56px; background: #fff; color: #334155; }
-.card-inspector__header { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 18px; max-width: 1060px; margin: 0 auto; }
+.card-inspector__header { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; max-width: 1060px; margin: 0 auto; }
 .card-inspector__heading { min-width: 0; }
 .card-inspector__heading h2 { margin: 0; color: #0f172a; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
 .card-inspector__summary { margin: 6px 0 0; color: #475569; font-size: 14px; overflow-wrap: anywhere; }
@@ -920,7 +931,8 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__status--needs_review { color: #b45309; }
 .card-inspector button { box-sizing: border-box; min-height: 34px; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #334155; font: inherit; font-size: 13px; font-weight: 700; padding: 0 10px; cursor: pointer; }
 .card-inspector button:disabled { cursor: not-allowed; opacity: .55; }
-.card-inspector__back { white-space: nowrap; }
+.card-inspector__back { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; }
+.card-inspector__back svg { width: 18px; height: 18px; }
 .card-inspector__toolbar { position: sticky; top: 0; z-index: 8; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 1060px; margin: 18px auto 0; padding: 10px 0; border-bottom: 1px solid #dce7e1; background: rgba(255, 255, 255, .96); }
 .card-inspector__mode { display: inline-grid; grid-template-columns: repeat(2, minmax(56px, 1fr)); border: 1px solid #dce7e1; border-radius: 6px; overflow: hidden; }
 .card-inspector__mode button { min-width: 56px; border: 0; border-radius: 0; }
@@ -942,9 +954,9 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector__chapters { min-width: 0; }
 .card-inspector__chapters button { display: block; width: 100%; min-width: 0; border: 0; background: transparent; color: #64748b; text-align: left; overflow-wrap: anywhere; }
 .card-inspector__chapters button[aria-current="location"] { color: #047857; background: #ecfdf5; }
-.card-inspector__document, .card-inspector__editor-document { min-width: 0; width: 100%; max-width: 840px; }
-.card-inspector__document { margin: 0 auto; }
-.card-inspector__editor-document { margin: 28px auto 0; }
+.card-inspector__document, .card-inspector__editor-document { min-width: 0; width: 100%; }
+.card-inspector__document { max-width: 840px; margin: 0 auto; }
+.card-inspector__editor-document { max-width: none; margin: 22px auto 0; }
 .card-inspector__document-section { min-width: 0; scroll-margin-top: 96px; }
 .card-inspector__document :deep([id^="markdown-section-"]) { scroll-margin-top: 96px; }
 .card-inspector__document-section + .card-inspector__document-section, .card-inspector__sources, .card-inspector__history { margin-top: 40px; padding-top: 26px; border-top: 1px solid #dce7e1; }

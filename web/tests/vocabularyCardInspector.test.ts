@@ -6,6 +6,10 @@ const inspector = fs.readFileSync(
   new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
   'utf8',
 )
+const markdownEditor = fs.readFileSync(
+  new URL('../src/components/vocabulary/VocabularyMarkdownEditor.vue', import.meta.url),
+  'utf8',
+)
 const vocabularyArchitecture = fs.readFileSync(
   new URL('../../docs/architecture/vocabulary-deposition.md', import.meta.url),
   'utf8',
@@ -305,4 +309,19 @@ test('inspector styles stable editors and narrow screens without horizontal over
   assert.match(inspector, /840px/)
   assert.match(inspector, /:deep\(\[id\^="markdown-section-"\]\)[^{]*\{[^}]*scroll-margin-top:/)
   assert.match(inspector, /grid-template-columns:\s*1fr/)
+})
+
+test('edit mode uses a wide document workspace with a responsive markdown height', () => {
+  assert.match(inspector, /\.card-inspector__document,\s*\.card-inspector__editor-document\s*\{[^}]*width:\s*100%/s)
+  assert.match(inspector, /\.card-inspector__document\s*\{[^}]*max-width:\s*840px/s)
+  assert.match(inspector, /\.card-inspector__editor-document\s*\{[^}]*max-width:\s*none/s)
+  assert.match(markdownEditor, /min-height:\s*clamp\(420px,\s*calc\(100vh - 430px\),\s*720px\)/)
+  assert.match(markdownEditor, /@media \(max-width:\s*767px\)[\s\S]*min-height:\s*360px/)
+})
+
+test('card detail uses a compact accessible back icon', () => {
+  assert.match(inspector, /import\s*\{\s*ArrowLeft\s*\}\s*from\s*'lucide-vue-next'/)
+  assert.match(inspector, /class="card-inspector__back"[^>]*aria-label="返回单词库"[^>]*title="返回单词库"/)
+  assert.match(inspector, /<ArrowLeft\s+aria-hidden="true"\s*\/>/)
+  assert.match(inspector, /\.card-inspector__back\s*\{[^}]*width:\s*34px[^}]*padding:\s*0/s)
 })

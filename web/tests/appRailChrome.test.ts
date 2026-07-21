@@ -76,6 +76,16 @@ assert.ok(
   appRailSource.includes('border-right: 1px solid var(--app-sidebar-border, #d9e2ec)'),
   'shared rail should use the shared sidebar divider token',
 )
+assert.match(
+  appRailSource,
+  /\.app-rail\s*\{[^}]*position:\s*fixed[^}]*top:\s*0[^}]*left:\s*0[^}]*height:\s*100dvh/s,
+  'expanded rail should remain a continuous viewport-height track while long pages scroll',
+)
+assert.match(
+  appLayoutSource,
+  /\.app-layout--rail-expanded\s+\.app-main\s*\{[^}]*margin-left:\s*72px/s,
+  'expanded fixed rail should reserve its width beside the main content',
+)
 assert.ok(appRailSource.includes("label: '阅读'"), 'shared rail vocabulary route should be labeled as reading')
 for (const removedShortcut of ["shortLabel: '写'", "shortLabel: '助'", "shortLabel: '词'", "shortLabel: '听'", "shortLabel: '说'"]) {
   assert.ok(!appRailSource.includes(removedShortcut), `shared rail should replace ${removedShortcut} with a logo icon`)

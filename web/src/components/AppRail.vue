@@ -153,6 +153,10 @@ function isActive(activePrefix: string) {
 
 <style scoped>
 .app-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   flex: 0 0 72px;
@@ -160,6 +164,7 @@ function isActive(activePrefix: string) {
   gap: 18px;
   width: 72px;
   height: 100vh;
+  height: 100dvh;
   padding: 18px 10px;
   border-right: 1px solid var(--app-sidebar-border, #d9e2ec);
   background: inherit;

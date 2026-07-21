@@ -37,8 +37,8 @@ function updateValue(event: Event) {
 .markdown-editor__label-row { min-width: 0; display: flex; justify-content: space-between; gap: 12px; color: #475569; font-size: 13px; }
 .markdown-editor__label-row label { font-weight: 800; }
 .markdown-editor__label-row span { flex: none; color: #64748b; font-variant-numeric: tabular-nums; }
-.markdown-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 220px; max-height: 560px; resize: vertical; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #0f172a; font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: clamp(420px, calc(100vh - 430px), 720px); max-height: 820px; resize: vertical; border: 1px solid #dce7e1; border-radius: 6px; background: #fff; color: #0f172a; font: 14px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 18px 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .markdown-editor p { min-height: 18px; margin: 0; color: #64748b; font-size: 12px; }
 .markdown-editor__count--error, .markdown-editor__error { color: #b91c1c !important; }
-@media (max-width: 620px) { .markdown-editor textarea { min-height: 180px; } }
+@media (max-width: 767px) { .markdown-editor textarea { min-height: 360px; padding: 14px; } }
 </style>
