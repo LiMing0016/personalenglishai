@@ -1,4 +1,4 @@
-import type { AssistantBlock } from '../../types/assistantBlocks.ts'
+import type { RenderableAssistantBlock } from '../../types/assistantBlocks.ts'
 import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
 
 export type AssistantMessageRole = 'user' | 'assistant'
@@ -23,7 +23,7 @@ export interface AssistantMessage {
   role: AssistantMessageRole
   content: string
   status: AssistantMessageStatus
-  parts?: AssistantBlock[]
+  parts?: RenderableAssistantBlock[]
   attachments?: AssistantAttachment[]
   attachmentMetadata?: AssistantAttachmentMetadata[]
 }
@@ -60,7 +60,7 @@ export interface AssistantReplyRequest {
 
 export interface AssistantReplyResult {
   reply: string
-  parts?: AssistantBlock[]
+  parts?: RenderableAssistantBlock[]
 }
 
 export async function buildMockAssistantReply(request: AssistantReplyRequest): Promise<string> {
