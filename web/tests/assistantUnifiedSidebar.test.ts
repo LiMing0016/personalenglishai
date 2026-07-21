@@ -50,11 +50,22 @@ for (const requiredText of [
 
 assert.ok(!sidebarSource.includes('AppRailSkillIcon'), 'assistant sidebar expanded app switcher should use quiet line icons')
 assert.ok(!sidebarSource.includes('assistant-workspace-card'), 'assistant sidebar should not show a redundant workspace intro card')
-assert.ok(sidebarSource.includes('flex: 0 0 218px'), 'expanded assistant sidebar should reserve 218px')
+assert.ok(
+  sidebarSource.includes('flex: 0 0 var(--assistant-sidebar-width, 218px)'),
+  'expanded assistant sidebar should consume the resizable width with a 218px fallback',
+)
 assert.ok(sidebarSource.includes('flex-basis: 72px'), 'compact assistant sidebar should reserve 72px')
 assert.ok(!sidebarSource.includes('appSwitcherOpen'), 'assistant sidebar should remove the PEAI app dropdown state')
 assert.ok(!sidebarSource.includes('collapsed-home-link'), 'assistant sidebar should remove the obsolete home shortcut')
 assert.ok(!sidebarSource.includes('aria-label="返回首页"'), 'assistant sidebar should not expose a home shortcut')
 assert.ok(!sidebarSource.includes('sidebar-app-switcher'), 'assistant sidebar should remove the old app switcher')
+assert.ok(
+  !sidebarSource.includes('<div class="workspace-section-label">助手空间</div>'),
+  'assistant sidebar should not render a visible assistant-space heading above the primary action',
+)
+assert.ok(
+  sidebarSource.includes('aria-label="助手空间"'),
+  'assistant context should keep its accessible region name after hiding the visible heading',
+)
 
 console.log('assistant-unified-sidebar-ok')

@@ -11,11 +11,24 @@ assert.ok(
   'assistant sidebar should expose a testable adaptive-collapse policy',
 )
 
-const { ASSISTANT_SIDEBAR_AUTO_COLLAPSE_WIDTH, shouldAutoCollapseAssistantSidebar } = await import(
+const {
+  ASSISTANT_SIDEBAR_AUTO_COLLAPSE_WIDTH,
+  DEFAULT_ASSISTANT_SIDEBAR_WIDTH,
+  MAX_ASSISTANT_SIDEBAR_WIDTH,
+  MIN_ASSISTANT_SIDEBAR_WIDTH,
+  clampAssistantSidebarWidth,
+  shouldAutoCollapseAssistantSidebar,
+} = await import(
   stateModuleUrl.href
 )
 
 assert.equal(ASSISTANT_SIDEBAR_AUTO_COLLAPSE_WIDTH, 1280)
+assert.equal(DEFAULT_ASSISTANT_SIDEBAR_WIDTH, 218)
+assert.equal(MIN_ASSISTANT_SIDEBAR_WIDTH, 200)
+assert.equal(MAX_ASSISTANT_SIDEBAR_WIDTH, 360)
+assert.equal(clampAssistantSidebarWidth(160), 200)
+assert.equal(clampAssistantSidebarWidth(284), 284)
+assert.equal(clampAssistantSidebarWidth(420), 360)
 assert.equal(
   shouldAutoCollapseAssistantSidebar({ learningCanvasOpen: true, viewportWidth: 1600 }),
   true,
@@ -47,6 +60,14 @@ for (const requiredText of [
   "window.removeEventListener('resize'",
   'shouldAutoCollapseAssistantSidebar',
   'assistant-page--sidebar-constrained',
+  'assistant-sidebar-resize-handle',
+  'role="separator"',
+  'aria-orientation="vertical"',
+  '@pointerdown="startAssistantSidebarResize"',
+  "'--assistant-sidebar-width': `${assistantSidebarWidth.value}px`",
+  'clampAssistantSidebarWidth',
+  'cursor: col-resize',
+  'background: #cbd5e1',
 ]) {
   assert.ok(pageSource.includes(requiredText), `assistant page should support adaptive collapse: ${requiredText}`)
 }

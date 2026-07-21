@@ -6,6 +6,7 @@
       'assistant-page--drawer-open': assistantDrawerOpen,
       'assistant-page--learning-canvas-open': learningCanvasOpen,
       'assistant-page--sidebar-constrained': sidebarConstrained,
+      'assistant-page--resizing-sidebar': assistantSidebarResizing,
     }"
   >
     <AssistantSidebar
@@ -35,6 +36,24 @@
       @create-folder-and-move="openCreateFolderDialog"
       @save-archive-dir="handleSaveArchiveDir"
     />
+
+    <button
+      v-if="assistantDrawerOpen && !sidebarConstrained"
+      type="button"
+      class="assistant-sidebar-resize-handle"
+      role="separator"
+      aria-label="调整助手栏宽度"
+      aria-orientation="vertical"
+      :aria-valuemin="MIN_ASSISTANT_SIDEBAR_WIDTH"
+      :aria-valuemax="MAX_ASSISTANT_SIDEBAR_WIDTH"
+      :aria-valuenow="assistantSidebarWidth"
+      title="左右拖动调整助手栏宽度"
+      @pointerdown="startAssistantSidebarResize"
+      @keydown.left.prevent="resizeAssistantSidebarBy(-16)"
+      @keydown.right.prevent="resizeAssistantSidebarBy(16)"
+      @keydown.home.prevent="setAssistantSidebarWidth(MIN_ASSISTANT_SIDEBAR_WIDTH)"
+      @keydown.end.prevent="setAssistantSidebarWidth(MAX_ASSISTANT_SIDEBAR_WIDTH)"
+    ></button>
 
     <button
       v-if="sidebarConstrained && assistantDrawerOpen"
@@ -180,7 +199,13 @@ import {
   writeAssistantMarkdownTheme,
   type AssistantMarkdownTheme,
 } from './assistantMarkdownTheme.ts'
-import { shouldAutoCollapseAssistantSidebar } from './assistantSidebarState.ts'
+import {
+  DEFAULT_ASSISTANT_SIDEBAR_WIDTH,
+  MAX_ASSISTANT_SIDEBAR_WIDTH,
+  MIN_ASSISTANT_SIDEBAR_WIDTH,
+  clampAssistantSidebarWidth,
+  shouldAutoCollapseAssistantSidebar,
+} from './assistantSidebarState.ts'
 import { createAssistantState } from './assistantState.ts'
 import { createLearningAssetDraftStore, type LearningAssetWorkspace } from './learningAssetDraftStore.ts'
 import {
@@ -253,6 +278,9 @@ const router = useRouter()
 const injectedAssistantDrawerOpen = inject<Ref<boolean> | null>('assistantDrawerOpen', null)
 const assistantDrawerOpen = ref(injectedAssistantDrawerOpen?.value ?? false)
 const viewportWidth = ref(readViewportWidth())
+const assistantSidebarWidth = ref(DEFAULT_ASSISTANT_SIDEBAR_WIDTH)
+const assistantSidebarResizing = ref(false)
+let assistantSidebarResizePageLeft = 0
 if (injectedAssistantDrawerOpen) {
   watch(injectedAssistantDrawerOpen, (value) => {
     assistantDrawerOpen.value = value
@@ -308,6 +336,7 @@ let learningAssetAutoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let loadingLearningNoteUid = ''
 
 const assistantPageStyle = computed(() => ({
+  '--assistant-sidebar-width': `${assistantSidebarWidth.value}px`,
   '--learning-canvas-width': `${learningAssetCanvasWidth.value}px`,
 }))
 
@@ -360,6 +389,37 @@ function readViewportWidth() {
 
 function handleViewportResize() {
   viewportWidth.value = window.innerWidth
+}
+
+function setAssistantSidebarWidth(width: number) {
+  assistantSidebarWidth.value = clampAssistantSidebarWidth(width)
+}
+
+function resizeAssistantSidebarBy(delta: number) {
+  setAssistantSidebarWidth(assistantSidebarWidth.value + delta)
+}
+
+function handleAssistantSidebarPointerMove(event: PointerEvent) {
+  setAssistantSidebarWidth(event.clientX - assistantSidebarResizePageLeft)
+}
+
+function stopAssistantSidebarResize() {
+  assistantSidebarResizing.value = false
+  window.removeEventListener('pointermove', handleAssistantSidebarPointerMove)
+  window.removeEventListener('pointerup', stopAssistantSidebarResize)
+  window.removeEventListener('pointercancel', stopAssistantSidebarResize)
+}
+
+function startAssistantSidebarResize(event: PointerEvent) {
+  if (event.button !== 0) return
+  const target = event.currentTarget as HTMLElement
+  assistantSidebarResizePageLeft = target.closest('.assistant-page')?.getBoundingClientRect().left ?? 0
+  assistantSidebarResizing.value = true
+  event.preventDefault()
+  handleAssistantSidebarPointerMove(event)
+  window.addEventListener('pointermove', handleAssistantSidebarPointerMove)
+  window.addEventListener('pointerup', stopAssistantSidebarResize)
+  window.addEventListener('pointercancel', stopAssistantSidebarResize)
 }
 
 watch(sidebarConstrained, (constrained) => {
@@ -774,6 +834,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearLearningAssetAutoSaveTimer()
+  stopAssistantSidebarResize()
   window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
   window.removeEventListener('resize', handleViewportResize)
 })
@@ -1035,6 +1096,7 @@ const folderConversationGroups = computed(() =>
   --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
   --learning-canvas-width: 420px;
   --learning-canvas-current-width: 0px;
+  position: relative;
   display: flex;
   flex: 1;
   height: 100vh;
@@ -1045,6 +1107,46 @@ const folderConversationGroups = computed(() =>
 
 .assistant-page--drawer-open {
   --assistant-sidebar-current-width: var(--assistant-sidebar-width);
+}
+
+.assistant-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--assistant-sidebar-width) - 5px);
+  z-index: 45;
+  width: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.assistant-sidebar-resize-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: #cbd5e1;
+  content: '';
+  transition: background-color 140ms ease;
+}
+
+.assistant-sidebar-resize-handle:hover::after,
+.assistant-sidebar-resize-handle:focus-visible::after,
+.assistant-page--resizing-sidebar .assistant-sidebar-resize-handle::after {
+  background: #10b981;
+}
+
+.assistant-sidebar-resize-handle:focus-visible {
+  outline: none;
+}
+
+.assistant-page--resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .assistant-page--sidebar-constrained.assistant-page--drawer-open {

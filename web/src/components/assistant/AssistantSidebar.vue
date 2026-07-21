@@ -31,7 +31,6 @@
       <AppNavigationMenu :collapsed="false" @toggle="$emit('closeSidebar')" />
 
       <section class="assistant-context-section" aria-label="助手空间">
-        <div class="workspace-section-label">助手空间</div>
         <div class="sidebar-primary-actions" aria-label="学习助手操作">
           <button type="button" class="sidebar-new-chat-button" @click="$emit('newConversation')">
             <span class="workspace-action-icon" aria-hidden="true">
@@ -331,9 +330,9 @@ function resetArchiveDir() {
 <style scoped>
 .assistant-sidebar {
   display: flex;
-  flex: 0 0 218px;
-  width: 218px;
-  min-width: 218px;
+  flex: 0 0 var(--assistant-sidebar-width, 218px);
+  width: var(--assistant-sidebar-width, 218px);
+  min-width: var(--assistant-sidebar-width, 218px);
   height: 100%;
   padding: 0;
   background: #eaf4fc;
