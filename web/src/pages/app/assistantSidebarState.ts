@@ -1,4 +1,5 @@
 export const ASSISTANT_SIDEBAR_AUTO_COLLAPSE_WIDTH = 1280
+export const COMPACT_LEARNING_CANVAS_WIDTH = 1024
 export const DEFAULT_ASSISTANT_SIDEBAR_WIDTH = 218
 export const MIN_ASSISTANT_SIDEBAR_WIDTH = 200
 export const MAX_ASSISTANT_SIDEBAR_WIDTH = 360
@@ -15,6 +16,10 @@ export function shouldAutoCollapseAssistantSidebar(options: {
     options.learningCanvasOpen
     || options.viewportWidth <= ASSISTANT_SIDEBAR_AUTO_COLLAPSE_WIDTH
   )
+}
+
+export function shouldUseCompactLearningCanvas(viewportWidth: number) {
+  return viewportWidth <= COMPACT_LEARNING_CANVAS_WIDTH
 }
 
 interface AssistantConversationGroupItem {

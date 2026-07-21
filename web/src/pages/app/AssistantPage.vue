@@ -4,7 +4,8 @@
     :style="assistantPageStyle"
     :class="{
       'assistant-page--drawer-open': assistantDrawerOpen,
-      'assistant-page--learning-canvas-open': learningCanvasOpen,
+      'assistant-page--learning-canvas-open': learningCanvasVisible,
+      'assistant-page--compact-learning-canvas': compactLearningCanvas,
       'assistant-page--sidebar-constrained': sidebarConstrained,
       'assistant-page--resizing-sidebar': assistantSidebarResizing,
     }"
@@ -68,6 +69,20 @@
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
         <div class="header-spacer"></div>
+        <button
+          v-if="compactLearningCanvas && activeConversation.messages.length > 0 && learningCanvasAvailable"
+          ref="learningResultsButtonRef"
+          type="button"
+          class="learning-results-button"
+          aria-controls="learning-asset-canvas"
+          :aria-expanded="learningCanvasVisible"
+          @click="openCompactLearningCanvas"
+        >
+          学习成果
+          <span v-if="learningAssetDrafts.length" class="learning-results-count">
+            {{ learningAssetDrafts.length }}
+          </span>
+        </button>
       </header>
 
       <AssistantChatView
@@ -96,7 +111,7 @@
             :loading="isSending"
             :attachments="composerAttachments"
             :assistant-mode="assistantMode"
-            :placeholder="learningCanvasOpen ? '' : undefined"
+            :placeholder="learningCanvasAvailable ? '' : undefined"
             @update:model-value="composerText = $event"
             @add-files="handleFileSelect"
             @remove-attachment="removeAttachment"
@@ -112,7 +127,7 @@
           :loading="isSending"
           :attachments="composerAttachments"
           :assistant-mode="assistantMode"
-          :placeholder="learningCanvasOpen ? '' : undefined"
+          :placeholder="learningCanvasAvailable ? '' : undefined"
           @update:model-value="composerText = $event"
           @add-files="handleFileSelect"
           @remove-attachment="removeAttachment"
@@ -122,8 +137,16 @@
       </div>
     </div>
 
+    <button
+      v-if="compactLearningCanvas && learningCanvasVisible"
+      type="button"
+      class="learning-canvas-scrim"
+      aria-label="关闭学习成果"
+      @click="closeCompactLearningCanvas"
+    ></button>
+
     <LearningAssetCanvas
-      v-if="learningCanvasOpen"
+      v-if="learningCanvasVisible"
       :draft="learningAssetDraft"
       :drafts="learningAssetDrafts"
       :active-draft-id="activeLearningAssetDraftId"
@@ -133,7 +156,7 @@
       :save-status-by-draft-id="learningAssetSaveStatusByDraftId"
       :error-message="learningAssetError"
       :width-px="learningAssetCanvasWidth"
-      @close="closeLearningAssetCanvas"
+      @close="handleLearningCanvasClose"
       @organize="handleOrganizeLearningAsset"
       @select-draft="setActiveLearningAssetDraft"
       @rename-draft="renameLearningAssetDraft"
@@ -208,6 +231,7 @@ import {
   buildAssistantConversationGroups,
   clampAssistantSidebarWidth,
   shouldAutoCollapseAssistantSidebar,
+  shouldUseCompactLearningCanvas,
 } from './assistantSidebarState.ts'
 import { createAssistantState } from './assistantState.ts'
 import { createLearningAssetDraftStore, type LearningAssetWorkspace } from './learningAssetDraftStore.ts'
@@ -295,6 +319,7 @@ const newFolderName = ref('')
 const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
 const selectedStarterGoal = ref<AssistantStarterGoalId | null>(null)
 const emptyComposerRef = ref<InstanceType<typeof AssistantComposer> | null>(null)
+const learningResultsButtonRef = ref<HTMLButtonElement | null>(null)
 const archiveSettings = ref<AssistantArchiveSettingsDto | null>(null)
 const archiveDirDraft = ref('')
 const isSavingArchiveDir = ref(false)
@@ -306,9 +331,15 @@ const learningAssetDraft = computed(() =>
     ?? learningAssetDrafts.value[0]
     ?? null,
 )
-const learningCanvasOpen = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
+const learningCanvasAvailable = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
+const compactLearningCanvas = computed(() => shouldUseCompactLearningCanvas(viewportWidth.value))
+const compactLearningCanvasOpen = ref(false)
+const learningCanvasVisible = computed(() => (
+  learningCanvasAvailable.value
+  && (!compactLearningCanvas.value || compactLearningCanvasOpen.value)
+))
 const sidebarConstrained = computed(() => shouldAutoCollapseAssistantSidebar({
-  learningCanvasOpen: learningCanvasOpen.value,
+  learningCanvasOpen: learningCanvasVisible.value,
   viewportWidth: viewportWidth.value,
 }))
 const learningAssetCandidateMarkdownByDraftId = ref<Record<string, string>>({})
@@ -373,7 +404,34 @@ function handleSetAssistantMode(mode: AssistantMode) {
   setAssistantMode(mode)
   if (mode === 'learning') {
     learningAssetError.value = ''
+    openCompactLearningCanvas()
   }
+}
+
+function openCompactLearningCanvas() {
+  if (!compactLearningCanvas.value) return
+  compactLearningCanvasOpen.value = true
+  void nextTick(() => document.getElementById('learning-asset-canvas')?.focus())
+}
+
+function closeCompactLearningCanvas() {
+  if (!compactLearningCanvasOpen.value) return
+  compactLearningCanvasOpen.value = false
+  void nextTick(() => learningResultsButtonRef.value?.focus())
+}
+
+function handleLearningCanvasClose() {
+  if (compactLearningCanvas.value) {
+    closeCompactLearningCanvas()
+    return
+  }
+  closeLearningAssetCanvas()
+}
+
+function handleLearningCanvasEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !compactLearningCanvas.value || !learningCanvasVisible.value) return
+  event.preventDefault()
+  closeCompactLearningCanvas()
 }
 
 function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
@@ -563,6 +621,7 @@ function handleCreateLearningAsset(selection: AssistantLearningAssetSelection) {
   }
   learningAssetError.value = ''
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
+  openCompactLearningCanvas()
   showToast(`已打开${learningAssetToastLabels[draft.type]}画布`, 'success')
 }
 
@@ -585,6 +644,7 @@ function createEmptyLearningAssetDraft(type: LearningAssetType) {
   })
   persistLearningAssetDraft(draft, { queueAutoSave: true })
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
+  openCompactLearningCanvas()
   showToast(`已新建${learningAssetToastLabels[type]}`, 'success')
 }
 
@@ -810,6 +870,7 @@ async function openLearningAssetFromNoteUid(noteUid: string) {
       [draft.draftId]: '',
     }
     setLearningAssetSaveStatus(draft.draftId, 'saved')
+    openCompactLearningCanvas()
     showToast('已打开学习资产画布', 'success')
   } catch (error) {
     learningAssetError.value = readApiErrorMessage(error, '打开学习资产失败')
@@ -844,6 +905,7 @@ onMounted(() => {
   }
   window.addEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
   window.addEventListener('resize', handleViewportResize)
+  document.addEventListener('keydown', handleLearningCanvasEscape)
 })
 
 onBeforeUnmount(() => {
@@ -851,13 +913,19 @@ onBeforeUnmount(() => {
   stopAssistantSidebarResize()
   window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
   window.removeEventListener('resize', handleViewportResize)
+  document.removeEventListener('keydown', handleLearningCanvasEscape)
 })
 
 watch(activeConversationId, (conversationId) => {
   selectedStarterGoal.value = null
+  compactLearningCanvasOpen.value = false
   if (readRouteLearningNoteUid(route.query[LEARNING_NOTE_QUERY_KEY])) return
   restoreLearningAssetDraft(conversationId)
 }, { immediate: true })
+
+watch(learningCanvasAvailable, (available) => {
+  if (!available) compactLearningCanvasOpen.value = false
+})
 
 watch(() => route.query[LEARNING_NOTE_QUERY_KEY], (value) => {
   const noteUid = readRouteLearningNoteUid(value)
@@ -1165,6 +1233,10 @@ const folderConversationGroups = computed(() =>
   --learning-canvas-current-width: var(--learning-canvas-width);
 }
 
+.assistant-page--compact-learning-canvas {
+  --learning-canvas-current-width: 0px;
+}
+
 .assistant-main {
   display: flex;
   flex: 1;
@@ -1205,6 +1277,52 @@ const folderConversationGroups = computed(() =>
 
 .header-spacer {
   flex: 1;
+}
+
+.learning-results-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.learning-results-button:hover,
+.learning-results-button:focus-visible,
+.learning-results-button[aria-expanded='true'] {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  outline: none;
+}
+
+.learning-results-count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #047857;
+  color: #ffffff;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+
+.learning-canvas-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 64;
+  border: none;
+  background: rgba(15, 23, 42, 0.28);
+  cursor: default;
 }
 
 .composer-dock {
