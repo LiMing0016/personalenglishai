@@ -35,7 +35,7 @@ test('core summary exposes accessible pronunciation controls for every phonetic'
   assert.match(coreSummarySource, /import\s*\{\s*Volume2\s*\}\s*from\s*'lucide-vue-next'/)
   assert.match(coreSummarySource, /defineEmits<\{\s*pronounce:/)
   assert.match(coreSummarySource, /class="core-summary__phonetic-button"/)
-  assert.match(coreSummarySource, /:aria-label="`播放\$\{regionLabel\(phonetic\.region\)\}式发音`"/)
+  assert.match(coreSummarySource, /:aria-label="`播放\$\{regionLabel\(phonetic\.region\)\}式发音：\$\{phonetic\.text\}`"/)
   assert.match(coreSummarySource, /@click="emit\('pronounce', phonetic\)"/)
   assert.match(coreSummarySource, /<Volume2\s+aria-hidden="true"\s*\/>/)
 })

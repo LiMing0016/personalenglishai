@@ -13,8 +13,8 @@
           <button
             type="button"
             class="core-summary__phonetic-button"
-            :aria-label="`播放${regionLabel(phonetic.region)}式发音`"
-            :title="`播放${regionLabel(phonetic.region)}式发音`"
+            :aria-label="`播放${regionLabel(phonetic.region)}式发音：${phonetic.text}`"
+            :title="`播放${regionLabel(phonetic.region)}式发音：${phonetic.text}`"
             @click="emit('pronounce', phonetic)"
           >
             <Volume2 aria-hidden="true" />
