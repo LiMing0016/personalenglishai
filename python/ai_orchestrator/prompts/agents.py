@@ -24,6 +24,7 @@ _PROMPT_FILES = {
     "vocabulary_card_markdown": "agent_instructions/vocabulary_card_markdown.md",
     "vocabulary_core_fallback": "agent_instructions/vocabulary_core_fallback.md",
     "vocabulary_image_recognition": "agent_instructions/vocabulary_image_recognition.md",
+    "vocabulary_import_analysis": "agent_instructions/vocabulary_import_analysis.md",
     "writing_coach_stage": "agent_instructions/writing_coach_stage.md",
     "writing_coach_route": "agent_instructions/writing_coach_route.md",
 }
@@ -35,6 +36,7 @@ _STRUCTURED_OUTPUT_ONLY_AGENT_KEYS = frozenset(
         "vocabulary_card_markdown",
         "vocabulary_core_fallback",
         "vocabulary_image_recognition",
+        "vocabulary_import_analysis",
         "writing_coach_stage",
         "writing_coach_route",
     }
@@ -45,6 +47,7 @@ _BACKGROUND_JOB_AGENT_KEYS = frozenset(
         "vocabulary_card_markdown",
         "vocabulary_core_fallback",
         "vocabulary_image_recognition",
+        "vocabulary_import_analysis",
     }
 )
 

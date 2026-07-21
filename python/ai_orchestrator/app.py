@@ -30,6 +30,8 @@ try:
     from .schemas.vocabulary_image_recognition import MAX_IMAGE_BYTES
     from .schemas.vocabulary_image_recognition import VocabularyImageRecognitionRequest
     from .schemas.vocabulary_image_recognition import VocabularyImageRecognitionResponse
+    from .schemas.vocabulary_import_analysis import VocabularyImportAnalysisRequest
+    from .schemas.vocabulary_import_analysis import VocabularyImportAnalysisResponse
     from .services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from .services.prompt_sheet_workflow import PromptSheetWorkflowService
     from .services.learning_asset_copilot import LearningAssetCopilotConfigError
@@ -39,6 +41,8 @@ try:
     from .services.vocabulary_card_generation import VocabularyCardGenerationService
     from .services.vocabulary_image_recognition import VocabularyImageRecognitionError
     from .services.vocabulary_image_recognition import VocabularyImageRecognitionService
+    from .services.vocabulary_import_analysis import VocabularyImportAnalysisError
+    from .services.vocabulary_import_analysis import VocabularyImportAnalysisService
 except ImportError:  # pragma: no cover - script mode fallback
     from assistant_service import AssistantAgentService, AssistantConfigError
     from env_loader import load_orchestrator_env
@@ -58,6 +62,8 @@ except ImportError:  # pragma: no cover - script mode fallback
     from schemas.vocabulary_image_recognition import MAX_IMAGE_BYTES
     from schemas.vocabulary_image_recognition import VocabularyImageRecognitionRequest
     from schemas.vocabulary_image_recognition import VocabularyImageRecognitionResponse
+    from schemas.vocabulary_import_analysis import VocabularyImportAnalysisRequest
+    from schemas.vocabulary_import_analysis import VocabularyImportAnalysisResponse
     from services.prompt_sheet_workflow import PromptSheetWorkflowConfigError
     from services.prompt_sheet_workflow import PromptSheetWorkflowService
     from services.learning_asset_copilot import LearningAssetCopilotConfigError
@@ -67,6 +73,8 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.vocabulary_card_generation import VocabularyCardGenerationService
     from services.vocabulary_image_recognition import VocabularyImageRecognitionError
     from services.vocabulary_image_recognition import VocabularyImageRecognitionService
+    from services.vocabulary_import_analysis import VocabularyImportAnalysisError
+    from services.vocabulary_import_analysis import VocabularyImportAnalysisService
 
 
 load_orchestrator_env()
@@ -88,6 +96,7 @@ prompt_sheet_service = PromptSheetWorkflowService.from_env()
 learning_asset_copilot_service = LearningAssetCopilotService.from_env()
 vocabulary_card_generation_service = VocabularyCardGenerationService.from_env()
 vocabulary_image_recognition_service = VocabularyImageRecognitionService.from_env()
+vocabulary_import_analysis_service = VocabularyImportAnalysisService.from_env()
 
 log = logging.getLogger("uvicorn.error")
 
@@ -106,6 +115,10 @@ def health() -> dict[str, object]:
         "vocabularyImageRecognitionConfigured": (
             vocabulary_image_recognition_service.is_configured()
             and bool(getattr(vocabulary_image_recognition_service, "internal_token", ""))
+        ),
+        "vocabularyImportAnalysisConfigured": (
+            vocabulary_import_analysis_service.is_configured()
+            and bool(getattr(vocabulary_import_analysis_service, "internal_token", ""))
         ),
         "model": service.model,
         "langfuseTracing": observability_status.configured,
@@ -271,6 +284,140 @@ def _validate_image_upload(file_name: str, content_type: str, content: bytes) ->
     }.get(content_type)
     if extensions is None or PurePath(file_name).suffix.casefold() not in extensions:
         raise VocabularyImageRecognitionError("UNSUPPORTED_IMAGE_TYPE", False)
+
+
+def _require_vocabulary_import_analysis_internal_token(
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    expected_token = getattr(vocabulary_import_analysis_service, "internal_token", "")
+    if not expected_token:
+        raise _image_recognition_http_error(
+            503,
+            "IMPORT_ANALYSIS_NOT_CONFIGURED",
+            "Vocabulary import analysis is unavailable.",
+        )
+    scheme, _, provided_token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not provided_token:
+        raise _image_recognition_http_error(
+            401,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+    if not hmac.compare_digest(provided_token, expected_token):
+        raise _image_recognition_http_error(
+            403,
+            "INTERNAL_AUTH_FAILED",
+            "Internal authentication failed.",
+        )
+
+
+def _import_analysis_error_to_http_exception(
+    error: VocabularyImportAnalysisError,
+) -> HTTPException:
+    if error.code in {
+        "INVALID_IMPORT_REQUEST",
+        "UNSUPPORTED_IMAGE_TYPE",
+        "IMAGE_TOO_LARGE",
+    }:
+        return _image_recognition_http_error(
+            400,
+            error.code,
+            "The vocabulary import analysis request is invalid.",
+        )
+    if error.code == "MODEL_OUTPUT_INVALID":
+        return _image_recognition_http_error(
+            502,
+            error.code,
+            "Vocabulary import analysis returned an invalid result.",
+        )
+    if error.code in {
+        "IMPORT_ANALYSIS_NOT_CONFIGURED",
+        "MODEL_UPSTREAM_UNAVAILABLE",
+    }:
+        return _image_recognition_http_error(
+            503,
+            error.code,
+            "Vocabulary import analysis is unavailable.",
+        )
+    if error.code == "MODEL_TIMEOUT":
+        return _image_recognition_http_error(
+            504,
+            error.code,
+            "Vocabulary import analysis timed out.",
+        )
+    return _image_recognition_http_error(
+        500,
+        "IMPORT_ANALYSIS_INTERNAL_ERROR",
+        "Vocabulary import analysis failed.",
+    )
+
+
+def _validate_import_image_upload(
+    file_name: str,
+    content_type: str,
+    content: bytes,
+) -> None:
+    try:
+        _validate_image_upload(file_name, content_type, content)
+    except VocabularyImageRecognitionError as exc:
+        code = "INVALID_IMPORT_REQUEST" if exc.code == "INVALID_IMAGE_REQUEST" else exc.code
+        raise VocabularyImportAnalysisError(code, exc.retryable) from None
+
+
+@app.post(
+    "/internal/v1/vocabulary/import-analyses",
+    response_model=VocabularyImportAnalysisResponse,
+    dependencies=[Depends(_require_vocabulary_import_analysis_internal_token)],
+)
+async def analyze_vocabulary_import(
+    contract_version: Annotated[int, Form(alias="contractVersion")],
+    trace_id: Annotated[str, Form(alias="traceId")],
+    input_fingerprint: Annotated[str, Form(alias="inputFingerprint")],
+    language: Annotated[str, Form()],
+    text: Annotated[str, Form()] = "",
+    file: Annotated[UploadFile | None, File()] = None,
+) -> VocabularyImportAnalysisResponse:
+    content = await file.read(MAX_IMAGE_BYTES + 1) if file is not None else None
+    file_name = (file.filename or "image") if file is not None else None
+    content_type = (file.content_type or "application/octet-stream") if file is not None else None
+    try:
+        if content is not None and file_name is not None and content_type is not None:
+            _validate_import_image_upload(file_name, content_type, content)
+        request = VocabularyImportAnalysisRequest(
+            contractVersion=contract_version,
+            traceId=trace_id,
+            inputFingerprint=input_fingerprint,
+            language=language,
+            text=text,
+            fileName=file_name,
+            contentType=content_type,
+            content=content,
+        )
+        result = await vocabulary_import_analysis_service.analyze(request)
+        return VocabularyImportAnalysisResponse.model_validate(result)
+    except ValidationError:
+        raise _image_recognition_http_error(
+            422,
+            "INVALID_IMPORT_REQUEST",
+            "The vocabulary import analysis request is invalid.",
+        ) from None
+    except VocabularyImportAnalysisError as exc:
+        raise _import_analysis_error_to_http_exception(exc) from None
+    except Exception:  # pragma: no cover - runtime safety
+        log.warning(
+            "Vocabulary import analysis endpoint failed",
+            extra={
+                "trace_id": trace_id,
+                "text_length": len(text),
+                "image_bytes": len(content or b""),
+                "error_code": "IMPORT_ANALYSIS_INTERNAL_ERROR",
+            },
+        )
+        raise _image_recognition_http_error(
+            500,
+            "IMPORT_ANALYSIS_INTERNAL_ERROR",
+            "Vocabulary import analysis failed.",
+        ) from None
 
 
 @app.post(
