@@ -1,27 +1,128 @@
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+import type { Element, ElementContent, Parent, Root as HastRoot, RootContent, Text } from 'hast'
+import type { Break, Html, Parent as MdastParent, Root as MdastRoot, Text as MdastText } from 'mdast'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import rehypeStringify from 'rehype-stringify'
+import remarkGfm from 'remark-gfm'
+import remarkParse from 'remark-parse'
+import remarkRehype from 'remark-rehype'
+import { unified } from 'unified'
+
+const TABLE_SCROLL_LABEL = '可横向滚动的数据表格'
+const RESPONSIVE_TABLE_MAX_COLUMNS = 3
+
+const markdownSanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    'button',
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    '*': [
+      ...(defaultSchema.attributes?.['*'] ?? []),
+      'className',
+    ],
+    a: [
+      ...(defaultSchema.attributes?.a ?? []),
+      'target',
+      'rel',
+    ],
+    button: [
+      ...(defaultSchema.attributes?.button ?? []),
+      'type',
+      'className',
+      'dataMarkdownCodeCopy',
+      'ariaLabel',
+      'ariaLive',
+    ],
+    div: [
+      ...(defaultSchema.attributes?.div ?? []),
+      'className',
+      'tabIndex',
+      'role',
+      'ariaLabel',
+    ],
+    img: [
+      ...(defaultSchema.attributes?.img ?? []),
+      'className',
+      'loading',
+    ],
+    input: [
+      ...(defaultSchema.attributes?.input ?? []),
+      'type',
+      'checked',
+      'disabled',
+    ],
+    table: [
+      ...(defaultSchema.attributes?.table ?? []),
+      'className',
+    ],
+    td: [
+      ...(defaultSchema.attributes?.td ?? []),
+      'dataLabel',
+    ],
+    th: [
+      ...(defaultSchema.attributes?.th ?? []),
+      'scope',
+    ],
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    src: [
+      ...(defaultSchema.protocols?.src ?? []),
+      'blob',
+      'data',
+    ],
+  },
 }
 
-function escapeAttribute(text: string): string {
-  return escapeHtml(text)
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+function isElement(node: RootContent | ElementContent): node is Element {
+  return node.type === 'element'
 }
 
-function renderInlineText(text: string): string {
-  return escapeHtml(text)
-    .replace(/`([^`]+?)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>')
+function isText(node: RootContent | ElementContent): node is Text {
+  return node.type === 'text'
 }
 
-function readMarkdownImageSource(sourceText: string): string {
-  const trimmed = sourceText.trim()
-  const titleStart = trimmed.search(/\s+["']/)
-  return titleStart >= 0 ? trimmed.slice(0, titleStart).trim() : trimmed
+function appendClassName(element: Element, className: string) {
+  const current = element.properties.className
+  const classNames = Array.isArray(current)
+    ? current.map(String)
+    : []
+  if (!classNames.includes(className)) classNames.push(className)
+  element.properties.className = classNames
+}
+
+function readElementText(element: Element): string {
+  return element.children
+    .map((child) => {
+      if (isText(child)) return child.value
+      if (isElement(child)) return readElementText(child)
+      return ''
+    })
+    .join('')
+    .trim()
+}
+
+function replaceSafeBreakHtml() {
+  return (tree: MdastRoot) => {
+    const visit = (parent: MdastParent) => {
+      parent.children = parent.children.map((child) => {
+        if (child.type === 'html') {
+          const rawHtml = (child as Html).value
+          if (/^<br\s*\/?\s*>$/i.test(rawHtml.trim())) {
+            return { type: 'break' } satisfies Break
+          }
+          return { type: 'text', value: rawHtml } satisfies MdastText
+        }
+        if ('children' in child && Array.isArray(child.children)) {
+          visit(child as MdastParent)
+        }
+        return child
+      })
+    }
+    visit(tree)
+  }
 }
 
 function isSafeImageSource(source: string): boolean {
@@ -29,73 +130,173 @@ function isSafeImageSource(source: string): boolean {
   if (/^https?:\/\//i.test(trimmed)) return true
   if (/^blob:/i.test(trimmed)) return true
   if (/^\/(?!\/)/.test(trimmed)) return true
+  if (/^\.{0,2}\//.test(trimmed)) return true
   return /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(trimmed)
 }
 
-function renderMarkdownImage(alt: string, source: string): string {
-  if (!isSafeImageSource(source)) return renderInlineText(alt || '图片')
-  return [
-    '<img',
-    ' class="markdown-image"',
-    ` src="${escapeAttribute(source)}"`,
-    ` alt="${escapeAttribute(alt)}"`,
-    ' loading="lazy"',
-    '>',
-  ].join('')
+function createTextNode(value: string): Text {
+  return { type: 'text', value }
 }
 
-function renderInline(text: string): string {
-  const imagePattern = /!\[([^\]]*)\]\(([^)\n]+)\)/g
-  let html = ''
-  let cursor = 0
+function createCodeBlock(element: Element): Element | null {
+  if (element.tagName !== 'pre' || element.children.length !== 1) return null
+  const codeElement = element.children[0]
+  if (!isElement(codeElement) || codeElement.tagName !== 'code') return null
 
-  for (const match of text.matchAll(imagePattern)) {
-    const start = match.index ?? 0
-    html += renderInlineText(text.slice(cursor, start))
-    html += renderMarkdownImage(match[1] ?? '', readMarkdownImageSource(match[2] ?? ''))
-    cursor = start + match[0].length
+  const languageClass = Array.isArray(codeElement.properties.className)
+    ? codeElement.properties.className.map(String).find((value) => value.startsWith('language-'))
+    : undefined
+  const language = languageClass?.slice('language-'.length).trim() || 'text'
+  if (!languageClass) appendClassName(codeElement, 'language-text')
+  const shouldWrap = ['text', 'markdown', 'md'].includes(language.toLowerCase())
+
+  return {
+    type: 'element',
+    tagName: 'div',
+    properties: {
+      className: [
+        'markdown-code-block',
+        ...(shouldWrap ? ['markdown-code-block--wrap'] : []),
+      ],
+    },
+    children: [
+      {
+        type: 'element',
+        tagName: 'div',
+        properties: { className: ['markdown-code-header'] },
+        children: [
+          {
+            type: 'element',
+            tagName: 'span',
+            properties: {},
+            children: [createTextNode(language)],
+          },
+          {
+            type: 'element',
+            tagName: 'button',
+            properties: {
+              type: 'button',
+              className: ['markdown-code-copy'],
+              dataMarkdownCodeCopy: '',
+              ariaLabel: '复制文本',
+              ariaLive: 'polite',
+            },
+            children: [createTextNode('复制')],
+          },
+        ],
+      },
+      element,
+    ],
+  }
+}
+
+function getTableHeaders(table: Element): string[] {
+  const thead = table.children.find((child) => isElement(child) && child.tagName === 'thead')
+  if (!thead || !isElement(thead)) return []
+  const row = thead.children.find((child) => isElement(child) && child.tagName === 'tr')
+  if (!row || !isElement(row)) return []
+  return row.children
+    .filter((child): child is Element => isElement(child) && child.tagName === 'th')
+    .map(readElementText)
+}
+
+function makeTableResponsive(table: Element): boolean {
+  const headers = getTableHeaders(table)
+  const isSimpleTable = headers.length > 0 && headers.length <= RESPONSIVE_TABLE_MAX_COLUMNS
+
+  const thead = table.children.find((child) => isElement(child) && child.tagName === 'thead')
+  if (thead && isElement(thead)) {
+    for (const row of thead.children) {
+      if (!isElement(row) || row.tagName !== 'tr') continue
+      for (const cell of row.children) {
+        if (isElement(cell) && cell.tagName === 'th') cell.properties.scope = 'col'
+      }
+    }
   }
 
-  html += renderInlineText(text.slice(cursor))
-  return html
+  if (!isSimpleTable) return false
+  appendClassName(table, 'markdown-table--responsive-cards')
+
+  const tbody = table.children.find((child) => isElement(child) && child.tagName === 'tbody')
+  if (!tbody || !isElement(tbody)) return true
+  for (const row of tbody.children) {
+    if (!isElement(row) || row.tagName !== 'tr') continue
+    let columnIndex = 0
+    for (const cell of row.children) {
+      if (!isElement(cell) || cell.tagName !== 'td') continue
+      cell.properties.dataLabel = headers[columnIndex] ?? ''
+      columnIndex += 1
+    }
+  }
+  return true
 }
 
-function renderParagraph(lines: string[]): string {
-  return `<p>${lines.map(renderInline).join('<br/>')}</p>`
+function createTableRegion(table: Element): Element {
+  const usesCards = makeTableResponsive(table)
+  return {
+    type: 'element',
+    tagName: 'div',
+    properties: {
+      className: [
+        'markdown-table-scroll',
+        ...(usesCards ? ['markdown-table-scroll--cards'] : []),
+      ],
+      tabIndex: 0,
+      role: 'region',
+      ariaLabel: TABLE_SCROLL_LABEL,
+    },
+    children: [table],
+  }
 }
 
-function renderList(lines: string[]): string {
-  const items = lines
-    .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
-    .map((item) => `<li>${renderInline(item)}</li>`)
-    .join('')
-  return `<ul>${items}</ul>`
+function enhanceMarkdownHtml() {
+  return (tree: HastRoot) => {
+    const visit = (parent: Parent) => {
+      parent.children = parent.children.map((child) => {
+        if (!isElement(child as RootContent)) return child
+        const element = child as Element
+
+        if (element.tagName === 'img') {
+          const source = String(element.properties.src ?? '')
+          if (!isSafeImageSource(source)) {
+            return createTextNode(String(element.properties.alt ?? '图片'))
+          }
+          appendClassName(element, 'markdown-image')
+          element.properties.loading = 'lazy'
+        }
+
+        if (element.tagName === 'a') {
+          const href = String(element.properties.href ?? '')
+          if (/^https?:\/\//i.test(href)) {
+            element.properties.target = '_blank'
+            element.properties.rel = ['noopener', 'noreferrer']
+          }
+        }
+
+        if (element.tagName === 'table') return createTableRegion(element)
+
+        const codeBlock = createCodeBlock(element)
+        if (codeBlock) return codeBlock
+
+        visit(element)
+        return element
+      })
+    }
+    visit(tree)
+  }
 }
 
-function renderOrderedList(lines: string[]): string {
-  const items = lines
-    .map((line) => line.replace(/^\s*\d+[.)]\s+/, '').trim())
-    .map((item) => `<li>${renderInline(item)}</li>`)
-    .join('')
-  return `<ol>${items}</ol>`
-}
+const markdownProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(replaceSafeBreakHtml)
+  .use(remarkRehype)
+  .use(enhanceMarkdownHtml)
+  .use(rehypeSanitize, markdownSanitizeSchema)
+  .use(rehypeStringify)
 
-function renderBlockquote(lines: string[]): string {
-  const quoteLines = lines.map((line) => line.replace(/^>\s?/, ''))
-  return `<blockquote>${renderParagraph(quoteLines)}</blockquote>`
-}
-
-function renderCodeBlock(language: string, code: string): string {
-  const label = language.trim() || 'text'
-  return [
-    '<div class="markdown-code-block">',
-    '<div class="markdown-code-header">',
-    `<span>${escapeHtml(label)}</span>`,
-    '<button type="button" class="markdown-code-copy" data-markdown-code-copy aria-label="复制文本">复制</button>',
-    '</div>',
-    `<pre><code>${escapeHtml(code)}</code></pre>`,
-    '</div>',
-  ].join('')
+export function renderAssistantMarkdown(markdown: string): string {
+  return markdownProcessor.processSync(markdown).toString()
 }
 
 async function writeTextToClipboard(text: string): Promise<void> {
@@ -154,183 +355,4 @@ export async function copyMarkdownCodeFromClick(event: MouseEvent): Promise<bool
     }, 1200)
   }
   return true
-}
-
-function splitTableRow(line: string): string[] {
-  let normalized = line.trim()
-  if (normalized.startsWith('|')) normalized = normalized.slice(1)
-  if (normalized.endsWith('|')) normalized = normalized.slice(0, -1)
-
-  const cells: string[] = []
-  let cell = ''
-  for (let index = 0; index < normalized.length; index += 1) {
-    const character = normalized[index]
-    const previous = normalized[index - 1]
-    if (character === '|' && previous !== '\\') {
-      cells.push(cell.trim().replace(/\\\|/g, '|'))
-      cell = ''
-      continue
-    }
-    cell += character
-  }
-  cells.push(cell.trim().replace(/\\\|/g, '|'))
-  return cells
-}
-
-function isTableRowLine(line: string): boolean {
-  return line.includes('|') && splitTableRow(line).length >= 2
-}
-
-function isTableSeparatorLine(line: string): boolean {
-  if (!isTableRowLine(line)) return false
-  return splitTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell))
-}
-
-function isTableStart(lines: string[], index: number): boolean {
-  const header = lines[index]?.trimEnd()
-  const separator = lines[index + 1]?.trimEnd()
-  return Boolean(
-    header &&
-      separator &&
-      isTableRowLine(header) &&
-      isTableSeparatorLine(separator) &&
-      splitTableRow(header).length === splitTableRow(separator).length,
-  )
-}
-
-function normalizeTableCells(cells: string[], columnCount: number): string[] {
-  return Array.from({ length: columnCount }, (_, index) => cells[index] ?? '')
-}
-
-function renderTable(lines: string[]): string {
-  const headers = splitTableRow(lines[0]!)
-  const rows = lines.slice(2).map((line) => normalizeTableCells(splitTableRow(line), headers.length))
-  const headerHtml = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join('')
-  const rowHtml = rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join('')}</tr>`)
-    .join('')
-  return `<div class="markdown-table-scroll"><table><thead><tr>${headerHtml}</tr></thead><tbody>${rowHtml}</tbody></table></div>`
-}
-
-export function renderAssistantMarkdown(markdown: string): string {
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n')
-  const blocks: string[] = []
-  let paragraph: string[] = []
-  let list: string[] = []
-  let orderedList: string[] = []
-  let quote: string[] = []
-
-  const flushParagraph = () => {
-    if (paragraph.length === 0) return
-    blocks.push(renderParagraph(paragraph))
-    paragraph = []
-  }
-
-  const flushList = () => {
-    if (list.length === 0) return
-    blocks.push(renderList(list))
-    list = []
-  }
-
-  const flushOrderedList = () => {
-    if (orderedList.length === 0) return
-    blocks.push(renderOrderedList(orderedList))
-    orderedList = []
-  }
-
-  const flushQuote = () => {
-    if (quote.length === 0) return
-    blocks.push(renderBlockquote(quote))
-    quote = []
-  }
-
-  const flushAll = () => {
-    flushParagraph()
-    flushList()
-    flushOrderedList()
-    flushQuote()
-  }
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const rawLine = lines[index]!
-    const line = rawLine.trimEnd()
-    const trimmed = line.trim()
-
-    const codeFence = /^```([A-Za-z0-9_+.-]+)?\s*$/.exec(trimmed)
-    if (codeFence) {
-      flushAll()
-      const codeLines: string[] = []
-      index += 1
-      while (index < lines.length && !/^```\s*$/.test(lines[index]!.trim())) {
-        codeLines.push(lines[index]!)
-        index += 1
-      }
-      blocks.push(renderCodeBlock(codeFence[1] ?? 'text', codeLines.join('\n')))
-      continue
-    }
-
-    if (!trimmed) {
-      flushAll()
-      continue
-    }
-
-    if (isTableStart(lines, index)) {
-      flushAll()
-      const tableLines = [line, lines[index + 1]!.trimEnd()]
-      index += 2
-      while (index < lines.length && isTableRowLine(lines[index]!.trimEnd())) {
-        tableLines.push(lines[index]!.trimEnd())
-        index += 1
-      }
-      index -= 1
-      blocks.push(renderTable(tableLines))
-      continue
-    }
-
-    if (/^---+$/.test(trimmed)) {
-      flushAll()
-      blocks.push('<hr/>')
-      continue
-    }
-
-    const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed)
-    if (heading) {
-      flushAll()
-      const level = heading[1].length
-      blocks.push(`<h${level}>${renderInline(heading[2].trim())}</h${level}>`)
-      continue
-    }
-
-    if (/^>\s?/.test(trimmed)) {
-      flushParagraph()
-      flushList()
-      flushOrderedList()
-      quote.push(trimmed)
-      continue
-    }
-
-    if (/^\s*[-*]\s+/.test(line)) {
-      flushParagraph()
-      flushOrderedList()
-      flushQuote()
-      list.push(line)
-      continue
-    }
-
-    if (/^\s*\d+[.)]\s+/.test(line)) {
-      flushParagraph()
-      flushList()
-      flushQuote()
-      orderedList.push(line)
-      continue
-    }
-
-    flushList()
-    flushOrderedList()
-    flushQuote()
-    paragraph.push(line)
-  }
-
-  flushAll()
-  return blocks.join('')
 }

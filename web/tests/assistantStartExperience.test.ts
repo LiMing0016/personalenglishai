@@ -42,6 +42,14 @@ assert.ok(!page.includes('markdown-theme-control'))
 assert.ok(chat.includes('overflow-wrap: anywhere'))
 assert.ok(chat.includes('.message-content--markdown :deep(.markdown-table-scroll)'))
 assert.ok(chat.includes('max-width: 100%'))
+const completedTaskStyles = chat.slice(
+  chat.indexOf('.message-content--markdown :deep(.task-list-item:has(input:checked))'),
+  chat.indexOf('.message-content--markdown :deep(code)'),
+)
+assert.ok(completedTaskStyles.includes('color: #64748b'))
+assert.ok(completedTaskStyles.includes('text-decoration: line-through'))
+assert.ok(completedTaskStyles.includes('.task-list-item input:checked'))
+assert.ok(completedTaskStyles.includes('opacity: 1'))
 const emptyStateStyles = chat.slice(
   chat.indexOf('.empty-state {'),
   chat.indexOf('.empty-title {'),
