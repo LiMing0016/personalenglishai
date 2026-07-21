@@ -98,19 +98,6 @@ public class VocabularyCaptureService {
                         "sourceType", sourceType,
                         "successCount", successCount,
                         "failedCount", failedCount)));
-
-        for (int index = 0; index < response.items().size(); index++) {
-            VocabularyCaptureResponse.Item item = response.items().get(index);
-            if (!"ready".equals(item.status()) || item.cardUid() == null) continue;
-            String readyIdentity = request.clientRequestId() + ":" + index + ":" + item.cardUid();
-            safeRecordProductEvent(userId,
-                    new VocabularyProductEventService.ServerEvent(
-                            "vocabulary-cards-ready:capture:" + sha256(readyIdentity),
-                            "vocabulary_cards_ready",
-                            traceId,
-                            item.cardUid(),
-                            Map.of("sourceType", sourceType)));
-        }
     }
 
     private String captureTraceId(VocabularyCaptureRequest request, String sourceType) {
@@ -119,7 +106,7 @@ public class VocabularyCaptureService {
             return "capture:" + sha256(request.clientRequestId());
         }
         Object traceId = request.source().metadata().get("recognitionTraceId");
-        if (traceId instanceof String text && isSafeEventIdentifier(text, 128)) {
+        if (traceId instanceof String text && isImageTraceId(text)) {
             return text;
         }
         return "capture:" + sha256(request.clientRequestId());
@@ -136,8 +123,8 @@ public class VocabularyCaptureService {
         }
     }
 
-    private boolean isSafeEventIdentifier(String value, int maxLength) {
-        return value.length() <= maxLength && value.matches("[A-Za-z0-9][A-Za-z0-9._:-]*");
+    private boolean isImageTraceId(String value) {
+        return value.matches("vocab-image-[0-9a-f]{32}");
     }
 
     @Transactional

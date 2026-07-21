@@ -30,7 +30,18 @@ public class VocabularyProductEventService {
     private static final long MAX_DURATION_MS = 86_400_000L;
     private static final long MAX_MODEL_CALL_COUNT = 100L;
     private static final int MAX_WARNING_CODES = 10;
-    private static final Pattern SAFE_IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]*");
+    private static final String RANDOM_ID = "(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+    private static final Pattern EVENT_UID = Pattern.compile(
+            "(?:vocabulary-event:" + RANDOM_ID
+                    + "|vocabulary-capture-submitted:[0-9a-f]{64}"
+                    + "|vocabulary-cards-ready:rev_[0-9a-f]{32})");
+    private static final Pattern SESSION_ID = Pattern.compile(
+            "(?:server|vocabulary-session:" + RANDOM_ID + ")");
+    private static final Pattern TRACE_ID = Pattern.compile(
+            "(?:vocab-image-[0-9a-f]{32}|capture:[0-9a-f]{64})");
+    private static final Pattern CARD_UID = Pattern.compile("card_[0-9a-f]{32}");
+    private static final Pattern VISUAL_MODEL_ID = Pattern.compile(
+            "(?i)(?:[a-z0-9._-]+/)*(?:gpt|qwen|claude|gemini|deepseek|glm|test|mock)[a-z0-9._-]*(?:/[a-z0-9._-]+)*");
     private static final Set<String> EVENT_NAMES = Set.of(
             "vocabulary_image_recognition_started",
             "vocabulary_image_recognition_completed",
@@ -51,6 +62,7 @@ public class VocabularyProductEventService {
             "vocabulary_learning_started", Set.of("sourceType"));
     private static final Set<String> SOURCE_TYPES = Set.of("manual", "dictionary", "ocr_image");
     private static final Set<String> OUTCOMES = Set.of("success", "failed");
+    private static final Set<String> PROVIDERS = Set.of("openai");
     private static final Set<String> WARNING_CODES = Set.of(
             "CANDIDATE_LIMIT_REACHED", "DICTIONARY_VERIFICATION_UNAVAILABLE");
     private static final Set<String> FORBIDDEN_PROPERTY_KEYS = Set.of(
@@ -114,12 +126,12 @@ public class VocabularyProductEventService {
 
     private VocabularyProductEvent mapEvent(Long userId, VocabularyProductEventBatchRequest.Event event) {
         if (event == null) throw invalid("Event is required");
-        requireIdentifier(event.eventUid(), 128, "Invalid event identity");
+        requirePattern(event.eventUid(), 128, EVENT_UID, "Invalid event identity");
         requireText(event.eventName(), 64, "Invalid event name");
         if (!EVENT_NAMES.contains(event.eventName())) throw invalid("Unsupported event name");
-        requireOptionalIdentifier(event.traceId(), 128, "Invalid trace identity");
-        requireIdentifier(event.sessionId(), 128, "Invalid session identity");
-        requireOptionalIdentifier(event.cardUid(), 64, "Invalid card identity");
+        requireOptionalPattern(event.traceId(), 128, TRACE_ID, "Invalid trace identity");
+        requirePattern(event.sessionId(), 128, SESSION_ID, "Invalid session identity");
+        requireOptionalPattern(event.cardUid(), 64, CARD_UID, "Invalid card identity");
         if (event.occurredAt() == null) throw invalid("Event time is required");
 
         VocabularyProductEvent mapped = new VocabularyProductEvent();
@@ -165,8 +177,10 @@ public class VocabularyProductEventService {
                     validateNonNegativeInteger(value, MAX_COUNT);
             case "sourceType" -> validateEnum(value, SOURCE_TYPES, "Invalid source type");
             case "outcome" -> validateEnum(value, OUTCOMES, "Invalid event outcome");
-            case "provider" -> validateSafePropertyIdentifier(value, 64);
-            case "model", "promptVersion" -> validateSafePropertyIdentifier(value, 128);
+            case "provider" -> validateEnum(value, PROVIDERS, "Invalid event provider");
+            case "model" -> validateVisualModel(value);
+            case "promptVersion" -> validateEnum(
+                    value, Set.of("vocabulary-image-recognition-v1"), "Invalid prompt version");
             case "warningCodes" -> validateWarningCodes(value);
             default -> throw invalid("Unsupported event property");
         };
@@ -198,9 +212,13 @@ public class VocabularyProductEventService {
         return text;
     }
 
-    private String validateSafePropertyIdentifier(Object value, int maxLength) {
-        if (!(value instanceof String text)) throw invalid("Event property must be a safe identifier");
-        requireIdentifier(text, maxLength, "Event property must be a safe identifier");
+    private String validateVisualModel(Object value) {
+        if (!(value instanceof String text)
+                || text.isBlank()
+                || text.length() > 200
+                || !VISUAL_MODEL_ID.matcher(text).matches()) {
+            throw invalid("Invalid visual model");
+        }
         return text;
     }
 
@@ -222,14 +240,16 @@ public class VocabularyProductEventService {
         if (value == null || value.isBlank() || value.length() > maxLength) throw invalid(message);
     }
 
-    private void requireIdentifier(String value, int maxLength, String message) {
+    private void requirePattern(
+            String value, int maxLength, Pattern pattern, String message) {
         requireText(value, maxLength, message);
-        if (!SAFE_IDENTIFIER.matcher(value).matches()) throw invalid(message);
+        if (!pattern.matcher(value).matches()) throw invalid(message);
     }
 
-    private void requireOptionalIdentifier(String value, int maxLength, String message) {
+    private void requireOptionalPattern(
+            String value, int maxLength, Pattern pattern, String message) {
         if (value == null || value.isBlank()) return;
-        requireIdentifier(value, maxLength, message);
+        requirePattern(value, maxLength, pattern, message);
     }
 
     private String blankToNull(String value) {

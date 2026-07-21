@@ -10,7 +10,11 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -146,14 +150,28 @@ public class VocabularyGenerationFinalizer {
             try {
                 String recognitionTraceId = textValue(
                         objectMapper.readTree(source.getMetadataJson()), "recognitionTraceId");
-                if (recognitionTraceId != null) return recognitionTraceId;
+                if (recognitionTraceId != null
+                        && recognitionTraceId.matches("vocab-image-[0-9a-f]{32}")) {
+                    return recognitionTraceId;
+                }
             } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
                 log.warn(
                         "Vocabulary ready source metadata unavailable sourceUid={} errorType={}",
                         source.getSourceUid(), exception.getClass().getSimpleName());
             }
         }
-        return textValue(request, "clientRequestId");
+        String clientRequestId = textValue(request, "clientRequestId");
+        return clientRequestId == null ? null : "capture:" + sha256(clientRequestId);
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
     }
 
     private String textValue(JsonNode object, String field) {

@@ -15,12 +15,14 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,6 +35,12 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class VocabularyProductEventServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 21, 4, 30);
+    private static final String HEX_32 = "0123456789abcdef0123456789abcdef";
+    private static final String HEX_64 = HEX_32 + HEX_32;
+    private static final String TRACE_ID = "vocab-image-" + HEX_32;
+    private static final String SESSION_ID = "vocabulary-session:" + HEX_32;
+    private static final String CARD_UID = "card_" + HEX_32;
+    private static final String REVISION_UID = "rev_" + HEX_32;
 
     @Mock VocabularyProductEventMapper mapper;
     private ObjectMapper objectMapper;
@@ -127,6 +135,11 @@ class VocabularyProductEventServiceTest {
                 Map.of("durationMs", true),
                 Map.of("outcome", List.of("raw text")),
                 Map.of("model", "文件 名/内容"),
+                Map.of("model", "receive"),
+                Map.of("model", "private.png"),
+                Map.of("model", "receive/private.png"),
+                Map.of("provider", "receive"),
+                Map.of("promptVersion", "vocabulary-image-recognition-v2"),
                 Map.of("sourceType", "clipboard"),
                 Map.of("warningCodes", List.of("LOW_CONFIDENCE")),
                 Map.of("candidateCount", -1),
@@ -161,26 +174,56 @@ class VocabularyProductEventServiceTest {
     }
 
     @Test
-    void rejectsIdentifiersThatCouldCarryUserContent() {
-        List<VocabularyProductEventBatchRequest.Event> invalidEvents = List.of(
-                new VocabularyProductEventBatchRequest.Event(
-                        "event 原词", "vocabulary_image_recognition_started", "trace-safe",
-                        "session-safe", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
-                new VocabularyProductEventBatchRequest.Event(
-                        "event-safe", "vocabulary_image_recognition_started", "trace raw text",
-                        "session-safe", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
-                new VocabularyProductEventBatchRequest.Event(
-                        "event-safe", "vocabulary_image_recognition_started", "trace-safe",
-                        "session/file.png", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
-                new VocabularyProductEventBatchRequest.Event(
-                        "event-safe", "vocabulary_image_recognition_started", "trace-safe",
-                        "session-safe", "card 原词", NOW, Map.of("sourceType", "ocr_image")));
+    void rejectsContentLikeAndWronglyPrefixedIdentifiers() {
+        List<String> contentLike = List.of("receive", "private.png", "abc123", "wrong:" + HEX_32);
+        List<VocabularyProductEventBatchRequest.Event> invalidEvents = new ArrayList<>();
+        for (String invalid : contentLike) {
+            invalidEvents.add(new VocabularyProductEventBatchRequest.Event(
+                    invalid, "vocabulary_image_recognition_started", TRACE_ID,
+                    SESSION_ID, CARD_UID, NOW, Map.of("sourceType", "ocr_image")));
+            invalidEvents.add(new VocabularyProductEventBatchRequest.Event(
+                    browserEventUid("trace-" + invalid), "vocabulary_image_recognition_started", invalid,
+                    SESSION_ID, CARD_UID, NOW, Map.of("sourceType", "ocr_image")));
+            invalidEvents.add(new VocabularyProductEventBatchRequest.Event(
+                    browserEventUid("session-" + invalid), "vocabulary_image_recognition_started", TRACE_ID,
+                    invalid, CARD_UID, NOW, Map.of("sourceType", "ocr_image")));
+            invalidEvents.add(new VocabularyProductEventBatchRequest.Event(
+                    browserEventUid("card-" + invalid), "vocabulary_image_recognition_started", TRACE_ID,
+                    SESSION_ID, invalid, NOW, Map.of("sourceType", "ocr_image")));
+        }
 
         for (VocabularyProductEventBatchRequest.Event event : invalidEvents) {
             assertThrows(IllegalArgumentException.class,
                     () -> service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event))));
         }
         verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void acceptsOnlyProductionIdentifierForms() {
+        when(mapper.insertIgnore(any())).thenReturn(1);
+        List<VocabularyProductEventBatchRequest.Event> events = List.of(
+                new VocabularyProductEventBatchRequest.Event(
+                        "vocabulary-event:" + HEX_32,
+                        "vocabulary_learning_started", TRACE_ID, SESSION_ID, CARD_UID, NOW,
+                        Map.of("sourceType", "ocr_image")),
+                new VocabularyProductEventBatchRequest.Event(
+                        "vocabulary-event:123e4567-e89b-12d3-a456-426614174000",
+                        "vocabulary_learning_started", "capture:" + HEX_64,
+                        "vocabulary-session:123e4567-e89b-12d3-a456-426614174000",
+                        CARD_UID, NOW, Map.of("sourceType", "manual")),
+                new VocabularyProductEventBatchRequest.Event(
+                        "vocabulary-capture-submitted:" + HEX_64,
+                        "vocabulary_capture_submitted", "capture:" + HEX_64, "server", null, NOW,
+                        Map.of("sourceType", "manual", "successCount", 1, "failedCount", 0)),
+                new VocabularyProductEventBatchRequest.Event(
+                        "vocabulary-cards-ready:" + REVISION_UID,
+                        "vocabulary_cards_ready", TRACE_ID, "server", CARD_UID, NOW,
+                        Map.of("sourceType", "ocr_image")));
+
+        for (VocabularyProductEventBatchRequest.Event event : events) {
+            service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event)));
+        }
     }
 
     @Test
@@ -239,7 +282,7 @@ class VocabularyProductEventServiceTest {
                         Map.of("sourceType", "ocr_image")),
                 event("event-prod-2", "vocabulary_image_recognition_completed", Map.of(
                         "sourceType", "ocr_image", "durationMs", 250, "candidateCount", 3,
-                        "suspectedCount", 1, "provider", "openai", "model", "gpt-4.1-mini",
+                        "suspectedCount", 1, "provider", "openai", "model", "openai/gpt-4.1-mini",
                         "promptVersion", "vocabulary-image-recognition-v1", "modelCallCount", 1,
                         "warningCodes", List.of("CANDIDATE_LIMIT_REACHED"), "outcome", "success")),
                 event("event-prod-3", "vocabulary_image_candidates_confirmed", Map.of(
@@ -255,6 +298,23 @@ class VocabularyProductEventServiceTest {
 
         for (VocabularyProductEventBatchRequest.Event event : events) {
             service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event)));
+        }
+    }
+
+    @Test
+    void acceptsSupportedVisualModelFamiliesIncludingNamespaces() {
+        when(mapper.insertIgnore(any())).thenReturn(1);
+        List<String> models = List.of(
+                "gpt-4.1-mini", "openai/gpt-4o", "qwen/qwen2.5-vl-72b-instruct",
+                "claude-3-7-sonnet", "google/gemini-2.5-flash", "deepseek-vl2",
+                "zhipu/glm-4v-plus", "test-vision", "mock/vision-model");
+
+        for (String model : models) {
+            service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event(
+                    "model-" + model,
+                    "vocabulary_image_recognition_completed",
+                    Map.of("provider", "openai", "model", model,
+                            "promptVersion", "vocabulary-image-recognition-v1")))));
         }
     }
 
@@ -277,10 +337,10 @@ class VocabularyProductEventServiceTest {
     void serverEventWriterUsesRequiresNewAndTheSamePrivacyValidation() throws Exception {
         when(mapper.insertIgnore(any())).thenReturn(1);
         var serverEvent = new VocabularyProductEventService.ServerEvent(
-                "vocabulary-cards-ready:rev_1",
+                "vocabulary-cards-ready:" + REVISION_UID,
                 "vocabulary_cards_ready",
-                "trace-safe",
-                "card_1",
+                TRACE_ID,
+                CARD_UID,
                 Map.of("sourceType", "ocr_image"));
 
         assertTrue(service.recordServerEvent(7L, serverEvent));
@@ -291,10 +351,10 @@ class VocabularyProductEventServiceTest {
         assertEquals(Propagation.REQUIRES_NEW, transaction.propagation());
 
         var forbidden = new VocabularyProductEventService.ServerEvent(
-                "vocabulary-cards-ready:rev_2",
+                "vocabulary-cards-ready:" + REVISION_UID,
                 "vocabulary_cards_ready",
-                "trace-safe",
-                "card_1",
+                TRACE_ID,
+                CARD_UID,
                 Map.of("RawText", "private"));
         assertThrows(IllegalArgumentException.class, () -> service.recordServerEvent(7L, forbidden));
     }
@@ -302,12 +362,17 @@ class VocabularyProductEventServiceTest {
     private VocabularyProductEventBatchRequest.Event event(
             String eventUid, String eventName, Map<String, Object> properties) {
         return new VocabularyProductEventBatchRequest.Event(
-                eventUid,
+                browserEventUid(eventUid),
                 eventName,
-                "trace-safe",
-                "session-safe",
-                "card_safe",
+                TRACE_ID,
+                SESSION_ID,
+                CARD_UID,
                 NOW,
                 properties);
+    }
+
+    private String browserEventUid(String seed) {
+        UUID uuid = UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
+        return "vocabulary-event:" + uuid;
     }
 }

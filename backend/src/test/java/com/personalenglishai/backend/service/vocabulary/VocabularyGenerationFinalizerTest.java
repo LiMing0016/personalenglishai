@@ -23,7 +23,11 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +40,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @ExtendWith(MockitoExtension.class)
 class VocabularyGenerationFinalizerTest {
+    private static final String IMAGE_TRACE_ID =
+            "vocab-image-0123456789abcdef0123456789abcdef";
+    private static final String PRODUCTION_CARD_UID =
+            "card_0123456789abcdef0123456789abcdef";
+    private static final String PRODUCTION_REVISION_UID =
+            "rev_0123456789abcdef0123456789abcdef";
 
     @Mock private VocabularyGenerationJobMapper jobs;
     @Mock private VocabularyCardMapper cards;
@@ -238,20 +248,26 @@ class VocabularyGenerationFinalizerTest {
 
     @Test
     void activatedReadyRevisionRecordsStableSourceLinkedEvent() {
-        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob(
+                "job_ready", PRODUCTION_CARD_UID, null, 0);
         job.setRequestJson("{\"clientRequestId\":\"req-safe\",\"sourceUid\":\"src_ocr\"}");
-        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
-        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        VocabularyCard card = VocabularyTestFixtures.generating(PRODUCTION_CARD_UID, null);
+        VocabularyCardRevision revision = aiRevision(PRODUCTION_REVISION_UID, null);
+        revision.setCardUid(PRODUCTION_CARD_UID);
         VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
         source.setSourceUid("src_ocr");
+        source.setCardUid(PRODUCTION_CARD_UID);
         source.setSourceType("ocr_image");
         source.setMetadataJson(
-                "{\"recognitionTraceId\":\"trace-safe\",\"fileName\":\"private.png\"}");
-        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
-        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+                "{\"recognitionTraceId\":\"" + IMAGE_TRACE_ID
+                        + "\",\"fileName\":\"private.png\"}");
+        when(cards.findByUidForUpdate(PRODUCTION_CARD_UID)).thenReturn(card);
+        when(jobs.markSucceeded(
+                "job_ready", "lease_ready", PRODUCTION_REVISION_UID, "complete", null)).thenReturn(1);
         when(cards.updateActiveRevision(
-                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
-        when(sources.findBySourceUid("src_ocr", 7L, "card_1")).thenReturn(source);
+                7L, PRODUCTION_CARD_UID, null, PRODUCTION_REVISION_UID,
+                "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_ocr", 7L, PRODUCTION_CARD_UID)).thenReturn(source);
 
         assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
                 finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
@@ -259,10 +275,10 @@ class VocabularyGenerationFinalizerTest {
         ArgumentCaptor<VocabularyProductEventService.ServerEvent> event =
                 ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
         verify(productEvents).recordServerEvent(eq(7L), event.capture());
-        assertEquals("vocabulary-cards-ready:rev_ready", event.getValue().eventUid());
+        assertEquals("vocabulary-cards-ready:" + PRODUCTION_REVISION_UID, event.getValue().eventUid());
         assertEquals("vocabulary_cards_ready", event.getValue().eventName());
-        assertEquals("trace-safe", event.getValue().traceId());
-        assertEquals("card_1", event.getValue().cardUid());
+        assertEquals(IMAGE_TRACE_ID, event.getValue().traceId());
+        assertEquals(PRODUCTION_CARD_UID, event.getValue().cardUid());
         assertEquals(Map.of("sourceType", "ocr_image"), event.getValue().properties());
     }
 
@@ -303,11 +319,65 @@ class VocabularyGenerationFinalizerTest {
         verify(productEvents, never()).recordServerEvent(any(), any());
     }
 
+    @Test
+    void nonOcrPrivateClientRequestIdIsRecordedOnlyAsHashedCaptureTrace() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        job.setRequestJson("{\"clientRequestId\":\"private.png\",\"sourceUid\":\"src_1\"}");
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_1", 7L, "card_1")).thenReturn(source);
+
+        finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null);
+
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> event =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEvents).recordServerEvent(eq(7L), event.capture());
+        assertEquals("capture:" + sha256("private.png"), event.getValue().traceId());
+    }
+
+    @Test
+    void invalidOcrTraceFallsBackToHashedClientRequestIdentity() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        job.setRequestJson("{\"clientRequestId\":\"private.png\",\"sourceUid\":\"src_ocr\"}");
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
+        source.setSourceUid("src_ocr");
+        source.setSourceType("ocr_image");
+        source.setMetadataJson("{\"recognitionTraceId\":\"private.png\"}");
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_ocr", 7L, "card_1")).thenReturn(source);
+
+        finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null);
+
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> event =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEvents).recordServerEvent(eq(7L), event.capture());
+        assertEquals("capture:" + sha256("private.png"), event.getValue().traceId());
+    }
+
     private VocabularyCardRevision aiRevision(String revisionUid, String baseRevisionUid) {
         VocabularyCardRevision revision = VocabularyTestFixtures.userRevision(revisionUid);
         revision.setAuthorType("ai");
         revision.setBaseRevisionUid(baseRevisionUid);
         revision.setChangeSummary("Generated fixture");
         return revision;
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 }

@@ -40,6 +40,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class VocabularyCaptureServiceTest {
+    private static final String IMAGE_TRACE_ID =
+            "vocab-image-0123456789abcdef0123456789abcdef";
     @Mock VocabularyCaptureItemService itemService;
     @Mock VocabularyThemeService themeService;
     @Mock VocabularyThemeMapper themeMapper;
@@ -273,7 +275,7 @@ class VocabularyCaptureServiceTest {
     }
 
     @Test
-    void recordsSafeCaptureAndImmediateReadyEventsWithRecognitionTrace() {
+    void recordsCaptureEventWithoutInventingAReadyRevisionIdentity() {
         when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
                 .thenReturn(outcome("receive", "card_1", "source_merged", "ready", false));
         VocabularyCaptureRequest request = ocrRequest(
@@ -284,13 +286,11 @@ class VocabularyCaptureServiceTest {
         assertEquals("ready", response.items().get(0).status());
         ArgumentCaptor<VocabularyProductEventService.ServerEvent> events =
                 ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
-        verify(productEventService, times(2)).recordServerEvent(eq(7L), events.capture());
+        verify(productEventService).recordServerEvent(eq(7L), events.capture());
         assertEquals("vocabulary_capture_submitted", events.getAllValues().get(0).eventName());
-        assertEquals("trace-1", events.getAllValues().get(0).traceId());
+        assertEquals(IMAGE_TRACE_ID, events.getAllValues().get(0).traceId());
         assertEquals(Map.of("sourceType", "ocr_image", "successCount", 1, "failedCount", 0),
                 events.getAllValues().get(0).properties());
-        assertEquals("vocabulary_cards_ready", events.getAllValues().get(1).eventName());
-        assertEquals("card_1", events.getAllValues().get(1).cardUid());
         assertTrue(events.getAllValues().stream().noneMatch(event ->
                 event.properties().keySet().stream().anyMatch(key -> key.equalsIgnoreCase("observedText"))));
     }
@@ -363,10 +363,10 @@ class VocabularyCaptureServiceTest {
 
     private Map<String, Object> batchMetadata() {
         return Map.of(
-                "recognitionTraceId", "trace-1",
+                "recognitionTraceId", IMAGE_TRACE_ID,
                 "fileName", "words.png",
                 "provider", "openai",
-                "model", "vision-model",
+                "model", "gpt-4.1-mini",
                 "promptVersion", "vocabulary-image-recognition-v1");
     }
 

@@ -10,6 +10,10 @@ const SESSION_STORAGE_KEY = 'vocabulary.productEventSessionId'
 
 type SessionStorageLike = Pick<Storage, 'getItem' | 'setItem'>
 type ProductEventSender = (batch: VocabularyProductEventBatch) => Promise<unknown>
+type RandomCryptoLike = Partial<Pick<Crypto, 'randomUUID' | 'getRandomValues'>>
+
+const RANDOM_ID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
+const SESSION_ID_PATTERN = new RegExp(`^vocabulary-session:${RANDOM_ID_PATTERN.source.slice(1, -1)}$`)
 
 interface ProductEventTrackerDependencies {
   storage?: SessionStorageLike | null
@@ -156,7 +160,7 @@ function resolveSessionId(
   const storage = configuredStorage === undefined ? safeSessionStorage() : configuredStorage
   try {
     const stored = storage?.getItem(SESSION_STORAGE_KEY)?.trim()
-    if (stored) return stored
+    if (stored && SESSION_ID_PATTERN.test(stored)) return stored
   } catch {
     // Fall through to the in-memory ID.
   }
@@ -179,13 +183,31 @@ function safeSessionStorage(): SessionStorageLike | null {
 }
 
 function randomId(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID()
+  return createVocabularyProductEventRandomId(safeCrypto())
+}
+
+export function createVocabularyProductEventRandomId(
+  cryptoApi: RandomCryptoLike | null = safeCrypto(),
+  random: () => number = Math.random,
+): string {
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID()
   const bytes = new Uint8Array(16)
-  if (typeof globalThis.crypto?.getRandomValues === 'function') {
-    globalThis.crypto.getRandomValues(bytes)
-    return [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('')
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    cryptoApi.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(random() * 256) & 0xff
+    }
   }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('')
+}
+
+function safeCrypto(): RandomCryptoLike | null {
+  try {
+    return globalThis.crypto ?? null
+  } catch {
+    return null
+  }
 }
 
 export const vocabularyProductEvents = createVocabularyProductEventTracker()
