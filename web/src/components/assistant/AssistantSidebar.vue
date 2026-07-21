@@ -222,7 +222,6 @@
         <span class="sidebar-profile-avatar">我</span>
         <span class="sidebar-profile-copy">
           <span class="sidebar-profile-name">个人中心</span>
-          <span class="sidebar-profile-subtitle">账号设置与订阅</span>
         </span>
       </RouterLink>
     </div>
@@ -335,7 +334,7 @@ function resetArchiveDir() {
   min-width: var(--assistant-sidebar-width, 218px);
   height: 100%;
   padding: 0;
-  background: #eaf4fc;
+  background: #ffffff;
   border-right: 1px solid var(--app-sidebar-border, #e2e8f0);
   color: #0f172a;
   box-sizing: border-box;
@@ -345,12 +344,12 @@ function resetArchiveDir() {
   flex-basis: 72px;
   width: 72px;
   min-width: 72px;
-  background: #eaf4fc;
+  background: #ffffff;
 }
 
 .assistant-sidebar.assistant-sidebar--collapsed,
 .assistant-sidebar.assistant-sidebar--collapsed .collapsed-sidebar {
-  background: #eaf4fc;
+  background: #ffffff;
   color: #334155;
 }
 
@@ -361,7 +360,7 @@ function resetArchiveDir() {
   min-height: 0;
   flex-direction: column;
   box-sizing: border-box;
-  background: #eaf4fc;
+  background: #ffffff;
 }
 
 .collapsed-sidebar {
@@ -474,22 +473,22 @@ function resetArchiveDir() {
 .sidebar-new-chat-button {
   justify-content: center;
   min-height: 44px;
-  border-color: #047857;
+  border-color: #dbe3ec;
   border-radius: 14px;
-  background: #047857;
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(4, 120, 87, 0.16);
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
 }
 
 .sidebar-new-chat-button .workspace-action-icon {
-  color: #ffffff;
+  color: #047857;
 }
 
 .sidebar-new-chat-button:hover,
 .sidebar-new-chat-button:focus-visible {
-  border-color: #065f46;
-  background: #065f46;
-  color: #ffffff;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
 }
 
 .workspace-action-icon svg {
@@ -798,14 +797,6 @@ function resetArchiveDir() {
   font-size: 12px;
   font-weight: 800;
   color: #0f172a;
-}
-
-.sidebar-profile-subtitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: #a3a3a3;
 }
 
 :deep(.conversation-groups) {

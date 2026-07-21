@@ -67,5 +67,24 @@ assert.ok(
   sidebarSource.includes('aria-label="助手空间"'),
   'assistant context should keep its accessible region name after hiding the visible heading',
 )
+assert.ok(
+  !sidebarSource.includes('background: #eaf4fc'),
+  'assistant sidebar surfaces should stay white instead of using the previous blue tint',
+)
+assert.ok(
+  !sidebarSource.includes('<span class="sidebar-profile-subtitle">账号设置与订阅</span>'),
+  'assistant sidebar profile should only show the primary personal-center label',
+)
+
+const newChatStylesStart = sidebarSource.indexOf('.sidebar-new-chat-button {')
+const newChatStyles = sidebarSource.slice(
+  newChatStylesStart,
+  sidebarSource.indexOf('.workspace-action-icon svg {', newChatStylesStart),
+)
+assert.ok(newChatStyles.includes('background: #ffffff'), 'new-chat action should use a white surface')
+assert.ok(
+  !/background:\s*#(?:047857|065f46)/.test(newChatStyles),
+  'new-chat action should not use a solid green background in default or interactive states',
+)
 
 console.log('assistant-unified-sidebar-ok')
