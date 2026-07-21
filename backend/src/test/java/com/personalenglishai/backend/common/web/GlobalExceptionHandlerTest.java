@@ -1,9 +1,15 @@
 package com.personalenglishai.backend.common.web;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.io.IOException;
@@ -78,5 +84,31 @@ class GlobalExceptionHandlerTest {
         assertThat(invalidInput.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(invalidInput.getBody().getCode()).isEqualTo(ErrorCode.COMMON_VALIDATION_ERROR.getCode());
         assertThat(infrastructure.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    @Test
+    void unreadableRequestLogDoesNotExposeRawJacksonMessageOrRequestContent() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        Level originalLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.WARN);
+        try {
+            var response = handler.handleHttpMessageNotReadable(
+                    new HttpMessageNotReadableException("raw body contains secret vocabulary"));
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody().getMessage()).isEqualTo("请求体格式错误");
+            assertThat(appender.list)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .allMatch(message -> !message.contains("secret vocabulary"))
+                    .allMatch(message -> !message.contains("raw body"));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(originalLevel);
+            appender.stop();
+        }
     }
 }

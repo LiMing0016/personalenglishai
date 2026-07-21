@@ -151,6 +151,12 @@ mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabu
 mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_add_vocabulary_generation_metadata.sql
 ```
 
+第六步执行单词产品事件迁移。必须在启用图片识别漏斗和卡片就绪事件链路前完成：
+
+```powershell
+mysql -u <user> -p <database> < backend/src/main/resources/db/migrate_create_vocabulary_product_events.sql
+```
+
 租约迁移会通过 `information_schema` 分别检查两列和恢复索引，可重复执行。中断后直接重跑即可；已有结构不会重复创建，仍为 `running` 且租约到期时间为空的历史任务会完成回填。
 
 ### 单词卡 MySQL 集成测试

@@ -89,7 +89,7 @@ public class VocabularyCaptureService {
                 .count();
         int failedCount = response.items().size() - successCount;
 
-        safeRecordProductEvent(userId, request.clientRequestId(), new VocabularyProductEventService.ServerEvent(
+        safeRecordProductEvent(userId, new VocabularyProductEventService.ServerEvent(
                 "vocabulary-capture-submitted:" + sha256(request.clientRequestId()),
                 "vocabulary_capture_submitted",
                 traceId,
@@ -103,7 +103,7 @@ public class VocabularyCaptureService {
             VocabularyCaptureResponse.Item item = response.items().get(index);
             if (!"ready".equals(item.status()) || item.cardUid() == null) continue;
             String readyIdentity = request.clientRequestId() + ":" + index + ":" + item.cardUid();
-            safeRecordProductEvent(userId, request.clientRequestId(),
+            safeRecordProductEvent(userId,
                     new VocabularyProductEventService.ServerEvent(
                             "vocabulary-cards-ready:capture:" + sha256(readyIdentity),
                             "vocabulary_cards_ready",
@@ -116,21 +116,28 @@ public class VocabularyCaptureService {
     private String captureTraceId(VocabularyCaptureRequest request, String sourceType) {
         if (!"ocr_image".equals(sourceType) || request.source() == null
                 || request.source().metadata() == null) {
-            return request.clientRequestId();
+            return "capture:" + sha256(request.clientRequestId());
         }
         Object traceId = request.source().metadata().get("recognitionTraceId");
-        return traceId instanceof String text && !text.isBlank() ? text : request.clientRequestId();
+        if (traceId instanceof String text && isSafeEventIdentifier(text, 128)) {
+            return text;
+        }
+        return "capture:" + sha256(request.clientRequestId());
     }
 
     private void safeRecordProductEvent(
-            Long userId, String requestId, VocabularyProductEventService.ServerEvent event) {
+            Long userId, VocabularyProductEventService.ServerEvent event) {
         try {
             productEventService.recordServerEvent(userId, event);
         } catch (RuntimeException exception) {
             log.warn(
-                    "Vocabulary product event write failed eventName={} requestId={} errorType={}",
-                    event.eventName(), requestId, exception.getClass().getSimpleName());
+                    "Vocabulary product event write failed eventName={} errorType={}",
+                    event.eventName(), exception.getClass().getSimpleName());
         }
+    }
+
+    private boolean isSafeEventIdentifier(String value, int maxLength) {
+        return value.length() <= maxLength && value.matches("[A-Za-z0-9][A-Za-z0-9._:-]*");
     }
 
     @Transactional

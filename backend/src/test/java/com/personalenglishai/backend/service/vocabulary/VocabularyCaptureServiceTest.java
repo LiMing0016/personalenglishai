@@ -1,5 +1,9 @@
 package com.personalenglishai.backend.service.vocabulary;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
@@ -7,6 +11,7 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.slf4j.LoggerFactory;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -298,10 +303,26 @@ class VocabularyCaptureServiceTest {
         when(productEventService.recordServerEvent(eq(7L), any()))
                 .thenThrow(new RuntimeException("analytics unavailable"));
 
-        VocabularyCaptureResponse response = service.capture(
-                7L, VocabularyCaptureRequest.manual("req-safe", List.of("safe"), "en", "basic"));
+        Logger logger = (Logger) LoggerFactory.getLogger(VocabularyCaptureService.class);
+        Level originalLevel = logger.getLevel();
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.WARN);
+        try {
+            VocabularyCaptureResponse response = service.capture(
+                    7L, VocabularyCaptureRequest.manual(
+                            "private filename receive.png", List.of("safe"), "en", "basic"));
 
-        assertEquals("card_1", response.items().get(0).cardUid());
+            assertEquals("card_1", response.items().get(0).cardUid());
+            assertTrue(appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .noneMatch(message -> message.contains("private filename receive.png")));
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(originalLevel);
+            appender.stop();
+        }
     }
 
     private ResolvedVocabularyTheme theme(String themeUid, int version, String templateKey) {

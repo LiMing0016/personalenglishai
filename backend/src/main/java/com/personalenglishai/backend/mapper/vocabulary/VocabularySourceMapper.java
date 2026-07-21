@@ -14,7 +14,10 @@ public interface VocabularySourceMapper {
             @Param("userId") Long userId,
             @Param("idempotencyKey") String idempotencyKey);
 
-    VocabularyCardSource findBySourceUid(@Param("sourceUid") String sourceUid);
+    VocabularyCardSource findBySourceUid(
+            @Param("sourceUid") String sourceUid,
+            @Param("userId") Long userId,
+            @Param("cardUid") String cardUid);
 
     List<VocabularyCardSource> listSources(@Param("cardUid") String cardUid);
 

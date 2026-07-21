@@ -251,7 +251,7 @@ class VocabularyGenerationFinalizerTest {
         when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
         when(cards.updateActiveRevision(
                 7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
-        when(sources.findBySourceUid("src_ocr")).thenReturn(source);
+        when(sources.findBySourceUid("src_ocr", 7L, "card_1")).thenReturn(source);
 
         assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
                 finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
@@ -276,12 +276,31 @@ class VocabularyGenerationFinalizerTest {
         when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
         when(cards.updateActiveRevision(
                 7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
-        when(sources.findBySourceUid("src_1")).thenReturn(VocabularyTestFixtures.manualSource(null));
+        when(sources.findBySourceUid("src_1", 7L, "card_1"))
+                .thenReturn(VocabularyTestFixtures.manualSource(null));
         when(productEvents.recordServerEvent(eq(7L), any()))
                 .thenThrow(new RuntimeException("unavailable"));
 
         assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
                 finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
+    }
+
+    @Test
+    void readyEventIsSkippedWhenSourceIsNotOwnedByCurrentUserAndCard() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        job.setRequestJson("{\"sourceUid\":\"src_other_owner\"}");
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_other_owner", 7L, "card_1")).thenReturn(null);
+
+        assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
+                finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
+
+        verify(productEvents, never()).recordServerEvent(any(), any());
     }
 
     private VocabularyCardRevision aiRevision(String revisionUid, String baseRevisionUid) {

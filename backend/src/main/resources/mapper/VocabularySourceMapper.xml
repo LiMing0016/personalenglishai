@@ -51,6 +51,8 @@
         SELECT <include refid="VocabularySourceColumns"/>
         FROM vocabulary_card_source
         WHERE source_uid = #{sourceUid}
+          AND user_id = #{userId}
+          AND card_uid = #{cardUid}
         LIMIT 1
     </select>
 

@@ -53,6 +53,20 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void sourceUidLookupIsScopedToTheOwningUserAndCard() throws Exception {
+        String sql = statementSql("VocabularySourceMapper", "findBySourceUid", Map.of(
+                "sourceUid", "src_1",
+                "userId", 7L,
+                "cardUid", "card_1"));
+
+        assertAll(
+                () -> assertTrue(sql.contains("source_uid = ?")),
+                () -> assertTrue(sql.contains("user_id = ?")),
+                () -> assertTrue(sql.contains("card_uid = ?"))
+        );
+    }
+
+    @Test
     void revisionMapperPersistsNullableGenerationMetadata() throws Exception {
         String revisions = readMapper("VocabularyRevisionMapper.xml");
         String insertSql = statementSql("VocabularyRevisionMapper", "insertRevision", Map.of(

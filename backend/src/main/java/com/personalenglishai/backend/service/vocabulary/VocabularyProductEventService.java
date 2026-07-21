@@ -15,18 +15,22 @@ import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 
 @Service
 public class VocabularyProductEventService {
     private static final int MAX_EVENTS = 50;
-    private static final int MAX_PROPERTY_STRING_LENGTH = 256;
-    private static final int MAX_ARRAY_LENGTH = 20;
-    private static final int MAX_ARRAY_STRING_LENGTH = 128;
-    private static final BigDecimal MAX_ABSOLUTE_NUMBER = new BigDecimal("1000000000000000");
+    private static final long MAX_COUNT = 1_000_000L;
+    private static final long MAX_DURATION_MS = 86_400_000L;
+    private static final long MAX_MODEL_CALL_COUNT = 100L;
+    private static final int MAX_WARNING_CODES = 10;
+    private static final Pattern SAFE_IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]*");
     private static final Set<String> EVENT_NAMES = Set.of(
             "vocabulary_image_recognition_started",
             "vocabulary_image_recognition_completed",
@@ -34,10 +38,21 @@ public class VocabularyProductEventService {
             "vocabulary_capture_submitted",
             "vocabulary_cards_ready",
             "vocabulary_learning_started");
-    private static final Set<String> PROPERTY_KEYS = Set.of(
-            "sourceType", "durationMs", "candidateCount", "suspectedCount", "selectedCount",
-            "editedCount", "removedCount", "resolutionCount", "successCount", "failedCount",
-            "provider", "model", "promptVersion", "modelCallCount", "warningCodes", "outcome");
+    private static final Map<String, Set<String>> EVENT_PROPERTY_KEYS = Map.of(
+            "vocabulary_image_recognition_started", Set.of("sourceType"),
+            "vocabulary_image_recognition_completed", Set.of(
+                    "sourceType", "durationMs", "candidateCount", "suspectedCount",
+                    "provider", "model", "promptVersion", "modelCallCount", "warningCodes", "outcome"),
+            "vocabulary_image_candidates_confirmed", Set.of(
+                    "sourceType", "candidateCount", "suspectedCount", "selectedCount",
+                    "editedCount", "removedCount", "resolutionCount"),
+            "vocabulary_capture_submitted", Set.of("sourceType", "successCount", "failedCount"),
+            "vocabulary_cards_ready", Set.of("sourceType"),
+            "vocabulary_learning_started", Set.of("sourceType"));
+    private static final Set<String> SOURCE_TYPES = Set.of("manual", "dictionary", "ocr_image");
+    private static final Set<String> OUTCOMES = Set.of("success", "failed");
+    private static final Set<String> WARNING_CODES = Set.of(
+            "CANDIDATE_LIMIT_REACHED", "DICTIONARY_VERIFICATION_UNAVAILABLE");
     private static final Set<String> FORBIDDEN_PROPERTY_KEYS = Set.of(
             "filename", "term", "observedtext", "contexttext", "rawtext", "content",
             "markdown", "image", "base64");
@@ -99,12 +114,12 @@ public class VocabularyProductEventService {
 
     private VocabularyProductEvent mapEvent(Long userId, VocabularyProductEventBatchRequest.Event event) {
         if (event == null) throw invalid("Event is required");
-        requireText(event.eventUid(), 128, "Invalid event identity");
+        requireIdentifier(event.eventUid(), 128, "Invalid event identity");
         requireText(event.eventName(), 64, "Invalid event name");
         if (!EVENT_NAMES.contains(event.eventName())) throw invalid("Unsupported event name");
-        requireOptionalText(event.traceId(), 128, "Invalid trace identity");
-        requireText(event.sessionId(), 128, "Invalid session identity");
-        requireOptionalText(event.cardUid(), 64, "Invalid card identity");
+        requireOptionalIdentifier(event.traceId(), 128, "Invalid trace identity");
+        requireIdentifier(event.sessionId(), 128, "Invalid session identity");
+        requireOptionalIdentifier(event.cardUid(), 64, "Invalid card identity");
         if (event.occurredAt() == null) throw invalid("Event time is required");
 
         VocabularyProductEvent mapped = new VocabularyProductEvent();
@@ -115,20 +130,23 @@ public class VocabularyProductEventService {
         mapped.setSessionId(event.sessionId());
         mapped.setCardUid(blankToNull(event.cardUid()));
         mapped.setOccurredAt(event.occurredAt());
-        mapped.setPropertiesJson(serializeProperties(event.properties()));
+        mapped.setPropertiesJson(serializeProperties(event.eventName(), event.properties()));
         return mapped;
     }
 
-    private String serializeProperties(Map<String, Object> properties) {
+    private String serializeProperties(String eventName, Map<String, Object> properties) {
         TreeMap<String, Object> safe = new TreeMap<>();
+        Set<String> allowedKeys = EVENT_PROPERTY_KEYS.get(eventName);
         if (properties != null) {
             for (Map.Entry<String, Object> entry : properties.entrySet()) {
                 String key = entry.getKey();
-                if (key == null || FORBIDDEN_PROPERTY_KEYS.contains(key.toLowerCase(java.util.Locale.ROOT))) {
+                if (key == null || FORBIDDEN_PROPERTY_KEYS.contains(key.toLowerCase(Locale.ROOT))) {
                     throw invalid("Sensitive event property is not allowed");
                 }
-                if (!PROPERTY_KEYS.contains(key)) throw invalid("Unsupported event property");
-                safe.put(key, validatePropertyValue(entry.getValue()));
+                if (allowedKeys == null || !allowedKeys.contains(key)) {
+                    throw invalid("Unsupported event property");
+                }
+                safe.put(key, validatePropertyValue(key, entry.getValue()));
             }
         }
         try {
@@ -138,62 +156,80 @@ public class VocabularyProductEventService {
         }
     }
 
-    private Object validatePropertyValue(Object value) {
-        if (value instanceof String text) {
-            if (text.length() > MAX_PROPERTY_STRING_LENGTH) throw invalid("Event property is too long");
-            return text;
-        }
-        if (value instanceof Boolean) return value;
-        if (value instanceof Number number) return validateNumber(number);
-        if (value instanceof List<?> list) {
-            if (list.size() > MAX_ARRAY_LENGTH) throw invalid("Event property array is too long");
-            List<Object> safe = new ArrayList<>(list.size());
-            for (Object item : list) {
-                if (item instanceof String text) {
-                    if (text.length() > MAX_ARRAY_STRING_LENGTH) {
-                        throw invalid("Event property array item is too long");
-                    }
-                    safe.add(text);
-                } else if (item instanceof Boolean) {
-                    safe.add(item);
-                } else if (item instanceof Number number) {
-                    safe.add(validateNumber(number));
-                } else {
-                    throw invalid("Event property arrays must contain scalar values");
-                }
-            }
-            return List.copyOf(safe);
-        }
-        throw invalid("Event property must be a bounded scalar or short array");
+    private Object validatePropertyValue(String key, Object value) {
+        return switch (key) {
+            case "durationMs" -> validateNonNegativeInteger(value, MAX_DURATION_MS);
+            case "modelCallCount" -> validateNonNegativeInteger(value, MAX_MODEL_CALL_COUNT);
+            case "candidateCount", "suspectedCount", "selectedCount", "editedCount",
+                    "removedCount", "resolutionCount", "successCount", "failedCount" ->
+                    validateNonNegativeInteger(value, MAX_COUNT);
+            case "sourceType" -> validateEnum(value, SOURCE_TYPES, "Invalid source type");
+            case "outcome" -> validateEnum(value, OUTCOMES, "Invalid event outcome");
+            case "provider" -> validateSafePropertyIdentifier(value, 64);
+            case "model", "promptVersion" -> validateSafePropertyIdentifier(value, 128);
+            case "warningCodes" -> validateWarningCodes(value);
+            default -> throw invalid("Unsupported event property");
+        };
     }
 
-    private Number validateNumber(Number number) {
-        if (number instanceof Double value && !Double.isFinite(value)) {
-            throw invalid("Event property number must be finite");
-        }
-        if (number instanceof Float value && !Float.isFinite(value)) {
-            throw invalid("Event property number must be finite");
+    private long validateNonNegativeInteger(Object value, long maximum) {
+        if (!(value instanceof Number number) || value instanceof Double doubleValue && !Double.isFinite(doubleValue)
+                || value instanceof Float floatValue && !Float.isFinite(floatValue)) {
+            throw invalid("Event property must be a finite integer");
         }
         BigDecimal decimal;
         try {
-            decimal = number instanceof BigDecimal value ? value
-                    : number instanceof BigInteger value ? new BigDecimal(value)
+            decimal = number instanceof BigDecimal decimalValue ? decimalValue
+                    : number instanceof BigInteger integerValue ? new BigDecimal(integerValue)
                     : new BigDecimal(number.toString());
         } catch (NumberFormatException exception) {
             throw invalid("Event property number is invalid");
         }
-        if (decimal.abs().compareTo(MAX_ABSOLUTE_NUMBER) > 0) {
+        if (decimal.stripTrailingZeros().scale() > 0
+                || decimal.compareTo(BigDecimal.ZERO) < 0
+                || decimal.compareTo(BigDecimal.valueOf(maximum)) > 0) {
             throw invalid("Event property number is out of range");
         }
-        return number;
+        return decimal.longValueExact();
+    }
+
+    private String validateEnum(Object value, Set<String> allowed, String message) {
+        if (!(value instanceof String text) || !allowed.contains(text)) throw invalid(message);
+        return text;
+    }
+
+    private String validateSafePropertyIdentifier(Object value, int maxLength) {
+        if (!(value instanceof String text)) throw invalid("Event property must be a safe identifier");
+        requireIdentifier(text, maxLength, "Event property must be a safe identifier");
+        return text;
+    }
+
+    private List<String> validateWarningCodes(Object value) {
+        if (!(value instanceof List<?> list) || list.size() > MAX_WARNING_CODES) {
+            throw invalid("Invalid warning codes");
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (Object item : list) {
+            if (!(item instanceof String code) || !WARNING_CODES.contains(code)) {
+                throw invalid("Invalid warning code");
+            }
+            unique.add(code);
+        }
+        return List.copyOf(unique);
     }
 
     private void requireText(String value, int maxLength, String message) {
         if (value == null || value.isBlank() || value.length() > maxLength) throw invalid(message);
     }
 
-    private void requireOptionalText(String value, int maxLength, String message) {
-        if (value != null && (!value.isBlank() && value.length() > maxLength)) throw invalid(message);
+    private void requireIdentifier(String value, int maxLength, String message) {
+        requireText(value, maxLength, message);
+        if (!SAFE_IDENTIFIER.matcher(value).matches()) throw invalid(message);
+    }
+
+    private void requireOptionalIdentifier(String value, int maxLength, String message) {
+        if (value == null || value.isBlank()) return;
+        requireIdentifier(value, maxLength, message);
     }
 
     private String blankToNull(String value) {

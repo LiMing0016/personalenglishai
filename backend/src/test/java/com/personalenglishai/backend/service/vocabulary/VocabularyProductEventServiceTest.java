@@ -121,6 +121,69 @@ class VocabularyProductEventServiceTest {
     }
 
     @Test
+    void rejectsPropertyTypeConfusionAndUnsupportedEnums() {
+        List<Map<String, Object>> invalidProperties = List.of(
+                Map.of("candidateCount", "原词"),
+                Map.of("durationMs", true),
+                Map.of("outcome", List.of("raw text")),
+                Map.of("model", "文件 名/内容"),
+                Map.of("sourceType", "clipboard"),
+                Map.of("warningCodes", List.of("LOW_CONFIDENCE")),
+                Map.of("candidateCount", -1),
+                Map.of("modelCallCount", 1.5));
+
+        for (int index = 0; index < invalidProperties.size(); index++) {
+            var request = new VocabularyProductEventBatchRequest(List.of(event(
+                    "event-invalid-" + index,
+                    "vocabulary_image_recognition_completed",
+                    invalidProperties.get(index))));
+
+            assertThrows(IllegalArgumentException.class, () -> service.acceptBatch(7L, request));
+        }
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void rejectsPropertiesThatDoNotBelongToTheEvent() {
+        List<VocabularyProductEventBatchRequest.Event> invalidEvents = List.of(
+                event("event-mismatch-1", "vocabulary_image_recognition_started",
+                        Map.of("outcome", "success")),
+                event("event-mismatch-2", "vocabulary_capture_submitted",
+                        Map.of("candidateCount", 1)),
+                event("event-mismatch-3", "vocabulary_learning_started",
+                        Map.of("provider", "openai")));
+
+        for (VocabularyProductEventBatchRequest.Event event : invalidEvents) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event))));
+        }
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
+    void rejectsIdentifiersThatCouldCarryUserContent() {
+        List<VocabularyProductEventBatchRequest.Event> invalidEvents = List.of(
+                new VocabularyProductEventBatchRequest.Event(
+                        "event 原词", "vocabulary_image_recognition_started", "trace-safe",
+                        "session-safe", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
+                new VocabularyProductEventBatchRequest.Event(
+                        "event-safe", "vocabulary_image_recognition_started", "trace raw text",
+                        "session-safe", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
+                new VocabularyProductEventBatchRequest.Event(
+                        "event-safe", "vocabulary_image_recognition_started", "trace-safe",
+                        "session/file.png", "card_safe", NOW, Map.of("sourceType", "ocr_image")),
+                new VocabularyProductEventBatchRequest.Event(
+                        "event-safe", "vocabulary_image_recognition_started", "trace-safe",
+                        "session-safe", "card 原词", NOW, Map.of("sourceType", "ocr_image")));
+
+        for (VocabularyProductEventBatchRequest.Event event : invalidEvents) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event))));
+        }
+        verifyNoInteractions(mapper);
+    }
+
+    @Test
     void rejectsOverlongStringsAndArrays() {
         var longString = new VocabularyProductEventBatchRequest(List.of(event(
                 "event-long", "vocabulary_image_recognition_completed",
@@ -138,7 +201,10 @@ class VocabularyProductEventServiceTest {
     void serializesAllowedPropertiesInStableKeyOrderWithoutSensitiveValues() throws Exception {
         when(mapper.insertIgnore(any())).thenReturn(1);
         Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("warningCodes", List.of("LOW_CONFIDENCE"));
+        properties.put("warningCodes", List.of(
+                "CANDIDATE_LIMIT_REACHED",
+                "DICTIONARY_VERIFICATION_UNAVAILABLE",
+                "CANDIDATE_LIMIT_REACHED"));
         properties.put("candidateCount", 3);
         properties.put("sourceType", "ocr_image");
         properties.put("durationMs", 125L);
@@ -159,7 +225,37 @@ class VocabularyProductEventServiceTest {
         assertEquals(125, decoded.get("durationMs"));
         assertEquals("success", decoded.get("outcome"));
         assertEquals("ocr_image", decoded.get("sourceType"));
-        assertEquals(List.of("LOW_CONFIDENCE"), decoded.get("warningCodes"));
+        assertEquals(List.of(
+                "CANDIDATE_LIMIT_REACHED",
+                "DICTIONARY_VERIFICATION_UNAVAILABLE"), decoded.get("warningCodes"));
+    }
+
+    @Test
+    void acceptsEveryProductionEventPayload() {
+        when(mapper.insertIgnore(any())).thenReturn(1);
+
+        List<VocabularyProductEventBatchRequest.Event> events = List.of(
+                event("event-prod-1", "vocabulary_image_recognition_started",
+                        Map.of("sourceType", "ocr_image")),
+                event("event-prod-2", "vocabulary_image_recognition_completed", Map.of(
+                        "sourceType", "ocr_image", "durationMs", 250, "candidateCount", 3,
+                        "suspectedCount", 1, "provider", "openai", "model", "gpt-4.1-mini",
+                        "promptVersion", "vocabulary-image-recognition-v1", "modelCallCount", 1,
+                        "warningCodes", List.of("CANDIDATE_LIMIT_REACHED"), "outcome", "success")),
+                event("event-prod-3", "vocabulary_image_candidates_confirmed", Map.of(
+                        "sourceType", "ocr_image", "candidateCount", 3, "suspectedCount", 1,
+                        "selectedCount", 2, "editedCount", 1, "removedCount", 1,
+                        "resolutionCount", 1)),
+                event("event-prod-4", "vocabulary_capture_submitted",
+                        Map.of("sourceType", "manual", "successCount", 2, "failedCount", 0)),
+                event("event-prod-5", "vocabulary_cards_ready",
+                        Map.of("sourceType", "dictionary")),
+                event("event-prod-6", "vocabulary_learning_started",
+                        Map.of("sourceType", "ocr_image")));
+
+        for (VocabularyProductEventBatchRequest.Event event : events) {
+            service.acceptBatch(7L, new VocabularyProductEventBatchRequest(List.of(event)));
+        }
     }
 
     @Test

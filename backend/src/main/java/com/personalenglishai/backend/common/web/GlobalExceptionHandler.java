@@ -42,10 +42,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
         String msg = "请求体格式错误";
         Throwable cause = e.getCause();
-        if (cause instanceof UnrecognizedPropertyException upe) {
-            msg = "不允许的字段: " + upe.getPropertyName();
+        if (cause instanceof UnrecognizedPropertyException) {
+            msg = "请求体包含不允许的字段";
         }
-        log.warn("请求体不可读: {} -> {}", e.getMessage(), msg);
+        String reasonType = cause == null ? "unreadable" : cause.getClass().getSimpleName();
+        log.warn("请求体不可读 reasonType={}", reasonType);
         return body(ErrorCode.COMMON_VALIDATION_ERROR.getCode(), msg, HttpStatus.BAD_REQUEST);
     }
 

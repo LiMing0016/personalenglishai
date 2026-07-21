@@ -121,7 +121,8 @@ public class VocabularyGenerationFinalizer {
                 log.warn("Vocabulary ready event skipped cardUid={} reason=source_missing", card.getCardUid());
                 return;
             }
-            VocabularyCardSource source = sources.findBySourceUid(sourceUid);
+            VocabularyCardSource source = sources.findBySourceUid(
+                    sourceUid, card.getUserId(), card.getCardUid());
             if (source == null) {
                 log.warn("Vocabulary ready event skipped cardUid={} reason=source_unavailable", card.getCardUid());
                 return;
