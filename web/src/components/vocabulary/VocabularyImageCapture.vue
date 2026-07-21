@@ -66,6 +66,7 @@ import {
   createImageRequestLifecycle,
   getVocabularyImageFileError,
 } from '@/features/vocabulary/imageRecognition'
+import { executeTrackedImageRecognition } from '@/features/vocabulary/productEvents'
 
 type ImageRecognitionMutation = {
   isPending: Ref<boolean>
@@ -125,9 +126,10 @@ async function recognize() {
   recognizing.value = true
   emit('clear-error')
   emit('recognizing', true)
-
   try {
-    const nextResponse = await props.mutation.mutateAsync({ file: selectedFile, signal })
+    const nextResponse = await executeTrackedImageRecognition(
+      () => props.mutation.mutateAsync({ file: selectedFile, signal }),
+    )
     if (!lifecycle.isLatest(requestId)) return
     response.value = nextResponse
     emit('recognized', { response: nextResponse, file: selectedFile })

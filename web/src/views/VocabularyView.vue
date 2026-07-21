@@ -342,6 +342,7 @@ import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
 import { isVocabularyImageRecognitionEnabled } from '@/features/vocabulary/imageRecognition'
+import { vocabularyProductEvents } from '@/features/vocabulary/productEvents'
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
@@ -1153,6 +1154,15 @@ function syncVocabularyRoute() {
 }
 
 watch(() => [route.name, route.params.cardUid, route.query.tab], syncVocabularyRoute)
+
+watch(
+  () => detailQuery.data.value,
+  (card) => {
+    if (!isPersistentVocabularyCardRoute.value || !card?.activeRevisionUid) return
+    void vocabularyProductEvents.learningStarted(card.cardUid, card.sourceTypes[0])
+  },
+  { immediate: true },
+)
 
 function addTodayReview(wordId: string) {
   const word = words.value.find((item) => item.id === wordId)

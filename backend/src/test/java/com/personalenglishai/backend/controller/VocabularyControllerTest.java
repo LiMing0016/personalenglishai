@@ -14,6 +14,7 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyConflictResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchResponse;
 import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
@@ -21,6 +22,7 @@ import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyTemplateRegistry;
 import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyProductEventService;
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,6 +49,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 @WebMvcTest(VocabularyController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -56,9 +59,49 @@ class VocabularyControllerTest {
     @MockBean VocabularyCardService cardService;
     @MockBean VocabularyThemeService themeService;
     @MockBean VocabularyImageRecognitionService imageRecognitionService;
+    @MockBean VocabularyProductEventService productEventService;
     @MockBean VocabularyTemplateRegistry templateRegistry;
     @MockBean JwtAuthenticationFilter jwtAuthenticationFilter;
     @MockBean JwtInterceptor jwtInterceptor;
+
+    @Test
+    void acceptsAuthenticatedVocabularyProductEventBatch() throws Exception {
+        when(productEventService.acceptBatch(eq(7L), any()))
+                .thenReturn(new VocabularyProductEventBatchResponse(1, 1));
+
+        mockMvc.perform(post("/api/vocabulary/product-events/batch")
+                        .requestAttr("userId", 7L)
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"events":[
+                                  {"eventUid":"event-1","eventName":"vocabulary_learning_started",
+                                   "sessionId":"session-1","cardUid":"card_1",
+                                   "occurredAt":"2026-07-21T04:30:00","properties":{}},
+                                  {"eventUid":"event-2","eventName":"vocabulary_learning_started",
+                                   "sessionId":"session-1","cardUid":"card_2",
+                                   "occurredAt":"2026-07-21T04:30:01","properties":{}}
+                                ]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accepted").value(1))
+                .andExpect(jsonPath("$.data.duplicate").value(1));
+
+        verify(productEventService).acceptBatch(eq(7L), argThat(request -> request.events().size() == 2));
+    }
+
+    @Test
+    void rejectsUnauthenticatedVocabularyProductEventBatch() throws Exception {
+        mockMvc.perform(post("/api/vocabulary/product-events/batch")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"events":[{"eventUid":"event-1",
+                                  "eventName":"vocabulary_learning_started","sessionId":"session-1",
+                                  "occurredAt":"2026-07-21T04:30:00","properties":{}}]}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(productEventService);
+    }
 
     @Test
     void recognizesVocabularyImageByDelegatingMultipartToService() throws Exception {

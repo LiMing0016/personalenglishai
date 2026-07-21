@@ -38,11 +38,13 @@ class VocabularyCaptureServiceTest {
     @Mock VocabularyCaptureItemService itemService;
     @Mock VocabularyThemeService themeService;
     @Mock VocabularyThemeMapper themeMapper;
+    @Mock VocabularyProductEventService productEventService;
     VocabularyCaptureService service;
 
     @BeforeEach
     void setUp() {
-        service = new VocabularyCaptureService(itemService, themeService, themeMapper, new VocabularyTermNormalizer());
+        service = new VocabularyCaptureService(
+                itemService, themeService, themeMapper, new VocabularyTermNormalizer(), productEventService);
     }
 
     @Test
@@ -263,6 +265,43 @@ class VocabularyCaptureServiceTest {
                 "captureDictionaryFavorite", Long.class, String.class, String.class, String.class);
 
         assertNotNull(method.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    void recordsSafeCaptureAndImmediateReadyEventsWithRecognitionTrace() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome("receive", "card_1", "source_merged", "ready", false));
+        VocabularyCaptureRequest request = ocrRequest(
+                batchMetadata(), itemMetadata("recieve", "suggestion_applied"));
+
+        VocabularyCaptureResponse response = service.capture(7L, request);
+
+        assertEquals("ready", response.items().get(0).status());
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> events =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEventService, times(2)).recordServerEvent(eq(7L), events.capture());
+        assertEquals("vocabulary_capture_submitted", events.getAllValues().get(0).eventName());
+        assertEquals("trace-1", events.getAllValues().get(0).traceId());
+        assertEquals(Map.of("sourceType", "ocr_image", "successCount", 1, "failedCount", 0),
+                events.getAllValues().get(0).properties());
+        assertEquals("vocabulary_cards_ready", events.getAllValues().get(1).eventName());
+        assertEquals("card_1", events.getAllValues().get(1).cardUid());
+        assertTrue(events.getAllValues().stream().noneMatch(event ->
+                event.properties().keySet().stream().anyMatch(key -> key.equalsIgnoreCase("observedText"))));
+    }
+
+    @Test
+    void analyticsFailureDoesNotRollbackSuccessfulCapture() {
+        when(itemService.captureOne(eq(7L), any(), any(), eq(0)))
+                .thenReturn(outcome(
+                        "safe", "card_1", "created", "generating", true, "theme_system_basic"));
+        when(productEventService.recordServerEvent(eq(7L), any()))
+                .thenThrow(new RuntimeException("analytics unavailable"));
+
+        VocabularyCaptureResponse response = service.capture(
+                7L, VocabularyCaptureRequest.manual("req-safe", List.of("safe"), "en", "basic"));
+
+        assertEquals("card_1", response.items().get(0).cardUid());
     }
 
     private ResolvedVocabularyTheme theme(String themeUid, int version, String templateKey) {

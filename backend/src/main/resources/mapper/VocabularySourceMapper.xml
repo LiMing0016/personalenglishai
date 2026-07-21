@@ -47,6 +47,13 @@
         LIMIT 1
     </select>
 
+    <select id="findBySourceUid" resultMap="VocabularySourceResultMap">
+        SELECT <include refid="VocabularySourceColumns"/>
+        FROM vocabulary_card_source
+        WHERE source_uid = #{sourceUid}
+        LIMIT 1
+    </select>
+
     <select id="listSources" resultMap="VocabularySourceResultMap">
         SELECT <include refid="VocabularySourceColumns"/>
         FROM vocabulary_card_source

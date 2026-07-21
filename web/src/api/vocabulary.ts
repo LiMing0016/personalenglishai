@@ -145,6 +145,33 @@ export interface VocabularyCaptureResponse {
   items: VocabularyCaptureItem[]
 }
 
+export type VocabularyProductEventName =
+  | 'vocabulary_image_recognition_started'
+  | 'vocabulary_image_recognition_completed'
+  | 'vocabulary_image_candidates_confirmed'
+  | 'vocabulary_capture_submitted'
+  | 'vocabulary_cards_ready'
+  | 'vocabulary_learning_started'
+
+export type VocabularyProductEventProperty = string | number | boolean | Array<string | number | boolean>
+
+export interface VocabularyProductEventBatch {
+  events: Array<{
+    eventUid: string
+    eventName: VocabularyProductEventName
+    traceId?: string
+    sessionId: string
+    cardUid?: string
+    occurredAt: string
+    properties: Record<string, VocabularyProductEventProperty>
+  }>
+}
+
+export interface VocabularyProductEventBatchResponse {
+  accepted: number
+  duplicate: number
+}
+
 export interface VocabularyCardSummary {
   cardUid: string
   displayTerm: string
@@ -350,6 +377,9 @@ export const deleteVocabularyTheme = (themeUid: string) =>
 
 export const captureVocabulary = (payload: VocabularyCaptureRequest) =>
   unwrap<VocabularyCaptureResponse>(http.post('/vocabulary/captures', payload))
+
+export const submitVocabularyProductEvents = (payload: VocabularyProductEventBatch) =>
+  unwrap<VocabularyProductEventBatchResponse>(http.post('/vocabulary/product-events/batch', payload))
 
 export const recognizeVocabularyImage = ({
   file,

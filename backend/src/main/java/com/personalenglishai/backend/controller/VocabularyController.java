@@ -17,12 +17,15 @@ import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogRes
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyThemeResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyImageRecognitionResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchRequest;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyProductEventBatchResponse;
 import com.personalenglishai.backend.dto.vocabulary.CreateVocabularyThemeRequest;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyThemeRequest;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCaptureService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyCardService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyThemeService;
 import com.personalenglishai.backend.service.vocabulary.VocabularyImageRecognitionService;
+import com.personalenglishai.backend.service.vocabulary.VocabularyProductEventService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -48,16 +51,29 @@ public class VocabularyController {
     private final VocabularyCardService cardService;
     private final VocabularyThemeService themeService;
     private final VocabularyImageRecognitionService imageRecognitionService;
+    private final VocabularyProductEventService productEventService;
 
     public VocabularyController(
             VocabularyCaptureService captureService,
             VocabularyCardService cardService,
             VocabularyThemeService themeService,
-            VocabularyImageRecognitionService imageRecognitionService) {
+            VocabularyImageRecognitionService imageRecognitionService,
+            VocabularyProductEventService productEventService) {
         this.captureService = captureService;
         this.cardService = cardService;
         this.themeService = themeService;
         this.imageRecognitionService = imageRecognitionService;
+        this.productEventService = productEventService;
+    }
+
+    @PostMapping("/product-events/batch")
+    public ResponseEntity<ApiResponse<VocabularyProductEventBatchResponse>> productEvents(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @Valid @RequestBody VocabularyProductEventBatchRequest request) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(productEventService.acceptBatch(userId, request)));
     }
 
     @PostMapping(value = "/image-recognitions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

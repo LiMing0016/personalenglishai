@@ -34,16 +34,19 @@ public class VocabularyCaptureService {
     private final VocabularyThemeService themeService;
     private final VocabularyThemeMapper themeMapper;
     private final VocabularyTermNormalizer termNormalizer;
+    private final VocabularyProductEventService productEventService;
 
     public VocabularyCaptureService(
             VocabularyCaptureItemService itemService,
             VocabularyThemeService themeService,
             VocabularyThemeMapper themeMapper,
-            VocabularyTermNormalizer termNormalizer) {
+            VocabularyTermNormalizer termNormalizer,
+            VocabularyProductEventService productEventService) {
         this.itemService = itemService;
         this.themeService = themeService;
         this.themeMapper = themeMapper;
         this.termNormalizer = termNormalizer;
+        this.productEventService = productEventService;
     }
 
     @Transactional
@@ -72,7 +75,62 @@ public class VocabularyCaptureService {
             }
         }
         recordRecentUseAfterMutation(userId, mutatedThemeUids);
-        return new VocabularyCaptureResponse(items);
+        VocabularyCaptureResponse response = new VocabularyCaptureResponse(items);
+        recordCaptureProductEvents(userId, request, response);
+        return response;
+    }
+
+    private void recordCaptureProductEvents(
+            Long userId, VocabularyCaptureRequest request, VocabularyCaptureResponse response) {
+        String sourceType = request.source() == null ? "manual" : request.source().type();
+        String traceId = captureTraceId(request, sourceType);
+        int successCount = (int) response.items().stream()
+                .filter(item -> item.cardUid() != null && !"failed".equals(item.status()))
+                .count();
+        int failedCount = response.items().size() - successCount;
+
+        safeRecordProductEvent(userId, request.clientRequestId(), new VocabularyProductEventService.ServerEvent(
+                "vocabulary-capture-submitted:" + sha256(request.clientRequestId()),
+                "vocabulary_capture_submitted",
+                traceId,
+                null,
+                Map.of(
+                        "sourceType", sourceType,
+                        "successCount", successCount,
+                        "failedCount", failedCount)));
+
+        for (int index = 0; index < response.items().size(); index++) {
+            VocabularyCaptureResponse.Item item = response.items().get(index);
+            if (!"ready".equals(item.status()) || item.cardUid() == null) continue;
+            String readyIdentity = request.clientRequestId() + ":" + index + ":" + item.cardUid();
+            safeRecordProductEvent(userId, request.clientRequestId(),
+                    new VocabularyProductEventService.ServerEvent(
+                            "vocabulary-cards-ready:capture:" + sha256(readyIdentity),
+                            "vocabulary_cards_ready",
+                            traceId,
+                            item.cardUid(),
+                            Map.of("sourceType", sourceType)));
+        }
+    }
+
+    private String captureTraceId(VocabularyCaptureRequest request, String sourceType) {
+        if (!"ocr_image".equals(sourceType) || request.source() == null
+                || request.source().metadata() == null) {
+            return request.clientRequestId();
+        }
+        Object traceId = request.source().metadata().get("recognitionTraceId");
+        return traceId instanceof String text && !text.isBlank() ? text : request.clientRequestId();
+    }
+
+    private void safeRecordProductEvent(
+            Long userId, String requestId, VocabularyProductEventService.ServerEvent event) {
+        try {
+            productEventService.recordServerEvent(userId, event);
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Vocabulary product event write failed eventName={} requestId={} errorType={}",
+                    event.eventName(), requestId, exception.getClass().getSimpleName());
+        }
     }
 
     @Transactional
@@ -184,11 +242,14 @@ public class VocabularyCaptureService {
     }
 
     private String dictionaryFavoriteRequestId(Long userId, String normalizedTerm) {
-        String value = userId + ":" + normalizedTerm;
+        return "dictionary-favorite-" + userId + "-" + sha256(userId + ":" + normalizedTerm);
+    }
+
+    private String sha256(String value) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(value.getBytes(StandardCharsets.UTF_8));
-            return "dictionary-favorite-" + userId + "-" + HexFormat.of().formatHex(digest);
+            return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }

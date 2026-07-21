@@ -113,6 +113,7 @@ import {
   updateCandidateTerm,
   type ImportCandidate,
 } from '@/features/vocabulary/imageRecognition'
+import { vocabularyProductEvents } from '@/features/vocabulary/productEvents'
 import VocabularyImageCapture from './VocabularyImageCapture.vue'
 import VocabularyTermReview, { type VocabularyReviewCommand } from './VocabularyTermReview.vue'
 import VocabularyTextCapture from './VocabularyTextCapture.vue'
@@ -153,6 +154,7 @@ const submitting = ref(false)
 const imageRecognizing = ref(false)
 const imageCaptureRef = ref<{ deactivate: () => void } | null>(null)
 let manualCandidateSequence = 0
+const recognitionBaselines = new Map<string, { candidateCount: number, suspectedCount: number }>()
 
 const activeThemes = computed(() => {
   const catalog = props.themeCatalog
@@ -237,6 +239,13 @@ function mergeImageCandidates(payload: { response: VocabularyImageRecognitionRes
   const merged = mergeRecognitionCandidateState(candidates.value, payload.response, payload.file.name)
   candidates.value = merged.candidates
   warnings.value = merged.warnings
+  const batchCandidates = candidates.value.filter(
+    (candidate) => candidate.source === 'ocr_image' && candidate.sourceBatchId === payload.response.traceId,
+  )
+  recognitionBaselines.set(payload.response.traceId, {
+    candidateCount: batchCandidates.length,
+    suspectedCount: batchCandidates.filter((candidate) => candidate.status === 'suspected_typo').length,
+  })
 }
 
 function handleReviewCommand(command: VocabularyReviewCommand) {
@@ -281,10 +290,35 @@ async function submitCapture() {
       themeUid: selectedThemeUid.value,
       sourceContext: sourceContext.value,
     })
+    const confirmedRecognitionTraces = new Set<string>()
 
     const result = await orchestrateCaptureBatches({
       batches,
-      capture: (payload) => props.captureMutation.mutateAsync(payload),
+      capture: (payload) => {
+        const traceId = payload.source.type === 'ocr_image'
+          ? String(payload.source.metadata.recognitionTraceId ?? '')
+          : ''
+        if (traceId && !confirmedRecognitionTraces.has(traceId)) {
+          confirmedRecognitionTraces.add(traceId)
+          const current = candidates.value.filter(
+            (candidate) => candidate.source === 'ocr_image' && candidate.sourceBatchId === traceId,
+          )
+          const baseline = recognitionBaselines.get(traceId) ?? {
+            candidateCount: current.length,
+            suspectedCount: current.filter((candidate) => candidate.status === 'suspected_typo').length,
+          }
+          void vocabularyProductEvents.candidatesConfirmed({
+            traceId,
+            candidateCount: baseline.candidateCount,
+            suspectedCount: baseline.suspectedCount,
+            selectedCount: current.filter((candidate) => candidate.selected).length,
+            editedCount: current.filter((candidate) => candidate.resolution === 'suggestion_applied').length,
+            removedCount: Math.max(0, baseline.candidateCount - current.length),
+            resolutionCount: current.filter((candidate) => candidate.resolution !== 'unresolved').length,
+          })
+        }
+        return props.captureMutation.mutateAsync(payload)
+      },
       isComplete: isVocabularyCaptureComplete,
       onBatchComplete: (candidateIds) => {
         const completedIds = new Set(candidateIds)

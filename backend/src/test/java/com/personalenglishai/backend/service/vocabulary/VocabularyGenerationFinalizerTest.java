@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -11,19 +12,24 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +40,15 @@ class VocabularyGenerationFinalizerTest {
     @Mock private VocabularyGenerationJobMapper jobs;
     @Mock private VocabularyCardMapper cards;
     @Mock private VocabularyRevisionMapper revisions;
+    @Mock private VocabularySourceMapper sources;
+    @Mock private VocabularyProductEventService productEvents;
 
     private VocabularyGenerationFinalizer finalizer;
 
     @BeforeEach
     void setUp() {
-        finalizer = new VocabularyGenerationFinalizer(jobs, cards, revisions);
+        finalizer = new VocabularyGenerationFinalizer(
+                jobs, cards, revisions, sources, productEvents, new ObjectMapper());
     }
 
     @Test
@@ -225,6 +234,54 @@ class VocabularyGenerationFinalizerTest {
         assertNotNull(success.getAnnotation(Transactional.class));
         assertNotNull(failure.getAnnotation(Transactional.class));
         assertNotNull(cancel.getAnnotation(Transactional.class));
+    }
+
+    @Test
+    void activatedReadyRevisionRecordsStableSourceLinkedEvent() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        job.setRequestJson("{\"clientRequestId\":\"req-safe\",\"sourceUid\":\"src_ocr\"}");
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        VocabularyCardSource source = VocabularyTestFixtures.manualSource(null);
+        source.setSourceUid("src_ocr");
+        source.setSourceType("ocr_image");
+        source.setMetadataJson(
+                "{\"recognitionTraceId\":\"trace-safe\",\"fileName\":\"private.png\"}");
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_ocr")).thenReturn(source);
+
+        assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
+                finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
+
+        ArgumentCaptor<VocabularyProductEventService.ServerEvent> event =
+                ArgumentCaptor.forClass(VocabularyProductEventService.ServerEvent.class);
+        verify(productEvents).recordServerEvent(eq(7L), event.capture());
+        assertEquals("vocabulary-cards-ready:rev_ready", event.getValue().eventUid());
+        assertEquals("vocabulary_cards_ready", event.getValue().eventName());
+        assertEquals("trace-safe", event.getValue().traceId());
+        assertEquals("card_1", event.getValue().cardUid());
+        assertEquals(Map.of("sourceType", "ocr_image"), event.getValue().properties());
+    }
+
+    @Test
+    void eventFailureDoesNotRollbackReadyFinalization() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_ready", "card_1", null, 0);
+        job.setRequestJson("{\"sourceUid\":\"src_1\"}");
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        VocabularyCardRevision revision = aiRevision("rev_ready", null);
+        when(cards.findByUidForUpdate("card_1")).thenReturn(card);
+        when(jobs.markSucceeded("job_ready", "lease_ready", "rev_ready", "complete", null)).thenReturn(1);
+        when(cards.updateActiveRevision(
+                7L, "card_1", null, "rev_ready", "ready", "basic", 1, null, null)).thenReturn(1);
+        when(sources.findBySourceUid("src_1")).thenReturn(VocabularyTestFixtures.manualSource(null));
+        when(productEvents.recordServerEvent(eq(7L), any()))
+                .thenThrow(new RuntimeException("unavailable"));
+
+        assertEquals(VocabularyGenerationFinalizer.SuccessOutcome.ACTIVATED,
+                finalizer.finalizeSuccess(job, "lease_ready", revision, "complete", null));
     }
 
     private VocabularyCardRevision aiRevision(String revisionUid, String baseRevisionUid) {

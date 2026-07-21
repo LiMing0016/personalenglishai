@@ -1,30 +1,49 @@
 package com.personalenglishai.backend.service.vocabulary;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCard;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision;
+import com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource;
 import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper;
+import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class VocabularyGenerationFinalizer {
+    private static final Logger log = LoggerFactory.getLogger(VocabularyGenerationFinalizer.class);
 
     private final VocabularyGenerationJobMapper jobs;
     private final VocabularyCardMapper cards;
     private final VocabularyRevisionMapper revisions;
+    private final VocabularySourceMapper sources;
+    private final VocabularyProductEventService productEvents;
+    private final ObjectMapper objectMapper;
 
     public VocabularyGenerationFinalizer(
             VocabularyGenerationJobMapper jobs,
             VocabularyCardMapper cards,
-            VocabularyRevisionMapper revisions) {
+            VocabularyRevisionMapper revisions,
+            VocabularySourceMapper sources,
+            VocabularyProductEventService productEvents,
+            ObjectMapper objectMapper) {
         this.jobs = jobs;
         this.cards = cards;
         this.revisions = revisions;
+        this.sources = sources;
+        this.productEvents = productEvents;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -53,6 +72,7 @@ public class VocabularyGenerationFinalizer {
         String currentRevisionUid = card.getActiveRevisionUid();
         if (Objects.equals(job.getBaseRevisionUid(), currentRevisionUid)) {
             activate(card, currentRevisionUid, job, revision, activationStatus(partial));
+            scheduleReadyEvent(card, job, revision, partial);
             return successOutcome(partial);
         }
 
@@ -64,12 +84,82 @@ public class VocabularyGenerationFinalizer {
                 && "ai".equals(currentRevision.getAuthorType());
         if (currentIsAi) {
             activate(card, currentRevisionUid, job, revision, activationStatus(partial));
+            scheduleReadyEvent(card, job, revision, partial);
             return successOutcome(partial);
         }
         if (cards.markConflictCandidate(card.getCardUid(), revision.getRevisionUid()) != 1) {
             throw new FinalizationConflictException(job.getJobUid());
         }
         return SuccessOutcome.NEEDS_REVIEW;
+    }
+
+    private void scheduleReadyEvent(
+            VocabularyCard card,
+            VocabularyGenerationJob job,
+            VocabularyCardRevision revision,
+            boolean partial) {
+        if (partial) return;
+        Runnable recorder = () -> recordReadyEvent(card, job, revision);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    recorder.run();
+                }
+            });
+        } else {
+            recorder.run();
+        }
+    }
+
+    private void recordReadyEvent(
+            VocabularyCard card, VocabularyGenerationJob job, VocabularyCardRevision revision) {
+        try {
+            JsonNode request = objectMapper.readTree(job.getRequestJson());
+            String sourceUid = textValue(request, "sourceUid");
+            if (sourceUid == null) {
+                log.warn("Vocabulary ready event skipped cardUid={} reason=source_missing", card.getCardUid());
+                return;
+            }
+            VocabularyCardSource source = sources.findBySourceUid(sourceUid);
+            if (source == null) {
+                log.warn("Vocabulary ready event skipped cardUid={} reason=source_unavailable", card.getCardUid());
+                return;
+            }
+            String traceId = sourceTraceId(source, request);
+            productEvents.recordServerEvent(card.getUserId(), new VocabularyProductEventService.ServerEvent(
+                    "vocabulary-cards-ready:" + revision.getRevisionUid(),
+                    "vocabulary_cards_ready",
+                    traceId,
+                    card.getCardUid(),
+                    Map.of("sourceType", source.getSourceType())));
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException exception) {
+            log.warn(
+                    "Vocabulary ready event write failed cardUid={} errorType={}",
+                    card.getCardUid(), exception.getClass().getSimpleName());
+        }
+    }
+
+    private String sourceTraceId(VocabularyCardSource source, JsonNode request) {
+        if ("ocr_image".equals(source.getSourceType()) && source.getMetadataJson() != null) {
+            try {
+                String recognitionTraceId = textValue(
+                        objectMapper.readTree(source.getMetadataJson()), "recognitionTraceId");
+                if (recognitionTraceId != null) return recognitionTraceId;
+            } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+                log.warn(
+                        "Vocabulary ready source metadata unavailable sourceUid={} errorType={}",
+                        source.getSourceUid(), exception.getClass().getSimpleName());
+            }
+        }
+        return textValue(request, "clientRequestId");
+    }
+
+    private String textValue(JsonNode object, String field) {
+        if (object == null) return null;
+        JsonNode value = object.get(field);
+        if (value == null || !value.isTextual() || value.textValue().isBlank()) return null;
+        return value.textValue();
     }
 
     @Transactional
