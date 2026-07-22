@@ -4,25 +4,25 @@ from agents import Agent
 
 from ..prompts.resolver import PromptResolutionError
 from ..prompts.resolver import resolve_agent_prompt_kwargs
-from ..schemas.vocabulary_card import VocabularyCoreFallbackOutput, VocabularyMarkdownOutput
+from ..schemas.vocabulary_card import VocabularyCardBlocks, VocabularyCoreFallbackOutput
 
 
-def create_vocabulary_core_fallback_agent(model: str) -> Agent:
+def create_vocabulary_core_agent(model: str) -> Agent:
     prompt_kwargs = resolve_agent_prompt_kwargs("vocabulary_core_fallback")
     return Agent(
-        name="VocabularyCoreFallbackAgent",
+        name="VocabularyCoreAgent",
         model=model,
         output_type=VocabularyCoreFallbackOutput,
         **prompt_kwargs,
     )
 
 
-def create_vocabulary_card_markdown_agent(model: str) -> Agent:
-    prompt_kwargs = resolve_agent_prompt_kwargs("vocabulary_card_markdown")
+def create_vocabulary_card_blocks_agent(model: str) -> Agent:
+    prompt_kwargs = resolve_agent_prompt_kwargs("vocabulary_card_blocks")
     return Agent(
-        name="VocabularyCardMarkdownAgent",
+        name="VocabularyCardBlocksAgent",
         model=model,
-        output_type=VocabularyMarkdownOutput,
+        output_type=VocabularyCardBlocks,
         **prompt_kwargs,
     )
 

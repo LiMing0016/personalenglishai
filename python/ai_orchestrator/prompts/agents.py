@@ -21,6 +21,7 @@ _PROMPT_FILES = {
     "translation": "agent_instructions/translation.md",
     "translate_vocab": "agent_instructions/translate_vocab.md",
     "vocab": "agent_instructions/vocab.md",
+    "vocabulary_card_blocks": "agent_instructions/vocabulary_card_blocks.md",
     "vocabulary_card_markdown": "agent_instructions/vocabulary_card_markdown.md",
     "vocabulary_core_fallback": "agent_instructions/vocabulary_core_fallback.md",
     "vocabulary_image_recognition": "agent_instructions/vocabulary_image_recognition.md",
@@ -33,6 +34,7 @@ _STRUCTURED_OUTPUT_ONLY_AGENT_KEYS = frozenset(
     {
         "prompt_sheet_canvas",
         "route_decision",
+        "vocabulary_card_blocks",
         "vocabulary_card_markdown",
         "vocabulary_core_fallback",
         "vocabulary_image_recognition",
@@ -44,6 +46,7 @@ _STRUCTURED_OUTPUT_ONLY_AGENT_KEYS = frozenset(
 
 _BACKGROUND_JOB_AGENT_KEYS = frozenset(
     {
+        "vocabulary_card_blocks",
         "vocabulary_card_markdown",
         "vocabulary_core_fallback",
         "vocabulary_image_recognition",

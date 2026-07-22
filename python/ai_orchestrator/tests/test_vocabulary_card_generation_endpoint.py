@@ -15,21 +15,24 @@ from python.ai_orchestrator.workflows.vocabulary_card_generation import (
 
 def request_payload() -> dict:
     return {
-        "contractVersion": 1,
-        "coreSchemaVersion": 1,
+        "contractVersion": 2,
+        "coreSchemaVersion": 2,
+        "cardBlocksSchemaVersion": 1,
         "requestId": "job_123:attempt_1",
         "traceId": "vocab-job_123-attempt_1",
         "timeoutBudgetMs": 45_000,
         "term": "supposed",
         "dictionaryCore": {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "term": "supposed",
             "phonetics": [{"region": "uk", "text": "səˈpəʊzd", "audioUrl": None}],
             "senses": [
                 {
+                    "id": "sense_adjective_01",
                     "partOfSpeech": "adjective",
                     "meanings": [
                         {
+                            "id": "meaning_expected_01",
                             "definitionEn": "generally believed or expected",
                             "definitionZh": "一般认为的；预期的",
                         }
@@ -43,7 +46,7 @@ def request_payload() -> dict:
             "version": 1,
             "name": "Exam",
             "purpose": "用于考试词义、搭配和易错点学习",
-            "promptStrategyKey": "exam-markdown-v1",
+            "promptStrategyKey": "exam-blocks-v1",
             "contentFormatVersion": 1,
         },
     }
@@ -51,18 +54,42 @@ def request_payload() -> dict:
 
 def complete_response(*, extra: dict | None = None) -> dict:
     response = {
-        "contractVersion": 1,
-        "coreSchemaVersion": 1,
+        "contractVersion": 2,
+        "coreSchemaVersion": 2,
+        "cardBlocksSchemaVersion": 1,
         "core": request_payload()["dictionaryCore"],
-        "contentMarkdown": "## Exam focus\n\nUseful collocation.",
-        "contentFormatVersion": 1,
+        "cardBlocks": {
+            "schemaVersion": 1,
+            "blocks": [
+                {
+                    "id": "block_examples_01",
+                    "type": "exampleList",
+                    "title": "常用例句",
+                    "meaningRefs": ["meaning_expected_01"],
+                    "format": "structured",
+                    "content": {
+                        "items": [
+                            {
+                                "sentence": "It is supposed to be easy.",
+                                "translation": "这应该很容易。",
+                            }
+                        ]
+                    },
+                    "source": "ai",
+                    "sourceRef": None,
+                    "sortOrder": 10,
+                    "userEdited": False,
+                    "locked": False,
+                }
+            ],
+        },
         "outcome": "complete",
         "warning": None,
         "generation": {
             "provider": "openai",
             "model": "test-model",
-            "promptVersion": "vocabulary-card-markdown-v1",
-            "modelCallCount": 1,
+            "promptVersion": "vocabulary-card-blocks-v1",
+            "modelCallCount": 2,
             "traceId": "vocab-job_123-attempt_1",
         },
     }
@@ -75,9 +102,9 @@ def partial_response() -> dict:
     response = complete_response()
     response.update(
         {
-            "contentMarkdown": "",
+            "cardBlocks": {"schemaVersion": 1, "blocks": []},
             "outcome": "partial",
-            "warning": "markdown_unavailable",
+            "warning": "card_blocks_unavailable",
         }
     )
     return response
@@ -153,9 +180,9 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["outcome"], "complete")
-        self.assertEqual(response.json()["contentMarkdown"], "## Exam focus\n\nUseful collocation.")
+        self.assertEqual(response.json()["cardBlocks"]["blocks"][0]["type"], "exampleList")
         self.assertEqual(service.received.term, "supposed")
-        self.assertEqual(service.received.theme.prompt_strategy_key, "exam-markdown-v1")
+        self.assertEqual(service.received.theme.prompt_strategy_key, "exam-blocks-v1")
 
     def test_valid_token_returns_partial_response(self) -> None:
         client = TestClient(app)
@@ -166,8 +193,8 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["outcome"], "partial")
-        self.assertEqual(response.json()["contentMarkdown"], "")
-        self.assertEqual(response.json()["warning"], "markdown_unavailable")
+        self.assertEqual(response.json()["cardBlocks"]["blocks"], [])
+        self.assertEqual(response.json()["warning"], "card_blocks_unavailable")
 
     def test_invalid_schema_returns_pydantic_422_without_calling_service(self) -> None:
         client = TestClient(app)
@@ -217,7 +244,7 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
             )
         )
         payload = request_payload()
-        payload["theme"]["promptStrategyKey"] = "future-markdown-v2"
+        payload["theme"]["promptStrategyKey"] = "future-blocks-v2"
 
         with patch("python.ai_orchestrator.app.vocabulary_card_generation_service", service):
             response = self.post(client, payload=payload)
@@ -263,7 +290,7 @@ class VocabularyCardGenerationEndpointTest(unittest.TestCase):
             "AI_ASSISTANT_PROMPT_SOURCE": "remote",
             "AI_PROMPT_VOCABULARY_CORE_FALLBACK_ID": "pmpt_vocab_core_123",
             "AI_PROMPT_VOCABULARY_CORE_FALLBACK_VERSION": "1",
-            "AI_PROMPT_VOCABULARY_CARD_MARKDOWN_ID": "pmpt_vocab_markdown_456",
+            "AI_PROMPT_VOCABULARY_CARD_BLOCKS_ID": "pmpt_vocab_blocks_456",
             "OPENAI_API_KEY": "test-key",
             "OPENAI_BASE_URL": "https://api.openai.com/v1",
             "VOCABULARY_GENERATION_INTERNAL_TOKEN": "internal-test-token",
