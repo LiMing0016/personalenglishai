@@ -60,6 +60,18 @@ class AssistantRuntimeModeTest(unittest.TestCase):
         self.assertEqual(build_session_key("multi_agent", "conv-1"), "multi:conv-1")
         self.assertEqual(build_session_key("single_agent_raw", "conv-1"), "single-raw:conv-1")
 
+    def test_rejects_removed_tool_enabled_single_agent_mode(self) -> None:
+        with self.assertRaises(ValidationError):
+            AssistantRequest.model_validate(
+                {
+                    "clientMessageId": "client-1",
+                    "agentMode": "single_agent_tools",
+                    "mode": "daily_explain",
+                    "intent": "free_chat",
+                    "message": {"text": "安顺今天的天气怎么样？"},
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

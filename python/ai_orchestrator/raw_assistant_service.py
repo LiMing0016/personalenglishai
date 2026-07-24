@@ -17,6 +17,8 @@ from .services.agent_session_runner import run_agent_session
 from .services.agent_session_runner import stream_agent_session
 from .services.assistant_request_validator import validate_assistant_request
 from .services.assistant_runtime_mode import build_session_key
+from .services.raw_fetch_mcp import RawFetchMcpConfig
+from .services.raw_fetch_mcp import connected_raw_fetch_mcp_servers
 
 
 log = logging.getLogger("uvicorn.error")
@@ -27,9 +29,16 @@ class RawAssistantConfigError(RuntimeError):
 
 
 class RawSingleAgentService:
-    def __init__(self, *, model: str, session_db_path: str) -> None:
+    def __init__(
+        self,
+        *,
+        model: str,
+        session_db_path: str,
+        fetch_mcp_config: RawFetchMcpConfig | None = None,
+    ) -> None:
         self.model = model
         self.session_db_path = session_db_path
+        self.fetch_mcp_config = fetch_mcp_config or RawFetchMcpConfig(enabled=False)
         self._agent = None
 
     @classmethod
@@ -43,18 +52,36 @@ class RawSingleAgentService:
             "AI_ASSISTANT_SESSION_DB_PATH",
             str(Path(__file__).resolve().parent / "data" / "assistant_sessions.db"),
         )
-        return cls(model=model, session_db_path=session_db_path)
+        return cls(
+            model=model,
+            session_db_path=session_db_path,
+            fetch_mcp_config=RawFetchMcpConfig.from_env(),
+        )
 
     def is_configured(self) -> bool:
         return bool(os.getenv("OPENAI_API_KEY", "").strip())
 
-    def _get_agent(self):
+    def _get_agent(self, *, mcp_servers=()):
+        if not self.is_configured() and self._agent is None:
+            raise RawAssistantConfigError("OPENAI_API_KEY 未配置，原始模型暂时不可用。")
+        if mcp_servers:
+            return create_raw_single_agent(self.model, mcp_servers=mcp_servers)
         if self._agent is not None:
             return self._agent
-        if not self.is_configured():
-            raise RawAssistantConfigError("OPENAI_API_KEY 未配置，原始模型暂时不可用。")
         self._agent = create_raw_single_agent(self.model)
         return self._agent
+
+    @staticmethod
+    def _with_sources(content: str, sources) -> str:
+        source_lines = []
+        for source in sources:
+            if source.url in content:
+                continue
+            title = source.title.replace("[", r"\[").replace("]", r"\]")
+            source_lines.append(f"- [{title}]({source.url})")
+        if not source_lines:
+            return content
+        return f"{content}\n\n### 来源\n\n" + "\n".join(source_lines)
 
     async def run_assistant_request(
         self,
@@ -80,22 +107,25 @@ class RawSingleAgentService:
             bool(authorization),
         )
         try:
-            result = await run_agent_session(
-                agent=self._get_agent(),
-                agent_input=raw_input.agent_input,
-                conversation_id=session_key,
-                session_db_path=self.session_db_path,
-                use_session=raw_input.use_session,
-                trace_workflow_name="PEAI Raw Single Agent",
-                trace_metadata={
-                    "agent_mode": "single_agent_raw",
-                    "conversation_id": conversation_id,
-                    "run_id": run_id,
-                    "trace_id": trace_id,
-                    "input_scope": validated.scope,
-                    "streaming": "false",
-                },
-            )
+            async with connected_raw_fetch_mcp_servers(
+                self.fetch_mcp_config
+            ) as mcp_servers:
+                result = await run_agent_session(
+                    agent=self._get_agent(mcp_servers=mcp_servers),
+                    agent_input=raw_input.agent_input,
+                    conversation_id=session_key,
+                    session_db_path=self.session_db_path,
+                    use_session=raw_input.use_session,
+                    trace_workflow_name="PEAI Raw Single Agent",
+                    trace_metadata={
+                        "agent_mode": "single_agent_raw",
+                        "conversation_id": conversation_id,
+                        "run_id": run_id,
+                        "trace_id": trace_id,
+                        "input_scope": validated.scope,
+                        "streaming": "false",
+                    },
+                )
             if not result.final_output:
                 raise RawAssistantConfigError("原始模型没有返回内容。")
             metadata = self._build_run_metadata(
@@ -108,7 +138,7 @@ class RawSingleAgentService:
                 latency_ms=(time.perf_counter() - started_at) * 1000,
             )
             return AssistantReply(
-                reply=result.final_output,
+                reply=self._with_sources(result.final_output, result.sources),
                 agent_name=result.agent_name or "Raw Single Agent",
                 run=metadata,
                 parts=[],
@@ -153,31 +183,34 @@ class RawSingleAgentService:
 
         try:
             final_result = None
-            async for event in stream_agent_session(
-                agent=self._get_agent(),
-                agent_input=raw_input.agent_input,
-                conversation_id=session_key,
-                session_db_path=self.session_db_path,
-                use_session=raw_input.use_session,
-                trace_workflow_name="PEAI Raw Single Agent",
-                trace_metadata={
-                    "agent_mode": "single_agent_raw",
-                    "conversation_id": conversation_id,
-                    "run_id": run_id,
-                    "trace_id": trace_id,
-                    "input_scope": validated.scope,
-                    "streaming": "true",
-                },
-            ):
-                if event.type == "delta":
-                    yield {
-                        "type": "message.delta",
-                        "runId": run_id,
-                        "messageId": message_id,
-                        "delta": event.delta,
-                    }
-                else:
-                    final_result = event.result
+            async with connected_raw_fetch_mcp_servers(
+                self.fetch_mcp_config
+            ) as mcp_servers:
+                async for event in stream_agent_session(
+                    agent=self._get_agent(mcp_servers=mcp_servers),
+                    agent_input=raw_input.agent_input,
+                    conversation_id=session_key,
+                    session_db_path=self.session_db_path,
+                    use_session=raw_input.use_session,
+                    trace_workflow_name="PEAI Raw Single Agent",
+                    trace_metadata={
+                        "agent_mode": "single_agent_raw",
+                        "conversation_id": conversation_id,
+                        "run_id": run_id,
+                        "trace_id": trace_id,
+                        "input_scope": validated.scope,
+                        "streaming": "true",
+                    },
+                ):
+                    if event.type == "delta":
+                        yield {
+                            "type": "message.delta",
+                            "runId": run_id,
+                            "messageId": message_id,
+                            "delta": event.delta,
+                        }
+                    else:
+                        final_result = event.result
 
             if final_result is None or not final_result.final_output:
                 raise RawAssistantConfigError("原始模型没有返回内容。")
@@ -190,11 +223,12 @@ class RawSingleAgentService:
                 run_items=final_result.run_items,
                 latency_ms=(time.perf_counter() - started_at) * 1000,
             )
+            final_content = self._with_sources(final_result.final_output, final_result.sources)
             yield {
                 "type": "message.completed",
                 "runId": run_id,
                 "messageId": message_id,
-                "content": final_result.final_output,
+                "content": final_content,
                 "parts": [],
             }
             yield {
@@ -227,6 +261,29 @@ class RawSingleAgentService:
         run_items,
         latency_ms: float,
     ) -> AssistantRunMetadata:
+        steps = [
+            {
+                "stepType": "target_agent",
+                "agentName": "Raw Single Agent",
+                "usage": {
+                    "requests": usage.requests,
+                    "inputTokens": usage.input_tokens,
+                    "cachedInputTokens": usage.cached_input_tokens,
+                    "outputTokens": usage.output_tokens,
+                    "totalTokens": usage.total_tokens,
+                },
+                "responseId": run_items.last_response_id,
+            }
+        ]
+        if run_items.tool_call_count:
+            steps.append(
+                {
+                    "stepType": "tool_calls",
+                    "toolCallCount": run_items.tool_call_count,
+                    "toolNames": list(run_items.tool_names),
+                }
+            )
+
         return AssistantRunMetadata(
             runId=run_id,
             traceId=trace_id,
@@ -247,19 +304,6 @@ class RawSingleAgentService:
             openai=AssistantOpenAIState(responseId=run_items.last_response_id),
             routeRequest=None,
             routingDecision=None,
-            steps=[
-                {
-                    "stepType": "target_agent",
-                    "agentName": "Raw Single Agent",
-                    "usage": {
-                        "requests": usage.requests,
-                        "inputTokens": usage.input_tokens,
-                        "cachedInputTokens": usage.cached_input_tokens,
-                        "outputTokens": usage.output_tokens,
-                        "totalTokens": usage.total_tokens,
-                    },
-                    "responseId": run_items.last_response_id,
-                }
-            ],
+            steps=steps,
             promptSnapshots=[],
         )
