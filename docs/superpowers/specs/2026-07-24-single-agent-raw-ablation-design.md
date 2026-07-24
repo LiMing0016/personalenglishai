@@ -2,7 +2,12 @@
 
 **日期：** 2026-07-24  
 **状态：** 已实现，待合并
+
 **目标分支：** `codex/single-agent-raw-ablation-design`
+
+> 当前产品方向已调整：不增加第三套联网 Agent。`WebSearchTool` 直接加入
+> 现有 `single_agent_raw`，让“原始模型”成为逐步增加工具能力的单 Agent
+> 路线。详见[原始单 Agent 能力扩展](../../agent/原始单Agent能力扩展.md)。
 
 ## 1. 背景
 
@@ -34,7 +39,7 @@
 | 模式 | 含义 |
 | --- | --- |
 | `multi_agent` | 当前完整多 Agent 环境，保持现有行为 |
-| `single_agent_raw` | 无应用级 Prompt、无工具、无路由的原始单 Agent 环境 |
+| `single_agent_raw` | 无应用级 Prompt、带托管网页搜索工具、无路由的单 Agent 环境 |
 
 环境变量定义默认模式：
 
@@ -64,6 +69,8 @@ AssistantAgentService        RawSingleAgentService
           |                          |
           v                          v
 现有 Route/Agents/Tools      Raw Single Agent
+                                     +
+                              WebSearchTool
           |                          |
           +-------------+------------+
                         |
@@ -107,6 +114,7 @@ AssistantAgentService        RawSingleAgentService
 Agent(
     name="Raw Single Agent",
     model=model,
+    tools=[WebSearchTool()],
 )
 ```
 
@@ -114,7 +122,6 @@ Agent(
 
 - `instructions`。
 - `prompt`。
-- `tools`。
 - `handoffs`。
 - `output_type`。
 - Agent guardrail 或业务审批流程。
@@ -194,7 +201,7 @@ single-raw:{conversationId}
 
 - 多 Agent 生成的历史被 Raw Agent 当作自身上下文。
 - Raw Agent 的回答改变多 Agent 的后续路由。
-- 两种模式共享 SDK `previous_response_id` 或 Session。
+- 不同模式共享 SDK `previous_response_id` 或 Session。
 
 如需比较相同历史，由评测工具分别创建两个新 Session，按相同顺序重放同一组输入。
 
@@ -240,7 +247,8 @@ Raw Agent 可以自然输出模型生成的普通文本或 Markdown，但 PEAI �
 }
 ```
 
-Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工具调用记录。
+Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤或 handoff。实际发生的
+网页搜索会记录为 `tool_calls` 步骤。
 
 ## 9. 错误处理与回退
 
@@ -276,7 +284,8 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 - 最终状态。
 - Trace ID。
 
-`single_agent_raw` 的正常模型请求次数预期为一次；如果 SDK 因模型内部行为产生额外调用，必须从 Trace 中如实记录。
+`single_agent_raw` 不需要搜索时通常只发生一次模型请求；触发搜索时由 SDK
+完成工具循环，模型请求数和工具调用数必须从 Trace 中如实记录。
 
 实验日志不得记录完整用户私密文本。固定评测集可以记录 case id 和评分结果。
 
@@ -368,7 +377,7 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 验证 Raw Agent：
 
 - `instructions` 为空。
-- `tools` 为空。
+- `tools` 只包含 `WebSearchTool`。
 - `handoffs` 为空。
 - 未设置结构化 `output_type`。
 - 未调用 Prompt Resolver。
@@ -445,7 +454,7 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 
 第一阶段明确不包括：
 
-- 业务工具。
+- 除 `WebSearchTool` 以外的业务工具。
 - 单词卡片。
 - 学习 Block。
 - 英语专项 Prompt。
@@ -460,7 +469,8 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 - 默认运行模式仍为 `multi_agent`。
 - 现有多 Agent 测试与行为保持不变。
 - 可以通过受控开关启动 `single_agent_raw`。
-- Raw Agent 没有任何 PEAI 应用级 Prompt、工具和 handoff。
+- Raw Agent 没有任何 PEAI 应用级 Prompt、路由或 handoff。
+- Raw Agent 只声明 `WebSearchTool`，后续工具继续在同一个 Agent 上扩展。
 - Raw Agent 不调用 RouteDecisionRunner 或 Specialist Agent。
 - 两种模式使用独立 Session。
 - 两种模式返回相同的 HTTP 和流式协议。
@@ -484,5 +494,9 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 4. 通过“再简单一点”修改上一轮回答。
 
 四轮均由 `Raw Single Agent` 单次模型请求完成，运行元数据为
-`agentMode=single_agent_raw`，未经过业务路由、工具或 handoff。结构测试、
-后端协议测试、前端模式切换测试和前端生产构建均已执行。
+`agentMode=single_agent_raw`，未经过业务路由或 handoff。
+
+随后按产品方向把 `WebSearchTool` 直接加入同一个 `Raw Single Agent`。真实
+查询 OpenAI Agents SDK 官方文档和安顺市当天实时天气时，运行元数据仍为
+`agentMode=single_agent_raw`，并记录一次 `web_search`；页面仍只展示
+“多 Agent”和“原始模型”两个选项。
