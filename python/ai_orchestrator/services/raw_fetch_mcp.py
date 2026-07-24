@@ -33,6 +33,7 @@ def create_raw_fetch_mcp_server(config: RawFetchMcpConfig):
             "env": {"PYTHONIOENCODING": "utf-8"},
         },
         cache_tools_list=True,
+        client_session_timeout_seconds=30,
     )
 
 
