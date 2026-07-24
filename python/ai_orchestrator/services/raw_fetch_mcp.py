@@ -43,11 +43,20 @@ async def connected_raw_fetch_mcp_servers(config: RawFetchMcpConfig):
         yield ()
         return
 
-    server = create_raw_fetch_mcp_server(config)
+    server = None
+    connected = False
     try:
+        server = create_raw_fetch_mcp_server(config)
         await server.connect()
+        connected = True
+        await server.list_tools()
     except Exception:
-        log.warning("Unable to connect to Fetch MCP; continuing without it", exc_info=True)
+        log.warning("Unable to initialize Fetch MCP; continuing without it", exc_info=True)
+        if connected:
+            try:
+                await server.cleanup()
+            except Exception:
+                log.warning("Unable to clean up Fetch MCP", exc_info=True)
         yield ()
         return
 

@@ -1,4 +1,5 @@
 import os
+import types
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -64,6 +65,7 @@ class ConnectedRawFetchMcpServersTest(unittest.IsolatedAsyncioTestCase):
     async def test_connected_server_is_yielded_and_cleaned_up(self) -> None:
         server = MagicMock()
         server.connect = AsyncMock()
+        server.list_tools = AsyncMock(return_value=[])
         server.cleanup = AsyncMock()
 
         with patch(
@@ -74,11 +76,13 @@ class ConnectedRawFetchMcpServersTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(servers, (server,))
 
         server.connect.assert_awaited_once_with()
+        server.list_tools.assert_awaited_once_with()
         server.cleanup.assert_awaited_once_with()
 
     async def test_connect_failure_yields_empty_tuple_without_cleanup(self) -> None:
         server = MagicMock()
         server.connect = AsyncMock(side_effect=RuntimeError("cannot connect"))
+        server.list_tools = AsyncMock(return_value=[])
         server.cleanup = AsyncMock()
 
         with patch(
@@ -90,9 +94,39 @@ class ConnectedRawFetchMcpServersTest(unittest.IsolatedAsyncioTestCase):
 
         server.cleanup.assert_not_awaited()
 
+    async def test_factory_failure_yields_empty_servers(self) -> None:
+        with patch(
+            "python.ai_orchestrator.services.raw_fetch_mcp.create_raw_fetch_mcp_server",
+            side_effect=RuntimeError("factory failed"),
+        ):
+            async with connected_raw_fetch_mcp_servers(
+                RawFetchMcpConfig(enabled=True)
+            ) as servers:
+                self.assertEqual(servers, ())
+
+    async def test_tool_discovery_failure_cleans_up_and_yields_empty_servers(self) -> None:
+        server = types.SimpleNamespace(
+            connect=AsyncMock(),
+            list_tools=AsyncMock(side_effect=RuntimeError("list failed")),
+            cleanup=AsyncMock(),
+        )
+        with patch(
+            "python.ai_orchestrator.services.raw_fetch_mcp.create_raw_fetch_mcp_server",
+            return_value=server,
+        ):
+            async with connected_raw_fetch_mcp_servers(
+                RawFetchMcpConfig(enabled=True)
+            ) as servers:
+                self.assertEqual(servers, ())
+
+        server.connect.assert_awaited_once()
+        server.list_tools.assert_awaited_once()
+        server.cleanup.assert_awaited_once()
+
     async def test_caller_exception_is_reraised_after_cleanup(self) -> None:
         server = MagicMock()
         server.connect = AsyncMock()
+        server.list_tools = AsyncMock(return_value=[])
         server.cleanup = AsyncMock()
 
         with patch(
@@ -108,6 +142,7 @@ class ConnectedRawFetchMcpServersTest(unittest.IsolatedAsyncioTestCase):
     async def test_cleanup_failure_does_not_fail_normal_caller(self) -> None:
         server = MagicMock()
         server.connect = AsyncMock()
+        server.list_tools = AsyncMock(return_value=[])
         server.cleanup = AsyncMock(side_effect=RuntimeError("cleanup failed"))
 
         with patch(
