@@ -106,6 +106,7 @@ class VocabularyCardServiceTransactionTest {
         @Bean VocabularyCoreContentCodec coreCodec(ObjectMapper objectMapper) {
             return new VocabularyCoreContentCodec(objectMapper);
         }
+        @Bean VocabularyCardBlocksCodec cardBlocksCodec() { return new VocabularyCardBlocksCodec(); }
         @Bean RecordingTransactionManager transactionManager() { return new RecordingTransactionManager(); }
         @Bean VocabularyCardService service(
                 VocabularyCardMapper cards,
@@ -117,11 +118,12 @@ class VocabularyCardServiceTransactionTest {
                 VocabularyThemeMapper themes,
                 VocabularyTemplateRegistry templateRegistry,
                 VocabularyCoreContentCodec coreCodec,
+                VocabularyCardBlocksCodec cardBlocksCodec,
                 ObjectMapper objectMapper,
                 VocabularyRevisionWriteService revisionWriter) {
             return new VocabularyCardService(
                     cards, sources, revisions, jobs, preferences, themeService, themes,
-                    templateRegistry, coreCodec, objectMapper, revisionWriter);
+                    templateRegistry, coreCodec, cardBlocksCodec, objectMapper, revisionWriter);
         }
     }
 

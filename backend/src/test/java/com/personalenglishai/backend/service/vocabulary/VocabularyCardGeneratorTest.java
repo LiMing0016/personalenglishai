@@ -178,10 +178,18 @@ class VocabularyCardGeneratorTest {
             @Override
             public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
                 calls++;
-                ObjectNode completedCore = input.dictionaryCore();
+                ObjectNode completedCore = objectMapper.createObjectNode();
+                completedCore.put("schemaVersion", 2);
+                completedCore.put("term", "record");
+                completedCore.putArray("phonetics").addObject()
+                        .put("text", "UK /\u02c8rek\u0254\u02d0d/")
+                        .put("region", "uk")
+                        .putNull("audioUrl");
                 completedCore.putArray("senses").addObject()
+                        .put("id", "sense_noun_1")
                         .put("partOfSpeech", "noun")
                         .putArray("meanings").addObject()
+                        .put("id", "meaning_noun_1")
                         .put("definitionEn", "a written account")
                         .put("definitionZh", "\u8bb0\u5f55");
                 return card(completedCore, input.theme());
@@ -195,6 +203,43 @@ class VocabularyCardGeneratorTest {
                 result.core().path("phonetics").get(0).path("text").asText());
         assertEquals("a written account", result.core().path("senses").get(0)
                 .path("meanings").get(0).path("definitionEn").asText());
+    }
+
+    @Test
+    void acceptsStructuredProviderThatAdaptsMeaningsAndPreservesCardBlocks() {
+        when(dictionary.lookup("record", "en-gb"))
+                .thenReturn(VocabularyTestFixtures.dictionaryLookupWithCoreTruth());
+        RecordingProvider provider = new RecordingProvider("python") {
+            @Override
+            public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
+                calls++;
+                ObjectNode adaptedCore = input.dictionaryCore();
+                ((ObjectNode) adaptedCore.path("senses").get(0).path("meanings").get(0))
+                        .put("definitionEn", "information kept for future use")
+                        .put("definitionZh", "记录；档案");
+                return new GeneratedVocabularyCard(
+                        adaptedCore,
+                        structuredBlocks(),
+                        1,
+                        null,
+                        input.theme().contentFormatVersion(),
+                        "test-model",
+                        "Generated structured fixture",
+                        false,
+                        "complete",
+                        null,
+                        null);
+            }
+        };
+
+        GeneratedVocabularyCard result = generator("python", provider).generate(
+                VocabularyTestFixtures.generating("record"), List.of(), theme(), "trace-structured");
+
+        assertEquals("information kept for future use", result.core().path("senses").get(0)
+                .path("meanings").get(0).path("definitionEn").asText());
+        assertEquals(1, result.cardBlocksSchemaVersion());
+        assertEquals("exampleList", result.cardBlocks().path("blocks").get(0).path("type").asText());
+        assertEquals(null, result.markdown());
     }
 
     @Test
@@ -293,6 +338,26 @@ class VocabularyCardGeneratorTest {
     private GeneratedVocabularyCard card(ObjectNode core, ResolvedVocabularyTheme theme) {
         return new GeneratedVocabularyCard(
                 core, "## Usage", theme.contentFormatVersion(), "test-model", "Generated fixture", false);
+    }
+
+    private ObjectNode structuredBlocks() {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("schemaVersion", 1);
+        ObjectNode block = root.putArray("blocks").addObject();
+        block.put("id", "block_examples_01");
+        block.put("type", "exampleList");
+        block.put("title", "常用例句");
+        block.putArray("meaningRefs").add("meaning_1_1");
+        block.put("format", "structured");
+        block.putObject("content").putArray("items").addObject()
+                .put("sentence", "The record was updated.")
+                .put("translation", "记录已更新。");
+        block.put("source", "ai");
+        block.putNull("sourceRef");
+        block.put("sortOrder", 10);
+        block.put("userEdited", false);
+        block.put("locked", false);
+        return root;
     }
 
     private class RecordingProvider implements VocabularyGenerationProvider {

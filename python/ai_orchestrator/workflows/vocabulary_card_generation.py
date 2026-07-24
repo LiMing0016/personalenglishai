@@ -96,13 +96,23 @@ def apply_trusted_dictionary_phonetics(
     dictionary: VocabularyCore,
 ) -> VocabularyCore:
     """Keep generated meanings while making dictionary audio and phonetics authoritative."""
-    generated_by_region = {
-        phonetic.region: phonetic for phonetic in generated.phonetics
-    }
+    generated_by_region: dict[str, Any] = {}
+    for phonetic in generated.phonetics:
+        generated_by_region.setdefault(phonetic.region, phonetic)
+
     phonetics: list[dict[str, Any]] = []
     seen_regions: set[str] = set()
+    dictionary_standard_regions = {
+        phonetic.region
+        for phonetic in dictionary.phonetics
+        if phonetic.region in {"uk", "us"} and phonetic.text.strip()
+    }
 
     for trusted in dictionary.phonetics:
+        if trusted.region in seen_regions:
+            continue
+        if trusted.region == "other" and dictionary_standard_regions:
+            continue
         generated_match = generated_by_region.get(trusted.region)
         text = trusted.text if trusted.text.strip() else (
             generated_match.text if generated_match is not None else ""
@@ -118,17 +128,25 @@ def apply_trusted_dictionary_phonetics(
         )
         seen_regions.add(trusted.region)
 
-    for candidate in generated.phonetics:
-        if candidate.region in seen_regions or not candidate.text.strip():
-            continue
-        phonetics.append(
-            {
-                "region": candidate.region,
-                "text": candidate.text,
-                "audioUrl": None,
-            }
-        )
-        seen_regions.add(candidate.region)
+    if not phonetics:
+        generated_standard_regions = {
+            phonetic.region
+            for phonetic in generated.phonetics
+            if phonetic.region in {"uk", "us"} and phonetic.text.strip()
+        }
+        for candidate in generated.phonetics:
+            if candidate.region in seen_regions or not candidate.text.strip():
+                continue
+            if candidate.region == "other" and generated_standard_regions:
+                continue
+            phonetics.append(
+                {
+                    "region": candidate.region,
+                    "text": candidate.text,
+                    "audioUrl": None,
+                }
+            )
+            seen_regions.add(candidate.region)
 
     return VocabularyCore.model_validate(
         {

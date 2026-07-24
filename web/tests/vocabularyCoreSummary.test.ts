@@ -13,9 +13,11 @@ const coreSummarySource = readSource('../src/components/vocabulary/VocabularyCor
 const markdownEditorSource = readSource('../src/components/vocabulary/VocabularyMarkdownEditor.vue')
 const cardsComposableSource = readSource('../src/composables/useVocabularyCards.ts')
 
-test('core summary renders every phonetic and bilingual meaning from typed core only', () => {
+test('core summary renders canonical phonetics and bilingual meaning from typed core only', () => {
   assert.match(coreSummarySource, /core\.term/)
-  assert.match(coreSummarySource, /v-for="phonetic in core\.phonetics"/)
+  assert.match(coreSummarySource, /displayPhonetics/)
+  assert.match(coreSummarySource, /v-for="phonetic in displayPhonetics"/)
+  assert.doesNotMatch(coreSummarySource, /v-for="phonetic in core\.phonetics"/)
   assert.match(coreSummarySource, /phonetic\.region/)
   assert.match(coreSummarySource, /phonetic\.text/)
   assert.match(coreSummarySource, /v-for="(?:\(sense, senseIndex\)|sense) in core\.senses"/)
@@ -40,15 +42,30 @@ test('core summary exposes accessible pronunciation controls for every phonetic'
   assert.match(coreSummarySource, /<Volume2\s+aria-hidden="true"\s*\/>/)
 })
 
-test('markdown editor preserves source in a bounded textarea without rendering HTML', () => {
+test('markdown editor provides a Typora-style visual editor with source repair mode and outline', () => {
+  assert.match(markdownEditorSource, /@tiptap\/markdown/)
+  assert.match(markdownEditorSource, /EditorContent/)
+  assert.match(markdownEditorSource, /BubbleMenu/)
+  assert.match(markdownEditorSource, /contentType:\s*['"]markdown['"]/)
+  assert.match(markdownEditorSource, /getMarkdown\(\)/)
   assert.match(markdownEditorSource, /<textarea/)
-  assert.match(markdownEditorSource, /Markdown 内容/)
+  assert.match(markdownEditorSource, /高级源码/)
+  assert.match(markdownEditorSource, /学习内容目录/)
+  assert.match(markdownEditorSource, /buildVocabularyMarkdownOutline/)
+  assert.match(markdownEditorSource, /outline\.value\.findIndex/)
+  assert.match(markdownEditorSource, /querySelectorAll<HTMLElement>\(['"]h2['"]\)/)
+  assert.doesNotMatch(markdownEditorSource, /querySelector<HTMLElement>\(`#\$\{id\}`\)/)
+  assert.match(markdownEditorSource, /grid-template-columns:\s*minmax\(0,\s*820px\)\s+200px/)
+  assert.match(markdownEditorSource, /position:\s*sticky/)
+  assert.match(markdownEditorSource, /@media \(max-width:\s*1023px\)/)
   assert.match(markdownEditorSource, /maxlength="20000"/)
   assert.match(markdownEditorSource, /20,000/)
   assert.match(markdownEditorSource, /modelValue\.length/)
   assert.match(markdownEditorSource, /emit\('update:modelValue', input\.value\)/)
+  assert.match(markdownEditorSource, /if \(sourceMode\.value\) return/)
   assert.match(markdownEditorSource, /超过 20,000 字限制/)
-  assert.doesNotMatch(markdownEditorSource, /readonly|textarea\[readonly\]|v-html|contenteditable|\.trim\(|markdown-it|marked/)
+  assert.doesNotMatch(markdownEditorSource, /TableKit/)
+  assert.doesNotMatch(markdownEditorSource, /VocabularyMarkdownRenderer|实时预览|grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/)
 })
 
 test('legacy content is projected through one pure typed core adapter', () => {

@@ -126,16 +126,35 @@ public final class VocabularyTestFixtures {
 
     public static GeneratedVocabularyCard basicGeneratedCard() {
         ObjectNode content = OBJECT_MAPPER.createObjectNode();
-        content.put("schemaVersion", 1);
+        content.put("schemaVersion", 2);
         content.put("term", "innovative");
         content.putArray("phonetics");
         content.putArray("senses").addObject()
+                .put("id", "sense_1")
                 .put("partOfSpeech", "adjective")
                 .putArray("meanings").addObject()
+                .put("id", "meaning_1_1")
                 .put("definitionEn", "introducing new ideas")
-                .put("definitionZh", "");
+                .put("definitionZh", "创新的");
+        ObjectNode cardBlocks = OBJECT_MAPPER.createObjectNode();
+        cardBlocks.put("schemaVersion", 1);
+        ObjectNode example = cardBlocks.putArray("blocks").addObject();
+        example.put("id", "block_examples_01");
+        example.put("type", "exampleList");
+        example.put("title", "常用例句");
+        example.putArray("meaningRefs").add("meaning_1_1");
+        example.put("format", "structured");
+        ObjectNode item = example.putObject("content").putArray("items").addObject();
+        item.put("sentence", "The team proposed an innovative solution.");
+        item.put("translation", "团队提出了一个创新的解决方案。");
+        example.put("source", "ai");
+        example.putNull("sourceRef");
+        example.put("sortOrder", 10);
+        example.put("userEdited", false);
+        example.put("locked", false);
         return new GeneratedVocabularyCard(
-                content, "## Usage", 1, "test-model", "Generated fixture", false);
+                content, cardBlocks, 1, null, 1, "test-model", "Generated fixture",
+                false, "complete", null, null);
     }
 
     public static DictionaryLookupResponse dictionaryLookup(

@@ -44,7 +44,13 @@
             <Volume2 v-else aria-hidden="true" />
           </button>
         </div>
-        <p v-if="headerSummary" class="card-inspector__summary">{{ headerSummary }}</p>
+        <p v-if="headerPhonetic" class="card-inspector__phonetic">{{ headerPhonetic }}</p>
+        <ul v-if="headerSenseSummaries.length" class="card-inspector__sense-list" aria-label="常见释义">
+          <li v-for="summary in headerSenseSummaries" :key="`${summary.partOfSpeech}-${summary.meaning}`">
+            <span class="card-inspector__part-of-speech">{{ summary.partOfSpeech }}</span>
+            <span class="card-inspector__meaning" :title="summary.meaning">{{ summary.meaning }}</span>
+          </li>
+        </ul>
         <div class="card-inspector__metadata">
           <span :class="`card-inspector__status card-inspector__status--${card.status}`">{{ statusLabel(card.status) }}</span>
           <span>{{ card.theme?.name || '兼容卡片' }}<template v-if="card.themeVersion"> · v{{ card.themeVersion }}</template></span>
@@ -181,6 +187,11 @@
             重新生成
           </button>
         </section>
+        <VocabularyCardBlocks
+          v-else-if="card.cardBlocks"
+          :card-blocks="card.cardBlocks"
+          @sections-change="markdownSections = $event"
+        />
         <VocabularyMarkdownRenderer
           v-else
           :markdown="cardMarkdown(card)"
@@ -238,11 +249,11 @@
     <div v-if="conflict && conflictDialogOpen" class="card-inspector__dialog-backdrop" role="presentation">
       <section ref="conflictDialog" class="card-inspector__dialog card-inspector__dialog--conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-card-title" aria-describedby="conflict-card-guidance">
         <h3 id="conflict-card-title">发现版本冲突</h3>
-        <p id="conflict-card-guidance">{{ v1Conflict ? '请先整体比较当前与候选 Markdown，再选择保留当前内容、使用 AI 新版本或组合内容，然后确认处理。' : '请先比较当前内容与 AI 新版本，再选择保留当前内容、使用 AI 新版本或逐字段合并，然后确认处理。' }}</p>
+        <p id="conflict-card-guidance">{{ conflictGuidance }}</p>
 
         <div v-if="v1Conflict" class="card-inspector__conflict-columns">
-          <section><h4>当前 Markdown</h4><pre>{{ currentConflictMarkdown || '暂无 Markdown 内容' }}</pre></section>
-          <section><h4>候选 Markdown</h4><pre>{{ candidateConflictMarkdown || '暂无 Markdown 内容' }}</pre></section>
+          <section><h4>{{ cardBlocksConflict ? '当前主题内容' : '当前 Markdown' }}</h4><pre>{{ currentConflictPreview }}</pre></section>
+          <section><h4>{{ cardBlocksConflict ? '候选主题内容' : '候选 Markdown' }}</h4><pre>{{ candidateConflictPreview }}</pre></section>
         </div>
         <div v-else class="card-inspector__conflict-columns">
           <section><h4>当前内容</h4><dl><template v-for="field in legacyConflictFields" :key="`current-${field}`"><dt>{{ fieldLabel(field) }}</dt><dd>{{ displayValue(conflict.currentContent, field) }}</dd></template></dl></section>
@@ -253,7 +264,7 @@
           <legend>解决方式</legend>
           <label><input ref="conflictInitialControl" v-model="conflictChoice" type="radio" value="keep_current">保留当前内容</label>
           <label><input v-model="conflictChoice" type="radio" value="use_ai">使用 AI 新版本</label>
-          <label><input v-model="conflictChoice" type="radio" value="merge_fields">{{ v1Conflict ? '组合核心数据与 Markdown' : '逐字段合并' }}</label>
+          <label><input v-model="conflictChoice" type="radio" value="merge_fields">{{ v1Conflict ? cardBlocksConflict ? '组合核心数据与主题内容' : '组合核心数据与 Markdown' : '逐字段合并' }}</label>
         </fieldset>
         <div v-if="conflictChoice === 'merge_fields'" class="card-inspector__merge-fields">
           <label v-for="field in mergeableConflictFields" :key="field">
@@ -279,6 +290,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, LoaderCircle, Volume2 } from 'luc
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 import type { MarkdownSection } from '../assistant/markdown'
+import VocabularyCardBlocks from './VocabularyCardBlocks.vue'
 import VocabularyCoreSummary from './VocabularyCoreSummary.vue'
 import VocabularyMarkdownEditor from './VocabularyMarkdownEditor.vue'
 import VocabularyMarkdownRenderer from './VocabularyMarkdownRenderer.vue'
@@ -289,6 +301,7 @@ import {
   type ResolveVocabularyConflictRequest,
   type UpdateVocabularyCardRequest,
   type VocabularyCardDetail,
+  type VocabularyCardBlocks as VocabularyCardBlocksContent,
   type VocabularyCardStatus,
   type VocabularyConflictResponse,
   type VocabularyCoreContent,
@@ -305,7 +318,9 @@ import {
   type VocabularyCardDraftIdentity,
 } from '@/composables/useVocabularyCards'
 import { safeExternalUrl } from '@/features/vocabulary/safeExternalUrl'
+import { buildVocabularyHeaderSenseSummaries } from '@/features/vocabulary/vocabularyCardHeader'
 import type { VocabularyCardSequence } from '@/features/vocabulary/vocabularyCardNavigation'
+import { vocabularyCardBlocksToMarkdown } from '@/features/vocabulary/vocabularyLearningMarkdown'
 import { showToast } from '@/utils/toast'
 
 type MutationBridge<T, TResult = unknown> = { isPending: Ref<boolean>, mutateAsync: (payload: T) => Promise<TResult> }
@@ -381,11 +396,8 @@ const displayCore = computed<VocabularyCoreContent>(() => {
     ? { ...projected, term: props.card.normalizedTerm }
     : minimalVocabularyCore(props.card.normalizedTerm)
 })
-const headerSummary = computed(() => {
-  const phonetic = displayCore.value.phonetics[0]?.text || props.card.phonetic
-  const partOfSpeech = [...new Set(displayCore.value.senses.map((sense) => sense.partOfSpeech).filter(Boolean))].join(' / ')
-  return [phonetic, partOfSpeech].filter(Boolean).join(' · ')
-})
+const headerPhonetic = computed(() => displayCore.value.phonetics[0]?.text.trim() || props.card.phonetic?.trim() || '')
+const headerSenseSummaries = computed(() => buildVocabularyHeaderSenseSummaries(displayCore.value))
 const hasReadableRevision = computed(() => Boolean(props.card.activeRevisionUid))
 const markdownTooLong = computed(() => editMarkdown.value.length > 20_000)
 const cardOperationPending = computed(() => (
@@ -409,7 +421,8 @@ const navigationDisabled = computed(() => (
   || Boolean(props.navigationPending)
 ))
 const isPartialMarkdown = computed(() => (
-  props.card.generationOutcome === 'partial' && props.card.warning === 'markdown_unavailable'
+  props.card.generationOutcome === 'partial'
+  && (props.card.warning === 'card_blocks_unavailable' || props.card.warning === 'markdown_unavailable')
 ))
 const showRetry = computed(() => (
   props.card.status === 'failed'
@@ -431,7 +444,7 @@ const generationState = computed(() => {
     return { text: '发现待确认的新版本' }
   }
   if (props.card.generationOutcome === 'partial'
-      && props.card.warning === 'markdown_unavailable') {
+      && (props.card.warning === 'card_blocks_unavailable' || props.card.warning === 'markdown_unavailable')) {
     return { text: '主题内容待完善' }
   }
   if (props.card.generationOutcome === 'failed'
@@ -488,6 +501,11 @@ function cardMarkdown(card: VocabularyCardDetail): string {
   if (card.markdown != null) return card.markdown
   const compatibleMarkdown = asRecord(card.content).markdown
   return typeof compatibleMarkdown === 'string' ? compatibleMarkdown : ''
+}
+
+function cardLearningMarkdown(card: VocabularyCardDetail): string {
+  const blocksMarkdown = vocabularyCardBlocksToMarkdown(card.cardBlocks)
+  return blocksMarkdown || cardMarkdown(card).trim()
 }
 
 function pronunciationLanguage(region: VocabularyCoreContent['phonetics'][number]['region']) {
@@ -687,7 +705,7 @@ function handleKeydown(event: KeyboardEvent) {
 
 function startEditing() {
   if (!hasReadableRevision.value || cardOperationPending.value) return
-  editMarkdown.value = cardMarkdown(props.card)
+  editMarkdown.value = cardLearningMarkdown(props.card)
   editing.value = true
   closeMoreMenu()
 }
@@ -698,7 +716,9 @@ function revisionFor(revisionUid: string | null): VocabularyRevision | undefined
 
 function isCoreContent(value: unknown): value is VocabularyCoreContent {
   const record = asRecord(value)
-  return record.schemaVersion === 1 && Array.isArray(record.phonetics) && Array.isArray(record.senses)
+  return (record.schemaVersion === 1 || record.schemaVersion === 2)
+    && Array.isArray(record.phonetics)
+    && Array.isArray(record.senses)
 }
 
 const v1Conflict = computed(() => {
@@ -719,6 +739,36 @@ function conflictMarkdown(revisionUid: string | null, content: unknown): string 
 
 const currentConflictMarkdown = computed(() => conflictMarkdown(conflict.value?.currentRevisionUid ?? null, conflict.value?.currentContent))
 const candidateConflictMarkdown = computed(() => conflictMarkdown(conflict.value?.candidateRevisionUid ?? null, conflict.value?.candidateContent))
+function conflictCardBlocks(revisionUid: string | null, content: unknown): VocabularyCardBlocksContent | null {
+  const revisionBlocks = revisionFor(revisionUid)?.cardBlocks
+  if (revisionBlocks) return revisionBlocks
+  const compatibleBlocks = asRecord(content).cardBlocks
+  const record = asRecord(compatibleBlocks)
+  return record.schemaVersion === 1 && Array.isArray(record.blocks)
+    ? compatibleBlocks as VocabularyCardBlocksContent
+    : null
+}
+const currentConflictCardBlocks = computed(() => conflictCardBlocks(
+  conflict.value?.currentRevisionUid ?? null,
+  conflict.value?.currentContent,
+))
+const candidateConflictCardBlocks = computed(() => conflictCardBlocks(
+  conflict.value?.candidateRevisionUid ?? null,
+  conflict.value?.candidateContent,
+))
+const cardBlocksConflict = computed(() => Boolean(currentConflictCardBlocks.value || candidateConflictCardBlocks.value))
+const currentConflictPreview = computed(() => cardBlocksConflict.value
+  ? JSON.stringify(currentConflictCardBlocks.value, null, 2) || '暂无主题内容'
+  : currentConflictMarkdown.value || '暂无 Markdown 内容')
+const candidateConflictPreview = computed(() => cardBlocksConflict.value
+  ? JSON.stringify(candidateConflictCardBlocks.value, null, 2) || '暂无主题内容'
+  : candidateConflictMarkdown.value || '暂无 Markdown 内容')
+const conflictGuidance = computed(() => {
+  if (!v1Conflict.value) return '请先比较当前内容与 AI 新版本，再选择保留当前内容、使用 AI 新版本或逐字段合并，然后确认处理。'
+  return cardBlocksConflict.value
+    ? '请整体比较当前与候选主题内容，再选择保留当前内容、使用 AI 新版本或组合内容，然后确认处理。'
+    : '请整体比较当前与候选 Markdown，再选择保留当前内容、使用 AI 新版本或组合内容，然后确认处理。'
+})
 const legacyConflictFields = computed(() => {
   const keys = new Set([
     ...Object.keys(asRecord(conflict.value?.currentContent)),
@@ -727,7 +777,9 @@ const legacyConflictFields = computed(() => {
   return [...keys].filter((field) => field !== 'markdown')
 })
 const legacyMergeableFields = computed(() => legacyConflictFields.value.filter((field) => field !== 'term'))
-const mergeableConflictFields = computed(() => v1Conflict.value ? ['core', 'markdown'] : legacyMergeableFields.value)
+const mergeableConflictFields = computed(() => v1Conflict.value
+  ? ['core', cardBlocksConflict.value ? 'cardBlocks' : 'markdown']
+  : legacyMergeableFields.value)
 
 function conflictCore(revisionUid: string | null, content: unknown): VocabularyCoreContent {
   const revisionCore = revisionFor(revisionUid)?.core
@@ -745,7 +797,7 @@ function conflictCore(revisionUid: string | null, content: unknown): VocabularyC
 function fieldLabel(field: string) {
   return ({
     term: '单词', definitions: '释义', examples: '例句', notes: '个人笔记',
-    core: '核心词典数据', markdown: 'Markdown',
+    core: '核心词典数据', cardBlocks: '主题内容', markdown: 'Markdown',
   } as Record<string, string>)[field] ?? field
 }
 
@@ -785,7 +837,7 @@ watch(
       conflictDialogOpen.value = false
     }
     draftIdentity.value = nextIdentity
-    editMarkdown.value = cardMarkdown(props.card)
+    editMarkdown.value = cardLearningMarkdown(props.card)
     markdownSections.value = []
     activeSectionId.value = 'core-information'
     if (cardChanged) {
@@ -879,7 +931,7 @@ onBeforeUnmount(() => {
 
 function cancelEditing() {
   if (cardOperationPending.value) return
-  editMarkdown.value = cardMarkdown(props.card)
+  editMarkdown.value = cardLearningMarkdown(props.card)
   editing.value = false
 }
 
@@ -900,16 +952,17 @@ async function save(event?: Event) {
   saveAnnouncement.value = ''
   await runCardOperation(async () => {
     try {
+      const payload: UpdateVocabularyCardRequest = {
+        baseRevisionUid: props.card.activeRevisionUid!,
+        core: { ...displayCore.value, term: props.card.normalizedTerm },
+        markdown: editMarkdown.value,
+        changeSummary: '用户编辑学习内容',
+      }
       const savedCard = await props.updateMutation.mutateAsync({
         cardUid: props.card.cardUid,
-        payload: {
-          baseRevisionUid: props.card.activeRevisionUid!,
-          core: { ...displayCore.value, term: props.card.normalizedTerm },
-          markdown: editMarkdown.value,
-          changeSummary: '用户编辑 Markdown 卡片',
-        },
+        payload,
       })
-      editMarkdown.value = cardMarkdown(savedCard)
+      editMarkdown.value = cardLearningMarkdown(savedCard)
       draftIdentity.value = {
         cardUid: savedCard.cardUid,
         activeRevisionUid: savedCard.activeRevisionUid,
@@ -984,6 +1037,14 @@ function conflictMergeFields(): Record<string, unknown> {
   if (v1Conflict.value) {
     const currentCore = conflictCore(conflict.value.currentRevisionUid, conflict.value.currentContent)
     const candidateCore = conflictCore(conflict.value.candidateRevisionUid, conflict.value.candidateContent)
+    if (cardBlocksConflict.value) {
+      return {
+        core: mergeChoice.value.core === 'candidate' ? candidateCore : currentCore,
+        cardBlocks: mergeChoice.value.cardBlocks === 'candidate'
+          ? candidateConflictCardBlocks.value
+          : currentConflictCardBlocks.value,
+      }
+    }
     return {
       core: mergeChoice.value.core === 'candidate' ? candidateCore : currentCore,
       markdown: mergeChoice.value.markdown === 'candidate'
@@ -1036,7 +1097,11 @@ function statusLabel(status: VocabularyCardStatus) {
 .card-inspector .card-inspector__pronunciation-button:hover, .card-inspector .card-inspector__pronunciation-button.is-playing { border-color: #10b981; background: #d1fae5; }
 .card-inspector__pronunciation-button svg { width: 18px; height: 18px; }
 .card-inspector__spinner { animation: card-inspector-spin .8s linear infinite; }
-.card-inspector__summary { margin: 6px 0 0; color: #475569; font-size: 14px; overflow-wrap: anywhere; }
+.card-inspector__phonetic { margin: 6px 0 0; color: #64748b; font-size: 14px; overflow-wrap: anywhere; }
+.card-inspector__sense-list { min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 0; padding: 0; list-style: none; }
+.card-inspector__sense-list li { min-width: 0; max-width: min(100%, 560px); display: inline-flex; align-items: baseline; gap: 8px; }
+.card-inspector__part-of-speech { flex: none; border: 1px solid #dce7e1; border-radius: 4px; background: #f8fafc; color: #475569; padding: 2px 6px; font-size: 11px; font-weight: 800; line-height: 1.35; }
+.card-inspector__meaning { min-width: 0; display: -webkit-box; overflow: hidden; color: #334155; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .card-inspector__metadata { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 9px; color: #64748b; font-size: 12px; overflow-wrap: anywhere; }
 .card-inspector__status { color: #047857; font-weight: 800; }
 .card-inspector__status--failed { color: #b91c1c; }

@@ -9,5 +9,15 @@ public record UpdateVocabularyCardRequest(
         JsonNode core,
         @Size(max = 20000) String markdown,
         JsonNode content,
+        JsonNode cardBlocks,
         @Size(max = 255) String changeSummary) {
+
+    public UpdateVocabularyCardRequest(
+            String baseRevisionUid,
+            JsonNode core,
+            String markdown,
+            JsonNode content,
+            String changeSummary) {
+        this(baseRevisionUid, core, markdown, content, null, changeSummary);
+    }
 }

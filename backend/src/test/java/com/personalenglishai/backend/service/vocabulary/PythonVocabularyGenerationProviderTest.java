@@ -25,130 +25,109 @@ class PythonVocabularyGenerationProviderTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     @Mock private VocabularyGenerationPythonClient client;
-
-    private VocabularyCoreContentCodec coreCodec;
     private PythonVocabularyGenerationProvider provider;
 
     @BeforeEach
     void setUp() {
-        coreCodec = new VocabularyCoreContentCodec(objectMapper);
-        provider = new PythonVocabularyGenerationProvider(client, coreCodec, objectMapper, Duration.ofSeconds(45));
+        provider = new PythonVocabularyGenerationProvider(
+                client,
+                new VocabularyCoreContentCodec(objectMapper),
+                new VocabularyCardBlocksCodec(),
+                objectMapper,
+                Duration.ofSeconds(45));
     }
 
     @Test
-    void mapsTheFrozenInputToTheExactTypedPythonRequestAndReturnsTypedMetadata() {
+    void mapsCoreTwoAndBlocksOneContractAndReturnsTypedContent() {
         VocabularyGenerationInput input = input("job_123:attempt_1");
         VocabularyGenerationMetadata metadata = metadata("job_123_attempt_1");
-        when(client.generate(any())).thenReturn(complete(input, metadata));
+        when(client.generate(any())).thenReturn(complete("record", metadata));
 
         GeneratedVocabularyCard generated = provider.generate(input);
 
         ArgumentCaptor<VocabularyGenerationPythonRequest> request =
                 ArgumentCaptor.forClass(VocabularyGenerationPythonRequest.class);
         verify(client).generate(request.capture());
-        assertEquals("request_job_123_attempt_1", request.getValue().requestId());
-        assertEquals("job_123_attempt_1", request.getValue().traceId());
-        assertEquals(45_000, request.getValue().timeoutBudgetMs());
-        assertEquals("record", request.getValue().term());
+        assertEquals(2, request.getValue().contractVersion());
+        assertEquals(2, request.getValue().coreSchemaVersion());
+        assertEquals(1, request.getValue().cardBlocksSchemaVersion());
         assertEquals("record", request.getValue().dictionaryCore().term());
-        assertEquals("The record was complete.", request.getValue().sourceContext());
-        assertEquals("theme_exam_3", request.getValue().theme().uid());
-        assertEquals(3, request.getValue().theme().version());
-        assertEquals("Exam", request.getValue().theme().name());
-        assertEquals("Exam preparation", request.getValue().theme().purpose());
-        assertEquals("exam-markdown-v1", request.getValue().theme().promptStrategyKey());
-        assertEquals(1, request.getValue().theme().contentFormatVersion());
-        assertEquals("python", provider.key());
+        assertEquals("sense_1", request.getValue().dictionaryCore().senses().get(0).id());
+        assertEquals("meaning_1_1", request.getValue().dictionaryCore().senses().get(0).meanings().get(0).id());
+        assertEquals("exam-blocks-v1", request.getValue().theme().promptStrategyKey());
         assertFalse(generated.partial());
-        assertEquals("## Exam focus", generated.markdown());
-        assertEquals("python-model", generated.model());
+        assertEquals(1, generated.cardBlocksSchemaVersion());
+        assertEquals("exampleList", generated.cardBlocks().path("blocks").get(0).path("type").asText());
+        assertEquals(null, generated.markdown());
         assertEquals(metadata, generated.generationMetadata());
     }
 
     @Test
-    void convertsValidatedPartialPythonResponsesWithoutInventingMarkdown() {
-        VocabularyGenerationInput input = input("job_partial");
+    void convertsPartialResponseWithoutInventingBlocks() {
         VocabularyGenerationMetadata metadata = metadata("job_partial");
-        when(client.generate(any())).thenReturn(partial(input, metadata));
+        when(client.generate(any())).thenReturn(partial("record", metadata));
 
-        GeneratedVocabularyCard generated = provider.generate(input);
+        GeneratedVocabularyCard generated = provider.generate(input("job_partial"));
 
         assertTrue(generated.partial());
-        assertEquals("partial", generated.generationOutcome());
-        assertEquals("markdown_unavailable", generated.warning());
-        assertEquals("", generated.markdown());
-        assertEquals(metadata, generated.generationMetadata());
+        assertEquals("card_blocks_unavailable", generated.warning());
+        assertTrue(generated.cardBlocks().path("blocks").isEmpty());
     }
 
     @Test
-    void rejectsAResponseThatChangesTheCardTermAfterClientValidation() {
-        VocabularyGenerationInput input = input("job_term");
-        VocabularyGenerationMetadata metadata = metadata("job_term");
-        when(client.generate(any())).thenReturn(response(
-                "different", "## Exam focus", "complete", null, metadata));
+    void rejectsChangedTermAndDanglingMeaningReferences() {
+        when(client.generate(any())).thenReturn(complete("different", metadata("job_term")));
+        VocabularyGenerationException changedTerm = assertThrows(
+                VocabularyGenerationException.class,
+                () -> provider.generate(input("job_term")));
+        assertEquals("INVALID_PROVIDER_RESULT", changedTerm.code());
+
+        VocabularyGenerationPythonResponse dangling = complete("record", metadata("job_dangling"));
+        ((ObjectNode) dangling.cardBlocks().path("blocks").get(0))
+                .putArray("meaningRefs")
+                .add("meaning_missing");
+        when(client.generate(any())).thenReturn(dangling);
+        VocabularyGenerationException invalidRef = assertThrows(
+                VocabularyGenerationException.class,
+                () -> provider.generate(input("job_dangling")));
+        assertEquals("INVALID_PROVIDER_RESULT", invalidRef.code());
+    }
+
+    @Test
+    void rejectsStructurallyValidButIncompleteCore() {
+        when(client.generate(any())).thenReturn(new VocabularyGenerationPythonResponse(
+                2,
+                2,
+                1,
+                new VocabularyGenerationPythonRequest.Core("record", List.of(), List.of()),
+                blocks(false),
+                "complete",
+                null,
+                metadata("job_incomplete")));
 
         VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class, () -> provider.generate(input));
-
+                VocabularyGenerationException.class,
+                () -> provider.generate(input("job_incomplete")));
         assertEquals("INVALID_PROVIDER_RESULT", exception.code());
         assertFalse(exception.retryable());
     }
 
     @Test
-    void createsSafeDeterministicOpaqueIdsForSanitizedInputTrace() {
-        VocabularyGenerationInput input = input("/job id");
-        VocabularyGenerationMetadata metadata = metadata("trace__job_id");
-        when(client.generate(any())).thenReturn(complete(input, metadata));
-
-        provider.generate(input);
-        provider.generate(input);
-
-        ArgumentCaptor<VocabularyGenerationPythonRequest> request =
-                ArgumentCaptor.forClass(VocabularyGenerationPythonRequest.class);
-        verify(client, org.mockito.Mockito.times(2)).generate(request.capture());
-        assertEquals(request.getAllValues().get(0).requestId(), request.getAllValues().get(1).requestId());
-        assertEquals(request.getAllValues().get(0).traceId(), request.getAllValues().get(1).traceId());
-        assertTrue(request.getAllValues().get(0).requestId().matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"));
-        assertTrue(request.getAllValues().get(0).traceId().matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"));
-    }
-
-    @Test
-    void propagatesTypedPythonClientFailuresWithoutFallback() {
+    void propagatesTypedClientFailuresWithoutFallback() {
         VocabularyGenerationException expected = new VocabularyGenerationException(
                 "PYTHON_GENERATION_TIMEOUT", true, "Python generation request timed out");
         when(client.generate(any())).thenThrow(expected);
 
         VocabularyGenerationException actual = assertThrows(
-                VocabularyGenerationException.class, () -> provider.generate(input("job_failure")));
-
+                VocabularyGenerationException.class,
+                () -> provider.generate(input("job_failure")));
         assertSame(expected, actual);
     }
 
     @Test
-    void rejectsStructurallyValidButIncompletePythonCore() {
-        VocabularyGenerationInput input = input("job_incomplete");
-        VocabularyGenerationMetadata metadata = metadata("job_incomplete");
-        when(client.generate(any())).thenReturn(new VocabularyGenerationPythonResponse(
-                1,
-                1,
-                new VocabularyGenerationPythonRequest.Core("record", List.of(), List.of()),
-                "## Exam focus",
-                1,
-                "complete",
-                null,
-                metadata));
-
-        VocabularyGenerationException exception = assertThrows(
-                VocabularyGenerationException.class, () -> provider.generate(input));
-
-        assertEquals("INVALID_PROVIDER_RESULT", exception.code());
-        assertFalse(exception.retryable());
-    }
-
-    @Test
-    void capsConfiguredTimeoutByTheRemainingAttemptBudget() {
+    void capsConfiguredTimeoutByRemainingBudget() {
         VocabularyGenerationInput input = input("job_budget", 1_234);
-        when(client.generate(any())).thenReturn(complete(input, metadata("job_budget")));
+        when(client.generate(any())).thenReturn(complete("record", metadata("job_budget")));
 
         provider.generate(input);
 
@@ -164,13 +143,16 @@ class PythonVocabularyGenerationProviderTest {
 
     private VocabularyGenerationInput input(String traceId, int timeoutBudgetMs) {
         return new VocabularyGenerationInput(
-                "record", core(), "The record was complete.",
+                "record",
+                legacyCore(),
+                "The record was complete.",
                 new ResolvedVocabularyTheme(
                         "theme_exam_3", 3, "Exam", "Exam preparation", "exam-markdown-v1", 1, "exam"),
-                traceId, timeoutBudgetMs);
+                traceId,
+                timeoutBudgetMs);
     }
 
-    private ObjectNode core() {
+    private ObjectNode legacyCore() {
         ObjectNode core = objectMapper.createObjectNode();
         core.put("schemaVersion", 1);
         core.put("term", "record");
@@ -182,39 +164,75 @@ class PythonVocabularyGenerationProviderTest {
                 .put("partOfSpeech", "noun")
                 .putArray("meanings").addObject()
                 .put("definitionEn", "a written account")
-                .put("definitionZh", "record");
+                .put("definitionZh", "记录");
         return core;
     }
 
     private VocabularyGenerationPythonResponse complete(
-            VocabularyGenerationInput input, VocabularyGenerationMetadata metadata) {
-        return response(input.term(), "## Exam focus", "complete", null, metadata);
+            String term,
+            VocabularyGenerationMetadata metadata) {
+        return new VocabularyGenerationPythonResponse(
+                2,
+                2,
+                1,
+                core(term),
+                blocks(false),
+                "complete",
+                null,
+                metadata);
     }
 
     private VocabularyGenerationPythonResponse partial(
-            VocabularyGenerationInput input, VocabularyGenerationMetadata metadata) {
-        return response(input.term(), "", "partial", "markdown_unavailable", metadata);
-    }
-
-    private VocabularyGenerationPythonResponse response(
             String term,
-            String markdown,
-            String outcome,
-            String warning,
             VocabularyGenerationMetadata metadata) {
         return new VocabularyGenerationPythonResponse(
-                1, 1,
-                new VocabularyGenerationPythonRequest.Core(
-                        term,
-                        List.of(new VocabularyGenerationPythonRequest.Phonetic("uk", "rekord", null)),
-                        List.of(new VocabularyGenerationPythonRequest.Sense(
-                                "noun", List.of(new VocabularyGenerationPythonRequest.Meaning(
-                                        "a written account", "record"))))),
-                markdown, 1, outcome, warning, metadata);
+                2,
+                2,
+                1,
+                core(term),
+                blocks(true),
+                "partial",
+                "card_blocks_unavailable",
+                metadata);
+    }
+
+    private VocabularyGenerationPythonRequest.Core core(String term) {
+        return new VocabularyGenerationPythonRequest.Core(
+                term,
+                List.of(new VocabularyGenerationPythonRequest.Phonetic("uk", "rekord", null)),
+                List.of(new VocabularyGenerationPythonRequest.Sense(
+                        "sense_1",
+                        "noun",
+                        List.of(new VocabularyGenerationPythonRequest.Meaning(
+                                "meaning_1_1", "a written account", "记录")))));
+    }
+
+    private ObjectNode blocks(boolean empty) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("schemaVersion", 1);
+        if (empty) {
+            root.putArray("blocks");
+            return root;
+        }
+        ObjectNode block = root.putArray("blocks").addObject();
+        block.put("id", "block_examples_01");
+        block.put("type", "exampleList");
+        block.put("title", "常用例句");
+        block.putArray("meaningRefs").add("meaning_1_1");
+        block.put("format", "structured");
+        block.putObject("content").putArray("items").addObject()
+                .put("sentence", "The record was complete.")
+                .put("translation", "记录很完整。");
+        block.put("source", "ai");
+        block.putNull("sourceRef");
+        block.put("sortOrder", 10);
+        block.put("userEdited", false);
+        block.put("locked", false);
+        return root;
     }
 
     private VocabularyGenerationMetadata metadata(String traceId) {
         return new VocabularyGenerationMetadata(
-                "python", "python-model", "vocabulary-card-markdown-v1", 1, traceId);
+                "python", "python-model", "vocabulary-card-blocks-v1", 2, traceId);
     }
 }

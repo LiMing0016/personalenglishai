@@ -25,7 +25,7 @@ export interface VocabularyTemplateCatalog {
 }
 
 export interface VocabularyCoreContent {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   term: string
   phonetics: Array<{
     region: 'uk' | 'us' | 'other'
@@ -33,12 +33,85 @@ export interface VocabularyCoreContent {
     audioUrl: string | null
   }>
   senses: Array<{
+    id?: string
     partOfSpeech: string
     meanings: Array<{
+      id?: string
       definitionEn: string
       definitionZh: string
     }>
   }>
+}
+
+export type VocabularyCardBlockSource = 'ai' | 'user' | 'assistant' | 'legacy'
+
+export interface VocabularyCardBlockBase {
+  id: string
+  title: string
+  meaningRefs: string[]
+  source: VocabularyCardBlockSource
+  sourceRef: string | null
+  sortOrder: number
+  userEdited: boolean
+  locked: boolean
+}
+
+export interface VocabularyExampleListBlock extends VocabularyCardBlockBase {
+  type: 'exampleList'
+  format: 'structured'
+  content: { items: Array<{ sentence: string, translation: string }> }
+}
+
+export interface VocabularyCollocationListBlock extends VocabularyCardBlockBase {
+  type: 'collocationList'
+  format: 'structured'
+  content: { items: Array<{ expression: string, translation: string }> }
+}
+
+export interface VocabularyUsageBoundaryBlock extends VocabularyCardBlockBase {
+  type: 'usageBoundary'
+  format: 'structured'
+  content: { useWhen: string[], avoidWhen: string[] }
+}
+
+export interface VocabularyContrastTableBlock extends VocabularyCardBlockBase {
+  type: 'contrastTable'
+  format: 'structured'
+  content: { rows: Array<{ term: string, focus: string, typicalContext: string }> }
+}
+
+export interface VocabularyMemoryTipBlock extends VocabularyCardBlockBase {
+  type: 'memoryTip'
+  format: 'structured'
+  content: { points: string[] }
+}
+
+export interface VocabularyNoteBlock extends VocabularyCardBlockBase {
+  type: 'note'
+  format: 'markdown'
+  content: string
+}
+
+export interface VocabularyLegacyMarkdownBlock extends VocabularyCardBlockBase {
+  type: 'legacyMarkdown'
+  format: 'markdown'
+  content: string
+  source: 'legacy'
+  locked: true
+}
+
+export type VocabularyCardBlock =
+  | VocabularyExampleListBlock
+  | VocabularyCollocationListBlock
+  | VocabularyUsageBoundaryBlock
+  | VocabularyContrastTableBlock
+  | VocabularyMemoryTipBlock
+  | VocabularyNoteBlock
+  | VocabularyLegacyMarkdownBlock
+
+export interface VocabularyCardBlocks {
+  schemaVersion: 1
+  blocks: VocabularyCardBlock[]
 }
 
 export interface VocabularyTheme {
@@ -231,6 +304,8 @@ export interface VocabularyCardDetail extends VocabularyCardSummary {
   core: VocabularyCoreContent | null
   markdown: string | null
   contentFormatVersion: number | null
+  cardBlocks: VocabularyCardBlocks | null
+  cardBlocksSchemaVersion: number | null
   sources: VocabularyCardSource[]
   createdAt: string | null
   candidateContent: unknown
@@ -264,6 +339,8 @@ export interface VocabularyRevision {
   core: VocabularyCoreContent | null
   markdown: string | null
   contentFormatVersion: number | null
+  cardBlocks: VocabularyCardBlocks | null
+  cardBlocksSchemaVersion: number | null
   changeSummary: string | null
   active: boolean
   candidate: boolean
@@ -293,6 +370,7 @@ export interface UpdateVocabularyCardRequest {
   core?: VocabularyCoreContent | null
   markdown?: string | null
   content?: unknown
+  cardBlocks?: VocabularyCardBlocks | null
   changeSummary?: string
 }
 

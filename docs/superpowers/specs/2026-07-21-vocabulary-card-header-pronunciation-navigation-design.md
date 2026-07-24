@@ -8,6 +8,7 @@ related_code:
   - web/src/views/VocabularyView.vue
   - web/src/components/vocabulary/VocabularyCardInspector.vue
   - web/src/components/vocabulary/VocabularyCoreSummary.vue
+  - web/src/features/vocabulary/vocabularyCardHeader.ts
   - web/src/composables/useVocabularyCards.ts
   - web/src/api/vocabulary.ts
   - backend/src/main/java/com/personalenglishai/backend/service/dictionary/
@@ -72,8 +73,9 @@ related_docs:
 1. 仅图标的返回按钮，使用现有图标库的向左箭头，tooltip 为“返回单词库”。
 2. 可点击的单词标题。点击后播放默认发音，语义上使用按钮而不是给普通标题绑定点击事件。
 3. 圆形扬声器按钮，使用现有图标库的 `Volume2` 图标；播放期间显示轻量状态，不改变按钮尺寸。
-4. 单词下方显示主音标和词性。
-5. 状态、主题和版本使用当前紧凑元数据样式。
+4. 单词下方先独立显示主音标，不再与词性拼接成一句。
+5. 音标下方最多展示两个“词性 + 首条常见释义”摘要；中文释义优先，缺失时使用英文释义，避免头部为了补全中文而引入第二份数据源。
+6. 状态、主题和版本使用当前紧凑元数据样式。
 
 长单词允许换行，不缩放字号，不挤压返回和发音按钮。
 

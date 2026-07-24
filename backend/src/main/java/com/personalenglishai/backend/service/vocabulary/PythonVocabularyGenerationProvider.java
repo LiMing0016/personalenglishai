@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -11,10 +13,11 @@ import org.springframework.stereotype.Service;
 @Service
 public final class PythonVocabularyGenerationProvider implements VocabularyGenerationProvider {
 
-    private static final int MAX_MARKDOWN_CHARS = 20_000;
+    private static final Logger LOG = LoggerFactory.getLogger(PythonVocabularyGenerationProvider.class);
 
     private final VocabularyGenerationPythonClient client;
     private final VocabularyCoreContentCodec coreCodec;
+    private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final ObjectMapper objectMapper;
     private final int timeoutBudgetMs;
 
@@ -22,9 +25,10 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
     public PythonVocabularyGenerationProvider(
             VocabularyGenerationPythonClient client,
             VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
             ObjectMapper objectMapper,
             @Value("${vocabulary.generation.python.timeout-ms:60000}") long timeoutMs) {
-        this(client, coreCodec, objectMapper, Duration.ofMillis(timeoutMs));
+        this(client, coreCodec, cardBlocksCodec, objectMapper, Duration.ofMillis(timeoutMs));
     }
 
     PythonVocabularyGenerationProvider(
@@ -32,7 +36,16 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
             VocabularyCoreContentCodec coreCodec,
             ObjectMapper objectMapper,
             Duration timeoutBudget) {
-        if (client == null || coreCodec == null || objectMapper == null) {
+        this(client, coreCodec, new VocabularyCardBlocksCodec(), objectMapper, timeoutBudget);
+    }
+
+    PythonVocabularyGenerationProvider(
+            VocabularyGenerationPythonClient client,
+            VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
+            ObjectMapper objectMapper,
+            Duration timeoutBudget) {
+        if (client == null || coreCodec == null || cardBlocksCodec == null || objectMapper == null) {
             throw new IllegalArgumentException("Python vocabulary generation dependencies are required");
         }
         if (timeoutBudget == null || timeoutBudget.isZero() || timeoutBudget.isNegative()
@@ -41,6 +54,7 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
         }
         this.client = client;
         this.coreCodec = coreCodec;
+        this.cardBlocksCodec = cardBlocksCodec;
         this.objectMapper = objectMapper;
         this.timeoutBudgetMs = Math.toIntExact(timeoutBudget.toMillis());
     }
@@ -54,17 +68,26 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
     public GeneratedVocabularyCard generate(VocabularyGenerationInput input) {
         VocabularyGenerationPythonRequest request = requestFor(input);
         VocabularyGenerationPythonResponse response = client.generate(request);
+        String validationStep = "response-core";
         try {
             ObjectNode core = responseCore(response);
+            validationStep = "core-schema";
             coreCodec.validate(input.term(), core);
+            validationStep = "core-completeness";
             if (!coreCodec.isComplete(input.term(), core)) {
                 throw invalidProviderResult();
             }
+            validationStep = "card-blocks-schema";
+            ObjectNode cardBlocks = responseCardBlocks(response);
+            cardBlocksCodec.validateGenerated(cardBlocks, core);
+            validationStep = "response-envelope";
             validateResponse(response, request);
             return new GeneratedVocabularyCard(
                     core,
-                    response.contentMarkdown(),
-                    response.contentFormatVersion(),
+                    cardBlocks,
+                    response.cardBlocksSchemaVersion(),
+                    null,
+                    input.theme().contentFormatVersion(),
                     response.generation().model(),
                     changeSummary(response, input.theme()),
                     "partial".equals(response.outcome()),
@@ -72,8 +95,18 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
                     response.warning(),
                     response.generation());
         } catch (VocabularyGenerationException exception) {
+            if ("INVALID_PROVIDER_RESULT".equals(exception.code())) {
+                LOG.warn(
+                        "Rejected Python vocabulary generation response traceId={} step={}",
+                        input.traceId(),
+                        validationStep);
+            }
             throw exception;
         } catch (RuntimeException exception) {
+            LOG.warn(
+                    "Rejected Python vocabulary generation response traceId={} step={} reason={}",
+                    input.traceId(), validationStep,
+                    exception.getMessage());
             throw invalidProviderResult();
         }
     }
@@ -93,7 +126,7 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
                             input.theme().version(),
                             input.theme().name(),
                             input.theme().purpose(),
-                            input.theme().promptStrategyKey(),
+                            blocksStrategy(input.theme().promptStrategyKey()),
                             input.theme().contentFormatVersion()));
         } catch (RuntimeException exception) {
             throw new VocabularyGenerationException(
@@ -110,6 +143,14 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
         return (ObjectNode) value;
     }
 
+    private ObjectNode responseCardBlocks(VocabularyGenerationPythonResponse response) {
+        JsonNode value = response.cardBlocks();
+        if (value == null || !value.isObject()) {
+            throw invalidProviderResult();
+        }
+        return ((ObjectNode) value).deepCopy();
+    }
+
     private void validateResponse(
             VocabularyGenerationPythonResponse response, VocabularyGenerationPythonRequest request) {
         if (response == null
@@ -119,30 +160,31 @@ public final class PythonVocabularyGenerationProvider implements VocabularyGener
             throw invalidProviderResult();
         }
         if ("complete".equals(response.outcome())) {
-            if (response.warning() != null || !validCompleteMarkdown(response.contentMarkdown())) {
+            if (response.warning() != null || response.cardBlocks().path("blocks").isEmpty()) {
                 throw invalidProviderResult();
             }
             return;
         }
         if (!"partial".equals(response.outcome())
-                || !"markdown_unavailable".equals(response.warning())
-                || response.contentMarkdown() == null
-                || !response.contentMarkdown().isEmpty()) {
+                || !"card_blocks_unavailable".equals(response.warning())
+                || !response.cardBlocks().path("blocks").isEmpty()) {
             throw invalidProviderResult();
         }
     }
 
-    private boolean validCompleteMarkdown(String markdown) {
-        return markdown != null
-                && !markdown.isBlank()
-                && markdown.length() <= MAX_MARKDOWN_CHARS
-                && !VocabularyMarkdownValidator.containsRawHtml(markdown);
-    }
-
     private String changeSummary(VocabularyGenerationPythonResponse response, ResolvedVocabularyTheme theme) {
         return "partial".equals(response.outcome())
-                ? "Generated validated core; Markdown unavailable"
+                ? "Generated validated core; Card Blocks unavailable"
                 : "Python generated with " + theme.name();
+    }
+
+    private String blocksStrategy(String strategy) {
+        if (strategy == null) {
+            return null;
+        }
+        return strategy.endsWith("-markdown-v1")
+                ? strategy.substring(0, strategy.length() - "-markdown-v1".length()) + "-blocks-v1"
+                : strategy;
     }
 
     private String safeOpaqueId(String value, String fallback) {

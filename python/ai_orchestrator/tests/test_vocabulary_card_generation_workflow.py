@@ -201,6 +201,27 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(response.core.phonetics[0].audio_url)
 
+    async def test_repeated_dictionary_pronunciations_keep_only_first_region_entry(self) -> None:
+        repeated_request = request()
+        trusted_phonetic = repeated_request.dictionary_core.phonetics[0]
+        repeated_request.dictionary_core.phonetics = [
+            trusted_phonetic,
+            trusted_phonetic.model_copy(update={"text": "anˈθrɒpɪks"}),
+            trusted_phonetic.model_copy(update={"text": "anˈθrɒpɪkəl"}),
+        ]
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            side_effect=[
+                SimpleNamespace(final_output=core_output()),
+                SimpleNamespace(final_output=blocks_output()),
+            ],
+        ):
+            response = await self.service().generate(repeated_request)
+
+        self.assertEqual(len(response.core.phonetics), 1)
+        self.assertEqual(response.core.phonetics[0].text, "anˈθrɒpɪk")
+
     async def test_blocks_failure_returns_partial_after_valid_core(self) -> None:
         with patch(
             "agents.Runner.run",

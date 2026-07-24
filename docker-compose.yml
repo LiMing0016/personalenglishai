@@ -56,8 +56,8 @@ services:
       # Python OpenAI Agents SDK orchestrator
       - ASSISTANT_ORCHESTRATOR_BASE_URL=http://assistant-orchestrator:8002
       - AI_ORCHESTRATOR_BASE_URL=${AI_ORCHESTRATOR_BASE_URL:-http://assistant-orchestrator:8002}
-      # Vocabulary Python provider is opt-in; service DNS is required inside the Compose network.
-      - VOCABULARY_GENERATION_PROVIDER=${VOCABULARY_GENERATION_PROVIDER:-java}
+      # Vocabulary cards use the Python structured provider; service DNS is required inside Compose.
+      - VOCABULARY_GENERATION_PROVIDER=${VOCABULARY_GENERATION_PROVIDER:-python}
       - VOCABULARY_GENERATION_PYTHON_BASE_URL=http://assistant-orchestrator:8002
       - VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS=${VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS:-60000}
       - VOCABULARY_GENERATION_INTERNAL_TOKEN=${VOCABULARY_GENERATION_INTERNAL_TOKEN:?Set VOCABULARY_GENERATION_INTERNAL_TOKEN}

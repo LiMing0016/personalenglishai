@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 public record GeneratedVocabularyCard(
         JsonNode core,
+        JsonNode cardBlocks,
+        Integer cardBlocksSchemaVersion,
         String markdown,
         int contentFormatVersion,
         String model,
@@ -12,6 +14,20 @@ public record GeneratedVocabularyCard(
         String generationOutcome,
         String warning,
         VocabularyGenerationMetadata generationMetadata) {
+
+    public GeneratedVocabularyCard(
+            JsonNode core,
+            String markdown,
+            int contentFormatVersion,
+            String model,
+            String changeSummary,
+            boolean partial,
+            String generationOutcome,
+            String warning,
+            VocabularyGenerationMetadata generationMetadata) {
+        this(core, null, null, markdown, contentFormatVersion, model, changeSummary, partial,
+                generationOutcome, warning, generationMetadata);
+    }
 
     public GeneratedVocabularyCard(
             JsonNode core,

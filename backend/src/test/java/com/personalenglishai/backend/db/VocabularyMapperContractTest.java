@@ -89,6 +89,29 @@ class VocabularyMapperContractTest {
     }
 
     @Test
+    void revisionMapperPersistsCardBlocksAndTheirSchemaVersion() throws Exception {
+        String revisions = readMapper("VocabularyRevisionMapper.xml");
+        String insertSql = statementSql("VocabularyRevisionMapper", "insertRevision", Map.of(
+                "revisionUid", "revision_1",
+                "cardUid", "card_1",
+                "authorType", "ai",
+                "templateKey", "basic",
+                "templateVersion", 1,
+                "contentJson", "{}",
+                "cardBlocksJson", "{\"schemaVersion\":1,\"blocks\":[]}",
+                "cardBlocksSchemaVersion", 1));
+
+        assertAll(
+                () -> assertTrue(revisions.contains(
+                        "<result column=\"card_blocks_json\" property=\"cardBlocksJson\"/>")),
+                () -> assertTrue(revisions.contains(
+                        "<result column=\"card_blocks_schema_version\" property=\"cardBlocksSchemaVersion\"/>")),
+                () -> assertTrue(insertSql.contains("card_blocks_json")),
+                () -> assertTrue(insertSql.contains("card_blocks_schema_version"))
+        );
+    }
+
+    @Test
     void atomicClaimUsesDatabaseTimeAndAttemptFence() throws Exception {
         String sql = statementSql("VocabularyGenerationJobMapper", "markRunning", Map.of(
                 "jobUid", "job_1",

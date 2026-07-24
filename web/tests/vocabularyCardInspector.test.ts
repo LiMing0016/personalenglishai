@@ -42,9 +42,9 @@ test('draft reset depends only on card and active revision identity', async () =
   assert.match(inspector, /shouldResetVocabularyCardDraft/)
 })
 
-test('save success immediately adopts the server revision markdown', () => {
+test('save success immediately adopts the server Markdown revision', () => {
   assert.match(inspector, /const savedCard = await props\.updateMutation\.mutateAsync/)
-  assert.match(inspector, /editMarkdown\.value = cardMarkdown\(savedCard\)/)
+  assert.match(inspector, /editMarkdown\.value = cardLearningMarkdown\(savedCard\)/)
   assert.match(inspector, /savedCard\.activeRevisionUid/)
 })
 
@@ -68,14 +68,31 @@ test('theme fallback runs on card changes and preserves an active manual choice'
   assert.match(inspector, /some\(\(theme\) => theme\.themeUid === selectedThemeUid\.value\)\) return/)
 })
 
-test('inspector adapts core once and edits markdown without legacy field guesses', () => {
+test('inspector adapts core once and edits all learning content as Markdown', () => {
   assert.match(inspector, /VocabularyCoreSummary/)
+  assert.match(inspector, /VocabularyCardBlocks/)
   assert.match(inspector, /VocabularyMarkdownRenderer/)
   assert.match(inspector, /VocabularyMarkdownEditor/)
+  assert.match(inspector, /vocabularyCardBlocksToMarkdown/)
   assert.match(inspector, /buildVocabularyCardSections/)
   assert.match(inspector, /card\.core\s*\?\?\s*projectLegacyVocabularyCore/)
   assert.match(inspector, /minimalVocabularyCore/)
+  assert.doesNotMatch(inspector, /VocabularyCardBlocksEditor/)
+  assert.doesNotMatch(inspector, /editCardBlocks/)
   assert.doesNotMatch(inspector, /VocabularyTemplate|props\.template|templates|fieldNames|isArrayField/)
+})
+
+test('inspector separates the primary phonetic from compact part-of-speech meanings', () => {
+  assert.match(inspector, /buildVocabularyHeaderSenseSummaries/)
+  assert.match(inspector, /card-inspector__phonetic/)
+  assert.match(inspector, /headerPhonetic/)
+  assert.match(inspector, /card-inspector__sense-list/)
+  assert.match(inspector, /v-for="summary in headerSenseSummaries"/)
+  assert.match(inspector, /summary\.partOfSpeech/)
+  assert.match(inspector, /summary\.meaning/)
+  assert.match(inspector, /:title="summary\.meaning"/)
+  assert.match(inspector, /-webkit-line-clamp:\s*2/)
+  assert.doesNotMatch(inspector, /\[phonetic, partOfSpeech\]\.filter\(Boolean\)\.join/)
 })
 
 test('inspector is a notebook document with dynamic chapter navigation', () => {
@@ -108,11 +125,11 @@ test('inspector tracks notebook chapters with one rebuilt window observer', () =
   assert.match(inspector, /intersectingSectionIds\.clear\(\)/)
 })
 
-test('inspector provides read and edit modes with polite save announcements', () => {
+test('inspector provides read and unified Markdown edit modes with polite save announcements', () => {
   assert.match(inspector, />阅读</)
   assert.match(inspector, />编辑</)
   assert.match(inspector, /v-if="editing"[\s\S]*VocabularyMarkdownEditor/)
-  assert.match(inspector, /v-else[\s\S]*VocabularyMarkdownRenderer/)
+  assert.match(inspector, /v-else-if="showReadableDocument"[\s\S]*VocabularyCardBlocks[\s\S]*VocabularyMarkdownRenderer/)
   assert.match(inspector, /saveAnnouncement\s*=\s*ref\(['"]['"]\)/)
   assert.match(inspector, /aria-live="polite"/)
   assert.match(inspector, /saveAnnouncement\.value\s*=\s*['"]单词卡已保存['"]/)
@@ -163,11 +180,12 @@ test('inspector moves theme and delete into one narrow-screen more menu', () => 
   assert.match(inspector, /window\.removeEventListener\(['"]keydown['"]/)
 })
 
-test('save preserves term identity and sends core markdown revision and summary', () => {
+test('save preserves term identity and sends unified Markdown with a summary', () => {
   for (const token of ['baseRevisionUid', 'core:', 'markdown:', 'changeSummary:']) {
     assert.match(inspector, new RegExp(token))
   }
   assert.match(inspector, /term:\s*props\.card\.normalizedTerm/)
+  assert.doesNotMatch(inspector, /cardBlocks:\s*editCardBlocks/)
   assert.match(inspector, /updateMutation\.isPending\.value/)
   assert.match(inspector, /单词卡已保存/)
   assert.match(inspector, /保存失败，请重试/)
@@ -228,12 +246,16 @@ test('documented web verification retains capture and API contract suites', () =
   assert.match(command, /tests\/vocabularyApiContract\.test\.ts/)
 })
 
-test('new format conflicts compare markdown as a whole and legacy revisions keep field merge', () => {
+test('new format conflicts compare blocks or markdown as a whole and legacy revisions keep field merge', () => {
   assert.match(inspector, /isVocabularyV1Revision/)
   assert.match(inspector, /当前 Markdown/)
   assert.match(inspector, /候选 Markdown/)
+  assert.match(inspector, /当前主题内容/)
+  assert.match(inspector, /候选主题内容/)
+  assert.match(inspector, /cardBlocksConflict/)
   assert.match(inspector, /const mergeFields = conflictMergeFields\(\)/)
   assert.match(inspector, /markdown:\s*mergeChoice\.value\.markdown/)
+  assert.match(inspector, /cardBlocks:\s*mergeChoice\.value\.cardBlocks/)
   assert.match(inspector, /legacyMergeableFields/)
   assert.match(inspector, /keep_current/)
   assert.match(inspector, /use_ai/)
@@ -251,9 +273,11 @@ test('conflict format follows the backend current revision shape check', async (
   const isV1 = classifyRevision as (formatVersion: number | null, content: unknown) => boolean
   const legacy = { term: 'record', definitions: ['entry'] }
   const v1 = { schemaVersion: 1, term: 'record', phonetics: [], senses: [], markdown: '# Card' }
+  const blocksV2 = { schemaVersion: 2, term: 'record', phonetics: [], senses: [], cardBlocks: { schemaVersion: 1, blocks: [] } }
   const v1Lookalike = { schemaVersion: 1, phonetics: [], senses: [], markdown: '# Card' }
 
   assert.equal(isV1(1, v1), true)
+  assert.equal(isV1(1, blocksV2), true, 'Core 2 and Card Blocks remain a structured revision')
   assert.equal(isV1(null, legacy), false, 'current legacy stays legacy even when a candidate is v1')
   assert.equal(isV1(1, legacy), false, 'a mislabeled legacy current revision stays legacy')
   assert.equal(isV1(null, v1), false, 'shape alone cannot override the current revision format')
@@ -293,6 +317,7 @@ test('partial generation warning uses stable outcome fields instead of cleared e
   const warningBlock = inspector.match(/const generationState = computed\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] ?? ''
   assert.match(warningBlock, /generationOutcome\s*===\s*['"]partial['"]/)
   assert.match(warningBlock, /warning\s*===\s*['"]markdown_unavailable['"]/)
+  assert.match(warningBlock, /warning\s*===\s*['"]card_blocks_unavailable['"]/)
   assert.match(warningBlock, /主题内容待完善/)
   assert.doesNotMatch(warningBlock, /!props\.card\.generationError/)
   const partialSection = inspector.match(/<section v-if="isPartialMarkdown"[\s\S]*?<\/section>/)?.[0] ?? ''
@@ -311,12 +336,12 @@ test('inspector styles stable editors and narrow screens without horizontal over
   assert.match(inspector, /grid-template-columns:\s*1fr/)
 })
 
-test('edit mode uses a wide document workspace with a responsive markdown height', () => {
+test('edit mode uses a wide document workspace owned by the Typora-style editor', () => {
   assert.match(inspector, /\.card-inspector__document,\s*\.card-inspector__editor-document\s*\{[^}]*width:\s*100%/s)
   assert.match(inspector, /\.card-inspector__document\s*\{[^}]*max-width:\s*840px/s)
   assert.match(inspector, /\.card-inspector__editor-document\s*\{[^}]*max-width:\s*none/s)
-  assert.match(markdownEditor, /min-height:\s*clamp\(420px,\s*calc\(100vh - 430px\),\s*720px\)/)
-  assert.match(markdownEditor, /@media \(max-width:\s*767px\)[\s\S]*min-height:\s*360px/)
+  assert.match(markdownEditor, /min-height:\s*clamp\(520px,\s*calc\(100vh - 390px\),\s*840px\)/)
+  assert.match(markdownEditor, /@media \(max-width:\s*767px\)[\s\S]*min-height:\s*420px/)
 })
 
 test('card detail uses a compact accessible back icon', () => {

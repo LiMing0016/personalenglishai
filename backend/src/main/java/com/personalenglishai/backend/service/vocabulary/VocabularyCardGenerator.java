@@ -27,6 +27,7 @@ public final class VocabularyCardGenerator {
 
     private final VocabularyDictionaryEnricher dictionaryEnricher;
     private final VocabularyCoreContentCodec coreCodec;
+    private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final VocabularyGenerationProvider provider;
     private final LongSupplier nanoTime;
 
@@ -34,9 +35,19 @@ public final class VocabularyCardGenerator {
     public VocabularyCardGenerator(
             VocabularyDictionaryEnricher dictionaryEnricher,
             VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
             List<VocabularyGenerationProvider> providers,
-            @Value("${vocabulary.generation.provider:java}") String providerKey) {
-        this(dictionaryEnricher, coreCodec, providers, providerKey, System::nanoTime);
+            @Value("${vocabulary.generation.provider:python}") String providerKey) {
+        this(dictionaryEnricher, coreCodec, cardBlocksCodec, providers, providerKey, System::nanoTime);
+    }
+
+    VocabularyCardGenerator(
+            VocabularyDictionaryEnricher dictionaryEnricher,
+            VocabularyCoreContentCodec coreCodec,
+            List<VocabularyGenerationProvider> providers,
+            String providerKey) {
+        this(dictionaryEnricher, coreCodec, new VocabularyCardBlocksCodec(), providers, providerKey,
+                System::nanoTime);
     }
 
     VocabularyCardGenerator(
@@ -45,8 +56,19 @@ public final class VocabularyCardGenerator {
             List<VocabularyGenerationProvider> providers,
             String providerKey,
             LongSupplier nanoTime) {
+        this(dictionaryEnricher, coreCodec, new VocabularyCardBlocksCodec(), providers, providerKey, nanoTime);
+    }
+
+    VocabularyCardGenerator(
+            VocabularyDictionaryEnricher dictionaryEnricher,
+            VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
+            List<VocabularyGenerationProvider> providers,
+            String providerKey,
+            LongSupplier nanoTime) {
         this.dictionaryEnricher = dictionaryEnricher;
         this.coreCodec = coreCodec;
+        this.cardBlocksCodec = cardBlocksCodec;
         this.provider = selectProvider(providers, providerKey);
         this.nanoTime = nanoTime;
     }
@@ -81,7 +103,9 @@ public final class VocabularyCardGenerator {
                 expectedTerm, trustedCore, sourceContext, theme, traceId, timeoutBudgetMs));
         validateProviderResult(generated, expectedTerm, trustedCore, theme);
         return new GeneratedVocabularyCard(
-                generated.core().deepCopy(), generated.markdown(), generated.contentFormatVersion(),
+                generated.core().deepCopy(),
+                generated.cardBlocks() == null ? null : generated.cardBlocks().deepCopy(),
+                generated.cardBlocksSchemaVersion(), generated.markdown(), generated.contentFormatVersion(),
                 generated.model(), generated.changeSummary(), generated.partial(),
                 generated.generationOutcome(), generated.warning(), generated.generationMetadata());
     }
@@ -108,7 +132,11 @@ public final class VocabularyCardGenerator {
                 throw new IllegalArgumentException("Provider result is incomplete");
             }
             coreCodec.validate(expectedTerm, generated.core());
-            coreCodec.validatePreservesTrustedFields(expectedTerm, trustedCore, generated.core());
+            if (isStructuredResult(generated)) {
+                coreCodec.validatePreservesTrustedPhonetics(expectedTerm, trustedCore, generated.core());
+            } else {
+                coreCodec.validatePreservesTrustedFields(expectedTerm, trustedCore, generated.core());
+            }
             validateProviderContent(generated);
         } catch (RuntimeException exception) {
             throw new VocabularyGenerationException(
@@ -117,6 +145,10 @@ public final class VocabularyCardGenerator {
     }
 
     private void validateProviderContent(GeneratedVocabularyCard generated) {
+        if (isStructuredResult(generated)) {
+            validateStructuredProviderContent(generated);
+            return;
+        }
         if (generated.partial()) {
             if (!"partial".equals(generated.generationOutcome())
                     || !"markdown_unavailable".equals(generated.warning())
@@ -133,6 +165,34 @@ public final class VocabularyCardGenerator {
                 || RAW_HTML.matcher(markdown).find()) {
             throw new IllegalArgumentException("Provider Markdown is invalid");
         }
+    }
+
+    private void validateStructuredProviderContent(GeneratedVocabularyCard generated) {
+        if (generated.cardBlocks() == null
+                || !Integer.valueOf(VocabularyCardBlocksCodec.SCHEMA_VERSION)
+                        .equals(generated.cardBlocksSchemaVersion())
+                || generated.markdown() != null) {
+            throw new IllegalArgumentException("Provider structured result is incomplete");
+        }
+        cardBlocksCodec.validateGenerated(generated.cardBlocks(), generated.core());
+        if (generated.partial()) {
+            if (!"partial".equals(generated.generationOutcome())
+                    || !"card_blocks_unavailable".equals(generated.warning())
+                    || !generated.cardBlocks().path("blocks").isEmpty()) {
+                throw new IllegalArgumentException("Provider structured partial result is invalid");
+            }
+            return;
+        }
+        if (!"complete".equals(generated.generationOutcome())
+                || generated.warning() != null
+                || generated.cardBlocks().path("blocks").isEmpty()) {
+            throw new IllegalArgumentException("Provider structured complete result is invalid");
+        }
+    }
+
+    private boolean isStructuredResult(GeneratedVocabularyCard generated) {
+        return generated != null
+                && (generated.cardBlocks() != null || generated.cardBlocksSchemaVersion() != null);
     }
 
     private VocabularyGenerationProvider selectProvider(

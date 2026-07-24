@@ -25,24 +25,42 @@ class VocabularyCoreContentCodecTest {
     private final VocabularyCoreContentCodec codec = new VocabularyCoreContentCodec(objectMapper);
 
     @Test
-    void dictionaryTruthKeepsMultiplePhoneticsAndGroupsMeaningsByPartOfSpeech() {
+    void dictionaryTruthKeepsOnePhoneticPerStandardRegionAndGroupsMeaningsByPartOfSpeech() {
         DictionaryLookupResponse dictionary = VocabularyTestFixtures.dictionaryLookupWithCoreTruth();
 
         ObjectNode core = codec.fromDictionary("record", dictionary);
 
-        assertEquals(1, core.path("schemaVersion").asInt());
+        assertEquals(2, core.path("schemaVersion").asInt());
         assertEquals("record", core.path("term").asText());
-        assertEquals(3, core.path("phonetics").size());
+        assertEquals(2, core.path("phonetics").size());
         assertEquals("uk", core.path("phonetics").get(0).path("region").asText());
         assertEquals("us", core.path("phonetics").get(1).path("region").asText());
-        assertEquals("other", core.path("phonetics").get(2).path("region").asText());
         assertEquals(2, core.path("senses").size());
         assertEquals("noun", core.path("senses").get(0).path("partOfSpeech").asText());
+        assertEquals("sense_1", core.path("senses").get(0).path("id").asText());
+        assertEquals("meaning_1_1", core.path("senses").get(0).path("meanings").get(0).path("id").asText());
         assertEquals(3, core.path("senses").get(0).path("meanings").size());
         assertEquals("a written account", core.path("senses").get(0).path("meanings").get(0).path("definitionEn").asText());
         assertEquals("记录", core.path("senses").get(0).path("meanings").get(0).path("definitionZh").asText());
         assertEquals("verb", core.path("senses").get(1).path("partOfSpeech").asText());
         codec.validate("record", core);
+    }
+
+    @Test
+    void dictionaryProjectionKeepsOnlyTheFirstUnlabelledPronunciation() {
+        DictionaryLookupResponse dictionary = new DictionaryLookupResponse();
+        dictionary.setLanguage("en-gb");
+        dictionary.setPhonetics(List.of(
+                new DictionaryPhoneticDto("ɪnˈspaɪə(r)", null),
+                new DictionaryPhoneticDto("ɪnˈspaɪəz", null),
+                new DictionaryPhoneticDto("ɪnˈspaɪəd", null)));
+        dictionary.setEntries(List.of());
+
+        ObjectNode core = codec.fromDictionary("inspire", dictionary);
+
+        assertEquals(1, core.path("phonetics").size());
+        assertEquals("uk", core.path("phonetics").get(0).path("region").asText());
+        assertEquals("ɪnˈspaɪə(r)", core.path("phonetics").get(0).path("text").asText());
     }
 
     @Test
@@ -84,7 +102,7 @@ class VocabularyCoreContentCodecTest {
 
         ObjectNode core = codec.fromDictionary("bounded", dictionary);
 
-        assertEquals(10, core.path("phonetics").size());
+        assertEquals(1, core.path("phonetics").size());
         assertEquals(20, core.path("senses").size());
         assertEquals(30, core.path("senses").get(19).path("meanings").size());
         codec.validate("bounded", core);
@@ -105,10 +123,11 @@ class VocabularyCoreContentCodecTest {
 
         ObjectNode core = codec.fromLegacy("record", legacy);
 
-        assertEquals(1, core.path("schemaVersion").asInt());
+        assertEquals(2, core.path("schemaVersion").asInt());
         assertEquals("record", core.path("term").asText());
         assertEquals("/ˈrekɔːd/", core.path("phonetics").get(0).path("text").asText());
         assertEquals("noun", core.path("senses").get(0).path("partOfSpeech").asText());
+        assertEquals("sense_1", core.path("senses").get(0).path("id").asText());
         assertEquals("记录", core.path("senses").get(0).path("meanings").get(0).path("definitionZh").asText());
         assertEquals(snapshot, legacy);
         assertFalse(core.has("definitions"));
@@ -166,6 +185,26 @@ class VocabularyCoreContentCodecTest {
 
         ObjectNode wrongTerm = codec.fromLegacy("record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
         assertThrows(IllegalArgumentException.class, () -> codec.validate("different", wrongTerm));
+    }
+
+    @Test
+    void validationKeepsSchemaOneReadableButRequiresIdsForSchemaTwo() throws Exception {
+        JsonNode schemaOne = objectMapper.readTree("""
+                {
+                  "schemaVersion": 1,
+                  "term": "record",
+                  "phonetics": [],
+                  "senses": [{
+                    "partOfSpeech": "noun",
+                    "meanings": [{"definitionEn": "a written account", "definitionZh": "记录"}]
+                  }]
+                }
+                """);
+        codec.validate("record", schemaOne);
+
+        ObjectNode missingIds = (ObjectNode) schemaOne.deepCopy();
+        missingIds.put("schemaVersion", 2);
+        assertThrows(IllegalArgumentException.class, () -> codec.validate("record", missingIds));
     }
 
     @Test

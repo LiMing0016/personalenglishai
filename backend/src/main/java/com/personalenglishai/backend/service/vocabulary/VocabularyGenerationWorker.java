@@ -30,7 +30,6 @@ public class VocabularyGenerationWorker {
     private static final int MAX_ERROR_CODE_LENGTH = 64;
     private static final int MAX_ERROR_MESSAGE_LENGTH = 1_000;
     private static final long FINALIZATION_RESERVE_MS = 5_000L;
-    private static final int MAX_MARKDOWN_CHARS = 20_000;
 
     private final VocabularyGenerationJobMapper jobs;
     private final VocabularyCardMapper cards;
@@ -39,6 +38,7 @@ public class VocabularyGenerationWorker {
     private final VocabularyTemplateRegistry templates;
     private final VocabularyThemeMapper themes;
     private final VocabularyCoreContentCodec coreCodec;
+    private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyGenerationFinalizer finalizer;
     private final int leaseSeconds;
@@ -52,6 +52,7 @@ public class VocabularyGenerationWorker {
             VocabularyTemplateRegistry templates,
             VocabularyThemeMapper themes,
             VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
             ObjectMapper objectMapper,
             VocabularyGenerationFinalizer finalizer,
             @Value("${vocabulary.generation.scheduler.lease-ms:300000}") long leaseMs) {
@@ -62,6 +63,7 @@ public class VocabularyGenerationWorker {
         this.templates = templates;
         this.themes = themes;
         this.coreCodec = coreCodec;
+        this.cardBlocksCodec = cardBlocksCodec;
         this.objectMapper = objectMapper;
         this.finalizer = finalizer;
         this.leaseSeconds = leaseSeconds(leaseMs);
@@ -145,7 +147,7 @@ public class VocabularyGenerationWorker {
         }
         return new ResolvedVocabularyTheme(
                 "theme_system_" + template.key(), template.version(), template.name(), "",
-                template.key() + "-markdown-v1", 1, template.key());
+                template.key() + "-blocks-v1", 1, template.key());
     }
 
     private VocabularyCardRevision newRevision(
@@ -177,9 +179,11 @@ public class VocabularyGenerationWorker {
         revision.setTemplateVersion(job.getTemplateVersion());
         revision.setThemeUid(theme.themeUid());
         revision.setThemeVersion(theme.version());
-        revision.setContentJson(writeContent(core, generated.markdown()));
+        revision.setContentJson(writeContent(core, generated.cardBlocks()));
         revision.setCoreJson(writeCore(core));
-        revision.setContentMarkdown(generated.markdown());
+        revision.setCardBlocksJson(writeCardBlocks(generated.cardBlocks()));
+        revision.setCardBlocksSchemaVersion(generated.cardBlocksSchemaVersion());
+        revision.setContentMarkdown(null);
         revision.setContentFormatVersion(generated.contentFormatVersion());
         revision.setChangeSummary(limit(generated.changeSummary(), 255));
         revision.setGenerationMetadataJson(writeGenerationMetadata(generated.generationMetadata()));
@@ -187,35 +191,48 @@ public class VocabularyGenerationWorker {
     }
 
     private void validateGeneratedContent(GeneratedVocabularyCard generated, ResolvedVocabularyTheme theme) {
-        boolean valid = generated.contentFormatVersion() == theme.contentFormatVersion();
+        boolean valid = generated.contentFormatVersion() == theme.contentFormatVersion()
+                && Objects.equals(generated.cardBlocksSchemaVersion(), VocabularyCardBlocksCodec.SCHEMA_VERSION)
+                && generated.cardBlocks() != null
+                && generated.markdown() == null;
+        if (valid) {
+            try {
+                cardBlocksCodec.validateGenerated(generated.cardBlocks(), generated.core());
+            } catch (IllegalArgumentException exception) {
+                valid = false;
+            }
+        }
         if (generated.partial()) {
             valid = valid
                     && "partial".equals(generated.generationOutcome())
-                    && "markdown_unavailable".equals(generated.warning())
-                    && generated.markdown() != null
-                    && generated.markdown().isEmpty();
+                    && "card_blocks_unavailable".equals(generated.warning())
+                    && generated.cardBlocks().path("blocks").isEmpty();
         } else {
-            String markdown = generated.markdown();
             valid = valid
                     && "complete".equals(generated.generationOutcome())
                     && generated.warning() == null
-                    && markdown != null
-                    && !markdown.isBlank()
-                    && markdown.length() <= MAX_MARKDOWN_CHARS
-                    && !VocabularyMarkdownValidator.containsRawHtml(markdown);
+                    && !generated.cardBlocks().path("blocks").isEmpty();
         }
         if (!valid) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content is invalid");
         }
     }
 
-    private String writeContent(JsonNode core, String markdown) {
+    private String writeContent(JsonNode core, JsonNode cardBlocks) {
         try {
             ObjectNode compatibility = (ObjectNode) core.deepCopy();
-            compatibility.put("markdown", markdown == null ? "" : markdown);
+            compatibility.set("cardBlocks", cardBlocks.deepCopy());
             return objectMapper.writeValueAsString(compatibility);
         } catch (JsonProcessingException exception) {
             throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary content cannot be stored");
+        }
+    }
+
+    private String writeCardBlocks(JsonNode cardBlocks) {
+        try {
+            return objectMapper.writeValueAsString(cardBlocks);
+        } catch (JsonProcessingException exception) {
+            throw permanentFailure("INVALID_GENERATED_CONTENT", "Generated vocabulary card blocks cannot be stored");
         }
     }
 

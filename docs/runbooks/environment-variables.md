@@ -224,23 +224,23 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 
 | 变量 | 默认值 | 责任与约束 |
 | --- | --- | --- |
-| `VOCABULARY_GENERATION_PROVIDER` | `java` | 后端 provider 选择。只有显式设为 `python` 才调用 Python；不会静默回退到 `java`。 |
+| `VOCABULARY_GENERATION_PROVIDER` | `python` | 后端 provider 选择。Python 生成 Core 2 + Blocks 1；只有显式设为 `java` 才进入旧 Markdown 回滚路径。失败时不会静默切换 provider。 |
 | `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。根 Compose 保留既有容器端口，必须为 `http://assistant-orchestrator:8002`，不得使用容器内 `127.0.0.1`。 |
 | `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS` | `60000` | 后端单次 Python HTTP timeout，必须小于 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS` 的 `300000` 默认值。 |
 | `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | backend 和 Python orchestrator 必须收到同一个非空专用 token。不得提交、打印或回传。 |
 | `VOCABULARY_GENERATION_MODEL` | Compose 默认 `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用；服务代码本身没有模型默认值，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
 
-Java 继续拥有词典查询、generation job、租约、revision、冲突和持久化；Python 只拥有 Prompt、模型调用、缺失 core 回填、Markdown 及 typed trace metadata。Python provider 不会使用旧 Java 七天缓存，且同一个 job attempt 内不会静默回退到 `java`。因此 Python 的 4xx 作为稳定配置/契约错误处理，5xx、连接失败和 timeout 继续由既有 job 重试处理；有效 core 的 Markdown 失败保存为 `partial`/`markdown_unavailable`，不会伪造 complete，也不会丢弃 core。
+Java 继续拥有词典查询、generation job、租约、revision、冲突和持久化；Python 只拥有 Prompt、模型调用、缺失 Core 回填、Card Blocks 和 typed trace metadata。Python provider 不会使用旧 Java 七天缓存，且同一个 job attempt 内不会静默回退到 `java`。因此 Python 的 4xx 作为稳定配置/契约错误处理，5xx、连接失败和 timeout 继续由既有 job 重试处理；有效 Core 的 Blocks 失败保存为 `partial`/`card_blocks_unavailable`，不会伪造 complete，也不会丢弃 Core。
 
 ### 发布顺序与回滚
 
-1. 对历史数据库先完成既有 vocabulary migration，再执行 `migrate_add_vocabulary_generation_metadata.sql`；全新数据库只初始化 `schema.sql`。自动化验收只能连接显式命名的 disposable MySQL schema，绝不对业务 schema 执行 migration 或 `DROP DATABASE`。
+1. 对历史数据库先完成既有 vocabulary migration，再依次执行 `migrate_add_vocabulary_generation_metadata.sql` 和 `migrate_add_vocabulary_card_blocks.sql`；全新数据库只初始化 `schema.sql`。自动化验收只能连接显式命名的 disposable MySQL schema，绝不对业务 schema 执行 migration 或 `DROP DATABASE`。
 2. 部署 Python orchestrator，设置 `VOCABULARY_GENERATION_MODEL`、现有 OpenAI 凭据和共享 internal token；确认 `/health` 只显示 configured 状态，不暴露 token。
-3. 部署后端，保持 `VOCABULARY_GENERATION_PROVIDER=java`，并配置 Python base URL、timeout 和同一个 token。先运行内部契约 smoke；发布切换顺序是显式的 `java` -> `python`，不是自动故障转移。
-4. 用真实 Basic dictionary core 和自定义主题完成验收，检查 complete/partial、稳定 retry 行为、lease 和冲突行为未改变，并在 revision 的 `generation_metadata_json` 查看 provider、model、Prompt version、调用次数和安全 trace ID。
-5. 仅在上述检查完成后显式切换 `VOCABULARY_GENERATION_PROVIDER=python` 并重启后端。回滚只把 `VOCABULARY_GENERATION_PROVIDER=java` 后重启；不要删除 metadata 列、Python endpoint 或 Python 已生成的 revision。
+3. 部署后端，保持默认 `VOCABULARY_GENERATION_PROVIDER=python`，并配置 Python base URL、timeout 和同一个 token。先运行内部契约 smoke；provider 失败不会自动故障转移。
+4. 用真实 Basic dictionary Core 和自定义主题完成验收，检查 Core 2、Blocks 1、complete/partial、稳定 retry、lease 和冲突行为，并在 revision 的 `generation_metadata_json` 查看 provider、model、Prompt version、调用次数和安全 trace ID。
+5. 回滚顺序是显式的 `python` -> `java`：修改 provider 并重启后端。旧 Java provider 只生成兼容 Markdown；不要删除 Blocks、metadata 列、Python endpoint 或已生成 revision。
 
-真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。直接运行真实模型 smoke 时必须显式设置非空 `VOCABULARY_GENERATION_MODEL`；显式启用后缺少模型配置会失败，不会降级为跳过。smoke 不打印 token、Prompt、词典 core、sourceContext、生成 Markdown 或原始模型输出；未满足三个 opt-in 前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
+真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。直接运行真实模型 smoke 时必须显式设置非空 `VOCABULARY_GENERATION_MODEL`；显式启用后缺少模型配置会失败，不会降级为跳过。smoke 不打印 token、Prompt、词典 Core、sourceContext、生成 Blocks 或原始模型输出；未满足三个 opt-in 前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
 
 ## 单词图片识别
 

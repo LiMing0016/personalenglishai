@@ -14,6 +14,8 @@ public class VocabularyCardRevision {
     private Integer themeVersion;
     private String contentJson;
     private String coreJson;
+    private String cardBlocksJson;
+    private Integer cardBlocksSchemaVersion;
     private String contentMarkdown;
     private Integer contentFormatVersion;
     private String generationMetadataJson;
@@ -42,6 +44,12 @@ public class VocabularyCardRevision {
     public void setContentJson(String contentJson) { this.contentJson = contentJson; }
     public String getCoreJson() { return coreJson; }
     public void setCoreJson(String coreJson) { this.coreJson = coreJson; }
+    public String getCardBlocksJson() { return cardBlocksJson; }
+    public void setCardBlocksJson(String cardBlocksJson) { this.cardBlocksJson = cardBlocksJson; }
+    public Integer getCardBlocksSchemaVersion() { return cardBlocksSchemaVersion; }
+    public void setCardBlocksSchemaVersion(Integer cardBlocksSchemaVersion) {
+        this.cardBlocksSchemaVersion = cardBlocksSchemaVersion;
+    }
     public String getContentMarkdown() { return contentMarkdown; }
     public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
     public Integer getContentFormatVersion() { return contentFormatVersion; }

@@ -1373,6 +1373,8 @@ CREATE TABLE IF NOT EXISTS vocabulary_card_revision (
     theme_uid VARCHAR(64) NULL,
     theme_version INT NULL,
     core_json JSON NULL,
+    card_blocks_json JSON NULL,
+    card_blocks_schema_version INT NULL,
     content_markdown MEDIUMTEXT NULL,
     content_format_version INT NULL,
     generation_metadata_json JSON NULL,

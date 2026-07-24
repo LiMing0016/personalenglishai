@@ -30,7 +30,9 @@ public record VocabularyCardDetailResponse(
         Integer themeVersion,
         JsonNode core,
         String markdown,
-        Integer contentFormatVersion) {
+        Integer contentFormatVersion,
+        JsonNode cardBlocks,
+        Integer cardBlocksSchemaVersion) {
 
     public VocabularyCardDetailResponse(
             String cardUid,
@@ -53,7 +55,7 @@ public record VocabularyCardDetailResponse(
                 activeRevisionUid, sourceTypes, content, sources, generationStatus, generationError,
                 null, null,
                 lastCapturedAt, createdAt, updatedAt, null, null, "none",
-                null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     public record SourceItem(

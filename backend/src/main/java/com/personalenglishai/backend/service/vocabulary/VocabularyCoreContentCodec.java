@@ -18,7 +18,8 @@ import org.springframework.stereotype.Component;
 @Component
 public final class VocabularyCoreContentCodec {
 
-    private static final int SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int LEGACY_SCHEMA_VERSION = 1;
     private static final int MAX_SCALAR_LENGTH = 2000;
     private static final int MAX_PHONETICS = 10;
     private static final int MAX_SENSES = 20;
@@ -26,8 +27,11 @@ public final class VocabularyCoreContentCodec {
     private static final Set<String> CORE_FIELDS = Set.of(
             "schemaVersion", "term", "phonetics", "senses");
     private static final Set<String> PHONETIC_FIELDS = Set.of("region", "text", "audioUrl");
-    private static final Set<String> SENSE_FIELDS = Set.of("partOfSpeech", "meanings");
-    private static final Set<String> MEANING_FIELDS = Set.of("definitionEn", "definitionZh");
+    private static final Set<String> SENSE_FIELDS_V1 = Set.of("partOfSpeech", "meanings");
+    private static final Set<String> SENSE_FIELDS_V2 = Set.of("id", "partOfSpeech", "meanings");
+    private static final Set<String> MEANING_FIELDS_V1 = Set.of("definitionEn", "definitionZh");
+    private static final Set<String> MEANING_FIELDS_V2 = Set.of("id", "definitionEn", "definitionZh");
+    private static final String OPAQUE_ID_PATTERN = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}";
 
     private final ObjectMapper objectMapper;
 
@@ -44,15 +48,25 @@ public final class VocabularyCoreContentCodec {
         boolean hasExplicitRegion = sourcePhonetics.stream()
                 .filter(this::hasText)
                 .anyMatch(phonetic -> explicitRegion(phonetic.getText()) != null);
+        boolean hasStandardRegion = sourcePhonetics.stream()
+                .filter(phonetic -> phonetic != null
+                        && (hasText(phonetic.getText()) || hasText(phonetic.getAudioUrl())))
+                .map(phonetic -> phoneticRegion(phonetic, dictionary, hasExplicitRegion))
+                .anyMatch(region -> "uk".equals(region) || "us".equals(region));
+        Set<String> seenRegions = new HashSet<>();
         for (DictionaryPhoneticDto phonetic : sourcePhonetics) {
             if (phonetic == null || (!hasText(phonetic.getText()) && !hasText(phonetic.getAudioUrl()))) {
+                continue;
+            }
+            String region = phoneticRegion(phonetic, dictionary, hasExplicitRegion);
+            if ((hasStandardRegion && "other".equals(region)) || !seenRegions.add(region)) {
                 continue;
             }
             if (phonetics.size() >= MAX_PHONETICS) {
                 break;
             }
             ObjectNode item = phonetics.addObject();
-            item.put("region", phoneticRegion(phonetic, dictionary, hasExplicitRegion));
+            item.put("region", region);
             item.put("text", valueOrEmpty(phonetic.getText()));
             if (phonetic.getAudioUrl() == null) {
                 item.putNull("audioUrl");
@@ -75,7 +89,7 @@ public final class VocabularyCoreContentCodec {
                 if (sensesByPartOfSpeech.size() >= MAX_SENSES) {
                     continue;
                 }
-                sense = newSense(partOfSpeech);
+                sense = newSense("sense_" + (sensesByPartOfSpeech.size() + 1), partOfSpeech);
                 sensesByPartOfSpeech.put(partOfSpeech, sense);
             }
             ArrayNode meanings = (ArrayNode) sense.get("meanings");
@@ -87,7 +101,9 @@ public final class VocabularyCoreContentCodec {
                     break;
                 }
                 if (hasText(definition)) {
-                    meanings.add(splitMeaning(definition));
+                    meanings.add(splitMeaning(
+                            "meaning_" + sensesByPartOfSpeech.size() + "_" + (meanings.size() + 1),
+                            definition));
                 }
             }
         }
@@ -119,7 +135,7 @@ public final class VocabularyCoreContentCodec {
                 && !partOfSpeech.textValue().isBlank();
         if (hasPartOfSpeech || (definitions != null && definitions.isArray())) {
             String partOfSpeechValue = partOfSpeech == null ? null : partOfSpeech.textValue();
-            ObjectNode sense = newSense(normalizePartOfSpeech(partOfSpeechValue));
+            ObjectNode sense = newSense("sense_1", normalizePartOfSpeech(partOfSpeechValue));
             ArrayNode meanings = (ArrayNode) sense.get("meanings");
             if (definitions != null && definitions.isArray()) {
                 for (JsonNode definition : definitions) {
@@ -127,7 +143,8 @@ public final class VocabularyCoreContentCodec {
                         break;
                     }
                     if (definition.isTextual() && !definition.textValue().isBlank()) {
-                        meanings.add(splitMeaning(definition.textValue()));
+                        meanings.add(splitMeaning(
+                                "meaning_1_" + (meanings.size() + 1), definition.textValue()));
                     }
                 }
             }
@@ -150,15 +167,17 @@ public final class VocabularyCoreContentCodec {
         }
         rejectUnknownFields(core, CORE_FIELDS, "core");
         JsonNode schemaVersion = required(core, "schemaVersion");
-        if (!schemaVersion.isInt() || schemaVersion.intValue() != SCHEMA_VERSION) {
-            throw invalid("schemaVersion must be 1");
+        if (!schemaVersion.isInt()
+                || (schemaVersion.intValue() != LEGACY_SCHEMA_VERSION
+                        && schemaVersion.intValue() != CURRENT_SCHEMA_VERSION)) {
+            throw invalid("schemaVersion must be 1 or 2");
         }
         String actualTerm = textField(required(core, "term"), "term");
         if (expectedTerm != null && !expectedTerm.equals(actualTerm)) {
             throw invalid("term does not match expected card identity");
         }
         validatePhonetics(required(core, "phonetics"));
-        validateSenses(required(core, "senses"));
+        validateSenses(required(core, "senses"), schemaVersion.intValue());
     }
 
     public void validate(JsonNode core, String expectedTerm) {
@@ -180,8 +199,11 @@ public final class VocabularyCoreContentCodec {
                 continue;
             }
             for (JsonNode meaning : sense.path("meanings")) {
-                if (textOrNull(meaning.path("definitionEn")) != null
-                        || textOrNull(meaning.path("definitionZh")) != null) {
+                boolean hasEnglish = textOrNull(meaning.path("definitionEn")) != null;
+                boolean hasChinese = textOrNull(meaning.path("definitionZh")) != null;
+                if (core.path("schemaVersion").asInt() == CURRENT_SCHEMA_VERSION
+                        ? hasEnglish && hasChinese
+                        : hasEnglish || hasChinese) {
                     return true;
                 }
             }
@@ -194,17 +216,7 @@ public final class VocabularyCoreContentCodec {
         validate(expectedTerm, trustedCore);
         validate(expectedTerm, candidateCore);
 
-        JsonNode trustedPhonetics = trustedCore.path("phonetics");
-        JsonNode candidatePhonetics = candidateCore.path("phonetics");
-        requireAtLeastTrustedSize(trustedPhonetics, candidatePhonetics, "phonetics");
-        for (int index = 0; index < trustedPhonetics.size(); index++) {
-            JsonNode trusted = trustedPhonetics.get(index);
-            JsonNode candidate = candidatePhonetics.get(index);
-            requireEqual(trusted.path("region"), candidate.path("region"), "phonetic region");
-            requireNonblankPreserved(trusted.path("text"), candidate.path("text"), "phonetic text");
-            requireNonblankPreserved(
-                    trusted.path("audioUrl"), candidate.path("audioUrl"), "phonetic audioUrl");
-        }
+        validatePreservesTrustedPhoneticsAfterValidation(trustedCore, candidateCore);
 
         JsonNode trustedSenses = trustedCore.path("senses");
         JsonNode candidateSenses = candidateCore.path("senses");
@@ -232,6 +244,28 @@ public final class VocabularyCoreContentCodec {
                         candidateMeaning.path("definitionZh"),
                         "definitionZh");
             }
+        }
+    }
+
+    public void validatePreservesTrustedPhonetics(
+            String expectedTerm, JsonNode trustedCore, JsonNode candidateCore) {
+        validate(expectedTerm, trustedCore);
+        validate(expectedTerm, candidateCore);
+        validatePreservesTrustedPhoneticsAfterValidation(trustedCore, candidateCore);
+    }
+
+    private void validatePreservesTrustedPhoneticsAfterValidation(
+            JsonNode trustedCore, JsonNode candidateCore) {
+        JsonNode trustedPhonetics = trustedCore.path("phonetics");
+        JsonNode candidatePhonetics = candidateCore.path("phonetics");
+        requireAtLeastTrustedSize(trustedPhonetics, candidatePhonetics, "phonetics");
+        for (int index = 0; index < trustedPhonetics.size(); index++) {
+            JsonNode trusted = trustedPhonetics.get(index);
+            JsonNode candidate = candidatePhonetics.get(index);
+            requireEqual(trusted.path("region"), candidate.path("region"), "phonetic region");
+            requireNonblankPreserved(trusted.path("text"), candidate.path("text"), "phonetic text");
+            requireNonblankPreserved(
+                    trusted.path("audioUrl"), candidate.path("audioUrl"), "phonetic audioUrl");
         }
     }
 
@@ -280,24 +314,26 @@ public final class VocabularyCoreContentCodec {
 
     private ObjectNode emptyCore(String term) {
         ObjectNode core = objectMapper.createObjectNode();
-        core.put("schemaVersion", SCHEMA_VERSION);
+        core.put("schemaVersion", CURRENT_SCHEMA_VERSION);
         core.put("term", valueOrEmpty(term));
         core.putArray("phonetics");
         core.putArray("senses");
         return core;
     }
 
-    private ObjectNode newSense(String partOfSpeech) {
+    private ObjectNode newSense(String id, String partOfSpeech) {
         ObjectNode sense = objectMapper.createObjectNode();
+        sense.put("id", id);
         sense.put("partOfSpeech", partOfSpeech);
         sense.putArray("meanings");
         return sense;
     }
 
-    private ObjectNode splitMeaning(String definition) {
+    private ObjectNode splitMeaning(String id, String definition) {
         String value = definition.trim();
         int delimiter = firstBilingualDelimiter(value);
         ObjectNode meaning = objectMapper.createObjectNode();
+        meaning.put("id", id);
         if (delimiter < 0) {
             meaning.put("definitionEn", value);
             meaning.put("definitionZh", "");
@@ -376,15 +412,26 @@ public final class VocabularyCoreContentCodec {
         }
     }
 
-    private void validateSenses(JsonNode value) {
+    private void validateSenses(JsonNode value, int schemaVersion) {
         if (!value.isArray() || value.size() > MAX_SENSES) {
             throw invalid("invalid senses");
         }
+        Set<String> senseIds = new HashSet<>();
+        Set<String> meaningIds = new HashSet<>();
         for (JsonNode sense : value) {
             if (!sense.isObject()) {
                 throw invalid("sense must be an object");
             }
-            rejectUnknownFields(sense, SENSE_FIELDS, "sense");
+            rejectUnknownFields(
+                    sense,
+                    schemaVersion == CURRENT_SCHEMA_VERSION ? SENSE_FIELDS_V2 : SENSE_FIELDS_V1,
+                    "sense");
+            if (schemaVersion == CURRENT_SCHEMA_VERSION) {
+                String senseId = opaqueId(required(sense, "id"), "sense.id");
+                if (!senseIds.add(senseId)) {
+                    throw invalid("sense ids must be unique");
+                }
+            }
             textField(required(sense, "partOfSpeech"), "partOfSpeech");
             JsonNode meanings = required(sense, "meanings");
             if (!meanings.isArray() || meanings.size() > MAX_MEANINGS) {
@@ -394,7 +441,16 @@ public final class VocabularyCoreContentCodec {
                 if (!meaning.isObject()) {
                     throw invalid("meaning must be an object");
                 }
-                rejectUnknownFields(meaning, MEANING_FIELDS, "meaning");
+                rejectUnknownFields(
+                        meaning,
+                        schemaVersion == CURRENT_SCHEMA_VERSION ? MEANING_FIELDS_V2 : MEANING_FIELDS_V1,
+                        "meaning");
+                if (schemaVersion == CURRENT_SCHEMA_VERSION) {
+                    String meaningId = opaqueId(required(meaning, "id"), "meaning.id");
+                    if (!meaningIds.add(meaningId)) {
+                        throw invalid("meaning ids must be unique");
+                    }
+                }
                 textField(required(meaning, "definitionEn"), "definitionEn");
                 textField(required(meaning, "definitionZh"), "definitionZh");
             }
@@ -414,6 +470,14 @@ public final class VocabularyCoreContentCodec {
             throw invalid("invalid text field: " + field);
         }
         return value.textValue();
+    }
+
+    private String opaqueId(JsonNode value, String field) {
+        String id = textField(value, field);
+        if (id.isBlank() || id.length() > 128 || !id.matches(OPAQUE_ID_PATTERN)) {
+            throw invalid("invalid opaque id: " + field);
+        }
+        return id;
     }
 
     private void rejectUnknownFields(JsonNode value, Set<String> allowed, String objectName) {

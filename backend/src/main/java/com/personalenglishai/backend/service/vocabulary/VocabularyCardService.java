@@ -59,6 +59,7 @@ public class VocabularyCardService {
     private final VocabularyThemeMapper themes;
     private final VocabularyTemplateRegistry templateRegistry;
     private final VocabularyCoreContentCodec coreCodec;
+    private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyRevisionWriteService revisionWriter;
 
@@ -72,6 +73,7 @@ public class VocabularyCardService {
             VocabularyThemeMapper themes,
             VocabularyTemplateRegistry templateRegistry,
             VocabularyCoreContentCodec coreCodec,
+            VocabularyCardBlocksCodec cardBlocksCodec,
             ObjectMapper objectMapper,
             VocabularyRevisionWriteService revisionWriter) {
         this.cards = cards;
@@ -83,6 +85,7 @@ public class VocabularyCardService {
         this.themes = themes;
         this.templateRegistry = templateRegistry;
         this.coreCodec = coreCodec;
+        this.cardBlocksCodec = cardBlocksCodec;
         this.objectMapper = objectMapper;
         this.revisionWriter = revisionWriter;
     }
@@ -179,15 +182,32 @@ public class VocabularyCardService {
                 activeRevision == null ? null : activeRevision.getThemeVersion(),
                 active.core(),
                 active.markdown(),
-                active.contentFormatVersion());
+                active.contentFormatVersion(),
+                active.cardBlocks(),
+                active.cardBlocksSchemaVersion());
     }
 
     public VocabularyCardDetailResponse update(Long userId, String cardUid, UpdateVocabularyCardRequest request) {
         VocabularyCard card = requireOwnedCard(userId, cardUid);
         VocabularyTemplateRegistry.TemplateDefinition template = templateRegistry.require(card.getTemplateKey());
+        VocabularyCardRevision baseRevision = ownedRevision(card, request.baseRevisionUid());
         ObjectNode core;
         ObjectNode legacyContent = null;
-        if (request.core() != null) {
+        JsonNode cardBlocks = null;
+        if (request.cardBlocks() != null) {
+            if (request.content() != null || request.markdown() != null) {
+                throw new IllegalArgumentException("card blocks cannot be combined with legacy content or markdown");
+            }
+            if (request.core() != null) {
+                core = editableCore(card, request.core());
+            } else if (baseRevision != null) {
+                JsonNode baseCore = projection(card, baseRevision).core();
+                core = editableCore(card, baseCore);
+            } else {
+                throw new IllegalArgumentException("vocabulary core is required for card blocks");
+            }
+            cardBlocks = editableCardBlocks(request.cardBlocks(), core);
+        } else if (request.core() != null) {
             core = editableCore(card, request.core());
         } else {
             legacyContent = editableContent(card, request.content());
@@ -195,7 +215,6 @@ public class VocabularyCardService {
             core = coreCodec.fromLegacy(card.getNormalizedTerm(), legacyContent);
         }
         validateMarkdown(request.markdown());
-        VocabularyCardRevision baseRevision = ownedRevision(card, request.baseRevisionUid());
         String themeUid = baseRevision != null && baseRevision.getThemeUid() != null
                 ? baseRevision.getThemeUid()
                 : card.getThemeUid();
@@ -218,11 +237,15 @@ public class VocabularyCardService {
         revision.setThemeUid(themeUid);
         revision.setThemeVersion(themeVersion);
         revision.setCoreJson(writeJson(core));
-        revision.setContentMarkdown(request.markdown());
+        revision.setCardBlocksJson(cardBlocks == null ? null : writeJson(cardBlocks));
+        revision.setCardBlocksSchemaVersion(cardBlocks == null ? null : VocabularyCardBlocksCodec.SCHEMA_VERSION);
+        revision.setContentMarkdown(cardBlocks == null ? request.markdown() : null);
         revision.setContentFormatVersion(contentFormatVersion);
-        revision.setContentJson(legacyContent == null
-                ? writeCompatibilityJson(core, request.markdown())
-                : writeJson(legacyContent));
+        revision.setContentJson(legacyContent != null
+                ? writeJson(legacyContent)
+                : cardBlocks != null
+                        ? writeCompatibilityJson(core, cardBlocks)
+                        : writeCompatibilityJson(core, request.markdown()));
         revision.setChangeSummary(request.changeSummary());
         VocabularyRevisionWriteService.WriteOutcome outcome =
                 revisionWriter.appendAndActivate(userId, card, revision);
@@ -287,7 +310,7 @@ public class VocabularyCardService {
                             projected.contentFormatVersion(), revision.getChangeSummary(),
                             Objects.equals(card.getActiveRevisionUid(), revision.getRevisionUid()),
                             candidate != null && Objects.equals(candidate.getRevisionUid(), revision.getRevisionUid()),
-                            revision.getCreatedAt());
+                            revision.getCreatedAt(), projected.cardBlocks(), projected.cardBlocksSchemaVersion());
                 })
                 .toList();
         return new VocabularyRevisionListResponse(card.getActiveRevisionUid(),
@@ -487,6 +510,15 @@ public class VocabularyCardService {
         return core;
     }
 
+    private ObjectNode editableCardBlocks(JsonNode requested, JsonNode core) {
+        if (requested == null || !requested.isObject()) {
+            throw new IllegalArgumentException("vocabulary card blocks must be an object");
+        }
+        ObjectNode cardBlocks = ((ObjectNode) requested).deepCopy();
+        cardBlocksCodec.validate(cardBlocks, core);
+        return cardBlocks;
+    }
+
     private void validateMarkdown(String markdown) {
         if (markdown != null && markdown.length() > MAX_MARKDOWN_LENGTH) {
             throw new IllegalArgumentException("vocabulary markdown must not exceed 20000 characters");
@@ -536,12 +568,61 @@ public class VocabularyCardService {
         if (markdown == null && content != null && content.path("markdown").isTextual()) {
             markdown = content.path("markdown").asText();
         }
+        JsonNode cardBlocks = storedCardBlocks(revision, content, core);
+        Integer cardBlocksSchemaVersion = cardBlocks == null
+                ? null
+                : VocabularyCardBlocksCodec.SCHEMA_VERSION;
+        if (cardBlocks == null && markdown != null && !markdown.isBlank()) {
+            cardBlocks = legacyMarkdownBlocks(markdown);
+            cardBlocksSchemaVersion = VocabularyCardBlocksCodec.SCHEMA_VERSION;
+        }
         return new RevisionProjection(
                 content,
                 themeSnapshot(revision),
                 core,
                 markdown,
-                revision.getContentFormatVersion());
+                revision.getContentFormatVersion(),
+                cardBlocks,
+                cardBlocksSchemaVersion);
+    }
+
+    private JsonNode storedCardBlocks(VocabularyCardRevision revision, JsonNode content, JsonNode core) {
+        JsonNode cardBlocks = null;
+        if (revision.getCardBlocksJson() != null && !revision.getCardBlocksJson().isBlank()) {
+            cardBlocks = parseJson(revision.getCardBlocksJson(), "card_blocks_json");
+        } else if (content != null && content.path("cardBlocks").isObject()) {
+            cardBlocks = content.path("cardBlocks");
+        }
+        if (cardBlocks == null) {
+            return null;
+        }
+        if (!Objects.equals(revision.getCardBlocksSchemaVersion(), VocabularyCardBlocksCodec.SCHEMA_VERSION)) {
+            throw new IllegalStateException("invalid stored card_blocks_schema_version");
+        }
+        try {
+            cardBlocksCodec.validate(cardBlocks, core);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException("invalid stored card_blocks_json", exception);
+        }
+        return cardBlocks.deepCopy();
+    }
+
+    private JsonNode legacyMarkdownBlocks(String markdown) {
+        ObjectNode cardBlocks = objectMapper.createObjectNode();
+        cardBlocks.put("schemaVersion", VocabularyCardBlocksCodec.SCHEMA_VERSION);
+        ObjectNode block = cardBlocks.putArray("blocks").addObject();
+        block.put("id", "legacy_markdown");
+        block.put("type", "legacyMarkdown");
+        block.put("title", "历史内容");
+        block.putArray("meaningRefs");
+        block.put("format", "markdown");
+        block.put("content", markdown);
+        block.put("source", "legacy");
+        block.putNull("sourceRef");
+        block.put("sortOrder", 0);
+        block.put("userEdited", false);
+        block.put("locked", true);
+        return cardBlocks;
     }
 
     private VocabularyThemeSnapshot themeSnapshot(VocabularyCardRevision revision) {
@@ -623,6 +704,7 @@ public class VocabularyCardService {
         ObjectNode core = editableCore(card, parseJson(current.getCoreJson(), "core_json"));
         String markdown = current.getContentMarkdown();
         JsonNode compatibility = revisionContent(current);
+        JsonNode cardBlocks = storedCardBlocks(current, compatibility, core);
         if (markdown == null && compatibility != null && compatibility.path("markdown").isTextual()) {
             markdown = compatibility.path("markdown").asText();
         }
@@ -631,12 +713,19 @@ public class VocabularyCardService {
             switch (field.getKey()) {
                 case "core" -> core = editableCore(card, field.getValue());
                 case "markdown" -> markdown = mergedMarkdown(field.getValue());
+                case "cardBlocks" -> cardBlocks = field.getValue();
                 default -> throw new IllegalArgumentException("merge field is not allowed: " + field.getKey());
             }
         }
-        validateMarkdown(markdown);
+        if (cardBlocks != null && !cardBlocks.isNull()) {
+            cardBlocks = editableCardBlocks(cardBlocks, core);
+            markdown = null;
+        } else {
+            cardBlocks = null;
+            validateMarkdown(markdown);
+        }
         return buildResolutionRevision(
-                card, current, current, core, null, markdown,
+                card, current, current, core, null, cardBlocks, markdown,
                 current.getContentFormatVersion(), "Merged vocabulary conflict fields");
     }
 
@@ -660,6 +749,7 @@ public class VocabularyCardService {
                 templateRegistry.require(contentRevision.getTemplateKey());
         ObjectNode core;
         ObjectNode legacy = null;
+        JsonNode cardBlocks = null;
         String markdown = contentRevision.getContentMarkdown();
         boolean newFormat = isNewFormatRevision(contentRevision);
         if (!newFormat) {
@@ -668,13 +758,18 @@ public class VocabularyCardService {
             core = coreCodec.fromLegacy(card.getNormalizedTerm(), legacy);
         } else {
             core = editableCore(card, parseJson(contentRevision.getCoreJson(), "core_json"));
-            if (markdown == null && selectedContent != null && selectedContent.path("markdown").isTextual()) {
-                markdown = selectedContent.path("markdown").asText();
+            cardBlocks = storedCardBlocks(contentRevision, selectedContent, core);
+            if (cardBlocks != null) {
+                markdown = null;
+            } else {
+                if (markdown == null && selectedContent != null && selectedContent.path("markdown").isTextual()) {
+                    markdown = selectedContent.path("markdown").asText();
+                }
+                validateMarkdown(markdown);
             }
-            validateMarkdown(markdown);
         }
         return buildResolutionRevision(
-                card, current, contentRevision, core, legacy, markdown,
+                card, current, contentRevision, core, legacy, cardBlocks, markdown,
                 newFormat
                         ? contentRevision.getContentFormatVersion() == null
                                 ? CONTENT_FORMAT_VERSION
@@ -701,6 +796,7 @@ public class VocabularyCardService {
             VocabularyCardRevision contentRevision,
             ObjectNode core,
             ObjectNode legacy,
+            JsonNode cardBlocks,
             String markdown,
             Integer contentFormatVersion,
             String changeSummary) {
@@ -715,11 +811,15 @@ public class VocabularyCardService {
         resolution.setTemplateVersion(template.version());
         resolution.setThemeUid(contentRevision.getThemeUid());
         resolution.setThemeVersion(contentRevision.getThemeVersion());
-        resolution.setContentJson(legacy == null
-                ? writeCompatibilityJson(core, markdown)
-                : writeJson(legacy));
+        resolution.setContentJson(legacy != null
+                ? writeJson(legacy)
+                : cardBlocks != null
+                        ? writeCompatibilityJson(core, cardBlocks)
+                        : writeCompatibilityJson(core, markdown));
         resolution.setCoreJson(writeJson(core));
-        resolution.setContentMarkdown(markdown);
+        resolution.setCardBlocksJson(cardBlocks == null ? null : writeJson(cardBlocks));
+        resolution.setCardBlocksSchemaVersion(cardBlocks == null ? null : VocabularyCardBlocksCodec.SCHEMA_VERSION);
+        resolution.setContentMarkdown(cardBlocks == null ? markdown : null);
         resolution.setContentFormatVersion(contentFormatVersion);
         resolution.setChangeSummary(changeSummary);
         return resolution;
@@ -802,6 +902,12 @@ public class VocabularyCardService {
         return writeJson(compatibility);
     }
 
+    private String writeCompatibilityJson(JsonNode core, JsonNode cardBlocks) {
+        ObjectNode compatibility = ((ObjectNode) core).deepCopy();
+        compatibility.set("cardBlocks", cardBlocks.deepCopy());
+        return writeJson(compatibility);
+    }
+
     private String writeJson(Map<String, String> value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -823,8 +929,10 @@ public class VocabularyCardService {
             VocabularyThemeSnapshot theme,
             JsonNode core,
             String markdown,
-            Integer contentFormatVersion) {
+            Integer contentFormatVersion,
+            JsonNode cardBlocks,
+            Integer cardBlocksSchemaVersion) {
         private static final RevisionProjection EMPTY =
-                new RevisionProjection(null, null, null, null, null);
+                new RevisionProjection(null, null, null, null, null, null, null);
     }
 }

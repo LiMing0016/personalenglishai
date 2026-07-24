@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS vocabulary_card_revision (
     template_key VARCHAR(32) NOT NULL,
     template_version INT NOT NULL,
     content_json JSON NOT NULL,
+    card_blocks_json JSON NULL,
+    card_blocks_schema_version INT NULL,
     change_summary VARCHAR(255) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_vocabulary_revision_uid (revision_uid),

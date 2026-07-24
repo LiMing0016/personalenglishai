@@ -48,7 +48,7 @@ test('keeps every vocabulary API function on its source-contract endpoint', () =
 test('adds theme selection and versioned card content without removing legacy fields', () => {
   for (const requiredPattern of [
     /interface VocabularyCoreContent/,
-    /schemaVersion:\s*1/,
+    /schemaVersion:\s*1\s*\|\s*2/,
     /region:\s*'uk'\s*\|\s*'us'\s*\|\s*'other'/,
     /themeUid\?:\s*string/,
     /templateKey\?:\s*VocabularyTemplateKey/,
@@ -57,6 +57,9 @@ test('adds theme selection and versioned card content without removing legacy fi
     /core:\s*VocabularyCoreContent\s*\|\s*null/,
     /markdown:\s*string\s*\|\s*null/,
     /contentFormatVersion:\s*number\s*\|\s*null/,
+    /cardBlocks:\s*VocabularyCardBlocks\s*\|\s*null/,
+    /cardBlocksSchemaVersion:\s*number\s*\|\s*null/,
+    /cardBlocks\?:\s*VocabularyCardBlocks\s*\|\s*null/,
     /currentContentFormatVersion\?:\s*number\s*\|\s*null/,
     /candidateContentFormatVersion\?:\s*number\s*\|\s*null/,
     /type VocabularyGenerationOutcome = 'complete' \| 'partial' \| 'failed'/,

@@ -568,6 +568,33 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void acceptsStructuredCardBlocksOnVocabularyCardUpdate() throws Exception {
+        mockMvc.perform(put("/api/vocabulary/cards/card_1")
+                        .requestAttr("userId", 7L)
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "baseRevisionUid":"rev_1",
+                                  "cardBlocks":{
+                                    "schemaVersion":1,
+                                    "blocks":[{
+                                      "id":"block_note_01","type":"note","title":"我的笔记",
+                                      "meaningRefs":[],"format":"markdown","content":"## 重点",
+                                      "source":"user","sourceRef":null,"sortOrder":10,
+                                      "userEdited":true,"locked":true
+                                    }]
+                                  },
+                                  "changeSummary":"补充笔记"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        verify(cardService).update(eq(7L), eq("card_1"), argThat(request ->
+                request.cardBlocks() != null
+                        && "note".equals(request.cardBlocks().path("blocks").get(0).path("type").asText())));
+    }
+
+    @Test
     void regenerateAcceptsValidatedTemplateAndRejectsUnsupportedTemplate() throws Exception {
         mockMvc.perform(post("/api/vocabulary/cards/card_1/regenerate")
                         .requestAttr("userId", 7L)

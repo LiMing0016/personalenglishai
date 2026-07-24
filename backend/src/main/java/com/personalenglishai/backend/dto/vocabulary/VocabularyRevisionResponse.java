@@ -18,5 +18,7 @@ public record VocabularyRevisionResponse(
         String changeSummary,
         boolean active,
         boolean candidate,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        JsonNode cardBlocks,
+        Integer cardBlocksSchemaVersion) {
 }

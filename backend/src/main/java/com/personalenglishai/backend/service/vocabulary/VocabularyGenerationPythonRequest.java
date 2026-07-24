@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 @JsonPropertyOrder({
-        "contractVersion", "coreSchemaVersion", "requestId", "traceId", "timeoutBudgetMs",
+        "contractVersion", "coreSchemaVersion", "cardBlocksSchemaVersion", "requestId", "traceId", "timeoutBudgetMs",
         "term", "dictionaryCore", "sourceContext", "theme"
 })
 public record VocabularyGenerationPythonRequest(
@@ -21,7 +21,8 @@ public record VocabularyGenerationPythonRequest(
         @JsonProperty("sourceContext") String sourceContext,
         @JsonProperty("theme") Theme theme) {
 
-    static final int VERSION = 1;
+    static final int VERSION = 2;
+    static final int CARD_BLOCKS_VERSION = 1;
     static final int MAX_TIMEOUT_BUDGET_MS = 60_000;
     private static final int MAX_TERM_LENGTH = 200;
     private static final int MAX_SOURCE_CONTEXT_LENGTH = 10_000;
@@ -59,6 +60,11 @@ public record VocabularyGenerationPythonRequest(
         return VERSION;
     }
 
+    @JsonProperty("cardBlocksSchemaVersion")
+    public int cardBlocksSchemaVersion() {
+        return CARD_BLOCKS_VERSION;
+    }
+
     @JsonPropertyOrder({"schemaVersion", "term", "phonetics", "senses"})
     public record Core(
             @JsonProperty("term") String term,
@@ -69,6 +75,18 @@ public record VocabularyGenerationPythonRequest(
             requireNonBlank(term, "core.term", MAX_TERM_LENGTH);
             phonetics = immutableList(phonetics, MAX_PHONETIC_COUNT, "phonetics");
             senses = immutableList(senses, MAX_SENSE_COUNT, "senses");
+            Set<String> senseIds = new HashSet<>();
+            Set<String> meaningIds = new HashSet<>();
+            for (Sense sense : senses) {
+                if (!senseIds.add(sense.id())) {
+                    throw invalid("sense ids must be unique");
+                }
+                for (Meaning meaning : sense.meanings()) {
+                    if (!meaningIds.add(meaning.id())) {
+                        throw invalid("meaning ids must be unique");
+                    }
+                }
+            }
         }
 
         @JsonProperty("schemaVersion")
@@ -78,7 +96,7 @@ public record VocabularyGenerationPythonRequest(
 
         static Core fromJson(JsonNode node) {
             requireExactFields(node, Set.of("schemaVersion", "term", "phonetics", "senses"), "core");
-            requireVersion(required(node, "schemaVersion"), "core.schemaVersion");
+            int incomingVersion = coreVersion(required(node, "schemaVersion"));
             List<Phonetic> phonetics = new ArrayList<>();
             for (JsonNode phonetic : array(required(node, "phonetics"), "core.phonetics")) {
                 requireExactFields(phonetic, Set.of("region", "text", "audioUrl"), "phonetic");
@@ -89,16 +107,36 @@ public record VocabularyGenerationPythonRequest(
                         audioUrl.isNull() ? null : text(audioUrl, "phonetic.audioUrl", MAX_SCALAR_LENGTH)));
             }
             List<Sense> senses = new ArrayList<>();
+            int senseIndex = 0;
             for (JsonNode sense : array(required(node, "senses"), "core.senses")) {
-                requireExactFields(sense, Set.of("partOfSpeech", "meanings"), "sense");
+                senseIndex++;
+                requireExactFields(
+                        sense,
+                        incomingVersion == VERSION
+                                ? Set.of("id", "partOfSpeech", "meanings")
+                                : Set.of("partOfSpeech", "meanings"),
+                        "sense");
                 List<Meaning> meanings = new ArrayList<>();
+                int meaningIndex = 0;
                 for (JsonNode meaning : array(required(sense, "meanings"), "sense.meanings")) {
-                    requireExactFields(meaning, Set.of("definitionEn", "definitionZh"), "meaning");
+                    meaningIndex++;
+                    requireExactFields(
+                            meaning,
+                            incomingVersion == VERSION
+                                    ? Set.of("id", "definitionEn", "definitionZh")
+                                    : Set.of("definitionEn", "definitionZh"),
+                            "meaning");
                     meanings.add(new Meaning(
+                            incomingVersion == VERSION
+                                    ? opaqueText(required(meaning, "id"), "meaning.id")
+                                    : "meaning_" + senseIndex + "_" + meaningIndex,
                             text(required(meaning, "definitionEn"), "meaning.definitionEn", MAX_SCALAR_LENGTH),
                             text(required(meaning, "definitionZh"), "meaning.definitionZh", MAX_SCALAR_LENGTH)));
                 }
                 senses.add(new Sense(
+                        incomingVersion == VERSION
+                                ? opaqueText(required(sense, "id"), "sense.id")
+                                : "sense_" + senseIndex,
                         text(required(sense, "partOfSpeech"), "sense.partOfSpeech", MAX_SCALAR_LENGTH), meanings));
             }
             return new Core(text(required(node, "term"), "core.term", MAX_TERM_LENGTH), phonetics, senses);
@@ -122,22 +160,34 @@ public record VocabularyGenerationPythonRequest(
     }
 
     public record Sense(
+            @JsonProperty("id") String id,
             @JsonProperty("partOfSpeech") String partOfSpeech,
             @JsonProperty("meanings") List<Meaning> meanings) {
 
         public Sense {
+            requireOpaqueId(id, "sense.id");
             requireText(partOfSpeech, "sense.partOfSpeech", MAX_SCALAR_LENGTH);
             meanings = immutableList(meanings, MAX_MEANING_COUNT, "meanings");
+        }
+
+        public Sense(String partOfSpeech, List<Meaning> meanings) {
+            this("sense_1", partOfSpeech, meanings);
         }
     }
 
     public record Meaning(
+            @JsonProperty("id") String id,
             @JsonProperty("definitionEn") String definitionEn,
             @JsonProperty("definitionZh") String definitionZh) {
 
         public Meaning {
+            requireOpaqueId(id, "meaning.id");
             requireText(definitionEn, "meaning.definitionEn", MAX_SCALAR_LENGTH);
             requireText(definitionZh, "meaning.definitionZh", MAX_SCALAR_LENGTH);
+        }
+
+        public Meaning(String definitionEn, String definitionZh) {
+            this("meaning_1_1", definitionEn, definitionZh);
         }
     }
 
@@ -158,11 +208,11 @@ public record VocabularyGenerationPythonRequest(
             if (purpose == null || purpose.length() > MAX_SOURCE_CONTEXT_LENGTH) {
                 throw invalid("theme.purpose is invalid");
             }
-            if (!Set.of("basic-markdown-v1", "exam-markdown-v1", "reading-markdown-v1", "custom-markdown-v1")
+            if (!Set.of("basic-blocks-v1", "exam-blocks-v1", "reading-blocks-v1", "custom-blocks-v1")
                     .contains(promptStrategyKey)) {
                 throw invalid("theme.promptStrategyKey is invalid");
             }
-            if (contentFormatVersion != VERSION) {
+            if (contentFormatVersion != CARD_BLOCKS_VERSION) {
                 throw invalid("theme.contentFormatVersion must be 1");
             }
         }
@@ -232,10 +282,17 @@ public record VocabularyGenerationPythonRequest(
         return value;
     }
 
-    private static void requireVersion(JsonNode node, String field) {
-        if (!node.isInt() || node.intValue() != VERSION) {
-            throw invalid(field + " must be 1");
+    private static int coreVersion(JsonNode node) {
+        if (!node.isInt() || !Set.of(1, VERSION).contains(node.intValue())) {
+            throw invalid("core.schemaVersion must be 1 or 2");
         }
+        return node.intValue();
+    }
+
+    private static String opaqueText(JsonNode node, String field) {
+        String value = text(node, field, MAX_OPAQUE_ID_LENGTH);
+        requireOpaqueId(value, field);
+        return value;
     }
 
     private static IllegalArgumentException invalid(String message) {

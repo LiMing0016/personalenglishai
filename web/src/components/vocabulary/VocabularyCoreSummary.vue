@@ -7,9 +7,9 @@
 
     <div class="core-summary__section">
       <h4>音标</h4>
-      <p v-if="!core.phonetics.length" class="core-summary__empty">暂无音标</p>
+      <p v-if="!displayPhonetics.length" class="core-summary__empty">暂无音标</p>
       <ul v-else class="core-summary__phonetics">
-        <li v-for="phonetic in core.phonetics" :key="`${phonetic.region}-${phonetic.text}`">
+        <li v-for="phonetic in displayPhonetics" :key="`${phonetic.region}-${phonetic.text}`">
           <button
             type="button"
             class="core-summary__phonetic-button"
@@ -46,13 +46,30 @@
 
 <script setup lang="ts">
 import { Volume2 } from 'lucide-vue-next'
+import { computed } from 'vue'
 
 import type { VocabularyCoreContent } from '@/api/vocabulary'
 
-defineProps<{ core: VocabularyCoreContent }>()
+const props = defineProps<{ core: VocabularyCoreContent }>()
 const emit = defineEmits<{
   pronounce: [phonetic: VocabularyCoreContent['phonetics'][number]]
 }>()
+const displayPhonetics = computed(() => {
+  const firstByRegion = new Map<
+    VocabularyCoreContent['phonetics'][number]['region'],
+    VocabularyCoreContent['phonetics'][number]
+  >()
+  for (const phonetic of props.core.phonetics) {
+    if (!phonetic.text.trim() || firstByRegion.has(phonetic.region)) continue
+    firstByRegion.set(phonetic.region, phonetic)
+  }
+  const standard = (['uk', 'us'] as const)
+    .map((region) => firstByRegion.get(region))
+    .filter((phonetic): phonetic is VocabularyCoreContent['phonetics'][number] => Boolean(phonetic))
+  if (standard.length) return standard
+  const fallback = firstByRegion.get('other')
+  return fallback ? [fallback] : []
+})
 
 function regionLabel(region: VocabularyCoreContent['phonetics'][number]['region']) {
   return ({ uk: '英', us: '美', other: '其他' } as const)[region]

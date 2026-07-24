@@ -68,7 +68,8 @@ class VocabularyCardServiceTest {
         templateRegistry = new VocabularyTemplateRegistry(objectMapper);
         service = new VocabularyCardService(
                 cards, sources, revisions, jobs, preferences, themeService, themes,
-                templateRegistry, new VocabularyCoreContentCodec(objectMapper), objectMapper, revisionWriter);
+                templateRegistry, new VocabularyCoreContentCodec(objectMapper),
+                new VocabularyCardBlocksCodec(), objectMapper, revisionWriter);
     }
 
     @Test
@@ -533,6 +534,85 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void detailAndRevisionResponsesExposeStoredCardBlocks() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_1");
+        var revision = VocabularyTestFixtures.userRevision("rev_1");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        ObjectNode blocks = cardBlocks(core, "AI 例句");
+        revision.setCoreJson(core.toString());
+        revision.setCardBlocksJson(blocks.toString());
+        revision.setCardBlocksSchemaVersion(1);
+        revision.setContentMarkdown(null);
+        revision.setContentFormatVersion(1);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_1")).thenReturn(revision);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(revision));
+
+        var detail = service.getDetail(7L, "card_1");
+        var history = service.revisions(7L, "card_1").items().get(0);
+
+        assertEquals("exampleList", detail.cardBlocks().path("blocks").get(0).path("type").asText());
+        assertEquals(1, detail.cardBlocksSchemaVersion());
+        assertNull(detail.markdown());
+        assertEquals(detail.cardBlocks(), history.cardBlocks());
+        assertEquals(1, history.cardBlocksSchemaVersion());
+    }
+
+    @Test
+    void legacyMarkdownProjectsToAReadOnlyLegacyBlockWithoutRewritingStorage() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_legacy");
+        var revision = VocabularyTestFixtures.userRevision("rev_legacy");
+        revision.setContentMarkdown("## Historical notes");
+        revision.setContentFormatVersion(1);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(revisions.findRevision("rev_legacy")).thenReturn(revision);
+
+        var detail = service.getDetail(7L, "card_1");
+        JsonNode legacyBlock = detail.cardBlocks().path("blocks").get(0);
+
+        assertEquals("legacyMarkdown", legacyBlock.path("type").asText());
+        assertEquals("legacy", legacyBlock.path("source").asText());
+        assertTrue(legacyBlock.path("locked").asBoolean());
+        assertEquals("## Historical notes", legacyBlock.path("content").asText());
+        assertEquals("## Historical notes", detail.markdown());
+        assertNull(revision.getCardBlocksJson());
+    }
+
+    @Test
+    void cardBlocksEditStoresTypedBlocksAndPreservesBaseCore() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_1");
+        var base = VocabularyTestFixtures.userRevision("rev_1");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        base.setCoreJson(core.toString());
+        base.setContentFormatVersion(1);
+        ObjectNode editedBlocks = cardBlocks(core, "用户补充例句");
+        ((ObjectNode) editedBlocks.path("blocks").get(0)).put("userEdited", true).put("locked", true);
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_1")).thenReturn(base);
+        when(revisionWriter.appendAndActivate(eq(7L), eq(card), any()))
+                .thenReturn(VocabularyRevisionWriteService.WriteOutcome.ACTIVATED);
+
+        service.update(7L, "card_1", new UpdateVocabularyCardRequest(
+                "rev_1", null, null, null, editedBlocks, "补充主题内容"));
+
+        org.mockito.ArgumentCaptor<com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision> revision =
+                org.mockito.ArgumentCaptor.forClass(com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision.class);
+        verify(revisionWriter).appendAndActivate(eq(7L), eq(card), revision.capture());
+        var stored = revision.getValue();
+        assertEquals(core, objectMapper.readTree(stored.getCoreJson()));
+        assertEquals("用户补充例句", objectMapper.readTree(stored.getCardBlocksJson())
+                .path("blocks").get(0).path("title").asText());
+        assertEquals(1, stored.getCardBlocksSchemaVersion());
+        assertNull(stored.getContentMarkdown());
+        assertEquals("用户补充例句", objectMapper.readTree(stored.getContentJson())
+                .path("cardBlocks").path("blocks").get(0).path("title").asText());
+    }
+
+    @Test
     void deleteSoftDeletesOwnedCardAndCancelsPendingAndRunningJobs() {
         when(cards.findOwnedByUid(7L, "card_1")).thenReturn(VocabularyTestFixtures.ready("card_1", "rev_1"));
         when(cards.softDelete(7L, "card_1")).thenReturn(1);
@@ -832,6 +912,48 @@ class VocabularyCardServiceTest {
     }
 
     @Test
+    void emptyMergeOnCardBlocksCurrentPreservesTypedBlocks() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        ObjectNode currentBlocks = cardBlocks(currentCore, "Current examples");
+        var current = newFormatConflictCurrent(currentCore, null);
+        current.setCardBlocksJson(currentBlocks.toString());
+        current.setCardBlocksSchemaVersion(1);
+        current.setContentJson(currentCore.deepCopy().set("cardBlocks", currentBlocks).toString());
+        arrangeNewFormatConflict(current);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of()));
+
+        var merged = capturedInsertedRevision();
+        assertEquals(currentBlocks, objectMapper.readTree(merged.getCardBlocksJson()));
+        assertEquals(1, merged.getCardBlocksSchemaVersion());
+        assertNull(merged.getContentMarkdown());
+        assertEquals(currentBlocks, objectMapper.readTree(merged.getContentJson()).path("cardBlocks"));
+    }
+
+    @Test
+    void cardBlocksMergeCanReplaceBlocksWithoutChangingCore() throws Exception {
+        ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        ObjectNode currentBlocks = cardBlocks(currentCore, "Current examples");
+        ObjectNode replacementBlocks = cardBlocks(currentCore, "User examples");
+        var current = newFormatConflictCurrent(currentCore, null);
+        current.setCardBlocksJson(currentBlocks.toString());
+        current.setCardBlocksSchemaVersion(1);
+        current.setContentJson(currentCore.deepCopy().set("cardBlocks", currentBlocks).toString());
+        arrangeNewFormatConflict(current);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("merge_fields", Map.of("cardBlocks", replacementBlocks)));
+
+        var merged = capturedInsertedRevision();
+        assertEquals(currentCore, objectMapper.readTree(merged.getCoreJson()));
+        assertEquals(replacementBlocks, objectMapper.readTree(merged.getCardBlocksJson()));
+        assertEquals(1, merged.getCardBlocksSchemaVersion());
+    }
+
+    @Test
     void newFormatMergeCanReplaceCoreWithoutChangingMarkdown() throws Exception {
         ObjectNode currentCore = new VocabularyCoreContentCodec(objectMapper).fromLegacy("record", null);
         var current = newFormatConflictCurrent(currentCore, "## Current notes");
@@ -958,6 +1080,44 @@ class VocabularyCardServiceTest {
         assertEquals(2, revision.getValue().getContentFormatVersion());
     }
 
+    @Test
+    void acceptingCardBlocksCandidatePreservesTypedBlocksAndFrozenTheme() throws Exception {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_1", 7L, "record", "rev_current");
+        card.setStatus("needs_review");
+        card.setConflictCandidateRevisionUid("rev_candidate");
+        var current = VocabularyTestFixtures.userRevision("rev_current");
+        var candidate = VocabularyTestFixtures.userRevision("rev_candidate");
+        ObjectNode core = new VocabularyCoreContentCodec(objectMapper).fromLegacy(
+                "record", VocabularyTestFixtures.legacyVocabularyContent(objectMapper));
+        ObjectNode blocks = cardBlocks(core, "Candidate examples");
+        candidate.setAuthorType("ai");
+        candidate.setBaseRevisionUid("rev_current");
+        candidate.setThemeUid("theme_user_1");
+        candidate.setThemeVersion(3);
+        candidate.setCoreJson(core.toString());
+        candidate.setCardBlocksJson(blocks.toString());
+        candidate.setCardBlocksSchemaVersion(1);
+        candidate.setContentMarkdown(null);
+        candidate.setContentFormatVersion(1);
+        candidate.setContentJson(core.deepCopy().set("cardBlocks", blocks).toString());
+        when(cards.findOwnedByUid(7L, "card_1")).thenReturn(card);
+        when(revisions.findRevision("rev_current")).thenReturn(current);
+        when(revisions.findRevision("rev_candidate")).thenReturn(candidate);
+        when(revisions.listRevisions("card_1")).thenReturn(List.of(candidate, current));
+        when(cards.updateActiveRevision(eq(7L), eq("card_1"), eq("rev_current"), anyString(),
+                eq("ready"), eq("basic"), eq(1), eq("theme_user_1"), eq(3),
+                eq("rev_candidate"))).thenReturn(1);
+
+        service.resolveConflict(7L, "card_1", "rev_candidate",
+                new ResolveVocabularyConflictRequest("use_ai", null));
+
+        var resolved = capturedInsertedRevision();
+        assertEquals(blocks, objectMapper.readTree(resolved.getCardBlocksJson()));
+        assertEquals(1, resolved.getCardBlocksSchemaVersion());
+        assertNull(resolved.getContentMarkdown());
+        assertEquals("theme_user_1", resolved.getThemeUid());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"keep_current", "use_ai", "merge_fields"})
     void everyConflictResolutionSynchronizesTheThemeOfItsActivatedRevision(String choice) {
@@ -1075,5 +1235,26 @@ class VocabularyCardServiceTest {
         assertEquals("theme_user_1", revision.getThemeUid());
         assertEquals(3, revision.getThemeVersion());
         assertEquals(2, revision.getContentFormatVersion());
+    }
+
+    private ObjectNode cardBlocks(JsonNode core, String title) {
+        String meaningId = core.path("senses").get(0).path("meanings").get(0).path("id").asText();
+        ObjectNode cardBlocks = objectMapper.createObjectNode();
+        cardBlocks.put("schemaVersion", 1);
+        ObjectNode block = cardBlocks.putArray("blocks").addObject();
+        block.put("id", "block_examples_01");
+        block.put("type", "exampleList");
+        block.put("title", title);
+        block.putArray("meaningRefs").add(meaningId);
+        block.put("format", "structured");
+        ObjectNode item = block.putObject("content").putArray("items").addObject();
+        item.put("sentence", "I keep a daily record.");
+        item.put("translation", "我每天做记录。");
+        block.put("source", "ai");
+        block.putNull("sourceRef");
+        block.put("sortOrder", 10);
+        block.put("userEdited", false);
+        block.put("locked", false);
+        return cardBlocks;
     }
 }

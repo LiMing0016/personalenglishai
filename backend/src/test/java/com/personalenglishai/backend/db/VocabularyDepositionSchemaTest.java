@@ -132,4 +132,28 @@ class VocabularyDepositionSchemaTest {
                 () -> assertTrue(migration.contains("PREPARE vocabulary_generation_metadata_migration_stmt"))
         );
     }
+
+    @Test
+    void cardBlocksAreStoredOnFreshAndHistoricalRevisionSchemas() throws Exception {
+        String schema = Files.readString(Path.of("src/main/resources/db/schema.sql"));
+        String initial = Files.readString(Path.of(
+                "src/main/resources/db/migrate_create_vocabulary_deposition_tables.sql"));
+        String migration = Files.readString(Path.of(
+                "src/main/resources/db/migrate_add_vocabulary_card_blocks.sql"));
+
+        for (String sql : new String[]{schema, initial}) {
+            assertAll(
+                    () -> assertTrue(sql.contains("card_blocks_json JSON NULL")),
+                    () -> assertTrue(sql.contains("card_blocks_schema_version INT NULL"))
+            );
+        }
+        assertAll(
+                () -> assertTrue(migration.contains("ALTER TABLE vocabulary_card_revision")),
+                () -> assertTrue(migration.contains("card_blocks_json JSON NULL")),
+                () -> assertTrue(migration.contains("card_blocks_schema_version INT NULL")),
+                () -> assertTrue(migration.contains("FROM information_schema.columns")),
+                () -> assertTrue(migration.contains("table_schema = DATABASE()")),
+                () -> assertTrue(migration.contains("PREPARE vocabulary_card_blocks_migration_stmt"))
+        );
+    }
 }
