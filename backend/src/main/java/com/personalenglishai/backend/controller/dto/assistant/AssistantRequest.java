@@ -17,6 +17,9 @@ public class AssistantRequest {
     @Size(max = 128)
     private String idempotencyKey;
 
+    @Size(max = 32)
+    private String agentMode;
+
     @NotBlank
     @Size(max = 32)
     private String mode;
@@ -73,6 +76,14 @@ public class AssistantRequest {
 
     public void setIdempotencyKey(String idempotencyKey) {
         this.idempotencyKey = idempotencyKey;
+    }
+
+    public String getAgentMode() {
+        return agentMode;
+    }
+
+    public void setAgentMode(String agentMode) {
+        this.agentMode = agentMode;
     }
 
     public String getMode() {

@@ -560,6 +560,7 @@ class AssistantAgentService:
             traceId=trace_id,
             agentName=agent_name,
             model=self.model,
+            agentMode="multi_agent",
             mode=request.mode,
             intent=request.intent,
             scope=validated_scope,

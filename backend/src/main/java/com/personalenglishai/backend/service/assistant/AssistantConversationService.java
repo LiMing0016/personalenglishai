@@ -500,6 +500,10 @@ public class AssistantConversationService {
     }
 
     private void attachConversationHistory(AssistantRequest request, String conversationUid) {
+        if ("single_agent_raw".equals(request.getAgentMode())) {
+            request.setConversationHistory(List.of());
+            return;
+        }
         List<AssistantMessage> messages = messageMapper.selectByConversationUid(conversationUid);
         if (messages == null || messages.isEmpty()) {
             request.setConversationHistory(List.of());

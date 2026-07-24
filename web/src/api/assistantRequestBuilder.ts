@@ -1,5 +1,6 @@
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
 import type {
+  AgentMode,
   AssistantInteractionContext,
   AssistantIntent,
   AssistantRequest,
@@ -12,6 +13,7 @@ import type {
 export interface AssistantAgentRequestPayload {
   input: string
   conversationId: string
+  agentMode?: AgentMode
   studyStage?: string
   assistantMode?: 'default' | 'exam' | 'learning'
   intent?: AssistantIntent
@@ -54,6 +56,7 @@ export function toAssistantAgentRequest(payload: AssistantAgentRequestPayload): 
   return {
     appConversationId: payload.conversationId,
     clientMessageId: createClientMessageId(),
+    agentMode: payload.agentMode,
     mode: mapLearningMode(payload.assistantMode),
     intent: payload.intent ?? (hasSelection ? 'explain' : 'free_chat'),
     scope: payload.scope ?? (hasSelection ? (text ? 'selection_and_message' : 'selection') : 'message_only'),

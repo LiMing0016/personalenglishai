@@ -1,7 +1,7 @@
 # 原始单 Agent 消融环境设计
 
 **日期：** 2026-07-24  
-**状态：** 待用户审阅  
+**状态：** 已实现，待合并
 **目标分支：** `codex/single-agent-raw-ablation-design`
 
 ## 1. 背景
@@ -180,11 +180,11 @@ Agent 名称只用于 Trace 和运行元数据，不承载业务指令。
 两套环境使用不同命名空间：
 
 ```text
-multi:{userId}:{conversationId}
-single-raw:{userId}:{conversationId}
+multi:{conversationId}
+single-raw:{conversationId}
 ```
 
-Session key 必须包含用户标识和对话标识，防止不同用户或不同运行模式共享历史。
+当前后端生成的 `conversationId` 是全局唯一且经过用户归属校验，因此第一版以“运行模式命名空间 + conversationId”作为 Session key。这样可以防止不同运行模式共享历史，也不会让两个用户命中同一个会话。若未来允许外部调用方自行指定非全局唯一会话 ID，再升级为显式加入用户标识。
 
 ### 7.3 模式切换
 
@@ -469,3 +469,20 @@ Raw Agent 不生成假的 RouteDecision、目标 Agent 步骤、handoff 或工�
 - Trace 可以按 `agent_mode` 比较请求数、Token 和延迟。
 - 固定上下文对话集可以分别在两种模式下运行。
 - 所有未运行的真实模型评测在交付说明中如实记录。
+
+## 16. 实施验证记录
+
+2026-07-24 使用本地 `backend/.env` 中已有的 OpenAI 配置，对
+`gpt-5.4-mini` 执行原始单 Agent 真实会话验证。密钥只加载到进程环境，
+未写入仓库、日志或评测输出。
+
+同一 SDK Session 内依次验证：
+
+1. 询问 `hive` 的含义。
+2. 切换到无关的“光合作用”问题。
+3. 通过“回到刚才的英文单词”恢复 `hive` 主题。
+4. 通过“再简单一点”修改上一轮回答。
+
+四轮均由 `Raw Single Agent` 单次模型请求完成，运行元数据为
+`agentMode=single_agent_raw`，未经过业务路由、工具或 handoff。结构测试、
+后端协议测试、前端模式切换测试和前端生产构建均已执行。

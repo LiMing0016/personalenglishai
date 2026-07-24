@@ -69,6 +69,31 @@
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
         <div class="header-spacer"></div>
+        <div
+          v-if="showAgentModeSwitch"
+          class="agent-mode-switch"
+          role="group"
+          aria-label="Agent 实验模式"
+        >
+          <button
+            type="button"
+            class="agent-mode-option"
+            :class="{ 'agent-mode-option--active': agentMode === 'multi_agent' }"
+            :aria-pressed="agentMode === 'multi_agent'"
+            @click="handleSetAgentMode('multi_agent')"
+          >
+            多 Agent
+          </button>
+          <button
+            type="button"
+            class="agent-mode-option"
+            :class="{ 'agent-mode-option--active': agentMode === 'single_agent_raw' }"
+            :aria-pressed="agentMode === 'single_agent_raw'"
+            @click="handleSetAgentMode('single_agent_raw')"
+          >
+            原始模型
+          </button>
+        </div>
         <button
           v-if="compactLearningCanvas && activeConversation.messages.length > 0 && learningCanvasAvailable"
           ref="learningResultsButtonRef"
@@ -217,6 +242,7 @@ import { showToast } from '@/utils/toast'
 import type { AssistantLearningAssetSelection } from '@/components/assistant/AssistantChatView.vue'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
 import type { AssistantMode } from './assistantMock.ts'
+import type { AgentMode } from '@/types/assistantRequest'
 import {
   PENDING_ASSISTANT_PROMPT_KEY,
   PENDING_ASSISTANT_SELECTION_KEY,
@@ -257,6 +283,7 @@ const {
   composerText,
   composerAttachments,
   assistantMode,
+  agentMode,
   searchText,
   isSending,
   errorMessage,
@@ -265,6 +292,7 @@ const {
   addAttachments,
   removeAttachment,
   setAssistantMode,
+  setAgentMode,
   loadRemoteState,
   createConversation,
   selectConversation,
@@ -284,6 +312,7 @@ const {
 } = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
+const showAgentModeSwitch = import.meta.env.DEV
 const emptyTitle = '今天想完成什么？'
 const emptySubtitle = '先选一个学习目标，再把内容发给我。'
 const emptyComposerPlaceholder = '把你的句子、段落或问题发给我…'
@@ -414,6 +443,18 @@ function handleSetAssistantMode(mode: AssistantMode) {
   if (mode === 'learning') {
     learningAssetError.value = ''
     openCompactLearningCanvas()
+  }
+}
+
+function handleSetAgentMode(mode: AgentMode) {
+  const conversation = setAgentMode(mode)
+  if (conversation) {
+    showToast(
+      mode === 'single_agent_raw'
+        ? '已切换到原始模型，并新建实验对话'
+        : '已切换到多 Agent，并新建对话',
+      'success',
+    )
   }
 }
 
@@ -1286,6 +1327,38 @@ const folderConversationGroups = computed(() =>
 
 .header-spacer {
   flex: 1;
+}
+
+.agent-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.agent-mode-option {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-mode-option:hover,
+.agent-mode-option:focus-visible {
+  color: #047857;
+  outline: none;
+}
+
+.agent-mode-option--active {
+  background: #d1fae5;
+  color: #047857;
 }
 
 .learning-results-button {

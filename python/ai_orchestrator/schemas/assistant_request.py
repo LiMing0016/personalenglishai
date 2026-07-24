@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 LearningMode = Literal["daily_explain", "exam_boost"]
+AgentMode = Literal["multi_agent", "single_agent_raw"]
 AssistantIntent = Literal[
     "free_chat",
     "explain",
@@ -178,6 +179,7 @@ class AssistantRequest(BaseModel):
     app_conversation_id: str | None = Field(default=None, alias="appConversationId")
     client_message_id: str = Field(alias="clientMessageId")
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
+    agent_mode: AgentMode | None = Field(default=None, alias="agentMode")
     mode: LearningMode
     intent: AssistantIntent
     scope: InputScope | None = None
@@ -219,6 +221,7 @@ class AssistantRunMetadata(BaseModel):
     trace_id: str | None = Field(default=None, alias="traceId")
     agent_name: str = Field(alias="agentName")
     model: str
+    agent_mode: AgentMode = Field(default="multi_agent", alias="agentMode")
     mode: LearningMode
     intent: AssistantIntent
     scope: InputScope

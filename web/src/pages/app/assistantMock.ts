@@ -1,5 +1,6 @@
 import type { RenderableAssistantBlock } from '../../types/assistantBlocks.ts'
 import type {
+  AgentMode,
   AssistantInteractionContext,
   AssistantIntent,
   AssistantSelection,
@@ -56,6 +57,7 @@ export const assistantStarterPrompts = [
 export interface AssistantReplyRequest {
   input: string
   conversationId: string
+  agentMode?: AgentMode
   studyStage?: string
   assistantMode?: AssistantMode
   intent?: AssistantIntent

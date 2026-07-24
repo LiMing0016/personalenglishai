@@ -9,7 +9,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 try:
-    from .assistant_service import AssistantAgentService, AssistantConfigError
+    from .assistant_runtime import AssistantRuntime
+    from .assistant_service import AssistantConfigError
     from .env_loader import load_orchestrator_env
     from .observability import configure_observability
     from .schemas.assistant_request import AssistantRequest
@@ -27,8 +28,10 @@ try:
     from .services.learning_asset_copilot import LearningAssetCopilotConfigError
     from .services.learning_asset_copilot import LearningAssetCopilotService
     from .services.assistant_request_validator import AssistantRequestValidationError
+    from .raw_assistant_service import RawAssistantConfigError
 except ImportError:  # pragma: no cover - script mode fallback
-    from assistant_service import AssistantAgentService, AssistantConfigError
+    from assistant_runtime import AssistantRuntime
+    from assistant_service import AssistantConfigError
     from env_loader import load_orchestrator_env
     from observability import configure_observability
     from schemas.assistant_request import AssistantRequest
@@ -46,6 +49,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.learning_asset_copilot import LearningAssetCopilotConfigError
     from services.learning_asset_copilot import LearningAssetCopilotService
     from services.assistant_request_validator import AssistantRequestValidationError
+    from raw_assistant_service import RawAssistantConfigError
 
 
 load_orchestrator_env()
@@ -62,7 +66,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
-service = AssistantAgentService.from_env()
+service = AssistantRuntime.from_env()
 prompt_sheet_service = PromptSheetWorkflowService.from_env()
 learning_asset_copilot_service = LearningAssetCopilotService.from_env()
 
@@ -112,7 +116,7 @@ async def chat(
             assistant_mode=assistant_mode,
             authorization=authorization,
         )
-    except AssistantConfigError as exc:
+    except (AssistantConfigError, RawAssistantConfigError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - runtime safety
         raise HTTPException(status_code=500, detail=f"assistant orchestrator failed: {exc}") from exc
@@ -133,7 +137,7 @@ async def assistant_run(
         result = await service.run_assistant_request(request, authorization=authorization)
     except AssistantRequestValidationError as exc:
         raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
-    except AssistantConfigError as exc:
+    except (AssistantConfigError, RawAssistantConfigError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - runtime safety
         raise HTTPException(status_code=500, detail=f"assistant run failed: {exc}") from exc
@@ -177,7 +181,7 @@ async def assistant_run_stream(
         except AssistantRequestValidationError as exc:
             payload = {"type": "run.failed", "error": {"code": exc.code, "message": exc.message}}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except AssistantConfigError as exc:
+        except (AssistantConfigError, RawAssistantConfigError) as exc:
             payload = {"type": "run.failed", "error": {"code": "OPENAI_RUN_FAILED", "message": str(exc)}}
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         except Exception as exc:  # pragma: no cover - runtime safety

@@ -20,7 +20,7 @@ import {
 } from './assistantAttachmentStore.ts'
 import { type AssistantAttachmentSource, validateAssistantFiles } from './assistantAttachmentRules.ts'
 import { findRetryUserMessage } from './assistantMessageActions.ts'
-import type { AssistantInteractionContext, AssistantSelection } from '../../types/assistantRequest.ts'
+import type { AgentMode, AssistantInteractionContext, AssistantSelection } from '../../types/assistantRequest.ts'
 import {
   mergeRemoteConversationListWithTransientAttachments,
   mergeTransientMessageAttachments,
@@ -274,6 +274,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const composerAttachments = ref<AssistantAttachment[]>([])
   const pendingSelection = ref<AssistantSelection | null>(null)
   const assistantMode = ref<AssistantMode>('default')
+  const agentMode = ref<AgentMode>('multi_agent')
   const searchText = ref('')
   const isSending = ref(false)
   const errorMessage = ref('')
@@ -407,6 +408,14 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     lastFailedPrompt.value = ''
     persistState()
     return conversation
+  }
+
+  function setAgentMode(mode: AgentMode) {
+    if (agentMode.value === mode) {
+      return null
+    }
+    agentMode.value = mode
+    return createConversation()
   }
 
   async function selectConversation(id: string) {
@@ -545,6 +554,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       const replyResult = await buildReply({
         input: trimmed || `请查看我上传的 ${attachments.length} 个附件`,
         conversationId: conversation.id,
+        agentMode: agentMode.value,
         studyStage: currentStudyStage(),
         assistantMode: assistantMode.value,
         intent: selectionForRequest ? 'explain' : 'free_chat',
@@ -781,6 +791,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerText,
     composerAttachments,
     assistantMode,
+    agentMode,
     searchText,
     pendingSelection,
     isSending,
@@ -792,6 +803,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     addAttachments,
     removeAttachment,
     setAssistantMode,
+    setAgentMode,
     createConversation,
     selectConversation,
     renameConversation,

@@ -5,6 +5,7 @@ import { toAssistantAgentRequest } from './assistantRequestBuilder.ts'
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
 import type { AssistantBlock } from '../types/assistantBlocks.ts'
 import type {
+  AgentMode,
   AssistantIntent,
   AssistantInteractionContext,
   AssistantRequest as AssistantAgentRequest,
@@ -13,6 +14,7 @@ import type {
   InputScope,
 } from '../types/assistantRequest'
 export type {
+  AgentMode,
   AssistantAttachmentRef,
   AssistantErrorPayload,
   AssistantIntent,
@@ -83,6 +85,7 @@ export interface PublicAssistantShareDto {
 export interface AssistantChatPayload {
   input: string
   conversationId: string
+  agentMode?: AgentMode
   studyStage?: string
   assistantMode?: 'default' | 'exam' | 'learning'
   intent?: AssistantIntent

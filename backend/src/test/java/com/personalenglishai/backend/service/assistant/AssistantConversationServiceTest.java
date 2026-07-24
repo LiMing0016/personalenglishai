@@ -203,6 +203,57 @@ class AssistantConversationServiceTest {
                 );
     }
 
+    @Test
+    void sendAgentMessage_singleAgentRawLeavesConversationHistoryToSdkSession() {
+        AssistantConversationService service = service(new ObjectMapper());
+        when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
+        when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(2);
+        when(messageMapper.selectByConversationUid("conv-history"))
+                .thenReturn(List.of(
+                        message("msg-1", "user", "hive 是什么意思？", "done", 1),
+                        message("msg-2", "assistant", "hive 可以表示蜂巢。", "done", 2)
+                ));
+        PythonAssistantClient.PythonAssistantReply reply = new PythonAssistantClient.PythonAssistantReply();
+        reply.setReply("这里有两个例句。");
+        when(pythonAssistantClient.run(any(AssistantRequest.class), eq("Bearer token"))).thenReturn(reply);
+        AssistantRequest request = request("再来两个例句。");
+        request.setAgentMode("single_agent_raw");
+
+        service.sendAgentMessage(4L, "conv-history", request, "Bearer token");
+
+        ArgumentCaptor<AssistantRequest> captor = ArgumentCaptor.forClass(AssistantRequest.class);
+        org.mockito.Mockito.verify(pythonAssistantClient).run(captor.capture(), eq("Bearer token"));
+        assertThat(captor.getValue().getConversationHistory()).isEmpty();
+        assertThat(captor.getValue().getAgentMode()).isEqualTo("single_agent_raw");
+    }
+
+    @Test
+    void writeAgentMessageStream_singleAgentRawLeavesConversationHistoryToSdkSession() {
+        AssistantConversationService service = service(new ObjectMapper());
+        when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
+        when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(2);
+        when(messageMapper.selectByConversationUid("conv-history"))
+                .thenReturn(List.of(
+                        message("msg-1", "user", "hive 是什么意思？", "done", 1),
+                        message("msg-2", "assistant", "hive 可以表示蜂巢。", "done", 2)
+                ));
+        when(pythonAssistantClient.streamRun(any(AssistantRequest.class), eq("Bearer token")))
+                .thenReturn(Flux.just("{\"type\":\"message.completed\",\"content\":\"两个例句\",\"parts\":[]}"));
+        AssistantRequest request = request("再来两个例句。");
+        request.setAgentMode("single_agent_raw");
+
+        service.writeAgentMessageStream(
+                4L,
+                "conv-history",
+                request,
+                "Bearer token",
+                new ByteArrayOutputStream());
+
+        ArgumentCaptor<AssistantRequest> captor = ArgumentCaptor.forClass(AssistantRequest.class);
+        org.mockito.Mockito.verify(pythonAssistantClient).streamRun(captor.capture(), eq("Bearer token"));
+        assertThat(captor.getValue().getConversationHistory()).isEmpty();
+    }
+
     private AssistantConversation conversation() {
         AssistantConversation conversation = new AssistantConversation();
         conversation.setConversationUid("conv-history");

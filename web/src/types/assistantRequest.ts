@@ -1,6 +1,7 @@
 import type { AssistantBlock } from './assistantBlocks.ts'
 
 export type LearningMode = 'daily_explain' | 'exam_boost'
+export type AgentMode = 'multi_agent' | 'single_agent_raw'
 
 export type AssistantInteractionSource =
   | 'composer'
@@ -196,6 +197,7 @@ export interface AssistantRequest {
   appConversationId?: string
   clientMessageId: string
   idempotencyKey?: string
+  agentMode?: AgentMode
   mode: LearningMode
   intent: AssistantIntent
   scope?: InputScope
@@ -226,6 +228,7 @@ export interface AssistantRunMetadata {
   traceId?: string
   agentName: string
   model: string
+  agentMode: AgentMode
   mode: LearningMode
   intent: AssistantIntent
   scope: InputScope
