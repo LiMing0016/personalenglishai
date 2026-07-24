@@ -52,7 +52,7 @@ class RawOpenAIInputItemsTest(unittest.TestCase):
             raw_input.agent_input,
             [
                 {"role": "user", "content": [{"type": "input_text", "text": "hive 是什么意思？"}]},
-                {"role": "assistant", "content": [{"type": "input_text", "text": "hive 可以表示蜂巢。"}]},
+                {"role": "assistant", "content": [{"type": "output_text", "text": "hive 可以表示蜂巢。"}]},
                 {"role": "user", "content": [{"type": "input_text", "text": "再来两个例句。"}]},
             ],
         )

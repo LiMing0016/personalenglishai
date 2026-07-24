@@ -36,8 +36,10 @@ class AssistantRequestInputItemsTest(unittest.TestCase):
         items = build_assistant_input_items(request)
 
         self.assertEqual(items[0]["role"], "user")
+        self.assertEqual(items[0]["content"][0]["type"], "input_text")
         self.assertEqual(items[0]["content"][0]["text"], "citation 是什么意思？")
         self.assertEqual(items[1]["role"], "assistant")
+        self.assertEqual(items[1]["content"][0]["type"], "output_text")
         self.assertEqual(items[1]["content"][0]["text"], "citation 表示引用、引证。")
         self.assertEqual(items[2]["role"], "user")
         self.assertIn("那它怎么造句？", items[2]["content"][0]["text"])
