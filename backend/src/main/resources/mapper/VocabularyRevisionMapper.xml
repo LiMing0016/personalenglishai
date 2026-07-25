@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularyRevisionMapper">
+
+    <resultMap id="VocabularyRevisionResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision">
+        <id column="id" property="id"/>
+        <result column="revision_uid" property="revisionUid"/>
+        <result column="card_uid" property="cardUid"/>
+        <result column="base_revision_uid" property="baseRevisionUid"/>
+        <result column="author_type" property="authorType"/>
+        <result column="template_key" property="templateKey"/>
+        <result column="template_version" property="templateVersion"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="theme_version" property="themeVersion"/>
+        <result column="content_json" property="contentJson"/>
+        <result column="core_json" property="coreJson"/>
+        <result column="card_blocks_json" property="cardBlocksJson"/>
+        <result column="card_blocks_schema_version" property="cardBlocksSchemaVersion"/>
+        <result column="content_markdown" property="contentMarkdown"/>
+        <result column="content_format_version" property="contentFormatVersion"/>
+        <result column="generation_metadata_json" property="generationMetadataJson"/>
+        <result column="change_summary" property="changeSummary"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <sql id="VocabularyRevisionColumns">
+        id, revision_uid, card_uid, base_revision_uid, author_type, template_key,
+        template_version, theme_uid, theme_version, content_json, core_json, card_blocks_json,
+        card_blocks_schema_version, content_markdown, content_format_version,
+        generation_metadata_json, change_summary, created_at
+    </sql>
+
+    <insert id="insertRevision" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyCardRevision"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_card_revision (
+            revision_uid, card_uid, base_revision_uid, author_type, template_key,
+            template_version, theme_uid, theme_version, content_json, core_json, card_blocks_json,
+            card_blocks_schema_version, content_markdown, content_format_version,
+            generation_metadata_json, change_summary
+        ) VALUES (
+            #{revisionUid}, #{cardUid}, #{baseRevisionUid}, #{authorType}, #{templateKey},
+            #{templateVersion}, #{themeUid}, #{themeVersion}, #{contentJson}, #{coreJson}, #{cardBlocksJson},
+            #{cardBlocksSchemaVersion}, #{contentMarkdown}, #{contentFormatVersion},
+            #{generationMetadataJson}, #{changeSummary}
+        )
+    </insert>
+
+    <select id="findRevision" resultMap="VocabularyRevisionResultMap">
+        SELECT <include refid="VocabularyRevisionColumns"/>
+        FROM vocabulary_card_revision
+        WHERE revision_uid = #{revisionUid}
+        LIMIT 1
+    </select>
+
+    <select id="listRevisions" resultMap="VocabularyRevisionResultMap">
+        SELECT <include refid="VocabularyRevisionColumns"/>
+        FROM vocabulary_card_revision
+        WHERE card_uid = #{cardUid}
+        ORDER BY created_at DESC, id DESC
+    </select>
+</mapper>

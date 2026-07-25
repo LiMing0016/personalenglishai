@@ -10,8 +10,32 @@ import { unified } from 'unified'
 const TABLE_SCROLL_LABEL = '可横向滚动的数据表格'
 const RESPONSIVE_TABLE_MAX_COLUMNS = 3
 
+export interface MarkdownSection {
+  id: string
+  title: string
+  level: 2
+}
+
+export interface MarkdownDocument {
+  html: string
+  sections: MarkdownSection[]
+}
+
+export interface MarkdownRenderOptions {
+  allowImages?: boolean
+  allowHtmlBreaks?: boolean
+  headingAnchors?: boolean
+}
+
+interface ResolvedMarkdownRenderOptions {
+  allowImages: boolean
+  allowHtmlBreaks: boolean
+  headingAnchors: boolean
+}
+
 const markdownSanitizeSchema = {
   ...defaultSchema,
+  clobberPrefix: '',
   tagNames: [
     ...(defaultSchema.tagNames ?? []),
     'button',
@@ -46,6 +70,10 @@ const markdownSanitizeSchema = {
       ...(defaultSchema.attributes?.img ?? []),
       'className',
       'loading',
+    ],
+    h2: [
+      ...(defaultSchema.attributes?.h2 ?? []),
+      'id',
     ],
     input: [
       ...(defaultSchema.attributes?.input ?? []),
@@ -104,13 +132,13 @@ function readElementText(element: Element): string {
     .trim()
 }
 
-function replaceSafeBreakHtml() {
+function replaceSafeBreakHtml(options: Pick<ResolvedMarkdownRenderOptions, 'allowHtmlBreaks'>) {
   return (tree: MdastRoot) => {
     const visit = (parent: MdastParent) => {
       parent.children = parent.children.map((child) => {
         if (child.type === 'html') {
           const rawHtml = (child as Html).value
-          if (/^<br\s*\/?\s*>$/i.test(rawHtml.trim())) {
+          if (options.allowHtmlBreaks && /^<br\s*\/?\s*>$/i.test(rawHtml.trim())) {
             return { type: 'break' } satisfies Break
           }
           return { type: 'text', value: rawHtml } satisfies MdastText
@@ -249,14 +277,30 @@ function createTableRegion(table: Element): Element {
   }
 }
 
-function enhanceMarkdownHtml() {
+function enhanceMarkdownHtml(configuration: {
+  options: ResolvedMarkdownRenderOptions
+  sections: MarkdownSection[]
+}) {
   return (tree: HastRoot) => {
     const visit = (parent: Parent) => {
       parent.children = parent.children.map((child) => {
         if (!isElement(child as RootContent)) return child
         const element = child as Element
 
+        if (element.tagName === 'h2' && configuration.options.headingAnchors) {
+          const id = `markdown-section-${configuration.sections.length + 1}`
+          element.properties.id = id
+          configuration.sections.push({
+            id,
+            title: readElementText(element) || '未命名章节',
+            level: 2,
+          })
+        }
+
         if (element.tagName === 'img') {
+          if (!configuration.options.allowImages) {
+            return createTextNode(String(element.properties.alt ?? '').trim() || '图片')
+          }
           const source = String(element.properties.src ?? '')
           if (!isSafeImageSource(source)) {
             return createTextNode(String(element.properties.alt ?? '图片'))
@@ -286,17 +330,38 @@ function enhanceMarkdownHtml() {
   }
 }
 
-const markdownProcessor = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(replaceSafeBreakHtml)
-  .use(remarkRehype)
-  .use(enhanceMarkdownHtml)
-  .use(rehypeSanitize, markdownSanitizeSchema)
-  .use(rehypeStringify)
+function resolveMarkdownRenderOptions(options: MarkdownRenderOptions): ResolvedMarkdownRenderOptions {
+  return {
+    allowImages: options.allowImages ?? true,
+    allowHtmlBreaks: options.allowHtmlBreaks ?? true,
+    headingAnchors: options.headingAnchors ?? false,
+  }
+}
+
+export function renderMarkdownDocument(
+  markdown: string,
+  options: MarkdownRenderOptions = {},
+): MarkdownDocument {
+  const resolvedOptions = resolveMarkdownRenderOptions(options)
+  const sections: MarkdownSection[] = []
+  const html = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(replaceSafeBreakHtml, resolvedOptions)
+    .use(remarkRehype)
+    .use(enhanceMarkdownHtml, { options: resolvedOptions, sections })
+    .use(rehypeSanitize, markdownSanitizeSchema)
+    .use(rehypeStringify)
+    .processSync(markdown)
+    .toString()
+    .replace(/&#x3C;/g, '&lt;')
+    .replace(/&lt;([^<>]*?)>/g, '&lt;$1&gt;')
+
+  return { html, sections }
+}
 
 export function renderAssistantMarkdown(markdown: string): string {
-  return markdownProcessor.processSync(markdown).toString()
+  return renderMarkdownDocument(markdown).html
 }
 
 async function writeTextToClipboard(text: string): Promise<void> {

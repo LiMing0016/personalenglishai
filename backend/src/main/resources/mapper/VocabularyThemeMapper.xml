@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper">
+
+    <resultMap id="VocabularyThemeResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyTheme">
+        <id column="id" property="id"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="owner_type" property="ownerType"/>
+        <result column="user_id" property="userId"/>
+        <result column="name" property="name"/>
+        <result column="status" property="status"/>
+        <result column="current_version" property="currentVersion"/>
+        <result column="deleted_at" property="deletedAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <resultMap id="VocabularyThemeRevisionResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision">
+        <id column="id" property="id"/>
+        <result column="revision_uid" property="revisionUid"/>
+        <result column="theme_uid" property="themeUid"/>
+        <result column="version" property="version"/>
+        <result column="name_snapshot" property="nameSnapshot"/>
+        <result column="purpose" property="purpose"/>
+        <result column="prompt_strategy_key" property="promptStrategyKey"/>
+        <result column="content_format_version" property="contentFormatVersion"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <sql id="VocabularyThemeColumns">
+        id, theme_uid, owner_type, user_id, name, status, current_version, deleted_at, created_at, updated_at
+    </sql>
+
+    <sql id="VocabularyThemeRevisionColumns">
+        id, revision_uid, theme_uid, version, name_snapshot, purpose, prompt_strategy_key,
+        content_format_version, created_at
+    </sql>
+
+    <select id="findVisibleThemes" resultMap="VocabularyThemeResultMap">
+        SELECT <include refid="VocabularyThemeColumns"/>
+        FROM vocabulary_theme
+        WHERE status = 'active'
+          AND deleted_at IS NULL
+          AND (owner_type = 'system' OR user_id = #{userId})
+        ORDER BY owner_type ASC, name ASC, id ASC
+    </select>
+
+    <select id="findOwnedByUid" resultMap="VocabularyThemeResultMap">
+        SELECT <include refid="VocabularyThemeColumns"/>
+        FROM vocabulary_theme
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND deleted_at IS NULL
+        LIMIT 1
+    </select>
+
+    <select id="lockOwnedByUidAtVersion" resultMap="VocabularyThemeResultMap">
+        SELECT <include refid="VocabularyThemeColumns"/>
+        FROM vocabulary_theme
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND status = 'active'
+          AND deleted_at IS NULL
+          AND current_version = #{expectedVersion}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="findCurrentRevision" resultMap="VocabularyThemeRevisionResultMap">
+        SELECT revision.id, revision.revision_uid, revision.theme_uid, revision.version,
+               revision.name_snapshot, revision.purpose, revision.prompt_strategy_key,
+               revision.content_format_version, revision.created_at
+        FROM vocabulary_theme_revision revision
+        INNER JOIN vocabulary_theme theme ON theme.theme_uid = revision.theme_uid
+        WHERE revision.theme_uid = #{themeUid}
+          AND revision.version = theme.current_version
+        LIMIT 1
+    </select>
+
+    <select id="findRevision" resultMap="VocabularyThemeRevisionResultMap">
+        SELECT <include refid="VocabularyThemeRevisionColumns"/>
+        FROM vocabulary_theme_revision
+        WHERE theme_uid = #{themeUid}
+          AND version = #{version}
+        LIMIT 1
+    </select>
+
+    <insert id="insertTheme" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyTheme"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_theme (
+            theme_uid, owner_type, user_id, name, status, current_version, deleted_at
+        ) VALUES (
+            #{themeUid}, #{ownerType}, #{userId}, #{name}, #{status}, #{currentVersion}, #{deletedAt}
+        )
+    </insert>
+
+    <insert id="insertRevision" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyThemeRevision"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_theme_revision (
+            revision_uid, theme_uid, version, name_snapshot, purpose, prompt_strategy_key, content_format_version
+        ) VALUES (
+            #{revisionUid}, #{themeUid}, #{version}, #{nameSnapshot}, #{purpose}, #{promptStrategyKey},
+            #{contentFormatVersion}
+        )
+    </insert>
+
+    <update id="advanceVersion">
+        UPDATE vocabulary_theme
+        SET current_version = #{nextVersion},
+            name = #{name},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND deleted_at IS NULL
+          AND current_version = #{expectedVersion}
+    </update>
+
+    <update id="setStatus">
+        UPDATE vocabulary_theme
+        SET status = #{status},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="softDelete">
+        UPDATE vocabulary_theme
+        SET deleted_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND theme_uid = #{themeUid}
+          AND owner_type = 'user'
+          AND deleted_at IS NULL
+    </update>
+
+    <insert id="recordRecentUse">
+        INSERT INTO user_vocabulary_theme_recent (user_id, theme_uid)
+        VALUES (#{userId}, #{themeUid})
+        ON DUPLICATE KEY UPDATE last_used_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <select id="findRecentThemeUids" resultType="string">
+        SELECT theme_uid
+        FROM user_vocabulary_theme_recent
+        WHERE user_id = #{userId}
+        ORDER BY last_used_at DESC, theme_uid ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

@@ -176,6 +176,33 @@ learning:
         fixed-delay-ms: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_FIXED_DELAY_MS:60000}
         batch-size: ${LEARNING_CAPTURE_DEEPSEEK_SCHEDULER_BATCH_SIZE:10}
 
+vocabulary:
+  product-events:
+    # 任务 9 的 compose 必须把同一变量同时传给 Java 与 Python，避免合法模型事件被拒绝。
+    allowed-image-models: ${VOCABULARY_IMAGE_RECOGNITION_MODEL:}
+  image-recognition:
+    python:
+      base-url: ${VOCABULARY_IMAGE_RECOGNITION_PYTHON_BASE_URL:${ASSISTANT_ORCHESTRATOR_BASE_URL:http://127.0.0.1:8011}}
+      internal-token: ${VOCABULARY_GENERATION_INTERNAL_TOKEN:}
+      timeout-ms: ${VOCABULARY_IMAGE_RECOGNITION_PYTHON_TIMEOUT_MS:55000}
+  import-analysis:
+    python:
+      base-url: ${VOCABULARY_IMPORT_ANALYSIS_PYTHON_BASE_URL:${ASSISTANT_ORCHESTRATOR_BASE_URL:http://127.0.0.1:8011}}
+      internal-token: ${VOCABULARY_GENERATION_INTERNAL_TOKEN:}
+      timeout-ms: ${VOCABULARY_IMPORT_ANALYSIS_PYTHON_TIMEOUT_MS:55000}
+  generation:
+    provider: ${VOCABULARY_GENERATION_PROVIDER:python}
+    python:
+      base-url: ${VOCABULARY_GENERATION_PYTHON_BASE_URL:${ASSISTANT_ORCHESTRATOR_BASE_URL:http://127.0.0.1:8011}}
+      internal-token: ${VOCABULARY_GENERATION_INTERNAL_TOKEN:}
+      timeout-ms: ${VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS:60000}
+    scheduler:
+      enabled: ${VOCABULARY_GENERATION_SCHEDULER_ENABLED:true}
+      fixed-delay-ms: ${VOCABULARY_GENERATION_SCHEDULER_FIXED_DELAY_MS:5000}
+      batch-size: ${VOCABULARY_GENERATION_SCHEDULER_BATCH_SIZE:5}
+      # Must exceed the maximum end-to-end external generation time; expiry fences late workers.
+      lease-ms: ${VOCABULARY_GENERATION_SCHEDULER_LEASE_MS:300000}
+
 languagetool:
   enabled: ${LANGUAGETOOL_ENABLED:false}
 

@@ -1,0 +1,53 @@
+package com.personalenglishai.backend.mapper.vocabulary;
+
+import com.personalenglishai.backend.entity.vocabulary.VocabularyGenerationJob;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Mapper
+public interface VocabularyGenerationJobMapper {
+    int insertJob(VocabularyGenerationJob job);
+
+    List<VocabularyGenerationJob> selectClaimable(@Param("limit") int limit);
+
+    VocabularyGenerationJob findLatestByCard(@Param("cardUid") String cardUid);
+
+    List<VocabularyGenerationJob> listLatestByCardUids(
+            @Param("userId") Long userId,
+            @Param("cardUids") List<String> cardUids);
+
+    int markRunning(
+            @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
+            @Param("leaseSeconds") int leaseSeconds);
+
+    int markSucceeded(
+            @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
+            @Param("revisionUid") String revisionUid,
+            @Param("generationOutcome") String generationOutcome,
+            @Param("warning") String warning);
+
+    int markFailed(
+            @Param("jobUid") String jobUid,
+            @Param("leaseToken") String leaseToken,
+            @Param("errorCode") String errorCode,
+            @Param("errorMessage") String errorMessage,
+            @Param("availableAt") LocalDateTime availableAt,
+            @Param("terminal") boolean terminal);
+
+    int cancel(@Param("jobUid") String jobUid, @Param("leaseToken") String leaseToken);
+
+    int cancelPendingForCard(@Param("cardUid") String cardUid);
+
+    int cancelActiveForCard(@Param("cardUid") String cardUid);
+
+    int retryFailed(@Param("cardUid") String cardUid, @Param("jobUid") String jobUid);
+
+    int requeueStaleRunning();
+
+    int failStaleRunning();
+}

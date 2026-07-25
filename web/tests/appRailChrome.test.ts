@@ -23,6 +23,16 @@ assert.ok(
   appLayoutSource.includes('app-layout--rail-expanded'),
   'app layout should expose an expanded rail state class',
 )
+assert.match(
+  appLayoutSource,
+  /\.app-layout--rail-expanded\s+\.app-main\s*\{[^}]*margin-left:\s*218px/s,
+  'expanded fixed rail should reserve its full width beside the main content',
+)
+assert.match(
+  appLayoutSource,
+  /\.app-layout--rail-collapsed\s+\.app-main\s*\{[^}]*margin-left:\s*72px/s,
+  'collapsed fixed rail should reserve its compact width beside the main content',
+)
 assert.ok(
   appLayoutSource.includes(':collapsed="railCollapsed"'),
   'app layout should pass the shared collapse state to AppRail',
@@ -73,6 +83,11 @@ assert.ok(
   'shared rail should use the shared sidebar divider token',
 )
 assert.ok(!appRailSource.includes("label: '工具箱'"), 'shared rail should remove the obsolete toolbox shortcut')
+assert.match(
+  appRailSource,
+  /\.app-rail\s*\{[^}]*position:\s*fixed[^}]*top:\s*0[^}]*left:\s*0[^}]*height:\s*100dvh/s,
+  'expanded rail should remain a continuous viewport-height track while long pages scroll',
+)
 assert.ok(!appRailSource.includes('AppRailSkillIcon'), 'shared rail should not use colorful uploaded nav icon cards')
 assert.ok(appRailSource.includes('/app/me'), 'shared rail should keep a personal center entry on every app page')
 assert.ok(

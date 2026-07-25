@@ -384,7 +384,7 @@ git commit -m "feat(vocabulary): 新增词条标准化与卡片模板"
 
 **Interfaces:**
 - Consumes: Task 1 table/column names and Task 2 normalized terms/template versions.
-- Produces: mapper methods `findByIdentityIncludingDeleted`, `findByUidIncludingDeleted`, `insert`, `restoreAndTouch`, `touch`, `listByUser`, `countByUser`, `findOwnedByUid`, `updateActiveRevision`, `markConflictCandidate`, `markGenerationFailed`, `softDelete`, `insertSource`, `findSourceByIdempotencyKey`, `listSources`, `insertRevision`, `findRevision`, `listRevisions`, `insertJob`, `selectClaimable`, `findLatestByCard`, `markRunning`, `markSucceeded`, `markFailed`, `cancel`, `cancelPendingForCard`, `findPreferenceByUser`, and `upsertDefaultTemplate`.
+- Produces: mapper methods `findByIdentityIncludingDeleted`, `findByUidIncludingDeleted`, `insert`, `restoreAndTouch`, `touch`, `listByUser`, `countByUser`, `findOwnedByUid`, `updateActiveRevision`, `markConflictCandidate`, `markGenerationFailed`, `softDelete`, `insertSource`, `findSourceByIdempotencyKey`, `listSources`, `insertRevision`, `findRevision`, `listRevisions`, `insertJob`, `selectClaimable`, `findLatestByCard`, `markRunning`, `markSucceeded`, `markFailed`, `cancel`, `cancelPendingForCard`, `requeueStaleRunning`, `findPreferenceByUser`, and `upsertDefaultTemplate`.
 
 - [ ] **Step 1: Write a mapper XML contract test**
 
@@ -422,9 +422,11 @@ public interface VocabularyCardMapper {
             @Param("language") String language, @Param("normalizedTerm") String normalizedTerm);
     int insert(VocabularyCard card);
     VocabularyCard findByUidIncludingDeleted(@Param("cardUid") String cardUid);
-    int restoreAndTouch(@Param("cardUid") String cardUid, @Param("displayTerm") String displayTerm,
-            @Param("status") String status, @Param("capturedAt") LocalDateTime capturedAt);
-    int touch(@Param("cardUid") String cardUid, @Param("capturedAt") LocalDateTime capturedAt);
+    int restoreAndTouch(@Param("userId") Long userId, @Param("cardUid") String cardUid,
+            @Param("displayTerm") String displayTerm, @Param("status") String status,
+            @Param("capturedAt") LocalDateTime capturedAt);
+    int touch(@Param("userId") Long userId, @Param("cardUid") String cardUid,
+            @Param("capturedAt") LocalDateTime capturedAt);
     VocabularyCard findOwnedByUid(@Param("userId") Long userId, @Param("cardUid") String cardUid);
     List<VocabularyCard> listByUser(@Param("userId") Long userId, @Param("keyword") String keyword,
             @Param("status") String status, @Param("sourceType") String sourceType,
@@ -454,6 +456,7 @@ public interface VocabularyGenerationJobMapper {
             @Param("terminal") boolean terminal);
     int cancel(@Param("jobUid") String jobUid);
     int cancelPendingForCard(@Param("cardUid") String cardUid);
+    int requeueStaleRunning(@Param("staleBefore") LocalDateTime staleBefore);
 }
 
 @Mapper
@@ -554,7 +557,7 @@ class VocabularyCaptureItemServiceTest {
         var result = service.captureOne(7L, VocabularyCaptureRequest.manual("req-2", List.of("innovative"), "en", "exam"), 0);
         assertEquals("source_merged", result.action());
         verify(sources).insertSource(argThat(s -> s.getIdempotencyKey().equals("req-2:0")));
-        verify(cards).touch(eq("card_1"), any());
+        verify(cards).touch(eq(7L), eq("card_1"), any());
         verifyNoInteractions(jobs);
     }
 
@@ -579,7 +582,7 @@ class VocabularyCaptureItemServiceTest {
         when(cards.findByIdentityIncludingDeleted(7L, "en", "innovative")).thenReturn(deleted);
         var result = service.captureOne(7L, VocabularyCaptureRequest.manual("req-5", List.of("innovative"), "en", "basic"), 0);
         assertEquals("card_1", result.cardUid());
-        verify(cards).restoreAndTouch(eq("card_1"), eq("innovative"), anyString(), any());
+        verify(cards).restoreAndTouch(eq(7L), eq("card_1"), eq("innovative"), anyString(), any());
     }
 }
 ```

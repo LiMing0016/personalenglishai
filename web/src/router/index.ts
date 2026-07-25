@@ -153,8 +153,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/VocabularyView.vue'),
       },
       {
-        path: 'vocabulary/cards/:word',
-        name: 'VocabularyWordCard',
+        path: 'vocabulary/themes',
+        name: 'VocabularyThemes',
+        component: () => import('@/pages/app/VocabularyThemesPage.vue'),
+      },
+      {
+        path: 'vocabulary/cards/:cardUid',
+        name: 'vocabulary-card',
         component: () => import('@/views/VocabularyView.vue'),
       },
       {

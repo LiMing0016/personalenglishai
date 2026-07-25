@@ -60,11 +60,16 @@ const isWritingRoute = computed(() => route.path.startsWith('/app/writing'))
 
 <style scoped>
 .app-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
   display: flex;
   flex: 0 0 218px;
   flex-direction: column;
   width: 218px;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
   padding: 16px 12px;
   border-right: 1px solid var(--app-sidebar-border, #d9e2ec);

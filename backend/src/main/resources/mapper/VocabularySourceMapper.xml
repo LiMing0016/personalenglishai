@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper">
+
+    <resultMap id="VocabularySourceResultMap" type="com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource">
+        <id column="id" property="id"/>
+        <result column="source_uid" property="sourceUid"/>
+        <result column="card_uid" property="cardUid"/>
+        <result column="user_id" property="userId"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_ref" property="sourceRef"/>
+        <result column="source_title" property="sourceTitle"/>
+        <result column="source_url" property="sourceUrl"/>
+        <result column="context_text" property="contextText"/>
+        <result column="raw_term" property="rawTerm"/>
+        <result column="idempotency_key" property="idempotencyKey"/>
+        <result column="captured_at" property="capturedAt"/>
+        <result column="metadata_json" property="metadataJson"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="source_count" property="sourceCount"/>
+    </resultMap>
+
+    <sql id="VocabularySourceColumns">
+        id, source_uid, card_uid, user_id, source_type, source_ref, source_title,
+        source_url, context_text, raw_term, idempotency_key, captured_at,
+        metadata_json, created_at, updated_at
+    </sql>
+
+    <insert id="insertSource" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyCardSource"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vocabulary_card_source (
+            source_uid, card_uid, user_id, source_type, source_ref, source_title,
+            source_url, context_text, raw_term, idempotency_key, captured_at, metadata_json
+        ) VALUES (
+            #{sourceUid}, #{cardUid}, #{userId}, #{sourceType}, #{sourceRef}, #{sourceTitle},
+            #{sourceUrl}, #{contextText}, #{rawTerm}, #{idempotencyKey}, #{capturedAt}, #{metadataJson}
+        )
+    </insert>
+
+    <select id="findSourceByIdempotencyKey" resultMap="VocabularySourceResultMap">
+        SELECT <include refid="VocabularySourceColumns"/>
+        FROM vocabulary_card_source
+        WHERE user_id = #{userId}
+          AND idempotency_key = #{idempotencyKey}
+        LIMIT 1
+    </select>
+
+    <select id="findBySourceUid" resultMap="VocabularySourceResultMap">
+        SELECT <include refid="VocabularySourceColumns"/>
+        FROM vocabulary_card_source
+        WHERE source_uid = #{sourceUid}
+          AND user_id = #{userId}
+          AND card_uid = #{cardUid}
+        LIMIT 1
+    </select>
+
+    <select id="listSources" resultMap="VocabularySourceResultMap">
+        SELECT <include refid="VocabularySourceColumns"/>
+        FROM vocabulary_card_source
+        WHERE card_uid = #{cardUid}
+        ORDER BY captured_at DESC, id DESC
+    </select>
+
+    <select id="listDistinctSourceTypesByCardUids" resultMap="VocabularySourceResultMap">
+        SELECT source.card_uid, source.user_id, source.source_type,
+               SUM(COUNT(*)) OVER (PARTITION BY source.card_uid) AS source_count
+        FROM vocabulary_card_source source
+        INNER JOIN vocabulary_card card
+            ON card.card_uid = source.card_uid
+           AND card.user_id = #{userId}
+           AND card.deleted_at IS NULL
+        WHERE source.user_id = #{userId}
+          AND source.card_uid IN
+          <foreach collection="cardUids" item="cardUid" open="(" separator="," close=")">
+              #{cardUid}
+          </foreach>
+        GROUP BY source.card_uid, source.user_id, source.source_type
+        ORDER BY source.card_uid, source.source_type
+    </select>
+</mapper>

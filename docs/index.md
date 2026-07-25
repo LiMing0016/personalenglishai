@@ -27,6 +27,7 @@ related_docs:
 - [iPadOS 联调](./ios-integration/README)：iPad 端和后端联调的接口事实来源、Docker 启动、验收和排障。
 - [数据](./data/)：数据库、迁移和持久化规则。
 - [AI](./ai/)：评分、语法、Prompt、助手路由和 agent 工作流。
+- [主题化单词卡 Prompt](./ai/vocabulary-theme-prompts.md)：主题策略、词典优先级、Markdown 安全边界和失败降级。
 - [Admin](./admin/)：管理员端的信息架构、运营治理后台和项目资产管理规则。
 - [运行手册](./runbooks/)：本地开发、部署和排障。
 - [测试](./testing/)：冒烟测试和回归检查。

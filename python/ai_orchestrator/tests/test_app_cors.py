@@ -19,6 +19,15 @@ class CapturingAssistantService:
         return AssistantReply(reply="ok", agent_name="Router Agent")
 
 
+class VocabularyGenerationHealthService:
+    def __init__(self, *, configured: bool, internal_token: str) -> None:
+        self._configured = configured
+        self.internal_token = internal_token
+
+    def is_configured(self) -> bool:
+        return self._configured
+
+
 class AppCorsTest(unittest.TestCase):
     def test_allows_local_vite_assistant_page_origin(self) -> None:
         client = TestClient(app)
@@ -70,6 +79,29 @@ class AppCorsTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_service.received["authorization"], "Bearer token")
+
+    def test_health_reports_vocabulary_generation_only_when_model_api_key_and_token_are_ready(self) -> None:
+        client = TestClient(app)
+
+        with patch(
+            "python.ai_orchestrator.app.vocabulary_card_generation_service",
+            VocabularyGenerationHealthService(configured=True, internal_token="internal-token"),
+        ):
+            ready_response = client.get("/health")
+        with patch(
+            "python.ai_orchestrator.app.vocabulary_card_generation_service",
+            VocabularyGenerationHealthService(configured=True, internal_token=""),
+        ):
+            missing_token_response = client.get("/health")
+        with patch(
+            "python.ai_orchestrator.app.vocabulary_card_generation_service",
+            VocabularyGenerationHealthService(configured=False, internal_token="internal-token"),
+        ):
+            missing_model_or_key_response = client.get("/health")
+
+        self.assertTrue(ready_response.json()["vocabularyCardGenerationConfigured"])
+        self.assertFalse(missing_token_response.json()["vocabularyCardGenerationConfigured"])
+        self.assertFalse(missing_model_or_key_response.json()["vocabularyCardGenerationConfigured"])
 
 
 if __name__ == "__main__":
