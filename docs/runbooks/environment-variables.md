@@ -1,3 +1,20 @@
+---
+title: 环境变量说明
+status: active
+owner: ops
+last_updated: 2026-07-21
+review_cycle: on-change
+related_code:
+  - docker-compose.yml
+  - backend/src/main/resources/application.yml
+  - python/ai_orchestrator/env_loader.py
+related_docs:
+  - docs/runbooks/docker-local.md
+  - docs/runbooks/local-scripts.md
+  - docs/ai/vocabulary-image-recognition.md
+  - docs/api/vocabulary.md
+---
+
 # 环境变量说明
 
 本文说明 Personal English AI 当前使用的环境变量。配置时不要靠记忆，应以本文、`.env.example`、`backend/.env.example`、`web/.env.example` 和部署平台 Secret 配置为准。
@@ -202,6 +219,57 @@ DirectMail 和阿里邮箱的账号体系不要混用。
 | `AI_CONTEXT_CONVERSATION_PYTHON_BASE_URL` | Python context sidecar 地址。 |
 | `AI_CONTEXT_CONVERSATION_PYTHON_TIMEOUT_MS` | Python context sidecar 超时。 |
 | `AI_CONTEXT_CONVERSATION_PYTHON_FALLBACK_ENABLED` | Python 处理失败时是否降级。 |
+
+## 单词卡 Python 生成发布
+
+| 变量 | 默认值 | 责任与约束 |
+| --- | --- | --- |
+| `VOCABULARY_GENERATION_PROVIDER` | `python` | 后端 provider 选择。Python 生成 Core 2 + Blocks 1；只有显式设为 `java` 才进入旧 Markdown 回滚路径。失败时不会静默切换 provider。 |
+| `VOCABULARY_GENERATION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | 后端到 Python 的内部地址。根 Compose 保留既有容器端口，必须为 `http://assistant-orchestrator:8002`，不得使用容器内 `127.0.0.1`。 |
+| `VOCABULARY_GENERATION_PYTHON_TIMEOUT_MS` | `60000` | 后端单次 Python HTTP timeout，必须小于 `VOCABULARY_GENERATION_SCHEDULER_LEASE_MS` 的 `300000` 默认值。 |
+| `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | backend 和 Python orchestrator 必须收到同一个非空专用 token。不得提交、打印或回传。 |
+| `VOCABULARY_GENERATION_MODEL` | Compose 默认 `gpt-5.4-mini` | 仅 Python vocabulary workflow 使用；服务代码本身没有模型默认值，且仍需要现有 `OPENAI_API_KEY`（及可选 `OPENAI_BASE_URL`）。 |
+
+Java 继续拥有词典查询、generation job、租约、revision、冲突和持久化；Python 只拥有 Prompt、模型调用、缺失 Core 回填、Card Blocks 和 typed trace metadata。Python provider 不会使用旧 Java 七天缓存，且同一个 job attempt 内不会静默回退到 `java`。因此 Python 的 4xx 作为稳定配置/契约错误处理，5xx、连接失败和 timeout 继续由既有 job 重试处理；有效 Core 的 Blocks 失败保存为 `partial`/`card_blocks_unavailable`，不会伪造 complete，也不会丢弃 Core。
+
+### 发布顺序与回滚
+
+1. 对历史数据库先完成既有 vocabulary migration，再依次执行 `migrate_add_vocabulary_generation_metadata.sql` 和 `migrate_add_vocabulary_card_blocks.sql`；全新数据库只初始化 `schema.sql`。自动化验收只能连接显式命名的 disposable MySQL schema，绝不对业务 schema 执行 migration 或 `DROP DATABASE`。
+2. 部署 Python orchestrator，设置 `VOCABULARY_GENERATION_MODEL`、现有 OpenAI 凭据和共享 internal token；确认 `/health` 只显示 configured 状态，不暴露 token。
+3. 部署后端，保持默认 `VOCABULARY_GENERATION_PROVIDER=python`，并配置 Python base URL、timeout 和同一个 token。先运行内部契约 smoke；provider 失败不会自动故障转移。
+4. 用真实 Basic dictionary Core 和自定义主题完成验收，检查 Core 2、Blocks 1、complete/partial、稳定 retry、lease 和冲突行为，并在 revision 的 `generation_metadata_json` 查看 provider、model、Prompt version、调用次数和安全 trace ID。
+5. 回滚顺序是显式的 `python` -> `java`：修改 provider 并重启后端。旧 Java provider 只生成兼容 Markdown；不要删除 Blocks、metadata 列、Python endpoint 或已生成 revision。
+
+真实模型 smoke 仅在 `RUN_VOCABULARY_REAL_MODEL_SMOKE=1`、`OPENAI_API_KEY` 和 `VOCABULARY_GENERATION_INTERNAL_TOKEN` 都存在时运行。直接运行真实模型 smoke 时必须显式设置非空 `VOCABULARY_GENERATION_MODEL`；显式启用后缺少模型配置会失败，不会降级为跳过。smoke 不打印 token、Prompt、词典 Core、sourceContext、生成 Blocks 或原始模型输出；未满足三个 opt-in 前置条件时它是跳过，不是通过。应用验收需要额外有可丢弃 MySQL、Python `8011` 和未占用 Java 端口。
+
+## 单词图片识别
+
+| 变量 | 默认值 | 注入位置 | 责任与约束 |
+| --- | --- | --- | --- |
+| `VITE_VOCABULARY_IMAGE_RECOGNITION_ENABLED` | `false` | Web 构建 | 只有精确字符串 `true` 才显示图片入口；回滚的首要开关。 |
+| `VOCABULARY_IMAGE_RECOGNITION_MODEL` | 无业务默认值 | Python、Java | 支持视觉输入的模型；两端必须完全相同。Python 调用模型，Java 用作事件 model 精确白名单。 |
+| `VOCABULARY_IMAGE_RECOGNITION_TIMEOUT_MS` | `45000` | Python | 一次调用加最多一次结构重试共享的总预算；最大 45 秒。 |
+| `VOCABULARY_IMAGE_RECOGNITION_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | Java | Compose 内固定为 `http://assistant-orchestrator:8002`。 |
+| `VOCABULARY_IMAGE_RECOGNITION_PYTHON_TIMEOUT_MS` | `55000` | Java | 必须大于 Python 总预算，为网络和词典增强留出余量。 |
+| `VOCABULARY_GENERATION_INTERNAL_TOKEN` | Secret | Python、Java | 图片识别与卡片生成共用的内部服务鉴权 token；两端相同且非空。 |
+| `RUN_VOCABULARY_IMAGE_RECOGNITION_REAL_SMOKE` | `0` | Python 测试 | 只有 `1` 才允许发起真实模型冒烟。 |
+| `VOCABULARY_IMAGE_RECOGNITION_SMOKE_IMAGE` | 空 | Python 测试 | 本地 opt-in 图片路径；不得写入 Compose 镜像、仓库或日志。 |
+
+部署顺序是事件表迁移、Python、Java、Web。先保持前端开关为 `false`；确认模型配置一致、内部鉴权、日志脱敏和真实冒烟后，最后构建并发布 `true` 版本。Compose 通过同一根变量向 Python 与 Java 注入模型，不能分别维护两个值。
+
+图片与 `rawText` 禁止持久化。产品事件仅允许计数、时延、稳定枚举、安全 ID、provider、已配置 model、Prompt version 和 warning code；文件名、词条、上下文、识别全文、卡片内容、图片和 base64 均禁止写入。
+
+## 单词统一导入分析
+
+| 变量 | 默认值 | 注入位置 | 责任与约束 |
+| --- | --- | --- | --- |
+| `VITE_VOCABULARY_IMPORT_ANALYSIS_ENABLED` | `false` | Web 构建 | 只有精确字符串 `true` 才启用 AI 分析按钮；回滚时优先关闭。 |
+| `VOCABULARY_IMPORT_ANALYSIS_MODEL` | 无业务默认值 | Python | 支持文本和视觉输入的模型；未设置时兼容读取旧图片识别模型。 |
+| `VOCABULARY_IMPORT_ANALYSIS_TIMEOUT_MS` | `45000` | Python | 初次调用和最多一次结构修复共享的总预算。 |
+| `VOCABULARY_IMPORT_ANALYSIS_PYTHON_BASE_URL` | 本地 `http://127.0.0.1:8011` | Java | Compose 内固定为 `http://assistant-orchestrator:8002`。 |
+| `VOCABULARY_IMPORT_ANALYSIS_PYTHON_TIMEOUT_MS` | `55000` | Java | 必须大于 Python 总预算并小于 Web 60 秒硬超时。 |
+
+输入原文和图片只用于当前请求，不进入普通日志、产品事件或卡片 metadata。Web 输入变化时取消旧请求并将候选标记为过期；Java 在额度检查前校验 `inputFingerprint`，指纹不一致返回 `400054`。
 
 ## Prompt 与 AI 调试
 

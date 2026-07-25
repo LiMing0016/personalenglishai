@@ -5,207 +5,112 @@ const pageSource = readFileSync(
   new URL('../src/views/VocabularyView.vue', import.meta.url),
   'utf8',
 )
+const routerSource = readFileSync(
+  new URL('../src/router/index.ts', import.meta.url),
+  'utf8',
+)
+const captureSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyCapturePanel.vue', import.meta.url),
+  'utf8',
+)
+const importDialogSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyImportDialog.vue', import.meta.url),
+  'utf8',
+)
+const importComposerSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyImportComposer.vue', import.meta.url),
+  'utf8',
+)
+const listSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyCardList.vue', import.meta.url),
+  'utf8',
+)
+const inspectorSource = readFileSync(
+  new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
+  'utf8',
+)
+const composedSource = [
+  pageSource,
+  captureSource,
+  importDialogSource,
+  importComposerSource,
+  listSource,
+  inspectorSource,
+].join('\n')
 
 for (const requiredText of [
-  '词启',
-  'Vocabulary',
   '搜索单词',
   '背词模式',
   '单词沉淀',
   '学习统计',
-  '查询、学习、一步到位',
-  '选择适合你的学习模式',
-  '单词卡中心',
-  '从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里',
+  '导入单词',
+  '输入、粘贴或添加图片',
+  'AI 分析',
+  '生成卡片',
   '全部来源',
-  '今天',
-  '本周',
   'A-Z',
   '最近沉淀',
-  '每日沉淀',
-  '我的笔记',
-  '来源',
-  '加入背词',
-  '整理单词卡',
-  '退出整理',
-  '单词导航',
-  '整理工作区',
-  '编辑单词名称',
-  '播放发音',
-  '开始复习',
-  '详情',
-  '搭配',
-  '例句',
-  '易混',
-  '选择模板',
-  '模板库',
-  '模板驱动',
-  '官方模板',
-  '我的模板',
-  '模板广场',
-  '适用阶段',
-  '适用场景',
-  '复制后自定义',
-  '当前模板',
-  '考试全景模板',
-  '词义拓展模板',
-  '阅读语境模板',
-  '搭配表达模板',
-  '基础单词卡',
-  '考试阅读卡',
-  '学术/专业词卡',
-  'AI 整理',
-  'AI 优化',
-  '复习',
-  '已自动保存',
-  '学习趋势（近 7 天）',
-  '单词详情',
-  '词根联想',
-  '今日学习计划',
-  '连续学习日历',
-  'innovative',
-  '加入今日复习',
+  '重新生成主题',
+  '使用最新主题版本？',
+  '再次收藏或录入时可恢复',
 ]) {
-  assert.ok(pageSource.includes(requiredText), `vocabulary learning page should render ${requiredText}`)
+  assert.ok(composedSource.includes(requiredText), `vocabulary learning page should render ${requiredText}`)
 }
 
-for (const requiredClass of [
-  'vocabulary-shell',
-  'vocabulary-topbar',
-  'vocabulary-nav',
-  'search-page',
-  'mode-page',
-  'collection-page',
-  'stats-page',
-  'word-preview-card',
-  'word-card-list',
-  'word-card-row',
-  'word-source-stack',
-  'word-card-inspector',
-  'word-card-workspace',
-  'word-deposit-page--organizing',
-  'word-navigation-panel',
-  'word-title-editor',
-  'word-study-hero',
-  'word-study-hero__content',
-  'word-study-hero__visual',
-  'word-study-tabs',
-  'word-template-picker',
-  'word-template-modal-backdrop',
-  'word-template-modal-panel',
-  'word-template-trigger',
-  'word-template-library-tabs',
-  'word-template-card',
-  'word-template-meta',
-  'word-template-fields',
-  'word-template-square-entry',
-  'word-template-layout-badge',
-  'word-card-canvas',
-  'word-note-stack',
-  'word-note-line',
-  'word-card-bottom-actions',
-  'template-field-grid',
-  'template-field-editor',
-  'ai-template-action',
-  'word-detail-tags',
-  'review-chip-card',
-  'daily-deposit-card',
-  'user-note-editor',
-  'review-plan-switch',
-  'search-detail-section',
-  'dictionary-detail-card',
-]) {
-  assert.ok(pageSource.includes(requiredClass), `vocabulary learning page should include ${requiredClass}`)
+for (const navigationLabel of ['搜索单词', '背词模式', '单词沉淀', '学习统计']) {
+  assert.ok(pageSource.includes(navigationLabel), `vocabulary navigation should keep ${navigationLabel}`)
 }
-
-assert.ok(
-  !pageSource.includes('单词端数据源验收标记'),
-  'vocabulary learning page should not expose backend integration status as student-facing content',
+assert.match(
+  pageSource,
+  /:class="\{\s*active:\s*activeView === view\.key\s*\}"/,
+  'vocabulary navigation should bind active state to activeView',
 )
-
-assert.ok(
-  !pageSource.includes('<h3>掌握程度</h3>'),
-  'word-card organizing page should not show mastery controls in the first version',
+assert.match(
+  pageSource,
+  /@click="switchVocabularyView\(view\.key\)"/,
+  'vocabulary navigation should keep its view switch handler',
 )
+assert.ok(!pageSource.includes('brand-lockup'), 'vocabulary navigation should remove the redundant brand lockup')
+assert.ok(!pageSource.includes('topbar-actions'), 'vocabulary navigation should remove the redundant topbar actions')
+
+assert.ok(pageSource.includes('lookupDictionary'), 'top search should keep dictionary lookup integration')
+assert.ok(pageSource.includes('useVocabularyCards'), 'collection should use the persisted vocabulary query layer')
+assert.ok(pageSource.includes('VocabularyCapturePanel'), 'collection should compose the capture panel')
+assert.ok(pageSource.includes('VocabularyCardList'), 'collection should compose the persisted list')
+assert.ok(pageSource.includes('VocabularyCardInspector'), 'card route should compose the inspector')
+assert.ok(!pageSource.includes('const savedWords = ref'), 'collection should not restore the removed mock list')
 
 assert.ok(
-  !pageSource.includes('<h3>复习设置</h3>'),
-  'word-card organizing page should collapse review settings into a lightweight tag',
+  routerSource.includes("path: 'vocabulary/cards/:cardUid'") && routerSource.includes("name: 'vocabulary-card'"),
+  'vocabulary card detail should use the canonical route',
 )
+assert.ok(pageSource.includes("route.name === 'vocabulary-card'"), 'canonical and legacy card URLs should be interpreted by the view')
+assert.ok(pageSource.includes("cardUid.startsWith('card_')"), 'persisted card IDs should open the inspector')
+assert.ok(pageSource.includes('legacyVocabularyCardKeyword'), 'legacy words should remain collection search filters')
+assert.ok(pageSource.includes('isPersistentVocabularyCardRoute'), 'persistent card routes should have an explicit discriminator')
+assert.ok(pageSource.includes('vocabulary-card-page'), 'persistent cards should render a dedicated full-page branch')
+assert.ok(!pageSource.includes('<aside class="vocabulary-card-detail"'), 'collection should not render a right-side inspector')
+assert.ok(!pageSource.includes('selectedVocabularyTemplate'), 'card details should not depend on a legacy template gate')
+assert.ok(!pageSource.includes(':template='), 'card details should not pass legacy template props')
+assert.ok(pageSource.includes('vocabulary-card-page__skeleton'), 'card loading should preserve a stable full-page layout')
+assert.ok(pageSource.includes('单词卡不存在或已被删除'), 'missing cards should have a distinct unavailable state')
+assert.ok(pageSource.includes('无权查看这张单词卡'), 'forbidden cards should have a distinct unavailable state')
+assert.ok(pageSource.includes('detailQuery.refetch'), 'generic card failures should expose a retry action')
 
 assert.ok(
-  pageSource.includes('lookupDictionary'),
-  'learning page should keep dictionary lookup integration for the top search',
+  !composedSource.includes('从 PDF、AI 对话、笔记和错题中整理的单词会自动回到这里'),
+  'the page should not promise sources that are not connected',
 )
-
+for (const obsoleteText of [
+  '单词卡中心',
+  '手动录入和词典收藏的单词会沉淀在这里；更多来源后续接入',
+  '批量录入',
+]) {
+  assert.ok(!composedSource.includes(obsoleteText), `vocabulary learning page should remove ${obsoleteText}`)
+}
 assert.ok(
-  pageSource.includes('buildWordCard'),
-  'vocabulary learning page should adapt collected words into word cards',
-)
-
-assert.ok(
-  pageSource.includes('dedupeWordCards'),
-  'vocabulary learning page should merge duplicate word cards by word',
-)
-
-assert.ok(
-  pageSource.includes('key: normalizeWordKey'),
-  'vocabulary learning page should name each word card by normalized word key',
-)
-
-assert.ok(
-  pageSource.includes('toggleReviewPlan'),
-  'vocabulary learning page should let users add word cards to the review plan',
-)
-
-assert.ok(
-  pageSource.includes('startWordCardOrganizing'),
-  'vocabulary learning page should switch from preview to a word-card organizing workspace',
-)
-
-assert.ok(
-  pageSource.includes('VocabularyWordCard'),
-  'vocabulary word-card organizing workspace should be route addressable',
-)
-
-assert.ok(
-  pageSource.includes('wordCardTemplates'),
-  'word-card organizing workspace should provide system templates',
-)
-
-assert.ok(
-  pageSource.includes('const showWordTemplatePicker = ref(false)'),
-  'word-card organizing page should not show the template library inline by default',
-)
-
-assert.ok(
-  pageSource.includes('selectWordTemplate'),
-  'word-card organizing page should apply a template from the template picker',
-)
-
-assert.ok(
-  pageSource.includes('audience:'),
-  'word-card templates should encode target learner age/stage',
-)
-
-assert.ok(
-  pageSource.includes('scenes:'),
-  'word-card templates should encode learning demand scenarios',
-)
-
-assert.ok(
-  pageSource.includes('layout:'),
-  'word-card templates should drive the card learning layout',
-)
-
-assert.ok(
-  pageSource.includes('source:'),
-  'word-card templates should distinguish official, personal, and shared templates',
-)
-
-assert.ok(
-  pageSource.includes('applyAiTemplateToWordCard'),
-  'word-card organizing workspace should let AI fill the selected template',
+  !composedSource.includes('单词端数据源验收标记'),
+  'the page should not expose backend integration markers to students',
 )
 
 console.log('vocabulary-learning-page-ok')

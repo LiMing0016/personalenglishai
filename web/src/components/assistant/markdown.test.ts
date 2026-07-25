@@ -1,7 +1,42 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { renderAssistantMarkdown } from './markdown.ts'
+import { renderAssistantMarkdown, renderMarkdownDocument } from './markdown.ts'
+
+test('strict markdown escapes html breaks and disables images', () => {
+  const document = renderMarkdownDocument(
+    'first<br>second\n\n![secret](https://example.com/secret.png)',
+    { allowHtmlBreaks: false, allowImages: false },
+  )
+
+  assert.match(document.html, /&lt;br&gt;/)
+  assert.doesNotMatch(document.html, /<br\/>|<img/)
+  assert.match(document.html, /secret/)
+})
+
+test('markdown document extracts ordered h2 sections with unique ids', () => {
+  const document = renderMarkdownDocument('## 例句\n\nA\n\n## **例句**\n\nB', {
+    headingAnchors: true,
+  })
+
+  assert.deepEqual(document.sections, [
+    { id: 'markdown-section-1', title: '例句', level: 2 },
+    { id: 'markdown-section-2', title: '例句', level: 2 },
+  ])
+  assert.match(document.html, /id="markdown-section-1"/)
+  assert.match(document.html, /id="markdown-section-2"/)
+})
+
+test('markdown document gives image-only h2 sections a stable fallback title', () => {
+  const document = renderMarkdownDocument('## ![](https://example.com/card.png)', {
+    headingAnchors: true,
+  })
+
+  assert.deepEqual(document.sections, [
+    { id: 'markdown-section-1', title: '未命名章节', level: 2 },
+  ])
+  assert.match(document.html, /<h2 id="markdown-section-1">/)
+})
 
 test('renderAssistantMarkdown renders GFM tables as table elements', () => {
   const html = renderAssistantMarkdown(

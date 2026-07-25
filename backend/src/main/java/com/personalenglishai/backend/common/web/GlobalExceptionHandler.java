@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.common.response.ApiResponse;
+import com.personalenglishai.backend.service.vocabulary.VocabularyRevisionConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.net.SocketTimeoutException;
 import java.util.Locale;
@@ -40,10 +42,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
         String msg = "请求体格式错误";
         Throwable cause = e.getCause();
-        if (cause instanceof UnrecognizedPropertyException upe) {
-            msg = "不允许的字段: " + upe.getPropertyName();
+        if (cause instanceof UnrecognizedPropertyException) {
+            msg = "请求体包含不允许的字段";
         }
-        log.warn("请求体不可读: {} -> {}", e.getMessage(), msg);
+        String reasonType = cause == null ? "unreadable" : cause.getClass().getSimpleName();
+        log.warn("请求体不可读 reasonType={}", reasonType);
         return body(ErrorCode.COMMON_VALIDATION_ERROR.getCode(), msg, HttpStatus.BAD_REQUEST);
     }
 
@@ -58,6 +61,29 @@ public class GlobalExceptionHandler {
         log.warn("业务异常: {} - {}", e.getErrorCode().getCode(), e.getMessage());
         HttpStatus status = resolveStatus(e.getErrorCode());
         return body(e.getErrorCode().getCode(), e.getMessage(), status);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMissingServletRequestPart(
+        MissingServletRequestPartException e) {
+        log.warn("请求缺少 multipart part: {}", e.getRequestPartName());
+        return body(ErrorCode.COMMON_VALIDATION_ERROR, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Object>> handleIllegalArgument(IllegalArgumentException e) {
+        log.warn("请求参数无效: {}", e.getMessage());
+        return body(ErrorCode.COMMON_VALIDATION_ERROR.getCode(), e.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(VocabularyRevisionConflictException.class)
+    public ResponseEntity<ApiResponse<Object>> handleVocabularyRevisionConflict(
+            VocabularyRevisionConflictException e) {
+        log.warn("单词卡版本冲突: {}", e.getConflict().currentRevisionUid());
+        ApiResponse<Object> response = new ApiResponse<>(
+                e.getErrorCode().getCode(), e.getMessage(), e.getConflict());
+        response.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(AsyncRequestNotUsableException.class)
@@ -99,7 +125,9 @@ public class GlobalExceptionHandler {
             case "409" -> HttpStatus.CONFLICT;
             case "429" -> HttpStatus.TOO_MANY_REQUESTS;
             case "500" -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case "502" -> HttpStatus.BAD_GATEWAY;
             case "503" -> HttpStatus.SERVICE_UNAVAILABLE;
+            case "504" -> HttpStatus.GATEWAY_TIMEOUT;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

@@ -108,6 +108,7 @@ export default defineConfig({
             { text: '助手会话管理', link: '/architecture/assistant-conversation-management' },
             { text: '仓库结构规范', link: '/architecture/repository-structure' },
             { text: '词典集成', link: '/architecture/dictionary-oxford' },
+            { text: '单词沉淀架构', link: '/architecture/vocabulary-deposition' },
             { text: '文档知识提取管线', link: '/architecture/文档知识提取管线设计' },
             { text: 'PaddleOCR 高质量文档解析', link: '/architecture/PaddleOCR高质量文档解析方案' },
             { text: '写作任务元数据', link: '/architecture/writing-task-metadata' }
@@ -125,6 +126,7 @@ export default defineConfig({
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
             { text: 'Learning Notes', link: '/api/learning-notes' },
+            { text: '单词沉淀', link: '/api/vocabulary' },
             { text: '考试写作题目', link: '/api/writing-ai-exam-prompt' }
           ]
         }
@@ -166,6 +168,8 @@ export default defineConfig({
             { text: '学习助手 Agent 编排', link: '/agent/学习助手Agent编排架构' },
             { text: '助手输出格式', link: '/ai/assistant-output-format' },
             { text: 'Prompt 管理', link: '/ai/prompt-management' },
+            { text: '主题化单词卡 Prompt', link: '/ai/vocabulary-theme-prompts' },
+            { text: '单词图片识别', link: '/ai/vocabulary-image-recognition' },
             { text: 'OpenAI Agents 请求架构', link: '/ai/openai-agents-request-architecture' }
           ]
         }

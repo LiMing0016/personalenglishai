@@ -6,7 +6,7 @@
       'app-layout--writing': isWritingRoute,
       'app-layout--assistant': isAssistantRoute,
       'app-layout--rail-collapsed': railCollapsed,
-      'app-layout--rail-expanded': !railCollapsed,
+      'app-layout--rail-expanded': !railCollapsed && !isAssistantRoute,
     }"
     @mouseup="handleSelectionChange"
     @keyup="handleSelectionChange"
@@ -177,6 +177,9 @@ function askAssistantWithSelection() {
   min-width: 0;
   height: 100vh;
   transition: margin-left 180ms ease;
+}
+.app-layout--rail-expanded .app-main {
+  margin-left: 72px;
 }
 .app-layout--writing .app-main {
   overflow-y: auto;

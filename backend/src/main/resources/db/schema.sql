@@ -1249,3 +1249,197 @@ CREATE TABLE IF NOT EXISTS translation_document_asset (
     CONSTRAINT fk_translation_asset_snapshot FOREIGN KEY (document_id)
         REFERENCES translation_document_parse_snapshot (document_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='translation document assets for OCR/table/formula iterations';
+CREATE TABLE IF NOT EXISTS vocabulary_theme (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    theme_uid VARCHAR(64) NOT NULL,
+    owner_type VARCHAR(16) NOT NULL,
+    user_id BIGINT NULL,
+    name VARCHAR(80) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    current_version INT NOT NULL,
+    deleted_at DATETIME NULL,
+    active_user_id BIGINT GENERATED ALWAYS AS (
+        CASE WHEN owner_type = 'user' AND deleted_at IS NULL THEN user_id ELSE NULL END
+    ) STORED,
+    active_name VARCHAR(80) GENERATED ALWAYS AS (
+        CASE WHEN owner_type = 'user' AND deleted_at IS NULL THEN name ELSE NULL END
+    ) STORED,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_theme_uid (theme_uid),
+    UNIQUE KEY uk_vocabulary_theme_active_user_name (active_user_id, active_name),
+    KEY idx_vocabulary_theme_user_status (user_id, status, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vocabulary_theme_revision (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    revision_uid VARCHAR(64) NOT NULL,
+    theme_uid VARCHAR(64) NOT NULL,
+    version INT NOT NULL,
+    name_snapshot VARCHAR(80) NOT NULL,
+    purpose VARCHAR(1000) NOT NULL,
+    prompt_strategy_key VARCHAR(64) NOT NULL,
+    content_format_version INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_theme_revision_uid (revision_uid),
+    UNIQUE KEY uk_vocabulary_theme_version (theme_uid, version),
+    CONSTRAINT fk_vocabulary_theme_revision_theme FOREIGN KEY (theme_uid) REFERENCES vocabulary_theme(theme_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_vocabulary_theme_recent (
+    user_id BIGINT NOT NULL,
+    theme_uid VARCHAR(64) NOT NULL,
+    last_used_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, theme_uid),
+    KEY idx_vocabulary_theme_recent (user_id, last_used_at),
+    CONSTRAINT fk_vocabulary_theme_recent_theme FOREIGN KEY (theme_uid) REFERENCES vocabulary_theme(theme_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO vocabulary_theme (
+    theme_uid, owner_type, user_id, name, status, current_version, deleted_at
+) VALUES
+    ('theme_system_basic', 'system', NULL, 'Basic', 'active', 1, NULL),
+    ('theme_system_exam', 'system', NULL, 'Exam', 'active', 1, NULL),
+    ('theme_system_reading', 'system', NULL, 'Reading', 'active', 1, NULL)
+ON DUPLICATE KEY UPDATE theme_uid = VALUES(theme_uid);
+
+INSERT INTO vocabulary_theme_revision (
+    revision_uid, theme_uid, version, name_snapshot, purpose, prompt_strategy_key, content_format_version
+) VALUES
+    ('theme_rev_system_basic_v1', 'theme_system_basic', 1, 'Basic',
+     'Everyday definitions and learning tips.', 'basic-markdown-v1', 1),
+    ('theme_rev_system_exam_v1', 'theme_system_exam', 1, 'Exam',
+     'Exam meanings, collocations, and common mistakes.', 'exam-markdown-v1', 1),
+    ('theme_rev_system_reading_v1', 'theme_system_reading', 1, 'Reading',
+     'Contextual meanings and reading comprehension.', 'reading-markdown-v1', 1)
+ON DUPLICATE KEY UPDATE theme_uid = VALUES(theme_uid);
+
+CREATE TABLE IF NOT EXISTS vocabulary_card (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    card_uid VARCHAR(64) NOT NULL,
+    user_id BIGINT NOT NULL,
+    language VARCHAR(16) NOT NULL DEFAULT 'en',
+    original_term VARCHAR(255) NOT NULL,
+    normalized_term VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    display_term VARCHAR(255) NOT NULL,
+    template_key VARCHAR(32) NOT NULL,
+    template_version INT NOT NULL,
+    theme_uid VARCHAR(64) NULL,
+    theme_version INT NULL,
+    status VARCHAR(24) NOT NULL,
+    active_revision_uid VARCHAR(64) NULL,
+    conflict_candidate_revision_uid VARCHAR(64) NULL,
+    last_captured_at DATETIME NOT NULL,
+    deleted_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_card_uid (card_uid),
+    UNIQUE KEY uk_vocabulary_card_identity (user_id, language, normalized_term),
+    KEY idx_vocabulary_card_user_status (user_id, status, updated_at),
+    KEY idx_vocabulary_card_user_capture (user_id, last_captured_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vocabulary_card_source (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    source_uid VARCHAR(64) NOT NULL,
+    card_uid VARCHAR(64) NOT NULL,
+    user_id BIGINT NOT NULL,
+    source_type VARCHAR(24) NOT NULL,
+    source_ref VARCHAR(128) NULL,
+    source_title VARCHAR(255) NULL,
+    source_url VARCHAR(1024) NULL,
+    context_text TEXT NULL,
+    raw_term VARCHAR(255) NOT NULL,
+    idempotency_key VARCHAR(160) NOT NULL,
+    captured_at DATETIME NOT NULL,
+    metadata_json JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_source_uid (source_uid),
+    UNIQUE KEY uk_vocabulary_source_idempotency (user_id, idempotency_key),
+    KEY idx_vocabulary_source_card (card_uid, captured_at),
+    CONSTRAINT fk_vocabulary_source_card FOREIGN KEY (card_uid) REFERENCES vocabulary_card(card_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vocabulary_card_revision (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    revision_uid VARCHAR(64) NOT NULL,
+    card_uid VARCHAR(64) NOT NULL,
+    base_revision_uid VARCHAR(64) NULL,
+    author_type VARCHAR(24) NOT NULL,
+    template_key VARCHAR(32) NOT NULL,
+    template_version INT NOT NULL,
+    content_json JSON NOT NULL,
+    theme_uid VARCHAR(64) NULL,
+    theme_version INT NULL,
+    core_json JSON NULL,
+    card_blocks_json JSON NULL,
+    card_blocks_schema_version INT NULL,
+    content_markdown MEDIUMTEXT NULL,
+    content_format_version INT NULL,
+    generation_metadata_json JSON NULL,
+    change_summary VARCHAR(255) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_revision_uid (revision_uid),
+    KEY idx_vocabulary_revision_card (card_uid, created_at),
+    CONSTRAINT fk_vocabulary_revision_card FOREIGN KEY (card_uid) REFERENCES vocabulary_card(card_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS user_vocabulary_preference (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    default_template_key VARCHAR(32) NOT NULL DEFAULT 'basic',
+    default_theme_uid VARCHAR(64) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_vocabulary_preference (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vocabulary_generation_job (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    job_uid VARCHAR(64) NOT NULL,
+    card_uid VARCHAR(64) NOT NULL,
+    base_revision_uid VARCHAR(64) NULL,
+    template_key VARCHAR(32) NOT NULL,
+    template_version INT NOT NULL,
+    theme_uid VARCHAR(64) NULL,
+    theme_version INT NULL,
+    status VARCHAR(24) NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    request_json JSON NOT NULL,
+    result_revision_uid VARCHAR(64) NULL,
+    error_code VARCHAR(64) NULL,
+    error_message VARCHAR(1000) NULL,
+    generation_outcome VARCHAR(24) NULL,
+    warning VARCHAR(64) NULL,
+    available_at DATETIME NOT NULL,
+    started_at DATETIME NULL,
+    lease_token VARCHAR(64) NULL,
+    lease_expires_at DATETIME NULL,
+    finished_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_vocabulary_job_uid (job_uid),
+    KEY idx_vocabulary_job_claim (status, available_at, id),
+    KEY idx_vocabulary_job_lease (status, lease_expires_at, attempt_count),
+    KEY idx_vocabulary_job_card (card_uid, created_at),
+    CONSTRAINT fk_vocabulary_job_card FOREIGN KEY (card_uid) REFERENCES vocabulary_card(card_uid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vocabulary_product_event (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    event_uid VARCHAR(128) NOT NULL,
+    user_id BIGINT NOT NULL,
+    event_name VARCHAR(64) NOT NULL,
+    trace_id VARCHAR(128) NULL,
+    session_id VARCHAR(128) NOT NULL,
+    card_uid VARCHAR(64) NULL,
+    properties_json JSON NOT NULL,
+    occurred_at DATETIME(3) NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_vocabulary_product_event_user_uid (user_id, event_uid),
+    KEY idx_vocabulary_product_event_name_time (event_name, occurred_at),
+    KEY idx_vocabulary_product_event_trace_time (trace_id, occurred_at),
+    KEY idx_vocabulary_product_event_card_time (card_uid, occurred_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

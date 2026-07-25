@@ -18,7 +18,7 @@ assert.ok(apiSource.includes('DictionaryLookupResponse'), 'dictionary API should
 assert.ok(pageSource.includes('lookupDictionary'), 'vocabulary page should call the dictionary API wrapper')
 assert.ok(pageSource.includes('en-gb'), 'vocabulary page should support British English lookup')
 assert.ok(pageSource.includes('en-us'), 'vocabulary page should support American English lookup')
-assert.ok(pageSource.includes("isVocabularyWordCardRoute() ? 'collection' : 'search'"), 'vocabulary page should default to search unless opening a word-card route')
+assert.ok(pageSource.includes("isVocabularyCardRoute() ? 'collection' : parseVocabularyView(route.query.tab) ?? 'search'"), 'vocabulary page should default to search unless opening a card route')
 assert.ok(pageSource.includes("key: 'search'"), 'vocabulary page should define a search view')
 assert.ok(pageSource.includes("key: 'modes'"), 'vocabulary page should define a study modes view')
 assert.ok(pageSource.includes("key: 'collection'"), 'vocabulary page should define a collection view')

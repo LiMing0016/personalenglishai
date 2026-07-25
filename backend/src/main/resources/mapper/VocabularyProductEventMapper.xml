@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.personalenglishai.backend.mapper.vocabulary.VocabularyProductEventMapper">
+    <insert id="insertIgnore" parameterType="com.personalenglishai.backend.entity.vocabulary.VocabularyProductEvent"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO vocabulary_product_event (
+            event_uid, user_id, event_name, trace_id, session_id, card_uid,
+            properties_json, occurred_at
+        ) VALUES (
+            #{eventUid}, #{userId}, #{eventName}, #{traceId}, #{sessionId}, #{cardUid},
+            #{propertiesJson}, #{occurredAt}
+        )
+    </insert>
+</mapper>

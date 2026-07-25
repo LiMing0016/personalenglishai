@@ -4,13 +4,30 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.personalenglishai.backend.ai.config.AiProviderProperties;
 import com.personalenglishai.backend.ai.config.AiProviderSelection;
 import com.personalenglishai.backend.ai.config.OpenAiClientConfig;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class OpenAiClientResponsesPayloadTest {
+
+    private HttpServer server;
+
+    @AfterEach
+    void stopServer() {
+        if (server != null) {
+            server.stop(0);
+        }
+    }
 
     @Test
     void buildTextResponsesPayloadShouldIncludePromptCachingFields() throws Exception {
@@ -199,6 +216,116 @@ class OpenAiClientResponsesPayloadTest {
         assertThat(payload.path("messages").get(1).path("content").get(1).path("image_url").path("url").asText())
                 .isEqualTo("data:image/png;base64,abc");
         assertThat(payload.toString()).doesNotContain("\"imageBase64\"");
+    }
+
+    @Test
+    void structuredResponsesPayloadShouldUseStrictJsonSchemaFormat() throws Exception {
+        OpenAiClient client = client("responses");
+        JsonNode schema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"type\":\"object\",\"additionalProperties\":false}");
+        Method method = OpenAiClient.class.getDeclaredMethod(
+                "buildStructuredResponsesPayload",
+                String.class, String.class, String.class, String.class,
+                JsonNode.class, Double.class, Integer.class);
+        method.setAccessible(true);
+
+        JsonNode payload = (JsonNode) method.invoke(
+                client, "gpt-4o", "system", "user", "vocabulary_core_v1", schema, 0.0, 1200);
+
+        JsonNode format = payload.path("text").path("format");
+        assertThat(format.path("type").asText()).isEqualTo("json_schema");
+        assertThat(format.path("name").asText()).isEqualTo("vocabulary_core_v1");
+        assertThat(format.path("strict").asBoolean()).isTrue();
+        assertThat(format.path("schema")).isEqualTo(schema);
+        assertThat(payload.path("temperature").asDouble()).isEqualTo(0.0);
+        assertThat(payload.path("max_output_tokens").asInt()).isEqualTo(1200);
+    }
+
+    @Test
+    void structuredChatPayloadShouldUseEquivalentNestedJsonSchema() throws Exception {
+        OpenAiClient client = client("chat_completions");
+        JsonNode schema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"type\":\"object\",\"additionalProperties\":false}");
+        Method method = OpenAiClient.class.getDeclaredMethod(
+                "buildStructuredChatCompletionsPayload",
+                AiProviderSelection.SelectedProvider.class,
+                String.class, String.class, String.class, String.class,
+                JsonNode.class, Double.class, Integer.class);
+        method.setAccessible(true);
+        AiProviderSelection.SelectedProvider provider =
+                providerSelection("openai", "https://api.openai.com", "gpt-4o").resolve("openai");
+
+        JsonNode payload = (JsonNode) method.invoke(
+                client, provider, "gpt-4o", "system", "user",
+                "vocabulary_core_v1", schema, 0.0, 1200);
+
+        JsonNode format = payload.path("response_format");
+        assertThat(format.path("type").asText()).isEqualTo("json_schema");
+        assertThat(format.path("json_schema").path("name").asText())
+                .isEqualTo("vocabulary_core_v1");
+        assertThat(format.path("json_schema").path("strict").asBoolean()).isTrue();
+        assertThat(format.path("json_schema").path("schema")).isEqualTo(schema);
+        assertThat(payload.path("max_tokens").asInt()).isEqualTo(1200);
+    }
+
+    @Test
+    void publicStructuredCallRetainsSchemaAcrossResponsesToChatFallback() throws Exception {
+        List<JsonNode> requests = new ArrayList<>();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/responses", exchange -> {
+            requests.add(new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(exchange.getRequestBody()));
+            respond(exchange, 400, """
+                    {"error":{"code":"unsupported_endpoint","message":"Responses unsupported"}}
+                    """);
+        });
+        server.createContext("/v1/chat/completions", exchange -> {
+            requests.add(new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(exchange.getRequestBody()));
+            respond(exchange, 200, """
+                    {"id":"chat-1","choices":[{"message":{"role":"assistant","content":"{\\"term\\":\\"record\\"}"}}]}
+                    """);
+        });
+        server.start();
+
+        String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        OpenAiClientConfig config = new OpenAiClientConfig();
+        config.setMaxRetries(0);
+        OpenAiClient client = new OpenAiClient(
+                providerSelection("openai", baseUrl, "gpt-test"),
+                "test", "responses", "gpt-fallback", false, false, 12000, config);
+        JsonNode schema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"type\":\"object\",\"additionalProperties\":false}");
+
+        String result = client.callStructuredWithTraceId(
+                "system", "user", "trace-fallback", "vocabulary_core_v1",
+                schema, 0.0, 1200);
+
+        assertThat(result).isEqualTo("{\"term\":\"record\"}");
+        assertThat(requests).hasSize(2);
+        assertThat(requests.get(0).path("text").path("format").path("schema"))
+                .isEqualTo(schema);
+        assertThat(requests.get(1).path("response_format").path("json_schema").path("schema"))
+                .isEqualTo(schema);
+        assertThat(requests.get(1).path("response_format").path("json_schema")
+                .path("name").asText()).isEqualTo("vocabulary_core_v1");
+        assertThat(requests.get(1).path("response_format").path("json_schema")
+                .path("strict").asBoolean()).isTrue();
+    }
+
+    private void respond(HttpExchange exchange, int status, String response) throws IOException {
+        byte[] body = response.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, body.length);
+        exchange.getResponseBody().write(body);
+        exchange.close();
+    }
+
+    private OpenAiClient client(String endpointMode) {
+        return new OpenAiClient(
+                providerSelection("openai", "https://api.openai.com", "gpt-4o"),
+                "test", endpointMode, "gpt-4o", false, false, 12000,
+                new OpenAiClientConfig());
     }
 
     private AiProviderSelection providerSelection(String provider, String baseUrl, String model) {

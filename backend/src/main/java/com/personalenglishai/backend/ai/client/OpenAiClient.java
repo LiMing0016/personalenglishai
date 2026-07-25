@@ -1,6 +1,7 @@
 package com.personalenglishai.backend.ai.client;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +62,9 @@ public class OpenAiClient implements AssistantOpenAiClient {
     private static final String ENDPOINT_MODE_CHAT_COMPLETIONS = "chat_completions";
     private static final String ENDPOINT_MODE_RESPONSES = "responses";
     private static final String PROMPT_VERSION = "v1";
+    private static final String VOCABULARY_MARKDOWN_PROMPT_PREFIX =
+            "以下 JSON 是可信的卡片核心与来源上下文：";
+    private static final String VOCABULARY_THEME_PURPOSE_TAG = "<theme-purpose>";
     private static final Random RANDOM = new Random();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -395,7 +399,33 @@ public class OpenAiClient implements AssistantOpenAiClient {
         return callInternal(null, systemPrompt, userPrompt, traceId, xDebugFail);
     }
 
+    public String callStructuredWithTraceId(
+            String systemPrompt,
+            String userPrompt,
+            String traceId,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        if (isBlank(schemaName) || schema == null || !schema.isObject()) {
+            throw new IllegalArgumentException("Structured output schema is required");
+        }
+        return callInternal(
+                null, systemPrompt, userPrompt, traceId, null,
+                new StructuredOutputConfig(schemaName.trim(), schema.deepCopy(), temperature, maxTokens));
+    }
+
     private String callInternal(String provider, String systemPrompt, String userPrompt, String traceId, String xDebugFail) {
+        return callInternal(provider, systemPrompt, userPrompt, traceId, xDebugFail, null);
+    }
+
+    private String callInternal(
+            String provider,
+            String systemPrompt,
+            String userPrompt,
+            String traceId,
+            String xDebugFail,
+            StructuredOutputConfig structuredOutput) {
         long startTime = System.currentTimeMillis();
         int inputLength = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         AtomicInteger attemptCounter = new AtomicInteger(1);
@@ -427,7 +457,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
 
             OpenAiCallResult callResult;
             try {
-                callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel,
+                        systemPrompt, userPrompt, traceId, retrySpec, structuredOutput);
             } catch (Exception e) {
                 if (shouldFallbackFromResponses(effectiveEndpoint, e)) {
                     fallbackUsed = true;
@@ -443,7 +474,8 @@ public class OpenAiClient implements AssistantOpenAiClient {
                             safeMsg(e),
                             extractOpenAiErrorCode(e),
                             extractHttpStatus(e));
-                    callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel, systemPrompt, userPrompt, traceId, retrySpec);
+                    callResult = callByMode(selectedProvider, targetWebClient, effectiveEndpoint, effectiveModel,
+                            systemPrompt, userPrompt, traceId, retrySpec, structuredOutput);
                 } else {
                     throw e;
                 }
@@ -733,11 +765,14 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                         String systemPrompt,
                                         String userPrompt,
                                         String traceId,
-                                        Retry retrySpec) {
+                                        Retry retrySpec,
+                                        StructuredOutputConfig structuredOutput) {
         if (ENDPOINT_MODE_RESPONSES.equals(endpointMode) && supportsResponses(selectedProvider.provider())) {
-            return callResponses(targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
+            return callResponses(targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec,
+                    structuredOutput);
         }
-        return callChatCompletions(selectedProvider, targetWebClient, model, systemPrompt, userPrompt, traceId, retrySpec);
+        return callChatCompletions(selectedProvider, targetWebClient, model, systemPrompt, userPrompt,
+                traceId, retrySpec, structuredOutput);
     }
 
     private OpenAiCallResult callChatCompletions(AiProviderSelection.SelectedProvider selectedProvider,
@@ -746,20 +781,34 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                                  String systemPrompt,
                                                  String userPrompt,
                                                  String traceId,
-                                                 Retry retrySpec) {
-        ChatRequest request = new ChatRequest(model, List.of(
-                new Message("system", systemPrompt == null ? "" : systemPrompt),
-                new Message("user", userPrompt == null ? "" : userPrompt)
-        ));
-        request.setTemperature(normalizeChatCompletionsTemperature(
-                selectedProvider,
-                overrideTemperature != null ? overrideTemperature : request.getTemperature()
-        ));
-        if (overrideMaxTokens != null) request.setMaxTokens(overrideMaxTokens);
+                                                 Retry retrySpec,
+                                                 StructuredOutputConfig structuredOutput) {
+        Object request;
+        if (structuredOutput == null) {
+            ChatRequest chatRequest = new ChatRequest(model, List.of(
+                    new Message("system", systemPrompt == null ? "" : systemPrompt),
+                    new Message("user", userPrompt == null ? "" : userPrompt)
+            ));
+            chatRequest.setTemperature(normalizeChatCompletionsTemperature(
+                    selectedProvider,
+                    overrideTemperature != null ? overrideTemperature : chatRequest.getTemperature()
+            ));
+            if (overrideMaxTokens != null) chatRequest.setMaxTokens(overrideMaxTokens);
+            request = chatRequest;
+        } else {
+            request = buildStructuredChatCompletionsPayload(
+                    selectedProvider, model, systemPrompt, userPrompt,
+                    structuredOutput.schemaName(), structuredOutput.schema(),
+                    structuredOutput.temperature(), structuredOutput.maxTokens());
+        }
         int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_CHAT_COMPLETIONS, model, request, inputChars, draftChars);
-        logPromptPayload(traceId, request, ENDPOINT_MODE_CHAT_COMPLETIONS);
+        ChatRequest promptLogRequest = new ChatRequest(model, List.of(
+                new Message("system", systemPrompt == null ? "" : systemPrompt),
+                new Message("user", userPrompt == null ? "" : userPrompt)
+        ));
+        logPromptPayload(traceId, promptLogRequest, ENDPOINT_MODE_CHAT_COMPLETIONS);
 
         ChatResponse response = targetWebClient.post()
                 .uri("/v1/chat/completions")
@@ -831,11 +880,18 @@ public class OpenAiClient implements AssistantOpenAiClient {
                                            String systemPrompt,
                                            String userPrompt,
                                            String traceId,
-                                           Retry retrySpec) {
-        ResponsesRequest request = new ResponsesRequest(model, List.of(
-                new ResponseInputItem("system", List.of(new ResponseContentItem("input_text", systemPrompt == null ? "" : systemPrompt))),
-                new ResponseInputItem("user", List.of(new ResponseContentItem("input_text", userPrompt == null ? "" : userPrompt)))
-        ));
+                                           Retry retrySpec,
+                                           StructuredOutputConfig structuredOutput) {
+        Object request = structuredOutput == null
+                ? new ResponsesRequest(model, List.of(
+                        new ResponseInputItem("system", List.of(new ResponseContentItem(
+                                "input_text", systemPrompt == null ? "" : systemPrompt))),
+                        new ResponseInputItem("user", List.of(new ResponseContentItem(
+                                "input_text", userPrompt == null ? "" : userPrompt)))))
+                : buildStructuredResponsesPayload(
+                        model, systemPrompt, userPrompt,
+                        structuredOutput.schemaName(), structuredOutput.schema(),
+                        structuredOutput.temperature(), structuredOutput.maxTokens());
         int inputChars = (systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length());
         int draftChars = extractDraftChars(userPrompt);
         int payloadBytes = logFinalPayload(traceId, ENDPOINT_MODE_RESPONSES, model, request, inputChars, draftChars);
@@ -888,6 +944,75 @@ public class OpenAiClient implements AssistantOpenAiClient {
         ObjectNode text = payload.putObject("text");
         text.putObject("format").put("type", "text");
         return payload;
+    }
+
+    private ObjectNode buildStructuredResponsesPayload(
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        ArrayNode input = payload.putArray("input");
+        addResponsesMessage(input, "system", systemPrompt);
+        addResponsesMessage(input, "user", userPrompt);
+        if (temperature != null) {
+            payload.put("temperature", temperature);
+        }
+        if (maxTokens != null) {
+            payload.put("max_output_tokens", maxTokens);
+        }
+        ObjectNode format = payload.putObject("text").putObject("format");
+        format.put("type", "json_schema");
+        format.put("name", schemaName);
+        format.put("strict", true);
+        format.set("schema", schema);
+        return payload;
+    }
+
+    private ObjectNode buildStructuredChatCompletionsPayload(
+            AiProviderSelection.SelectedProvider selectedProvider,
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        ArrayNode messages = payload.putArray("messages");
+        addChatMessage(messages, "system", systemPrompt);
+        addChatMessage(messages, "user", userPrompt);
+        payload.put("temperature", normalizeChatCompletionsTemperature(
+                selectedProvider, temperature == null ? 0.2d : temperature));
+        if (maxTokens != null) {
+            payload.put("max_tokens", maxTokens);
+        }
+        ObjectNode responseFormat = payload.putObject("response_format");
+        responseFormat.put("type", "json_schema");
+        ObjectNode jsonSchema = responseFormat.putObject("json_schema");
+        jsonSchema.put("name", schemaName);
+        jsonSchema.put("strict", true);
+        jsonSchema.set("schema", schema);
+        return payload;
+    }
+
+    private void addResponsesMessage(ArrayNode input, String role, String value) {
+        ObjectNode message = input.addObject();
+        message.put("role", role);
+        ObjectNode content = message.putArray("content").addObject();
+        content.put("type", "input_text");
+        content.put("text", value == null ? "" : value);
+    }
+
+    private void addChatMessage(ArrayNode messages, String role, String value) {
+        ObjectNode message = messages.addObject();
+        message.put("role", role);
+        message.put("content", value == null ? "" : value);
     }
 
     private ObjectNode buildVisionChatCompletionsPayload(AiProviderSelection.SelectedProvider selectedProvider,
@@ -1718,8 +1843,6 @@ public class OpenAiClient implements AssistantOpenAiClient {
                 lastUser = content;
             }
 
-            log.debug("OpenAI message traceId={} index={} role={} contentLength={} contentPreview={}",
-                    traceId, i, role, content.length(), previewForLog(content, 120));
         }
         String payloadCanonical = canonicalMessages(messages);
         String payloadSha256 = sha256Hex(payloadCanonical);
@@ -1738,32 +1861,6 @@ public class OpenAiClient implements AssistantOpenAiClient {
             log.info("OpenAI prompt raw traceId={} role=system content=\n{}", traceId, limitForRawLog(redactForLog(lastSystem)));
             log.info("OpenAI prompt raw traceId={} role=user content=\n{}", traceId, limitForRawLog(redactForLog(lastUser)));
         }
-        log.debug("OpenAI system prompt (last) traceId={} content={}", traceId, redactForLog(lastSystem));
-        log.debug("OpenAI user prompt (last) traceId={} content={}", traceId, redactForLog(lastUser));
-        log.debug("OpenAI messages payload traceId={} payload={}", traceId, formatMessagesForLog(messages));
-    }
-
-    private String formatMessagesForLog(List<Message> messages) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < messages.size(); i++) {
-            Message m = messages.get(i);
-            String role = m.getRole() == null ? "" : m.getRole();
-            String content = m.getContent() == null ? "" : m.getContent();
-            if (i > 0) {
-                sb.append(", ");
-            }
-            sb.append("{index=")
-                    .append(i)
-                    .append(", role=\"")
-                    .append(role)
-                    .append("\", contentLength=")
-                    .append(content.length())
-                    .append(", contentPreview=\"")
-                    .append(previewForLog(content, 120))
-                    .append("\"}");
-        }
-        sb.append("]");
-        return sb.toString();
     }
 
     private String previewForLog(String content, int maxLen) {
@@ -1778,10 +1875,107 @@ public class OpenAiClient implements AssistantOpenAiClient {
         if (content == null) {
             return "";
         }
-        String redacted = content;
+        if (isVocabularyMarkdownPrompt(content)) {
+            return safeVocabularyPromptSummary(content);
+        }
+        String redacted = redactSourceContext(content);
         redacted = redacted.replaceAll("sk-[a-zA-Z0-9]+", "sk-***");
         redacted = redacted.replaceAll("(?i)(api[_-]?key\\s*[:=]\\s*)([^\\s,;]+)", "$1***");
         return redacted;
+    }
+
+    private String redactSourceContext(String content) {
+        try {
+            JsonNode parsed = objectMapper.readTree(content);
+            if (parsed == null || (!parsed.isObject() && !parsed.isArray())) {
+                return content;
+            }
+            JsonNode copy = parsed.deepCopy();
+            if (!redactSourceContextFields(copy)) {
+                return content;
+            }
+            return objectMapper.writeValueAsString(copy);
+        } catch (JsonProcessingException exception) {
+            return containsSensitivePromptMarker(content)
+                    ? safeUnparseablePromptSummary(content)
+                    : content;
+        }
+    }
+
+    private boolean redactSourceContextFields(JsonNode node) {
+        boolean redacted = false;
+        if (node.isObject()) {
+            ObjectNode object = (ObjectNode) node;
+            List<String> fieldNames = new java.util.ArrayList<>();
+            object.fieldNames().forEachRemaining(fieldNames::add);
+            for (String fieldName : fieldNames) {
+                JsonNode value = object.get(fieldName);
+                if (isSourceContextField(fieldName)) {
+                    object.put(fieldName, "[REDACTED]");
+                    redacted = true;
+                } else if (value != null && value.isTextual()
+                        && containsSensitivePromptMarker(value.asText())) {
+                    object.put(fieldName, safeSensitivePromptSummary(value.asText()));
+                    redacted = true;
+                } else if (value != null) {
+                    redacted |= redactSourceContextFields(value);
+                }
+            }
+        } else if (node.isArray()) {
+            ArrayNode array = (ArrayNode) node;
+            for (int i = 0; i < array.size(); i++) {
+                JsonNode item = array.get(i);
+                if (item != null && item.isTextual()
+                        && containsSensitivePromptMarker(item.asText())) {
+                    array.set(i, objectMapper.getNodeFactory().textNode(
+                            safeSensitivePromptSummary(item.asText())));
+                    redacted = true;
+                } else if (item != null) {
+                    redacted |= redactSourceContextFields(item);
+                }
+            }
+        }
+        return redacted;
+    }
+
+    private boolean isVocabularyMarkdownPrompt(String content) {
+        return content != null
+                && content.contains(VOCABULARY_MARKDOWN_PROMPT_PREFIX)
+                && content.contains(VOCABULARY_THEME_PURPOSE_TAG);
+    }
+
+    private boolean containsSensitivePromptMarker(String content) {
+        if (content == null) {
+            return false;
+        }
+        String normalized = content.toLowerCase(java.util.Locale.ROOT);
+        return content.contains(VOCABULARY_MARKDOWN_PROMPT_PREFIX)
+                || content.contains(VOCABULARY_THEME_PURPOSE_TAG)
+                || normalized.contains("\"sourcecontext\"")
+                || normalized.contains("\"capturedsourcecontext\"")
+                || normalized.contains("\"contexttext\"");
+    }
+
+    private String safeVocabularyPromptSummary(String content) {
+        return "[REDACTED_VOCABULARY_PROMPT chars=" + content.length()
+                + " sha256=" + sha256Hex(content) + "]";
+    }
+
+    private String safeSensitivePromptSummary(String content) {
+        return isVocabularyMarkdownPrompt(content)
+                ? safeVocabularyPromptSummary(content)
+                : safeUnparseablePromptSummary(content);
+    }
+
+    private String safeUnparseablePromptSummary(String content) {
+        return "[REDACTED_UNPARSEABLE_PROMPT chars=" + content.length()
+                + " sha256=" + sha256Hex(content) + "]";
+    }
+
+    private boolean isSourceContextField(String fieldName) {
+        return "capturedSourceContext".equalsIgnoreCase(fieldName)
+                || "sourceContext".equalsIgnoreCase(fieldName)
+                || "contextText".equalsIgnoreCase(fieldName);
     }
 
     private String limitForRawLog(String content) {
@@ -1926,6 +2120,13 @@ public class OpenAiClient implements AssistantOpenAiClient {
     }
 
     private record OpenAiCallResult(String content, int payloadBytes, boolean parseSuccess) {
+    }
+
+    private record StructuredOutputConfig(
+            String schemaName,
+            JsonNode schema,
+            Double temperature,
+            Integer maxTokens) {
     }
 
     private record ImageResponsePayload(MediaType contentType, byte[] body) {

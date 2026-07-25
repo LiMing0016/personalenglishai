@@ -1,3 +1,16 @@
+---
+title: Oxford 词典集成
+status: active
+owner: backend
+last_updated: 2026-07-11
+review_cycle: on-change
+related_code:
+  - backend/src/main/java/com/personalenglishai/backend/service/dictionary/
+  - web/src/api/dictionary.ts
+related_docs:
+  - docs/architecture/vocabulary-deposition.md
+---
+
 # 单词模块第一版设计方案：Oxford Dictionaries API 接入
 
 ## 目标
@@ -474,3 +487,7 @@ CREATE TABLE IF NOT EXISTS user_dictionary_word_state (
 - README 或本地启动文档是否需要补充 Oxford 本地配置说明。
 - 当前改动是否只包含词典需求相关文件。
 - 后端测试和前端构建是否通过。
+
+## 单词沉淀边界
+
+词典内容、用户词典状态与单词卡已拆分为独立资产。单词卡的数据库迁移、生成任务租约、捕获/编辑冲突契约和工作区路由见[单词沉淀架构](./vocabulary-deposition.md)。
