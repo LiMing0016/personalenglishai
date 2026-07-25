@@ -1,8 +1,10 @@
 <template>
   <aside
+    id="learning-asset-canvas"
     class="learning-asset-canvas"
     :style="canvasStyle"
     aria-label="学习资产画布"
+    tabindex="-1"
   >
     <button
       type="button"
@@ -1756,12 +1758,12 @@ onBeforeUnmount(() => {
   line-height: 1.7;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .learning-asset-canvas {
     position: fixed;
     inset: 0 0 0 auto;
     z-index: 65;
-    width: min(100vw, var(--canvas-width));
+    width: min(100vw, 420px);
     max-width: 100vw;
     min-width: 0;
   }

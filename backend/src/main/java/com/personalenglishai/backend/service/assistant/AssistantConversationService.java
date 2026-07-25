@@ -226,7 +226,9 @@ public class AssistantConversationService {
         }
         agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
 
-        persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+        AssistantMessage assistantMessage = buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1);
+        assistantMessage.setPartsJson(writePartsJson(reply.getParts()));
+        persistAndCaptureMessage(assistantMessage);
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
         conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         return getConversation(userId, conversationUid);
@@ -271,7 +273,9 @@ public class AssistantConversationService {
         String replyText = !completedContent.isEmpty() ? completedContent.toString() : deltaContent.toString();
         if (!failed.get() && !replyText.isBlank()) {
             agentDebugService.recordAssistantRun(userId, conversationUid, prompt, runMetadataHolder.run, replyText);
-            persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
+            AssistantMessage assistantMessage = buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1);
+            assistantMessage.setPartsJson(writePartsJson(runMetadataHolder.parts));
+            persistAndCaptureMessage(assistantMessage);
             String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();
             conversationMapper.updateTitleSummaryOwned(userId, conversationUid, title, buildSummary(prompt));
         }
@@ -496,6 +500,10 @@ public class AssistantConversationService {
     }
 
     private void attachConversationHistory(AssistantRequest request, String conversationUid) {
+        if ("single_agent_raw".equals(request.getAgentMode())) {
+            request.setConversationHistory(List.of());
+            return;
+        }
         List<AssistantMessage> messages = messageMapper.selectByConversationUid(conversationUid);
         if (messages == null || messages.isEmpty()) {
             request.setConversationHistory(List.of());
@@ -602,6 +610,7 @@ public class AssistantConversationService {
             } else if ("message.completed".equals(type)) {
                 completedContent.setLength(0);
                 completedContent.append(event.path("content").asText(""));
+                runMetadataHolder.parts = normalizeParts(event.get("parts"));
             } else if ("run.completed".equals(type) && event.has("run")) {
                 runMetadataHolder.run = objectMapper.treeToValue(event.get("run"), com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse.class);
             } else if ("run.failed".equals(type)) {
@@ -641,6 +650,7 @@ public class AssistantConversationService {
 
     private static final class AssistantRunMetadataHolder {
         private com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse run;
+        private JsonNode parts;
     }
 
     private String generateShareToken() {
@@ -707,8 +717,38 @@ public class AssistantConversationService {
                 message.getMessageUid(),
                 message.getRole(),
                 message.getContent(),
+                readPartsJson(message.getPartsJson()),
                 message.getStatus(),
                 message.getCreatedAt());
+    }
+
+    private JsonNode normalizeParts(JsonNode parts) {
+        return parts != null && parts.isArray() && !parts.isEmpty() ? parts : null;
+    }
+
+    private String writePartsJson(JsonNode parts) {
+        JsonNode normalized = normalizeParts(parts);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(normalized);
+        } catch (JsonProcessingException e) {
+            log.warn("assistant parts serialization failed", e);
+            return null;
+        }
+    }
+
+    private JsonNode readPartsJson(String partsJson) {
+        if (partsJson == null || partsJson.isBlank()) {
+            return null;
+        }
+        try {
+            return normalizeParts(objectMapper.readTree(partsJson));
+        } catch (JsonProcessingException e) {
+            log.warn("invalid assistant parts JSON ignored", e);
+            return null;
+        }
     }
 
     private AssistantShareResponse toShareResponse(AssistantShare share) {

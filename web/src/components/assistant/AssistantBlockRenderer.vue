@@ -11,17 +11,20 @@
         :block="block"
       />
       <div v-else class="assistant-block-fallback">
-        <p class="assistant-block-fallback-title">{{ block.title || '学习卡片' }}</p>
-        <p v-if="block.fallbackMarkdown">{{ block.fallbackMarkdown }}</p>
+        <p class="assistant-block-fallback-title">学习卡片</p>
+        <div
+          class="assistant-block-fallback-content"
+          v-html="renderAssistantMarkdown(block.fallbackMarkdown)"
+        ></div>
       </div>
 
-      <div v-if="block.actions?.length" class="assistant-block-actions">
+      <div v-if="actionsFor(block)?.length" class="assistant-block-actions">
         <button
-          v-for="action in block.actions"
+          v-for="action in actionsFor(block)"
           :key="action.id"
           type="button"
           class="assistant-block-action"
-          @click="$emit('action', action.prompt)"
+          @click="emitAction(action)"
         >
           {{ action.label }}
         </button>
@@ -31,31 +34,45 @@
 </template>
 
 <script setup lang="ts">
-import type { Component } from 'vue'
+import { defineAsyncComponent, type Component } from 'vue'
 
-import GrammarTreeBlock from './blocks/GrammarTreeBlock.vue'
-import SentenceAnalysisBlock from './blocks/SentenceAnalysisBlock.vue'
-import StudyPlanBlock from './blocks/StudyPlanBlock.vue'
-import VocabCardBlock from './blocks/VocabCardBlock.vue'
-import type { AssistantBlock } from '@/types/assistantBlocks.ts'
+import { definitionFor, isFallbackAssistantBlock } from './learning-blocks/registry.ts'
+import { renderAssistantMarkdown } from './markdown.ts'
+import type { RenderableAssistantBlock } from '@/types/assistantBlocks.ts'
+import type { AssistantBlockAction } from '@/types/assistantBlocks.ts'
+import type { AssistantInteractionTrigger } from '@/types/assistantRequest.ts'
 
 defineProps<{
-  blocks: AssistantBlock[]
+  blocks: RenderableAssistantBlock[]
 }>()
 
-defineEmits<{
-  action: [prompt: string]
+const emit = defineEmits<{
+  action: [choice: string | AssistantInteractionTrigger]
 }>()
 
-const blockRenderers: Record<AssistantBlock['type'], Component> = {
-  vocab_card: VocabCardBlock,
-  grammar_tree: GrammarTreeBlock,
-  study_plan: StudyPlanBlock,
-  sentence_analysis: SentenceAnalysisBlock,
+const componentCache = new Map<string, Component>()
+
+function componentForBlock(block: RenderableAssistantBlock) {
+  const definition = definitionFor(block)
+  if (!definition) return undefined
+  const key = `${definition.type}@${definition.version}`
+  const cached = componentCache.get(key)
+  if (cached) return cached
+  const component = defineAsyncComponent(definition.loadComponent)
+  componentCache.set(key, component)
+  return component
 }
 
-function componentForBlock(block: AssistantBlock) {
-  return blockRenderers[block.type]
+function actionsFor(block: RenderableAssistantBlock) {
+  return isFallbackAssistantBlock(block) ? undefined : block.actions
+}
+
+function emitAction(action: AssistantBlockAction) {
+  if ('prompt' in action) {
+    emit('action', action.prompt)
+    return
+  }
+  emit('action', { displayText: action.displayText, interaction: action.interaction })
 }
 </script>
 

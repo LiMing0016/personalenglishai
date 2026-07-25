@@ -73,8 +73,8 @@ assert.ok(
   'created folders should be expandable to reveal their conversations',
 )
 assert.ok(
-  sidebarSource.includes('sidebar-brand'),
-  'expanded assistant drawer should keep PEAI brand context',
+  sidebarSource.includes('AppNavigationMenu'),
+  'expanded assistant drawer should share the global application navigation',
 )
 assert.ok(
   sidebarSource.includes('to="/app/me"'),
@@ -93,8 +93,8 @@ assert.ok(
   'assistant drawer should not duplicate the shared global rail',
 )
 assert.ok(
-  !sidebarSource.includes('src="/brand/peai-logo.png"'),
-  'assistant drawer should not own the global rail logo',
+  !sidebarSource.includes('<AppRail'),
+  'assistant drawer should replace the global rail instead of rendering a second rail component',
 )
 assert.ok(
   sidebarSource.includes('closeSidebar'),

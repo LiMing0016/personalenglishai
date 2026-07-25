@@ -20,11 +20,13 @@ import {
 } from './assistantAttachmentStore.ts'
 import { type AssistantAttachmentSource, validateAssistantFiles } from './assistantAttachmentRules.ts'
 import { findRetryUserMessage } from './assistantMessageActions.ts'
-import type { AssistantSelection } from '../../types/assistantRequest.ts'
+import type { AgentMode, AssistantInteractionContext, AssistantSelection } from '../../types/assistantRequest.ts'
 import {
   mergeRemoteConversationListWithTransientAttachments,
   mergeTransientMessageAttachments,
 } from './assistantConversationMerge.ts'
+import { fromRemoteConversation as mapRemoteConversation } from './assistantConversationBlocks.ts'
+import type { AssistantBlockDiagnostic } from '../../components/assistant/learning-blocks/registry.ts'
 import {
   type AssistantAttachment,
   type AssistantAttachmentMetadata,
@@ -47,6 +49,16 @@ interface CreateAssistantStateOptions {
 
 const DEFAULT_STORAGE_KEY = 'peai:assistant:state:v1'
 
+function reportAssistantBlockDiagnostic(diagnostic: AssistantBlockDiagnostic) {
+  if (import.meta.env.DEV) {
+    console.warn('[assistant-learning-block]', diagnostic)
+  }
+}
+
+function fromRemoteConversation(dto: AssistantConversationDto) {
+  return mapRemoteConversation(dto, reportAssistantBlockDiagnostic)
+}
+
 interface PersistedAssistantMessage {
   id: string
   role: AssistantMessage['role']
@@ -61,6 +73,7 @@ interface PersistedAssistantConversation {
   projectId?: number | null
   title: string
   summary: string
+  createdAt?: number
   updatedAt: number
   pinned?: boolean
   archived?: boolean
@@ -82,12 +95,14 @@ function createId(prefix: string) {
 }
 
 function createEmptyConversation(): AssistantConversation {
+  const now = Date.now()
   return {
     id: createId('conv'),
     projectId: null,
     title: '新对话',
     summary: '',
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
     pinned: false,
     archived: false,
     messages: [],
@@ -137,6 +152,7 @@ function toPersistedConversation(conversation: AssistantConversation): Persisted
     projectId: conversation.projectId ?? null,
     title: conversation.title,
     summary: conversation.summary,
+    createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     pinned: Boolean(conversation.pinned),
     archived: Boolean(conversation.archived),
@@ -203,40 +219,19 @@ function restoreConversation(value: unknown): AssistantConversation | null {
         .filter((message): message is AssistantMessage => Boolean(message))
     : []
 
+  const updatedAt = typeof conversation.updatedAt === 'number' ? conversation.updatedAt : Date.now()
+  const createdAt = typeof conversation.createdAt === 'number' ? conversation.createdAt : updatedAt
+
   return {
     id: conversation.id,
     projectId: typeof conversation.projectId === 'number' ? conversation.projectId : null,
     title: typeof conversation.title === 'string' && conversation.title.trim() ? conversation.title : '新对话',
     summary: typeof conversation.summary === 'string' ? conversation.summary : '',
-    updatedAt: typeof conversation.updatedAt === 'number' ? conversation.updatedAt : Date.now(),
+    createdAt,
+    updatedAt,
     pinned: Boolean(conversation.pinned),
     archived: Boolean(conversation.archived),
     messages,
-  }
-}
-
-function parseRemoteTime(value: string | null | undefined) {
-  if (!value) return Date.now()
-  const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? Date.now() : parsed
-}
-
-function fromRemoteConversation(dto: AssistantConversationDto): AssistantConversation {
-  return {
-    id: dto.id,
-    projectId: dto.projectId ?? null,
-    title: dto.title || '新对话',
-    summary: dto.summary ?? '',
-    updatedAt: parseRemoteTime(dto.updatedAt ?? dto.createdAt),
-    pinned: dto.pinned,
-    archived: dto.archived,
-    messages: (dto.messages ?? []).map((message) => ({
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      status: message.status === 'failed' ? 'done' : 'done',
-      parts: normalizeAssistantBlocks(message.parts),
-    })),
   }
 }
 
@@ -279,11 +274,13 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
   const composerAttachments = ref<AssistantAttachment[]>([])
   const pendingSelection = ref<AssistantSelection | null>(null)
   const assistantMode = ref<AssistantMode>('default')
+  const agentMode = ref<AgentMode>('multi_agent')
   const searchText = ref('')
   const isSending = ref(false)
   const errorMessage = ref('')
   const lastFailedPrompt = ref('')
   const lastFailedAttachments = ref<AssistantAttachment[]>([])
+  const lastFailedInteraction = ref<AssistantInteractionContext>()
   const buildReply = options.buildReply ?? (async (request: AssistantReplyRequest, stream?: AssistantChatStreamHandlers) => {
     const response = await assistantChatStream(request, stream)
     return response.reply
@@ -410,12 +407,15 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     errorMessage.value = ''
     lastFailedPrompt.value = ''
     persistState()
-    if (remote) {
-      void ensureRemoteConversation(conversation).catch((error) => {
-        errorMessage.value = error instanceof Error ? error.message : '新建对话失败'
-      })
-    }
     return conversation
+  }
+
+  function setAgentMode(mode: AgentMode) {
+    if (agentMode.value === mode) {
+      return null
+    }
+    agentMode.value = mode
+    return createConversation()
   }
 
   async function selectConversation(id: string) {
@@ -484,7 +484,11 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     assistantMode.value = mode
   }
 
-  async function sendPrompt(prompt: string, attachments: AssistantAttachment[] = composerAttachments.value) {
+  async function sendPrompt(
+    prompt: string,
+    attachments: AssistantAttachment[] = composerAttachments.value,
+    interaction?: AssistantInteractionContext,
+  ) {
     if (isSending.value) {
       return
     }
@@ -499,6 +503,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     errorMessage.value = ''
     lastFailedPrompt.value = ''
     lastFailedAttachments.value = []
+    lastFailedInteraction.value = undefined
 
     let conversation = activeConversation.value
     try {
@@ -509,6 +514,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       return
     }
     const userMessage = createMessage('user', trimmed, 'done')
+    userMessage.interaction = interaction
     userMessage.attachments = attachments.map((attachment) => ({ ...attachment }))
     userMessage.attachmentMetadata = attachments.map(createAttachmentMetadata)
     const loadingMessage = createMessage('assistant', '正在思考...', 'loading')
@@ -548,6 +554,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       const replyResult = await buildReply({
         input: trimmed || `请查看我上传的 ${attachments.length} 个附件`,
         conversationId: conversation.id,
+        agentMode: agentMode.value,
         studyStage: currentStudyStage(),
         assistantMode: assistantMode.value,
         intent: selectionForRequest ? 'explain' : 'free_chat',
@@ -555,6 +562,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
           ? (trimmed ? 'selection_and_message' : 'selection')
           : 'message_only',
         selection: selectionForRequest ?? undefined,
+        interaction,
         attachments,
       }, {
         onDelta: (delta) => {
@@ -590,6 +598,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
       errorMessage.value = error instanceof Error ? error.message : '学习助手暂时不可用'
       lastFailedPrompt.value = trimmed
       lastFailedAttachments.value = attachments.map((attachment) => ({ ...attachment }))
+      lastFailedInteraction.value = interaction
       persistState()
     } finally {
       isSending.value = false
@@ -609,7 +618,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     if (!lastFailedPrompt.value && lastFailedAttachments.value.length === 0) {
       return
     }
-    await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value)
+    await sendPrompt(lastFailedPrompt.value, lastFailedAttachments.value, lastFailedInteraction.value)
   }
 
   async function retryAssistantMessage(messageId: string) {
@@ -617,7 +626,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     if (!retryMessage) {
       throw new Error('没有找到可重试的上一条用户消息')
     }
-    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [])
+    await sendPrompt(retryMessage.content, retryMessage.attachments ?? [], retryMessage.interaction)
   }
 
   async function renameConversation(id: string, title: string) {
@@ -782,6 +791,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     composerText,
     composerAttachments,
     assistantMode,
+    agentMode,
     searchText,
     pendingSelection,
     isSending,
@@ -793,6 +803,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     addAttachments,
     removeAttachment,
     setAssistantMode,
+    setAgentMode,
     createConversation,
     selectConversation,
     renameConversation,
@@ -804,6 +815,7 @@ export function createAssistantState(options: CreateAssistantStateOptions = {}) 
     shareConversation,
     createProject,
     sendMessage,
+    sendPrompt,
     retryLastMessage,
     retryAssistantMessage,
   }

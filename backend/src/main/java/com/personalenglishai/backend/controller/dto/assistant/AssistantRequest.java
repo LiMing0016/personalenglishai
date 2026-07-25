@@ -17,6 +17,9 @@ public class AssistantRequest {
     @Size(max = 128)
     private String idempotencyKey;
 
+    @Size(max = 32)
+    private String agentMode;
+
     @NotBlank
     @Size(max = 32)
     private String mode;
@@ -45,6 +48,9 @@ public class AssistantRequest {
     private ClientMeta clientMeta;
 
     @Valid
+    private Interaction interaction;
+
+    @Valid
     @Size(max = 20)
     private List<ConversationHistoryMessage> conversationHistory = List.of();
 
@@ -70,6 +76,14 @@ public class AssistantRequest {
 
     public void setIdempotencyKey(String idempotencyKey) {
         this.idempotencyKey = idempotencyKey;
+    }
+
+    public String getAgentMode() {
+        return agentMode;
+    }
+
+    public void setAgentMode(String agentMode) {
+        this.agentMode = agentMode;
     }
 
     public String getMode() {
@@ -134,6 +148,14 @@ public class AssistantRequest {
 
     public void setClientMeta(ClientMeta clientMeta) {
         this.clientMeta = clientMeta;
+    }
+
+    public Interaction getInteraction() {
+        return interaction;
+    }
+
+    public void setInteraction(Interaction interaction) {
+        this.interaction = interaction;
     }
 
     public List<ConversationHistoryMessage> getConversationHistory() {
@@ -320,6 +342,98 @@ public class AssistantRequest {
 
         public void setUserAgent(String userAgent) {
             this.userAgent = userAgent;
+        }
+    }
+
+    public static class Interaction {
+        @Size(max = 32)
+        private String source;
+
+        @Size(max = 64)
+        private String uiIntent;
+
+        @Size(max = 128)
+        private String activeActivityId;
+
+        @Size(max = 128)
+        private String actionId;
+
+        @Valid
+        private InteractionContext context;
+
+        public String getSource() {
+            return source;
+        }
+
+        public void setSource(String source) {
+            this.source = source;
+        }
+
+        public String getUiIntent() {
+            return uiIntent;
+        }
+
+        public void setUiIntent(String uiIntent) {
+            this.uiIntent = uiIntent;
+        }
+
+        public String getActiveActivityId() {
+            return activeActivityId;
+        }
+
+        public void setActiveActivityId(String activeActivityId) {
+            this.activeActivityId = activeActivityId;
+        }
+
+        public String getActionId() {
+            return actionId;
+        }
+
+        public void setActionId(String actionId) {
+            this.actionId = actionId;
+        }
+
+        public InteractionContext getContext() {
+            return context;
+        }
+
+        public void setContext(InteractionContext context) {
+            this.context = context;
+        }
+    }
+
+    public static class InteractionContext {
+        @Size(max = 64)
+        private String exerciseType;
+
+        @Size(max = 256)
+        private String topic;
+
+        @Size(max = 32)
+        private String difficulty;
+
+        public String getExerciseType() {
+            return exerciseType;
+        }
+
+        public void setExerciseType(String exerciseType) {
+            this.exerciseType = exerciseType;
+        }
+
+        public String getTopic() {
+            return topic;
+        }
+
+        public void setTopic(String topic) {
+            this.topic = topic;
+        }
+
+        public String getDifficulty() {
+            return difficulty;
+        }
+
+        public void setDifficulty(String difficulty) {
+            this.difficulty = difficulty;
         }
     }
 

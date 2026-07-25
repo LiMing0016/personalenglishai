@@ -21,14 +21,22 @@
     "@tiptap/starter-kit": "^3.20.1",
     "@tiptap/vue-3": "^3.20.1",
     "@vueuse/core": "^14.2.1",
+    "@xstate/vue": "^5.0.1",
     "axios": "^1.7.7",
     "echarts": "^6.0.0",
     "lucide-vue-next": "^0.468.0",
     "mermaid": "^11.15.0",
     "pdfjs-dist": "^6.0.227",
     "pinia": "^3.0.4",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
     "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "xstate": "^5.32.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

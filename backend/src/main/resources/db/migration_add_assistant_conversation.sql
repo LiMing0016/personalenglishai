@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS assistant_message (
     user_id BIGINT NOT NULL COMMENT 'users.id',
     role VARCHAR(16) NOT NULL COMMENT 'user | assistant',
     content MEDIUMTEXT NOT NULL COMMENT 'message content',
+    parts_json JSON NULL COMMENT 'versioned assistant learning blocks',
     status VARCHAR(16) NOT NULL DEFAULT 'done' COMMENT 'done | failed',
     sort_order INT NOT NULL COMMENT 'message order in conversation',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created at',

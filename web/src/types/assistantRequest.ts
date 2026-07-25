@@ -1,6 +1,30 @@
 import type { AssistantBlock } from './assistantBlocks.ts'
 
 export type LearningMode = 'daily_explain' | 'exam_boost'
+export type AgentMode = 'multi_agent' | 'single_agent_raw'
+
+export type AssistantInteractionSource =
+  | 'composer'
+  | 'quick_action'
+  | 'response_action'
+  | 'activity_action'
+
+export interface AssistantInteractionContext {
+  source: AssistantInteractionSource
+  uiIntent?: 'start_practice' | 'show_learning_card' | 'activity_action'
+  activeActivityId?: string
+  actionId?: string
+  context?: {
+    exerciseType?: 'sentence_reorder'
+    topic?: string
+    difficulty?: 'easy' | 'medium' | 'hard'
+  }
+}
+
+export interface AssistantInteractionTrigger {
+  displayText: string
+  interaction: AssistantInteractionContext
+}
 
 export type AssistantIntent =
   | 'free_chat'
@@ -173,12 +197,14 @@ export interface AssistantRequest {
   appConversationId?: string
   clientMessageId: string
   idempotencyKey?: string
+  agentMode?: AgentMode
   mode: LearningMode
   intent: AssistantIntent
   scope?: InputScope
   message: {
     text?: string
   }
+  interaction?: AssistantInteractionContext
   selection?: AssistantSelection
   attachments?: AssistantAttachmentRef[]
   studyContext?: {
@@ -202,6 +228,7 @@ export interface AssistantRunMetadata {
   traceId?: string
   agentName: string
   model: string
+  agentMode: AgentMode
   mode: LearningMode
   intent: AssistantIntent
   scope: InputScope

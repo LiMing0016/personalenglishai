@@ -96,11 +96,37 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
             new_items=[
                 SimpleNamespace(type="tool_call_item", raw_item=SimpleNamespace(name="polish_text")),
                 SimpleNamespace(type="tool_call_item", raw_item=SimpleNamespace(name="translate_text")),
+                SimpleNamespace(type="tool_call_item", raw_item=SimpleNamespace(type="web_search_call")),
                 SimpleNamespace(type="handoff_output_item"),
             ],
             raw_responses=[
-                SimpleNamespace(response_id="resp-1", model="gpt-test"),
-                SimpleNamespace(response_id="resp-2", model="gpt-test"),
+                SimpleNamespace(response_id="resp-1", model="gpt-test", output=[]),
+                SimpleNamespace(
+                    response_id="resp-2",
+                    model="gpt-test",
+                    output=[
+                        SimpleNamespace(
+                            type="message",
+                            content=[
+                                SimpleNamespace(
+                                    type="output_text",
+                                    annotations=[
+                                        SimpleNamespace(
+                                            type="url_citation",
+                                            title="Weather source",
+                                            url="https://weather.example/anshun",
+                                        ),
+                                        SimpleNamespace(
+                                            type="url_citation",
+                                            title="Duplicate source",
+                                            url="https://weather.example/anshun",
+                                        ),
+                                    ],
+                                )
+                            ],
+                        )
+                    ],
+                ),
             ],
         )
 
@@ -116,14 +142,17 @@ class AgentSessionRunnerTest(unittest.IsolatedAsyncioTestCase):
                 session_db_path="data/assistant.db",
             )
 
-        self.assertEqual(result.run_items.new_items_count, 3)
-        self.assertEqual(result.run_items.tool_call_count, 2)
-        self.assertEqual(result.run_items.tool_names, ("polish_text", "translate_text"))
+        self.assertEqual(result.run_items.new_items_count, 4)
+        self.assertEqual(result.run_items.tool_call_count, 3)
+        self.assertEqual(result.run_items.tool_names, ("polish_text", "translate_text", "web_search"))
         self.assertEqual(result.run_items.handoff_count, 1)
         self.assertEqual(result.run_items.raw_response_count, 2)
         self.assertEqual(result.run_items.last_response_id, "resp-2")
         self.assertEqual(result.run_items.response_ids, ("resp-1", "resp-2"))
         self.assertEqual(result.run_items.response_models, ("gpt-test", "gpt-test"))
+        self.assertEqual(len(result.sources), 1)
+        self.assertEqual(result.sources[0].title, "Weather source")
+        self.assertEqual(result.sources[0].url, "https://weather.example/anshun")
 
     async def test_run_agent_session_passes_context_to_runner(self) -> None:
         agent = object()

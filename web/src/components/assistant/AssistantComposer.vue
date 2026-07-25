@@ -160,6 +160,12 @@ const menuOpen = ref(false)
 const draggingOver = ref(false)
 const previewUrls = new Map<string, string>()
 
+function focusTextarea() {
+  textareaRef.value?.focus()
+}
+
+defineExpose({ focus: focusTextarea })
+
 const activeModeLabel = computed(() => {
   if (props.assistantMode === 'learning') return '学习模式 ✦'
   if (props.assistantMode === 'exam') return '考试模式'
@@ -301,6 +307,19 @@ function formatAttachmentMeta(size: number, kind: AssistantAttachment['kind']) {
   border-color: #10b981;
   background: #f0fdf4;
   box-shadow: 0 24px 54px rgba(4, 120, 87, 0.18);
+}
+
+.assistant-composer--entry {
+  min-height: 138px;
+}
+
+.assistant-composer--entry .composer-shell,
+.assistant-composer--entry .composer-input-zone {
+  flex: 1;
+}
+
+.assistant-composer--entry .composer-shell {
+  justify-content: space-between;
 }
 
 .file-input {

@@ -8,6 +8,7 @@ public class AssistantRunMetadataResponse {
     private String traceId;
     private String agentName;
     private String model;
+    private String agentMode;
     private String mode;
     private String intent;
     private String scope;
@@ -50,6 +51,14 @@ public class AssistantRunMetadataResponse {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public String getAgentMode() {
+        return agentMode;
+    }
+
+    public void setAgentMode(String agentMode) {
+        this.agentMode = agentMode;
     }
 
     public String getMode() {

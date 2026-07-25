@@ -43,6 +43,7 @@ try:
     from .services.continuation_classifier import ContinuationClassifier
     from .services.route_decision_runner import RouteDecisionRunner
     from .services.writing_coach_route_runner import WritingCoachRouteRunner
+    from .workflows.generate_sentence_reorder import SentenceReorderWorkflow
 except ImportError:  # pragma: no cover - script mode fallback
     from adapters.openai_input_items import build_assistant_input_items
     from adapters.openai_input_items import build_input_items
@@ -78,6 +79,7 @@ except ImportError:  # pragma: no cover - script mode fallback
     from services.continuation_classifier import ContinuationClassifier
     from services.route_decision_runner import RouteDecisionRunner
     from services.writing_coach_route_runner import WritingCoachRouteRunner
+    from workflows.generate_sentence_reorder import SentenceReorderWorkflow
 
 
 class AssistantConfigError(RuntimeError):
@@ -189,6 +191,7 @@ class AssistantAgentService:
         continuation_classifier=None,
         route_decision_runner=None,
         writing_coach_route_runner=None,
+        sentence_reorder_workflow=None,
         route_decision_enabled: bool = False,
     ) -> None:
         self.model = model
@@ -203,6 +206,7 @@ class AssistantAgentService:
         )
         self._route_decision_runner = route_decision_runner
         self._writing_coach_route_runner = writing_coach_route_runner
+        self._sentence_reorder_workflow = sentence_reorder_workflow
         self._route_decision_enabled = route_decision_enabled
 
     @classmethod
@@ -299,6 +303,121 @@ class AssistantAgentService:
                 raise AssistantConfigError("OPENAI_API_KEY 未配置，写作教练暂时不可用。")
             self._writing_coach_route_runner = WritingCoachRouteRunner(model=self.model)
         return self._writing_coach_route_runner
+
+    def _get_sentence_reorder_workflow(self):
+        if self._sentence_reorder_workflow is None:
+            if not self.is_configured():
+                raise AssistantConfigError("OPENAI_API_KEY 未配置，重组成句练习暂时不可用。")
+            self._sentence_reorder_workflow = SentenceReorderWorkflow(model=self.model)
+        return self._sentence_reorder_workflow
+
+    @staticmethod
+    def _is_sentence_reorder_request(request: AssistantRequest) -> bool:
+        interaction = request.interaction
+        return bool(
+            interaction
+            and interaction.ui_intent == "start_practice"
+            and interaction.context.exercise_type == "sentence_reorder"
+        )
+
+    async def _run_sentence_reorder_request(
+        self,
+        request: AssistantRequest,
+        *,
+        validated_scope: str,
+        started_at: float,
+        conversation_id: str,
+        run_id: str,
+        trace_id: str,
+    ) -> AssistantReply:
+        try:
+            with self._assistant_workflow_trace(
+                request,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                scope=validated_scope,
+            ):
+                result = await self._get_sentence_reorder_workflow().generate(request, flush_trace=False)
+                run_metadata = self._build_run_metadata(
+                    request,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    validated_scope=validated_scope,
+                    agent_name="Sentence Reorder Agent",
+                    route_request=None,
+                    route_decision=None,
+                    usage=result.usage,
+                    run_items=result.run_items,
+                    latency_ms=(time.perf_counter() - started_at) * 1000,
+                )
+                return AssistantReply(
+                    reply=result.content,
+                    agent_name="Sentence Reorder Agent",
+                    run=run_metadata,
+                    parts=result.parts,
+                )
+        finally:
+            self._flush_trace_export()
+
+    async def _stream_sentence_reorder_request(
+        self,
+        request: AssistantRequest,
+        *,
+        validated_scope: str,
+        started_at: float,
+        conversation_id: str,
+        run_id: str,
+        trace_id: str,
+        message_id: str,
+    ):
+        try:
+            yield {
+                "type": "run.started",
+                "runId": run_id,
+                "traceId": trace_id,
+                "agentName": "Sentence Reorder Agent",
+                "model": self.model,
+            }
+            yield {
+                "type": "message.created",
+                "runId": run_id,
+                "messageId": message_id,
+                "role": "assistant",
+            }
+            result = await self._get_sentence_reorder_workflow().generate(request, flush_trace=False)
+            run_metadata = self._build_run_metadata(
+                request,
+                run_id=run_id,
+                trace_id=trace_id,
+                validated_scope=validated_scope,
+                agent_name="Sentence Reorder Agent",
+                route_request=None,
+                route_decision=None,
+                usage=result.usage,
+                run_items=result.run_items,
+                latency_ms=(time.perf_counter() - started_at) * 1000,
+            )
+            yield {
+                "type": "message.completed",
+                "runId": run_id,
+                "messageId": message_id,
+                "content": result.content,
+                "parts": [part.model_dump(by_alias=True, exclude_none=True) for part in result.parts],
+            }
+            yield {
+                "type": "run.completed",
+                "runId": run_id,
+                "run": run_metadata.model_dump(by_alias=True),
+            }
+        except Exception as exc:
+            yield {
+                "type": "run.failed",
+                "runId": run_id,
+                "error": {"code": "OPENAI_RUN_FAILED", "message": str(exc)},
+            }
+        finally:
+            self._flush_trace_export()
 
     async def _resolve_writing_coach_action(
         self,
@@ -441,6 +560,7 @@ class AssistantAgentService:
             traceId=trace_id,
             agentName=agent_name,
             model=self.model,
+            agentMode="multi_agent",
             mode=request.mode,
             intent=request.intent,
             scope=validated_scope,
@@ -612,6 +732,16 @@ class AssistantAgentService:
         run_id = f"run_{uuid4().hex}"
         trace_id = f"trace_{uuid4().hex}"
 
+        if self._is_sentence_reorder_request(request):
+            return await self._run_sentence_reorder_request(
+                request,
+                validated_scope=validated.scope,
+                started_at=started_at,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                trace_id=trace_id,
+            )
+
         try:
             with self._assistant_workflow_trace(
                 request,
@@ -737,6 +867,19 @@ class AssistantAgentService:
         run_id = f"run_{uuid4().hex}"
         trace_id = f"trace_{uuid4().hex}"
         message_id = f"msg_{uuid4().hex}"
+
+        if self._is_sentence_reorder_request(request):
+            async for event in self._stream_sentence_reorder_request(
+                request,
+                validated_scope=validated.scope,
+                started_at=started_at,
+                conversation_id=conversation_id,
+                run_id=run_id,
+                trace_id=trace_id,
+                message_id=message_id,
+            ):
+                yield event
+            return
 
         content_parts: list[str] = []
         try:

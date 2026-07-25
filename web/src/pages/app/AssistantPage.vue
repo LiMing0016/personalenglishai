@@ -4,7 +4,10 @@
     :style="assistantPageStyle"
     :class="{
       'assistant-page--drawer-open': assistantDrawerOpen,
-      'assistant-page--learning-canvas-open': learningCanvasOpen,
+      'assistant-page--learning-canvas-open': learningCanvasVisible,
+      'assistant-page--compact-learning-canvas': compactLearningCanvas,
+      'assistant-page--sidebar-constrained': sidebarConstrained,
+      'assistant-page--resizing-sidebar': assistantSidebarResizing,
     }"
   >
     <AssistantSidebar
@@ -35,54 +38,121 @@
       @save-archive-dir="handleSaveArchiveDir"
     />
 
+    <button
+      v-if="assistantDrawerOpen && !sidebarConstrained"
+      type="button"
+      class="assistant-sidebar-resize-handle"
+      role="separator"
+      aria-label="调整助手栏宽度"
+      aria-orientation="vertical"
+      :aria-valuemin="MIN_ASSISTANT_SIDEBAR_WIDTH"
+      :aria-valuemax="MAX_ASSISTANT_SIDEBAR_WIDTH"
+      :aria-valuenow="assistantSidebarWidth"
+      title="左右拖动调整助手栏宽度"
+      @pointerdown="startAssistantSidebarResize"
+      @keydown.left.prevent="resizeAssistantSidebarBy(-16)"
+      @keydown.right.prevent="resizeAssistantSidebarBy(16)"
+      @keydown.home.prevent="setAssistantSidebarWidth(MIN_ASSISTANT_SIDEBAR_WIDTH)"
+      @keydown.end.prevent="setAssistantSidebarWidth(MAX_ASSISTANT_SIDEBAR_WIDTH)"
+    ></button>
+
+    <button
+      v-if="sidebarConstrained && assistantDrawerOpen"
+      type="button"
+      class="assistant-sidebar-scrim"
+      aria-label="收起侧边栏"
+      @click="closeAssistantDrawer"
+    ></button>
+
     <div class="assistant-main">
       <header class="main-header">
         <span class="main-title">{{ pageTitle }}</span>
         <span v-if="isLoadingConversations" class="loading-label">同步中</span>
         <div class="header-spacer"></div>
-        <div class="markdown-theme-control" aria-label="助手输出风格">
+        <div
+          v-if="showAgentModeSwitch"
+          class="agent-mode-switch"
+          role="group"
+          aria-label="Agent 实验模式"
+        >
           <button
             type="button"
-            class="markdown-theme-button"
-            :class="{ 'markdown-theme-button--active': markdownTheme === 'marktext' }"
-            @click="setMarkdownTheme('marktext')"
+            class="agent-mode-option"
+            :class="{ 'agent-mode-option--active': agentMode === 'multi_agent' }"
+            :aria-pressed="agentMode === 'multi_agent'"
+            @click="handleSetAgentMode('multi_agent')"
           >
-            MarkText
+            多 Agent
           </button>
           <button
             type="button"
-            class="markdown-theme-button"
-            :class="{ 'markdown-theme-button--active': markdownTheme === 'milkdown' }"
-            @click="setMarkdownTheme('milkdown')"
+            class="agent-mode-option"
+            :class="{ 'agent-mode-option--active': agentMode === 'single_agent_raw' }"
+            :aria-pressed="agentMode === 'single_agent_raw'"
+            @click="handleSetAgentMode('single_agent_raw')"
           >
-            Milkdown
+            原始模型
           </button>
         </div>
+        <button
+          v-if="compactLearningCanvas && activeConversation.messages.length > 0 && learningCanvasAvailable"
+          ref="learningResultsButtonRef"
+          type="button"
+          class="learning-results-button"
+          aria-controls="learning-asset-canvas"
+          :aria-expanded="learningCanvasVisible"
+          @click="openCompactLearningCanvas"
+        >
+          学习成果
+          <span v-if="learningAssetDrafts.length" class="learning-results-count">
+            {{ learningAssetDrafts.length }}
+          </span>
+        </button>
       </header>
 
       <AssistantChatView
         :messages="activeConversation.messages"
         :error-message="errorMessage"
         :can-retry="canRetry"
-      :empty-title="emptyTitle"
-      :empty-subtitle="emptySubtitle"
-      :markdown-theme="markdownTheme"
-      :can-append-to-learning-asset="Boolean(learningAssetDraft)"
-      @choose-starter="applyStarter"
-      @copy-message="handleCopyMessage"
-      @retry-message="handleRetryAssistantMessage"
-      @retry="retryLastMessage"
-      @create-learning-asset="handleCreateLearningAsset"
-      @append-to-learning-asset="handleAppendToLearningAsset"
-      />
+        :empty-title="emptyTitle"
+        :empty-subtitle="emptySubtitle"
+        :markdown-theme="markdownTheme"
+        :can-append-to-learning-asset="Boolean(learningAssetDraft)"
+        :selected-goal="selectedStarterGoal"
+        @choose-starter="handleChooseStarter"
+        @select-goal="handleSelectStarterGoal"
+        @copy-message="handleCopyMessage"
+        @retry-message="handleRetryAssistantMessage"
+        @retry="retryLastMessage"
+        @create-learning-asset="handleCreateLearningAsset"
+        @append-to-learning-asset="handleAppendToLearningAsset"
+      >
+        <template #empty-composer>
+          <AssistantComposer
+            v-if="activeConversation.messages.length === 0"
+            ref="emptyComposerRef"
+            class="empty-state-composer assistant-composer--entry"
+            :model-value="composerText"
+            :loading="isSending"
+            :attachments="composerAttachments"
+            :assistant-mode="assistantMode"
+            :placeholder="learningCanvasAvailable ? '' : emptyComposerPlaceholder"
+            @update:model-value="composerText = $event"
+            @add-files="handleFileSelect"
+            @remove-attachment="removeAttachment"
+            @set-assistant-mode="handleSetAssistantMode"
+            @send="sendMessage"
+          />
+        </template>
+      </AssistantChatView>
 
-      <div class="composer-dock" :class="{ composerDocked }">
+      <div v-if="activeConversation.messages.length > 0" class="composer-dock" :class="{ composerDocked }">
         <AssistantComposer
           :model-value="composerText"
           :loading="isSending"
           :attachments="composerAttachments"
           :assistant-mode="assistantMode"
-          :placeholder="learningCanvasOpen ? '' : undefined"
+          :placeholder="learningCanvasAvailable ? '' : undefined"
           @update:model-value="composerText = $event"
           @add-files="handleFileSelect"
           @remove-attachment="removeAttachment"
@@ -92,8 +162,16 @@
       </div>
     </div>
 
+    <button
+      v-if="compactLearningCanvas && learningCanvasVisible"
+      type="button"
+      class="learning-canvas-scrim"
+      aria-label="关闭学习成果"
+      @click="closeCompactLearningCanvas"
+    ></button>
+
     <LearningAssetCanvas
-      v-if="learningCanvasOpen"
+      v-if="learningCanvasVisible"
       :draft="learningAssetDraft"
       :drafts="learningAssetDrafts"
       :active-draft-id="activeLearningAssetDraftId"
@@ -103,7 +181,7 @@
       :save-status-by-draft-id="learningAssetSaveStatusByDraftId"
       :error-message="learningAssetError"
       :width-px="learningAssetCanvasWidth"
-      @close="closeLearningAssetCanvas"
+      @close="handleLearningCanvasClose"
       @organize="handleOrganizeLearningAsset"
       @select-draft="setActiveLearningAssetDraft"
       @rename-draft="renameLearningAssetDraft"
@@ -140,11 +218,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AssistantChatView from '@/components/assistant/AssistantChatView.vue'
 import AssistantComposer from '@/components/assistant/AssistantComposer.vue'
+import type {
+  AssistantStarterChoice,
+  AssistantStarterGoalId,
+} from '@/components/assistant/AssistantStarterCards.vue'
 import LearningAssetCanvas from '@/components/assistant/LearningAssetCanvas.vue'
 import AssistantSidebar from '@/components/assistant/AssistantSidebar.vue'
 import { assistantApi, type AssistantArchiveSettingsDto } from '@/api/assistant'
@@ -160,6 +242,7 @@ import { showToast } from '@/utils/toast'
 import type { AssistantLearningAssetSelection } from '@/components/assistant/AssistantChatView.vue'
 import type { AssistantAttachmentSource } from './assistantAttachmentRules.ts'
 import type { AssistantMode } from './assistantMock.ts'
+import type { AgentMode } from '@/types/assistantRequest'
 import {
   PENDING_ASSISTANT_PROMPT_KEY,
   PENDING_ASSISTANT_SELECTION_KEY,
@@ -168,9 +251,17 @@ import {
 } from './assistantMessageActions.ts'
 import {
   readAssistantMarkdownTheme,
-  writeAssistantMarkdownTheme,
   type AssistantMarkdownTheme,
 } from './assistantMarkdownTheme.ts'
+import {
+  DEFAULT_ASSISTANT_SIDEBAR_WIDTH,
+  MAX_ASSISTANT_SIDEBAR_WIDTH,
+  MIN_ASSISTANT_SIDEBAR_WIDTH,
+  buildAssistantConversationGroups,
+  clampAssistantSidebarWidth,
+  shouldAutoCollapseAssistantSidebar,
+  shouldUseCompactLearningCanvas,
+} from './assistantSidebarState.ts'
 import { createAssistantState } from './assistantState.ts'
 import { createLearningAssetDraftStore, type LearningAssetWorkspace } from './learningAssetDraftStore.ts'
 import {
@@ -192,6 +283,7 @@ const {
   composerText,
   composerAttachments,
   assistantMode,
+  agentMode,
   searchText,
   isSending,
   errorMessage,
@@ -200,6 +292,7 @@ const {
   addAttachments,
   removeAttachment,
   setAssistantMode,
+  setAgentMode,
   loadRemoteState,
   createConversation,
   selectConversation,
@@ -212,14 +305,17 @@ const {
   shareConversation,
   createProject,
   sendMessage,
+  sendPrompt,
   retryLastMessage,
   retryAssistantMessage,
   setPendingSelection,
 } = createAssistantState({ remote: true })
 
 const pageTitle = '学习助手'
-const emptyTitle = '今天想练什么？'
-const emptySubtitle = '我可以陪你做英语评价、表达润色、题目设计和词句讲解。'
+const showAgentModeSwitch = import.meta.env.DEV
+const emptyTitle = '今天想完成什么？'
+const emptySubtitle = '先选一个学习目标，再把内容发给我。'
+const emptyComposerPlaceholder = '把你的句子、段落或问题发给我…'
 const composerDocked = true
 const LEARNING_ASSET_CANVAS_WIDTH_KEY = 'peai:assistant:learning-asset-canvas-width'
 const LEARNING_NOTE_QUERY_KEY = 'learningNote'
@@ -242,6 +338,10 @@ const route = useRoute()
 const router = useRouter()
 const injectedAssistantDrawerOpen = inject<Ref<boolean> | null>('assistantDrawerOpen', null)
 const assistantDrawerOpen = ref(injectedAssistantDrawerOpen?.value ?? false)
+const viewportWidth = ref(readViewportWidth())
+const assistantSidebarWidth = ref(DEFAULT_ASSISTANT_SIDEBAR_WIDTH)
+const assistantSidebarResizing = ref(false)
+let assistantSidebarResizePageLeft = 0
 if (injectedAssistantDrawerOpen) {
   watch(injectedAssistantDrawerOpen, (value) => {
     assistantDrawerOpen.value = value
@@ -251,6 +351,9 @@ const folderDialogMode = ref<'create' | 'move' | null>(null)
 const pendingMoveConversationId = ref<string | null>(null)
 const newFolderName = ref('')
 const markdownTheme = ref<AssistantMarkdownTheme>(readAssistantMarkdownTheme())
+const selectedStarterGoal = ref<AssistantStarterGoalId | null>(null)
+const emptyComposerRef = ref<InstanceType<typeof AssistantComposer> | null>(null)
+const learningResultsButtonRef = ref<HTMLButtonElement | null>(null)
 const archiveSettings = ref<AssistantArchiveSettingsDto | null>(null)
 const archiveDirDraft = ref('')
 const isSavingArchiveDir = ref(false)
@@ -262,7 +365,17 @@ const learningAssetDraft = computed(() =>
     ?? learningAssetDrafts.value[0]
     ?? null,
 )
-const learningCanvasOpen = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
+const learningCanvasAvailable = computed(() => assistantMode.value === 'learning' || Boolean(learningAssetDraft.value))
+const compactLearningCanvas = computed(() => shouldUseCompactLearningCanvas(viewportWidth.value))
+const compactLearningCanvasOpen = ref(false)
+const learningCanvasVisible = computed(() => (
+  learningCanvasAvailable.value
+  && (!compactLearningCanvas.value || compactLearningCanvasOpen.value)
+))
+const sidebarConstrained = computed(() => shouldAutoCollapseAssistantSidebar({
+  learningCanvasOpen: learningCanvasVisible.value,
+  viewportWidth: viewportWidth.value,
+}))
 const learningAssetCandidateMarkdownByDraftId = ref<Record<string, string>>({})
 const learningAssetCandidateMarkdown = computed({
   get() {
@@ -293,6 +406,7 @@ let learningAssetAutoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let loadingLearningNoteUid = ''
 
 const assistantPageStyle = computed(() => ({
+  '--assistant-sidebar-width': `${assistantSidebarWidth.value}px`,
   '--learning-canvas-width': `${learningAssetCanvasWidth.value}px`,
 }))
 
@@ -306,16 +420,68 @@ function handleFileSelect(files: File[], source: AssistantAttachmentSource) {
   addAttachments(files, source)
 }
 
-function setMarkdownTheme(theme: AssistantMarkdownTheme) {
-  markdownTheme.value = theme
-  writeAssistantMarkdownTheme(theme)
+function focusEmptyComposer() {
+  void nextTick(() => emptyComposerRef.value?.focus())
+}
+
+function handleSelectStarterGoal(goalId: AssistantStarterGoalId) {
+  selectedStarterGoal.value = goalId
+  focusEmptyComposer()
+}
+
+function handleChooseStarter(choice: AssistantStarterChoice) {
+  if (typeof choice === 'string') {
+    applyStarter(choice)
+    focusEmptyComposer()
+    return
+  }
+  void sendPrompt(choice.displayText, [], choice.interaction)
 }
 
 function handleSetAssistantMode(mode: AssistantMode) {
   setAssistantMode(mode)
   if (mode === 'learning') {
     learningAssetError.value = ''
+    openCompactLearningCanvas()
   }
+}
+
+function handleSetAgentMode(mode: AgentMode) {
+  const conversation = setAgentMode(mode)
+  if (conversation) {
+    showToast(
+      mode === 'single_agent_raw'
+        ? '已切换到原始模型，并新建实验对话'
+        : '已切换到多 Agent，并新建对话',
+      'success',
+    )
+  }
+}
+
+function openCompactLearningCanvas() {
+  if (!compactLearningCanvas.value) return
+  compactLearningCanvasOpen.value = true
+  void nextTick(() => document.getElementById('learning-asset-canvas')?.focus())
+}
+
+function closeCompactLearningCanvas() {
+  if (!compactLearningCanvasOpen.value) return
+  compactLearningCanvasOpen.value = false
+  void nextTick(() => learningResultsButtonRef.value?.focus())
+}
+
+function handleLearningCanvasClose() {
+  if (compactLearningCanvas.value) {
+    closeCompactLearningCanvas()
+    return
+  }
+  closeLearningAssetCanvas()
+}
+
+function handleLearningCanvasEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !compactLearningCanvas.value || !learningCanvasVisible.value) return
+  event.preventDefault()
+  closeCompactLearningCanvas()
 }
 
 function applyPendingAssistantPrompt(prompt: string, selection?: PendingAssistantSelection | null) {
@@ -338,6 +504,51 @@ function openAssistantDrawer() {
     injectedAssistantDrawerOpen.value = true
   }
 }
+
+function readViewportWidth() {
+  return typeof window === 'undefined' ? Number.POSITIVE_INFINITY : window.innerWidth
+}
+
+function handleViewportResize() {
+  viewportWidth.value = window.innerWidth
+}
+
+function setAssistantSidebarWidth(width: number) {
+  assistantSidebarWidth.value = clampAssistantSidebarWidth(width)
+}
+
+function resizeAssistantSidebarBy(delta: number) {
+  setAssistantSidebarWidth(assistantSidebarWidth.value + delta)
+}
+
+function handleAssistantSidebarPointerMove(event: PointerEvent) {
+  setAssistantSidebarWidth(event.clientX - assistantSidebarResizePageLeft)
+}
+
+function stopAssistantSidebarResize() {
+  assistantSidebarResizing.value = false
+  window.removeEventListener('pointermove', handleAssistantSidebarPointerMove)
+  window.removeEventListener('pointerup', stopAssistantSidebarResize)
+  window.removeEventListener('pointercancel', stopAssistantSidebarResize)
+}
+
+function startAssistantSidebarResize(event: PointerEvent) {
+  if (event.button !== 0) return
+  const target = event.currentTarget as HTMLElement
+  assistantSidebarResizePageLeft = target.closest('.assistant-page')?.getBoundingClientRect().left ?? 0
+  assistantSidebarResizing.value = true
+  event.preventDefault()
+  handleAssistantSidebarPointerMove(event)
+  window.addEventListener('pointermove', handleAssistantSidebarPointerMove)
+  window.addEventListener('pointerup', stopAssistantSidebarResize)
+  window.addEventListener('pointercancel', stopAssistantSidebarResize)
+}
+
+watch(sidebarConstrained, (constrained) => {
+  if (constrained) {
+    closeAssistantDrawer()
+  }
+}, { immediate: true })
 
 function restoreLearningAssetDraft(conversationId: string) {
   clearLearningAssetAutoSaveTimer()
@@ -460,6 +671,7 @@ function handleCreateLearningAsset(selection: AssistantLearningAssetSelection) {
   }
   learningAssetError.value = ''
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
+  openCompactLearningCanvas()
   showToast(`已打开${learningAssetToastLabels[draft.type]}画布`, 'success')
 }
 
@@ -482,6 +694,7 @@ function createEmptyLearningAssetDraft(type: LearningAssetType) {
   })
   persistLearningAssetDraft(draft, { queueAutoSave: true })
   setLearningAssetSaveStatus(draft.draftId, 'unsaved')
+  openCompactLearningCanvas()
   showToast(`已新建${learningAssetToastLabels[type]}`, 'success')
 }
 
@@ -707,6 +920,7 @@ async function openLearningAssetFromNoteUid(noteUid: string) {
       [draft.draftId]: '',
     }
     setLearningAssetSaveStatus(draft.draftId, 'saved')
+    openCompactLearningCanvas()
     showToast('已打开学习资产画布', 'success')
   } catch (error) {
     learningAssetError.value = readApiErrorMessage(error, '打开学习资产失败')
@@ -723,6 +937,7 @@ function clearLearningAssetRouteQuery() {
 }
 
 onMounted(() => {
+  handleViewportResize()
   void loadRemoteState()
   void loadArchiveSettings()
   const routeLearningNoteUid = readRouteLearningNoteUid(route.query[LEARNING_NOTE_QUERY_KEY])
@@ -739,17 +954,28 @@ onMounted(() => {
     sessionStorage.removeItem(PENDING_ASSISTANT_SELECTION_KEY)
   }
   window.addEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+  window.addEventListener('resize', handleViewportResize)
+  document.addEventListener('keydown', handleLearningCanvasEscape)
 })
 
 onBeforeUnmount(() => {
   clearLearningAssetAutoSaveTimer()
+  stopAssistantSidebarResize()
   window.removeEventListener('peai:assistant:use-prompt', handlePendingPromptEvent)
+  window.removeEventListener('resize', handleViewportResize)
+  document.removeEventListener('keydown', handleLearningCanvasEscape)
 })
 
 watch(activeConversationId, (conversationId) => {
+  selectedStarterGoal.value = null
+  compactLearningCanvasOpen.value = false
   if (readRouteLearningNoteUid(route.query[LEARNING_NOTE_QUERY_KEY])) return
   restoreLearningAssetDraft(conversationId)
 }, { immediate: true })
+
+watch(learningCanvasAvailable, (available) => {
+  if (!available) compactLearningCanvasOpen.value = false
+})
 
 watch(() => route.query[LEARNING_NOTE_QUERY_KEY], (value) => {
   const noteUid = readRouteLearningNoteUid(value)
@@ -920,30 +1146,6 @@ async function handleSubmitFolderDialog() {
   }
 }
 
-function buildConversationGroups(items: typeof conversations.value) {
-  const now = Date.now()
-  const dayMs = 24 * 60 * 60 * 1000
-
-  const groups = [
-    {
-      label: '今天',
-      conversations: items.filter((conversation) => now - conversation.updatedAt < dayMs),
-    },
-    {
-      label: '最近 7 天',
-      conversations: items.filter(
-        (conversation) => now - conversation.updatedAt >= dayMs && now - conversation.updatedAt < dayMs * 7,
-      ),
-    },
-    {
-      label: '更早',
-      conversations: items.filter((conversation) => now - conversation.updatedAt >= dayMs * 7),
-    },
-  ]
-
-  return groups.filter((group) => group.conversations.length > 0)
-}
-
 function readApiErrorMessage(error: unknown, fallback: string) {
   const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
   if (typeof responseMessage === 'string' && responseMessage.trim()) {
@@ -971,13 +1173,13 @@ const filteredArchivedConversations = computed(() => {
 })
 
 const conversationGroups = computed(() =>
-  buildConversationGroups(filteredConversations.value.filter((conversation) => (
+  buildAssistantConversationGroups(filteredConversations.value.filter((conversation) => (
     conversation.projectId === null || conversation.projectId === undefined
   ))),
 )
 
 const archivedConversationGroups = computed(() =>
-  buildConversationGroups(filteredArchivedConversations.value),
+  buildAssistantConversationGroups(filteredArchivedConversations.value),
 )
 
 const folderConversationGroups = computed(() =>
@@ -985,11 +1187,12 @@ const folderConversationGroups = computed(() =>
     const folderConversations = filteredConversations.value.filter(
       (conversation) => conversation.projectId === folder.id,
     )
+    const groups = buildAssistantConversationGroups(folderConversations)
     return {
       id: folder.id,
       name: folder.name,
-      conversationCount: folderConversations.length,
-      groups: buildConversationGroups(folderConversations),
+      conversationCount: groups.reduce((total, group) => total + group.conversations.length, 0),
+      groups,
     }
   }),
 )
@@ -998,11 +1201,12 @@ const folderConversationGroups = computed(() =>
 <style scoped>
 .assistant-page {
   --app-rail-width: 0px;
-  --assistant-sidebar-width: 320px;
+  --assistant-sidebar-width: 218px;
   --assistant-sidebar-collapsed-width: 72px;
   --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
   --learning-canvas-width: 420px;
   --learning-canvas-current-width: 0px;
+  position: relative;
   display: flex;
   flex: 1;
   height: 100vh;
@@ -1015,8 +1219,72 @@ const folderConversationGroups = computed(() =>
   --assistant-sidebar-current-width: var(--assistant-sidebar-width);
 }
 
+.assistant-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--assistant-sidebar-width) - 5px);
+  z-index: 45;
+  width: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.assistant-sidebar-resize-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: #cbd5e1;
+  content: '';
+  transition: background-color 140ms ease;
+}
+
+.assistant-sidebar-resize-handle:hover::after,
+.assistant-sidebar-resize-handle:focus-visible::after,
+.assistant-page--resizing-sidebar .assistant-sidebar-resize-handle::after {
+  background: #10b981;
+}
+
+.assistant-sidebar-resize-handle:focus-visible {
+  outline: none;
+}
+
+.assistant-page--resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.assistant-page--sidebar-constrained.assistant-page--drawer-open {
+  --assistant-sidebar-current-width: var(--assistant-sidebar-collapsed-width);
+}
+
+.assistant-page--sidebar-constrained.assistant-page--drawer-open :deep(.assistant-sidebar) {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  box-shadow: 20px 0 48px rgba(15, 23, 42, 0.18);
+}
+
+.assistant-sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border: 0;
+  background: rgba(15, 23, 42, 0.24);
+  cursor: default;
+}
+
 .assistant-page--learning-canvas-open {
   --learning-canvas-current-width: var(--learning-canvas-width);
+}
+
+.assistant-page--compact-learning-canvas {
+  --learning-canvas-current-width: 0px;
 }
 
 .assistant-main {
@@ -1061,37 +1329,82 @@ const folderConversationGroups = computed(() =>
   flex: 1;
 }
 
-.markdown-theme-control {
+.agent-mode-switch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid #dbe3ea;
+  padding: 3px;
+  border: 1px solid #dbe4ee;
   border-radius: 999px;
   background: #ffffff;
 }
 
-.markdown-theme-button {
-  min-width: 78px;
-  border: none;
+.agent-mode-option {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
   border-radius: 999px;
   background: transparent;
   color: #64748b;
-  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-mode-option:hover,
+.agent-mode-option:focus-visible {
+  color: #047857;
+  outline: none;
+}
+
+.agent-mode-option--active {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.learning-results-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #047857;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
 }
 
-.markdown-theme-button:hover,
-.markdown-theme-button:focus-visible {
-  color: #0f172a;
+.learning-results-button:hover,
+.learning-results-button:focus-visible,
+.learning-results-button[aria-expanded='true'] {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
   outline: none;
 }
 
-.markdown-theme-button--active {
-  background: #dcfce7;
-  color: #047857;
+.learning-results-count {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #047857;
+  color: #ffffff;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+
+.learning-canvas-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 64;
+  border: none;
+  background: rgba(15, 23, 42, 0.28);
+  cursor: default;
 }
 
 .composer-dock {
@@ -1112,15 +1425,6 @@ const folderConversationGroups = computed(() =>
 
   .main-header {
     padding: 0 18px;
-  }
-
-  .markdown-theme-control {
-    gap: 2px;
-  }
-
-  .markdown-theme-button {
-    min-width: auto;
-    padding: 7px 9px;
   }
 
   .composer-dock {

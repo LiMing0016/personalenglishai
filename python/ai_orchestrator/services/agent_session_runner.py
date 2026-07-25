@@ -37,12 +37,19 @@ class AgentSessionRunItems:
     response_models: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class AgentSessionSource:
+    title: str
+    url: str
+
+
 @dataclass(slots=True)
 class AgentSessionResult:
     final_output: str
     agent_name: str | None
     usage: AgentSessionUsage = field(default_factory=AgentSessionUsage)
     run_items: AgentSessionRunItems = field(default_factory=AgentSessionRunItems)
+    sources: tuple[AgentSessionSource, ...] = ()
 
 
 @dataclass(slots=True)
@@ -119,6 +126,8 @@ def extract_run_items(result: Any) -> AgentSessionRunItems:
             tool_call_count += 1
             raw_item = getattr(item, "raw_item", None)
             tool_name = getattr(raw_item, "name", None)
+            if not tool_name and getattr(raw_item, "type", None) == "web_search_call":
+                tool_name = "web_search"
             if tool_name:
                 tool_names.append(str(tool_name))
         elif item_type == "handoff_output_item":
@@ -136,6 +145,24 @@ def extract_run_items(result: Any) -> AgentSessionRunItems:
         response_ids=response_ids,
         response_models=response_models,
     )
+
+
+def extract_sources(result: Any) -> tuple[AgentSessionSource, ...]:
+    sources: list[AgentSessionSource] = []
+    seen_urls: set[str] = set()
+    for raw_response in list(getattr(result, "raw_responses", []) or []):
+        for output_item in list(getattr(raw_response, "output", []) or []):
+            for content_item in list(getattr(output_item, "content", []) or []):
+                for annotation in list(getattr(content_item, "annotations", []) or []):
+                    if getattr(annotation, "type", None) != "url_citation":
+                        continue
+                    url = str(getattr(annotation, "url", "") or "").strip()
+                    if not url or url in seen_urls:
+                        continue
+                    title = str(getattr(annotation, "title", "") or "").strip() or url
+                    seen_urls.add(url)
+                    sources.append(AgentSessionSource(title=title, url=url))
+    return tuple(sources)
 
 
 def _extract_usage(result: Any) -> AgentSessionUsage:
@@ -185,6 +212,7 @@ async def run_agent_session(
         agent_name=getattr(final_agent, "name", None),
         usage=extract_usage(result),
         run_items=extract_run_items(result),
+        sources=extract_sources(result),
     )
 
 
@@ -234,5 +262,6 @@ async def stream_agent_session(
             agent_name=getattr(final_agent, "name", None),
             usage=extract_usage(result),
             run_items=extract_run_items(result),
+            sources=extract_sources(result),
         ),
     )

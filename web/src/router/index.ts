@@ -81,8 +81,11 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        name: 'Dashboard',
-        component: () => import('@/views/DashboardView.vue'),
+        redirect: (to) => ({
+          name: 'LearningAssistant',
+          query: to.query,
+          hash: to.hash,
+        }),
       },
       {
         path: 'stage-setup',

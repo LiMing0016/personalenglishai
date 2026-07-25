@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from python.ai_orchestrator.assistant_service import AssistantAgentService, AssistantConfigError
 from python.ai_orchestrator.schemas.assistant_request import AssistantRequest
+from python.ai_orchestrator.schemas.learning_blocks import SentenceReorderBlock
 from python.ai_orchestrator.schemas.routing import RoutingDecision
 from python.ai_orchestrator.schemas.writing_coach import WritingCoachRouteDecision
 from python.ai_orchestrator.schemas.routing_state import ActiveTaskState
@@ -16,6 +17,7 @@ from python.ai_orchestrator.services.agent_session_runner import (
     AgentSessionRunItems,
     AgentSessionUsage,
 )
+from python.ai_orchestrator.workflows.generate_sentence_reorder import SentenceReorderWorkflowResult
 
 
 def _logged_messages(log) -> list[str]:
@@ -1028,6 +1030,113 @@ class AssistantAgentServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[4]["content"], "pong")
         self.assertEqual(events[5]["type"], "run.completed")
         self.assertEqual(events[5]["run"]["agentName"], "Router Agent")
+
+    async def test_explicit_sentence_reorder_request_bypasses_normal_routing(self) -> None:
+        workflow = AsyncMock()
+        workflow.generate.return_value = SentenceReorderWorkflowResult(
+            content="开始练习。",
+            parts=[self._sentence_reorder_block()],
+            usage=AgentSessionUsage(),
+            run_items=AgentSessionRunItems(),
+        )
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            sentence_reorder_workflow=workflow,
+        )
+        request = self._sentence_reorder_request()
+
+        with patch("python.ai_orchestrator.assistant_service.run_agent_session", new_callable=AsyncMock) as runner:
+            reply = await service.run_assistant_request(request)
+
+        workflow.generate.assert_awaited_once_with(request, flush_trace=False)
+        runner.assert_not_awaited()
+        self.assertEqual(reply.reply, "开始练习。")
+        self.assertEqual(reply.parts[0].type, "sentence_reorder")
+
+    async def test_ordinary_request_does_not_call_sentence_reorder_workflow(self) -> None:
+        workflow = AsyncMock()
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            sentence_reorder_workflow=workflow,
+        )
+        service._router_agent = object()
+        request = AssistantRequest(
+            clientMessageId="client-normal",
+            mode="daily_explain",
+            intent="free_chat",
+            message={"text": "为什么这里用过去时？"},
+        )
+
+        with patch(
+            "python.ai_orchestrator.assistant_service.run_agent_session",
+            new_callable=AsyncMock,
+            return_value=AgentSessionResult(final_output="因为动作发生在过去。", agent_name="Router Agent"),
+        ):
+            await service.run_assistant_request(request)
+
+        workflow.generate.assert_not_awaited()
+
+    async def test_explicit_sentence_reorder_stream_completes_with_parts_without_text_deltas(self) -> None:
+        workflow = AsyncMock()
+        workflow.generate.return_value = SentenceReorderWorkflowResult(
+            content="开始练习。",
+            parts=[self._sentence_reorder_block()],
+            usage=AgentSessionUsage(),
+            run_items=AgentSessionRunItems(),
+        )
+        service = AssistantAgentService(
+            model="test-model",
+            session_db_path="unused.db",
+            sentence_reorder_workflow=workflow,
+        )
+
+        events = [event async for event in service.stream_assistant_request(self._sentence_reorder_request())]
+
+        self.assertEqual([event["type"] for event in events], [
+            "run.started",
+            "message.created",
+            "message.completed",
+            "run.completed",
+        ])
+        self.assertEqual(events[2]["parts"][0]["type"], "sentence_reorder")
+
+    @staticmethod
+    def _sentence_reorder_request() -> AssistantRequest:
+        return AssistantRequest.model_validate(
+            {
+                "clientMessageId": "client-reorder",
+                "mode": "daily_explain",
+                "intent": "free_chat",
+                "scope": "message_only",
+                "message": {"text": "开始重组成句练习"},
+                "interaction": {
+                    "source": "quick_action",
+                    "uiIntent": "start_practice",
+                    "context": {"exerciseType": "sentence_reorder"},
+                },
+            }
+        )
+
+    @staticmethod
+    def _sentence_reorder_block() -> SentenceReorderBlock:
+        return SentenceReorderBlock.model_validate(
+            {
+                "id": "block-1",
+                "fallbackMarkdown": "### 练习",
+                "data": {
+                    "activityId": "activity-1",
+                    "items": [{
+                        "id": "q1",
+                        "instruction": "组成句子",
+                        "tokens": [{"id": "t1", "text": "Hello"}, {"id": "t2", "text": "world"}],
+                        "initialOrder": ["t2", "t1"],
+                        "acceptedOrders": [["t1", "t2"]],
+                    }],
+                },
+            }
+        )
 
     async def test_chat_rejects_empty_model_output(self) -> None:
         service = AssistantAgentService(model="test-model", session_db_path="unused.db")

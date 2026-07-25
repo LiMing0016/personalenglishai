@@ -5,7 +5,7 @@
       immersive,
       'app-layout--writing': isWritingRoute,
       'app-layout--assistant': isAssistantRoute,
-      'app-layout--rail-collapsed': railCollapsed,
+      'app-layout--rail-collapsed': railCollapsed && !isAssistantRoute,
       'app-layout--rail-expanded': !railCollapsed && !isAssistantRoute,
     }"
     @mouseup="handleSelectionChange"
@@ -179,6 +179,9 @@ function askAssistantWithSelection() {
   transition: margin-left 180ms ease;
 }
 .app-layout--rail-expanded .app-main {
+  margin-left: 218px;
+}
+.app-layout--rail-collapsed .app-main {
   margin-left: 72px;
 }
 .app-layout--writing .app-main {

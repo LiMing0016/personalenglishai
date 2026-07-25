@@ -1,17 +1,20 @@
 import { http } from './http'
 import { streamAssistantEvents } from './assistantStream.ts'
+import { toAssistantAgentRequest } from './assistantRequestBuilder.ts'
 
 import type { AssistantAttachment } from '../pages/app/assistantMock.ts'
 import type { AssistantBlock } from '../types/assistantBlocks.ts'
 import type {
+  AgentMode,
   AssistantIntent,
+  AssistantInteractionContext,
   AssistantRequest as AssistantAgentRequest,
   AssistantSelection,
   AssistantWritingCoachContext,
   InputScope,
-  LearningMode,
 } from '../types/assistantRequest'
 export type {
+  AgentMode,
   AssistantAttachmentRef,
   AssistantErrorPayload,
   AssistantIntent,
@@ -44,7 +47,7 @@ export interface AssistantMessageDto {
   id: string
   role: 'user' | 'assistant'
   content: string
-  parts?: AssistantBlock[]
+  parts?: unknown
   status: 'done' | 'failed'
   createdAt?: string | null
 }
@@ -82,12 +85,14 @@ export interface PublicAssistantShareDto {
 export interface AssistantChatPayload {
   input: string
   conversationId: string
+  agentMode?: AgentMode
   studyStage?: string
   assistantMode?: 'default' | 'exam' | 'learning'
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection
   writingCoachContext?: AssistantWritingCoachContext
+  interaction?: AssistantInteractionContext
   attachments: AssistantAttachment[]
 }
 
@@ -134,63 +139,7 @@ export interface WritingCoachChatKitSessionResult {
   expiresAt?: number | null
 }
 
-function createClientMessageId() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID()
-  }
-  return `client-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function mapLearningMode(mode?: AssistantChatPayload['assistantMode']): LearningMode {
-  return mode === 'exam' ? 'exam_boost' : 'daily_explain'
-}
-
-type AssistantStudyContext = NonNullable<AssistantAgentRequest['studyContext']>
-type AssistantStudyStage = AssistantStudyContext['studyStage']
-type AssistantTargetExam = AssistantStudyContext['targetExam']
-
-function normalizeStudyStage(stage?: string): AssistantStudyStage | undefined {
-  const normalized = stage?.trim()
-  return normalized || undefined
-}
-
-function normalizeTargetExam(stage?: string): AssistantTargetExam | undefined {
-  const normalized = stage?.trim().toLowerCase()
-  if (
-    normalized === 'ielts'
-    || normalized === 'toefl'
-    || normalized === 'cet4'
-    || normalized === 'cet6'
-    || normalized === 'gaokao'
-    || normalized === 'postgrad'
-  ) {
-    return normalized
-  }
-  return undefined
-}
-
-function toAssistantAgentRequest(payload: AssistantChatPayload): AssistantAgentRequest {
-  const hasSelection = Boolean(payload.selection?.text?.trim())
-  const text = payload.input.trim()
-  return {
-    appConversationId: payload.conversationId,
-    clientMessageId: createClientMessageId(),
-    mode: mapLearningMode(payload.assistantMode),
-    intent: payload.intent ?? (hasSelection ? 'explain' : 'free_chat'),
-    scope: payload.scope ?? (hasSelection ? (text ? 'selection_and_message' : 'selection') : 'message_only'),
-    message: {
-      text: payload.input,
-    },
-    selection: payload.selection,
-    studyContext: {
-      studyStage: normalizeStudyStage(payload.studyStage),
-      targetExam: normalizeTargetExam(payload.studyStage),
-      locale: 'zh-CN',
-      responseLanguage: 'zh-CN',
-    },
-    writingCoachContext: payload.writingCoachContext,
-  }
-}
+export { toAssistantAgentRequest } from './assistantRequestBuilder.ts'
 
 function unwrap<T>(body: ApiEnvelope<T>): T {
   if (body.data === undefined) {
@@ -214,8 +163,8 @@ function latestAssistantParts(conversation: AssistantConversationDto) {
   const messages = conversation.messages ?? []
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
-    if (message?.role === 'assistant' && message.parts?.length) {
-      return message.parts
+    if (message?.role === 'assistant' && Array.isArray(message.parts) && message.parts.length) {
+      return message.parts as AssistantBlock[]
     }
   }
   return undefined

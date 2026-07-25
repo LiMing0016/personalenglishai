@@ -194,7 +194,7 @@ class VocabularyDepositionDocsTest {
                 () -> assertTrue(prompts.contains("VocabularyCardBlocks")),
                 () -> assertTrue(prompts.contains("未知 strategy key 会在模型调用前永久失败")),
                 () -> assertFalse(prompts.contains("<theme-purpose>")),
-                () -> assertTrue(runbook.startsWith("---\n")),
+                () -> assertTrue(runbook.replace("\r\n", "\n").startsWith("---\n")),
                 () -> assertTrue(runbook.contains("last_updated: 2026-07-21")),
                 () -> assertTrue(runbook.contains("Compose \u9ed8\u8ba4 `gpt-5.4-mini`")),
                 () -> assertTrue(runbook.contains("\u76f4\u63a5\u8fd0\u884c\u771f\u5b9e\u6a21\u578b smoke \u65f6\u5fc5\u987b\u663e\u5f0f\u8bbe\u7f6e")),

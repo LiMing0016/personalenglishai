@@ -5,20 +5,7 @@
     aria-label="学习助手侧边栏"
   >
     <div v-if="collapsed" class="collapsed-sidebar">
-      <button
-        type="button"
-        class="collapsed-sidebar-button collapsed-sidebar-button--primary"
-        title="打开边栏"
-        aria-label="打开边栏"
-        @mousedown.prevent="requestOpenSidebar"
-        @click="requestOpenSidebar"
-      >
-        <img src="/brand/peai-logo.png" alt="" class="collapsed-brand-logo" draggable="false" />
-        <svg class="collapsed-brand-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="4" y="5" width="16" height="14" rx="3" />
-          <path d="M10 5v14" />
-        </svg>
-      </button>
+      <AppNavigationMenu :collapsed="true" @toggle="requestOpenSidebar" />
 
       <button
         type="button"
@@ -33,46 +20,6 @@
         </svg>
       </button>
 
-      <button
-        type="button"
-        class="collapsed-sidebar-button"
-        title="搜索聊天"
-        aria-label="搜索聊天"
-        @mousedown.prevent="requestOpenSidebar"
-        @click="requestOpenSidebar"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="7" />
-          <path d="m16 16 4 4" />
-        </svg>
-      </button>
-
-      <button
-        type="button"
-        class="collapsed-sidebar-button"
-        title="文件夹"
-        aria-label="文件夹"
-        @mousedown.prevent="requestOpenSidebar"
-        @click="requestOpenSidebar"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 7.5h7l2 2h9v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z" />
-        </svg>
-      </button>
-
-      <button
-        type="button"
-        class="collapsed-sidebar-button"
-        title="聊天"
-        aria-label="聊天"
-        @mousedown.prevent="requestOpenSidebar"
-        @click="requestOpenSidebar"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.2A8 8 0 1 1 21 12Z" />
-        </svg>
-      </button>
-
       <div class="collapsed-sidebar-spacer" aria-hidden="true"></div>
 
       <RouterLink to="/app/me" class="collapsed-profile-link" title="个人中心" aria-label="个人中心">
@@ -81,76 +28,20 @@
     </div>
 
     <div v-else class="sidebar-panel">
-      <div class="sidebar-app-header">
-        <RouterLink to="/app" class="sidebar-brand">PEAI</RouterLink>
-        <button
-          type="button"
-          class="collapse-button"
-          title="收起侧边栏"
-          aria-label="收起侧边栏"
-          @click="$emit('closeSidebar')"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16M4 12h16M4 19h16" />
-          </svg>
-        </button>
-      </div>
+      <AppNavigationMenu :collapsed="false" @toggle="$emit('closeSidebar')" />
 
-      <div class="sidebar-primary-actions" aria-label="学习助手操作">
-        <button type="button" class="sidebar-new-chat-button" @click="$emit('newConversation')">
-          <span class="workspace-action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
-              <path d="m13.5 6.5 4 4" />
-            </svg>
-          </span>
-          <span>新聊天</span>
-        </button>
-      </div>
-
-      <section class="workspace-section workspace-section--apps">
-        <div class="workspace-section-label">其他应用</div>
-        <nav class="workspace-nav-grid" aria-label="其他应用">
-          <RouterLink
-            v-for="item in appNavItems"
-            :key="item.to"
-            :to="item.to"
-            class="workspace-nav-link"
-            :class="{ 'workspace-nav-link--active': isActive(item.activePrefix) }"
-          >
-            <span class="workspace-nav-icon" aria-hidden="true">
-              <svg v-if="item.skillIcon === 'writing'" viewBox="0 0 24 24">
+      <section class="assistant-context-section" aria-label="助手空间">
+        <div class="sidebar-primary-actions" aria-label="学习助手操作">
+          <button type="button" class="sidebar-new-chat-button" @click="$emit('newConversation')">
+            <span class="workspace-action-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
                 <path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z" />
                 <path d="m13.5 6.5 4 4" />
               </svg>
-              <svg v-else-if="item.skillIcon === 'translation'" viewBox="0 0 24 24">
-                <path d="M4 7h10" />
-                <path d="M9 4v3c0 4-2 7-5 9" />
-                <path d="M7 11c1.1 2 3 3.5 5 4.5" />
-                <path d="M14 20l4-9 4 9" />
-                <path d="M15.5 17h5" />
-              </svg>
-              <svg v-else-if="item.skillIcon === 'reading'" viewBox="0 0 24 24">
-                <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z" />
-                <path d="M4 5.5V21" />
-                <path d="M8 7h8M8 11h8" />
-              </svg>
-              <svg v-else-if="item.skillIcon === 'listening'" viewBox="0 0 24 24">
-                <path d="M6 10a6 6 0 0 1 12 0v5a4 4 0 0 1-4 4h-1" />
-                <path d="M6 13v2a3 3 0 0 0 3 3" />
-                <path d="M18 13h1a2 2 0 0 1 0 4h-1" />
-                <path d="M6 13H5a2 2 0 0 0 0 4h1" />
-              </svg>
-              <svg v-else viewBox="0 0 24 24">
-                <path d="M12 14a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v4a4 4 0 0 0 4 4Z" />
-                <path d="M5 10a7 7 0 0 0 14 0" />
-                <path d="M12 17v4" />
-                <path d="M9 21h6" />
-              </svg>
             </span>
-            <span>{{ item.label }}</span>
-          </RouterLink>
-        </nav>
+            <span>新聊天</span>
+          </button>
+        </div>
       </section>
 
       <section class="chat-library-section">
@@ -331,7 +222,6 @@
         <span class="sidebar-profile-avatar">我</span>
         <span class="sidebar-profile-copy">
           <span class="sidebar-profile-name">个人中心</span>
-          <span class="sidebar-profile-subtitle">账号设置与订阅</span>
         </span>
       </RouterLink>
     </div>
@@ -340,8 +230,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 
+import AppNavigationMenu from '@/components/AppNavigationMenu.vue'
 import AssistantConversationList from './AssistantConversationList.vue'
 import type { AssistantConversation } from '@/pages/app/assistantMock.ts'
 
@@ -399,23 +289,6 @@ const emit = defineEmits<{
 }>()
 
 const archiveDirDraft = ref(props.archiveDir)
-const route = useRoute()
-
-type SkillIcon = 'writing' | 'translation' | 'reading' | 'listening' | 'speaking'
-type AppNavItem = {
-  to: string
-  activePrefix: string
-  label: string
-  skillIcon: SkillIcon
-}
-
-const appNavItems = [
-  { to: '/app/writing', activePrefix: '/app/writing', label: '写作', skillIcon: 'writing' },
-  { to: '/app/translation', activePrefix: '/app/translation', label: '翻译', skillIcon: 'translation' },
-  { to: '/app/vocabulary', activePrefix: '/app/vocabulary', label: '阅读', skillIcon: 'reading' },
-  { to: '/app/listening', activePrefix: '/app/listening', label: '听力', skillIcon: 'listening' },
-  { to: '/app/speaking', activePrefix: '/app/speaking', label: '口语', skillIcon: 'speaking' },
-] satisfies readonly AppNavItem[]
 
 const archivedConversationCount = computed(() =>
   props.archivedGroups.reduce((total, group) => total + group.conversations.length, 0),
@@ -451,21 +324,18 @@ function resetArchiveDir() {
   emit('saveArchiveDir', props.defaultArchiveDir)
 }
 
-function isActive(activePrefix: string) {
-  return route.path === activePrefix || route.path.startsWith(`${activePrefix}/`)
-}
 </script>
 
 <style scoped>
 .assistant-sidebar {
   display: flex;
-  flex: 0 0 320px;
-  width: 320px;
-  min-width: 320px;
+  flex: 0 0 var(--assistant-sidebar-width, 218px);
+  width: var(--assistant-sidebar-width, 218px);
+  min-width: var(--assistant-sidebar-width, 218px);
   height: 100%;
   padding: 0;
-  background: #f8fafc;
-  border-right: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-right: 1px solid var(--app-sidebar-border, #e2e8f0);
   color: #0f172a;
   box-sizing: border-box;
 }
@@ -474,12 +344,12 @@ function isActive(activePrefix: string) {
   flex-basis: 72px;
   width: 72px;
   min-width: 72px;
-  background: #f8fafc;
+  background: #ffffff;
 }
 
 .assistant-sidebar.assistant-sidebar--collapsed,
 .assistant-sidebar.assistant-sidebar--collapsed .collapsed-sidebar {
-  background: #f8fafc;
+  background: #ffffff;
   color: #334155;
 }
 
@@ -487,20 +357,20 @@ function isActive(activePrefix: string) {
 .sidebar-panel {
   display: flex;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
   box-sizing: border-box;
-  background: #f8fafc;
+  background: #ffffff;
 }
 
 .collapsed-sidebar {
   align-items: center;
-  gap: 18px;
-  padding: 18px 10px 16px;
+  gap: 14px;
+  padding: 16px 14px;
 }
 
 .collapsed-sidebar-button,
-.collapse-button,
 .folder-create-button {
   display: inline-flex;
   align-items: center;
@@ -515,9 +385,9 @@ function isActive(activePrefix: string) {
   height: 44px;
   border-radius: 14px;
   background: transparent;
+  text-decoration: none;
 }
 
-.collapsed-sidebar-button--primary,
 .collapsed-sidebar-button:hover,
 .collapsed-sidebar-button:focus-visible {
   background: #ffffff;
@@ -525,9 +395,7 @@ function isActive(activePrefix: string) {
 }
 
 .collapsed-sidebar-button svg,
-.collapse-button svg,
-.workspace-action-icon svg,
-.workspace-nav-icon svg {
+.workspace-action-icon svg {
   width: 23px;
   height: 23px;
   fill: none;
@@ -535,42 +403,6 @@ function isActive(activePrefix: string) {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.collapsed-brand-logo,
-.collapsed-brand-icon {
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
-}
-
-.collapsed-brand-logo {
-  display: block;
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-}
-
-.collapsed-brand-icon {
-  position: absolute;
-  opacity: 0;
-  transform: scale(0.88);
-}
-
-.collapsed-sidebar-button--primary {
-  position: relative;
-}
-
-.collapsed-sidebar-button--primary:hover .collapsed-brand-logo,
-.collapsed-sidebar-button--primary:focus-visible .collapsed-brand-logo {
-  opacity: 0;
-  transform: scale(0.88);
-}
-
-.collapsed-sidebar-button--primary:hover .collapsed-brand-icon,
-.collapsed-sidebar-button--primary:focus-visible .collapsed-brand-icon {
-  opacity: 1;
-  transform: scale(1);
 }
 
 .collapsed-sidebar-spacer {
@@ -592,41 +424,7 @@ function isActive(activePrefix: string) {
 }
 
 .sidebar-panel {
-  padding: 22px 14px 18px;
-}
-
-.sidebar-app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 10px;
-}
-
-.sidebar-brand {
-  color: #047857;
-  font-size: 24px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-decoration: none;
-}
-
-.sidebar-brand:hover {
-  color: #065f46;
-}
-
-.collapse-button {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: transparent;
-}
-
-.collapse-button:hover,
-.collapse-button:focus-visible {
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  padding: 16px 12px 18px;
 }
 
 .workspace-section-label {
@@ -636,12 +434,17 @@ function isActive(activePrefix: string) {
   letter-spacing: 0;
 }
 
-.sidebar-primary-actions {
-  margin-top: 24px;
+.assistant-context-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(100, 116, 139, 0.18);
 }
 
-.workspace-action-icon,
-.workspace-nav-icon {
+.sidebar-primary-actions {
+  margin-top: 8px;
+}
+
+.workspace-action-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -649,8 +452,7 @@ function isActive(activePrefix: string) {
   color: #047857;
 }
 
-.sidebar-new-chat-button,
-.workspace-nav-link {
+.sidebar-new-chat-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -672,66 +474,31 @@ function isActive(activePrefix: string) {
 .sidebar-new-chat-button {
   justify-content: center;
   min-height: 44px;
-  border-color: #047857;
+  border-color: #dbe3ec;
   border-radius: 14px;
-  background: #047857;
-  color: #ffffff;
-  box-shadow: 0 12px 24px rgba(4, 120, 87, 0.16);
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
 }
 
 .sidebar-new-chat-button .workspace-action-icon {
-  color: #ffffff;
+  color: #047857;
 }
 
 .sidebar-new-chat-button:hover,
 .sidebar-new-chat-button:focus-visible {
-  border-color: #065f46;
-  background: #065f46;
-  color: #ffffff;
-}
-
-.workspace-nav-link:hover,
-.workspace-nav-link:focus-visible,
-.workspace-nav-link--active {
-  border-color: #a7f3d0;
-  background: #f0fdf4;
+  border-color: #cbd5e1;
+  background: #f8fafc;
   color: #0f172a;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
-.workspace-action-icon svg,
-.workspace-nav-icon svg {
+.workspace-action-icon svg {
   width: 18px;
   height: 18px;
 }
 
-.workspace-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
-}
-
 .workspace-section-label {
   padding: 0 2px;
-}
-
-.workspace-nav-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.workspace-nav-link {
-  min-width: 0;
-}
-
-.workspace-nav-link span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chat-library-section {
@@ -1033,14 +800,6 @@ function isActive(activePrefix: string) {
   color: #0f172a;
 }
 
-.sidebar-profile-subtitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: #a3a3a3;
-}
-
 :deep(.conversation-groups) {
   gap: 14px;
 }
@@ -1092,9 +851,9 @@ function isActive(activePrefix: string) {
   }
 
   .assistant-sidebar--collapsed {
-    flex-basis: 64px;
-    width: 64px;
-    min-width: 64px;
+    flex-basis: 72px;
+    width: 72px;
+    min-width: 72px;
   }
 }
 </style>

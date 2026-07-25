@@ -1,5 +1,11 @@
-import type { AssistantBlock } from '../../types/assistantBlocks.ts'
-import type { AssistantIntent, AssistantSelection, InputScope } from '../../types/assistantRequest.ts'
+import type { RenderableAssistantBlock } from '../../types/assistantBlocks.ts'
+import type {
+  AgentMode,
+  AssistantInteractionContext,
+  AssistantIntent,
+  AssistantSelection,
+  InputScope,
+} from '../../types/assistantRequest.ts'
 
 export type AssistantMessageRole = 'user' | 'assistant'
 export type AssistantMessageStatus = 'done' | 'loading'
@@ -23,9 +29,10 @@ export interface AssistantMessage {
   role: AssistantMessageRole
   content: string
   status: AssistantMessageStatus
-  parts?: AssistantBlock[]
+  parts?: RenderableAssistantBlock[]
   attachments?: AssistantAttachment[]
   attachmentMetadata?: AssistantAttachmentMetadata[]
+  interaction?: AssistantInteractionContext
 }
 
 export interface AssistantConversation {
@@ -33,6 +40,7 @@ export interface AssistantConversation {
   projectId?: number | null
   title: string
   summary: string
+  createdAt: number
   updatedAt: number
   pinned?: boolean
   archived?: boolean
@@ -49,17 +57,19 @@ export const assistantStarterPrompts = [
 export interface AssistantReplyRequest {
   input: string
   conversationId: string
+  agentMode?: AgentMode
   studyStage?: string
   assistantMode?: AssistantMode
   intent?: AssistantIntent
   scope?: InputScope
   selection?: AssistantSelection
+  interaction?: AssistantInteractionContext
   attachments: AssistantAttachment[]
 }
 
 export interface AssistantReplyResult {
   reply: string
-  parts?: AssistantBlock[]
+  parts?: RenderableAssistantBlock[]
 }
 
 export async function buildMockAssistantReply(request: AssistantReplyRequest): Promise<string> {

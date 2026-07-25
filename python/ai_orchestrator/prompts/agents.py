@@ -15,6 +15,7 @@ _PROMPT_FILES = {
     "prompt_sheet_canvas": "agent_instructions/prompt_sheet_canvas.md",
     "prompt_sheet_chat": "agent_instructions/prompt_sheet_chat.md",
     "route_decision": "agent_instructions/route_decision.md",
+    "sentence_reorder": "agent_instructions/sentence_reorder.md",
     "router": "agent_instructions/router.md",
     "scoring": "agent_instructions/scoring.md",
     "sentence_structure": "agent_instructions/sentence_structure.md",
@@ -34,6 +35,7 @@ _STRUCTURED_OUTPUT_ONLY_AGENT_KEYS = frozenset(
     {
         "prompt_sheet_canvas",
         "route_decision",
+        "sentence_reorder",
         "vocabulary_card_blocks",
         "vocabulary_card_markdown",
         "vocabulary_core_fallback",

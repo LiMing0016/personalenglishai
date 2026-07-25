@@ -2,13 +2,21 @@
   <section
     ref="scrollContainerRef"
     class="assistant-chat-view"
+    :class="{ 'assistant-chat-view--empty': messages.length === 0 }"
     @scroll.passive="handleScroll"
   >
     <div v-if="messages.length === 0" class="empty-state">
-      <p class="eyebrow">学习助手</p>
       <h1 class="empty-title">{{ emptyTitle }}</h1>
       <p class="empty-subtitle">{{ emptySubtitle }}</p>
-      <AssistantStarterCards @choose="$emit('chooseStarter', $event)" />
+      <AssistantStarterCards
+        :selected-goal="selectedGoal"
+        @select-goal="$emit('selectGoal', $event)"
+        @choose="$emit('chooseStarter', $event)"
+      >
+        <template #composer>
+          <slot name="empty-composer"></slot>
+        </template>
+      </AssistantStarterCards>
     </div>
 
     <div v-else class="message-list">
@@ -127,7 +135,8 @@
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import AssistantBlockRenderer from './AssistantBlockRenderer.vue'
-import AssistantStarterCards from './AssistantStarterCards.vue'
+import AssistantStarterCards, { type AssistantStarterChoice } from './AssistantStarterCards.vue'
+import type { AssistantStarterGoalId } from './AssistantStarterCards.vue'
 import LearningAssetSelectionToolbar from './LearningAssetSelectionToolbar.vue'
 import { copyMarkdownCodeFromClick, renderAssistantMarkdown } from './markdown.ts'
 import type { AssistantMessage } from '@/pages/app/assistantMock.ts'
@@ -148,15 +157,17 @@ const props = defineProps<{
   emptySubtitle: string
   markdownTheme: 'marktext' | 'milkdown'
   canAppendToLearningAsset: boolean
+  selectedGoal: AssistantStarterGoalId | null
 }>()
 
 const emit = defineEmits<{
-  chooseStarter: [prompt: string]
+  chooseStarter: [choice: AssistantStarterChoice]
   copyMessage: [content: string]
   retryMessage: [messageId: string]
   retry: []
   createLearningAsset: [selection: AssistantLearningAssetSelection]
   appendToLearningAsset: [selection: AssistantLearningAssetSelection]
+  selectGoal: [goalId: AssistantStarterGoalId]
 }>()
 
 const previewUrls = new Map<string, string>()
@@ -347,20 +358,16 @@ onBeforeUnmount(() => {
   flex: 1;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  width: min(920px, 100%);
   min-height: 0;
   max-width: 920px;
-  margin: 0 auto;
+  margin: clamp(72px, 10vh, 118px) auto 0;
   text-align: center;
 }
 
-.eyebrow {
-  margin: 0 0 10px;
-  color: #6ee7b7;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.assistant-chat-view--empty {
+  padding-bottom: 48px;
 }
 
 .empty-title {
@@ -373,7 +380,7 @@ onBeforeUnmount(() => {
 
 .empty-subtitle {
   max-width: 620px;
-  margin: 14px 0 32px;
+  margin: 12px 0 24px;
   color: #475569;
   font-size: 17px;
   line-height: 1.65;
@@ -420,6 +427,7 @@ onBeforeUnmount(() => {
   color: #0f172a;
   font-size: 15px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .message-content--plain {
@@ -473,9 +481,15 @@ onBeforeUnmount(() => {
   font-size: 15px;
 }
 
-.message-content--markdown :deep(ul) {
+.message-content--markdown :deep(ul),
+.message-content--markdown :deep(ol) {
   margin: 0 0 14px;
   padding-left: 20px;
+}
+
+.message-content--markdown :deep(li > ul),
+.message-content--markdown :deep(li > ol) {
+  margin: 6px 0 2px;
 }
 
 .message-content--markdown :deep(li) {
@@ -491,6 +505,60 @@ onBeforeUnmount(() => {
 
 .message-content--markdown :deep(strong) {
   font-weight: 800;
+}
+
+.message-content--markdown :deep(a) {
+  color: #047857;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: #a7f3d0;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+.message-content--markdown :deep(a:hover) {
+  color: #065f46;
+  text-decoration-color: currentColor;
+}
+
+.message-content--markdown :deep(a:focus-visible) {
+  border-radius: 4px;
+  outline: 3px solid rgba(16, 185, 129, 0.28);
+  outline-offset: 2px;
+}
+
+.message-content--markdown :deep(del) {
+  color: #64748b;
+}
+
+.message-content--markdown :deep(.contains-task-list) {
+  list-style: none;
+  padding-left: 0;
+}
+
+.message-content--markdown :deep(.task-list-item) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.message-content--markdown :deep(.task-list-item input) {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 5px 0 0;
+  accent-color: #059669;
+}
+
+.message-content--markdown :deep(.task-list-item:has(input:checked)) {
+  color: #64748b;
+  text-decoration: line-through;
+  text-decoration-color: #cbd5e1;
+}
+
+.message-content--markdown :deep(.task-list-item input:checked) {
+  accent-color: #059669;
+  opacity: 1;
 }
 
 .message-content--markdown :deep(code) {
@@ -511,6 +579,14 @@ onBeforeUnmount(() => {
   max-width: 100%;
   overflow-x: auto;
   margin: 14px 0 18px;
+  border-radius: 10px;
+  scrollbar-color: #94a3b8 transparent;
+  scrollbar-width: thin;
+}
+
+.message-content--markdown :deep(.markdown-table-scroll:focus-visible) {
+  outline: 3px solid rgba(16, 185, 129, 0.24);
+  outline-offset: 3px;
 }
 
 .message-content--markdown :deep(table) {
@@ -584,7 +660,13 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow-x: auto;
   padding: 13px 14px;
+  white-space: pre;
+}
+
+.message-content--markdown :deep(.markdown-code-block--wrap pre) {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .message-content--markdown :deep(.markdown-code-block code) {
@@ -594,6 +676,14 @@ onBeforeUnmount(() => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.message-content--markdown :deep(.markdown-image) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 14px auto 18px;
+  border-radius: 12px;
 }
 
 .message-content--markdown-marktext :deep(h1),
@@ -774,13 +864,86 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .assistant-chat-view {
-    padding: 24px 18px 226px;
+    padding: 20px 18px 210px;
+  }
+
+  .assistant-chat-view--empty {
+    padding-bottom: 36px;
   }
 
   .message-bubble {
     max-width: 100%;
+  }
+
+  .message-row--user .message-bubble {
+    max-width: min(620px, 88%);
+  }
+
+  .message-content--markdown :deep(:not(pre) > code) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 520px) {
+  .message-content--markdown :deep(.markdown-table-scroll--cards) {
+    overflow: visible;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards) {
+    display: block;
+    min-width: 0;
+    background: transparent;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards thead) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards tbody),
+  .message-content--markdown :deep(.markdown-table--responsive-cards tr) {
+    display: block;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards tr) {
+    overflow: hidden;
+    margin-bottom: 10px;
+    border: 1px solid #dbe3ea;
+    border-radius: 12px;
+    background: #ffffff;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards tr:last-child) {
+    margin-bottom: 0;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards td) {
+    display: grid;
+    grid-template-columns: minmax(76px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards td:last-child) {
+    border-bottom: 0;
+  }
+
+  .message-content--markdown :deep(.markdown-table--responsive-cards td::before) {
+    content: attr(data-label);
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 800;
   }
 }
 </style>

@@ -1,5 +1,6 @@
 package com.personalenglishai.backend.service.assistant;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
@@ -187,6 +188,7 @@ public class PythonAssistantClient {
         private String agentName;
         private String agent_name;
         private AssistantRunMetadataResponse run;
+        private JsonNode parts;
 
         public String getReply() {
             return reply;
@@ -226,6 +228,14 @@ public class PythonAssistantClient {
 
         public void setRun(AssistantRunMetadataResponse run) {
             this.run = run;
+        }
+
+        public JsonNode getParts() {
+            return parts;
+        }
+
+        public void setParts(JsonNode parts) {
+            this.parts = parts;
         }
 
         public String text() {

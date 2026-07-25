@@ -8,3 +8,11 @@ assert.ok(assistantStateSource.includes('restoreAssistantState'))
 assert.ok(assistantStateSource.includes('persistState'))
 assert.ok(assistantStateSource.includes('storage.setItem'))
 assert.ok(assistantStateSource.includes("message.status !== 'loading'"))
+
+const createConversationStart = assistantStateSource.indexOf('function createConversation()')
+const selectConversationStart = assistantStateSource.indexOf('async function selectConversation', createConversationStart)
+const createConversationSource = assistantStateSource.slice(createConversationStart, selectConversationStart)
+assert.ok(
+  !createConversationSource.includes('ensureRemoteConversation'),
+  'starting a blank chat should not create a remote history record before the first message is sent',
+)

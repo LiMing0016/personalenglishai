@@ -63,10 +63,11 @@ def _build_conversation_history_items(request: AssistantRequest) -> list[dict]:
         content = (message.content or "").strip()
         if not content:
             continue
+        content_type = "output_text" if message.role == "assistant" else "input_text"
         items.append(
             {
                 "role": message.role,
-                "content": [{"type": "input_text", "text": content}],
+                "content": [{"type": content_type, "text": content}],
             }
         )
     return items

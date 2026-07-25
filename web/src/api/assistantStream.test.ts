@@ -33,3 +33,17 @@ test('parseAssistantStreamChunk parses CRLF server-sent event separators', () =>
 
   assert.deepEqual(events, [{ type: 'run.started' }, { type: 'message.delta', delta: 'hi' }])
 })
+
+test('parseAssistantStreamChunk keeps optional completed message parts backward compatible', () => {
+  const events = parseAssistantStreamChunk(
+    'data: {"type":"message.completed","content":"开始练习","parts":[{"id":"r1","type":"sentence_reorder","version":1}]}\n\n',
+  )
+
+  assert.deepEqual(events, [
+    {
+      type: 'message.completed',
+      content: '开始练习',
+      parts: [{ id: 'r1', type: 'sentence_reorder', version: 1 }],
+    },
+  ])
+})
