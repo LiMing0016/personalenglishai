@@ -43,6 +43,10 @@
             <p class="profile-eyebrow">个人中心</p>
             <div v-if="!editingNickname" class="nickname-row">
               <h1>{{ profile?.nickname ?? (profileLoading ? '正在加载' : '英语学习者') }}</h1>
+              <SubscriptionBadge
+                :status="subscriptionStatus"
+                :profile-created-at="profile?.createdAt"
+              />
               <button class="edit-name-button" type="button" title="编辑昵称" @click="startEditNickname">
                 <Pencil :size="15" :stroke-width="1.8" />
               </button>
@@ -134,7 +138,11 @@
         <MyEssaysSection v-else-if="activeSection === 'records'" />
         <WritingAssetsSection v-else-if="activeSection === 'assets'" />
         <AbilityRadarSection v-else-if="activeSection === 'profile'" />
-        <SubscriptionSection v-else-if="activeSection === 'subscription'" />
+        <SubscriptionSection
+          v-else-if="activeSection === 'subscription'"
+          :status="subscriptionStatus"
+          @status-updated="subscriptionStatus = $event"
+        />
         <AccountSettingsSection
           v-else-if="activeSection === 'security' && profile"
           :profile="profile"
@@ -167,11 +175,12 @@ import {
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 
-import { userApi, type MeProfile } from '@/api/user'
+import { userApi, type MeProfile, type SubscriptionStatus } from '@/api/user'
 import AbilityRadarSection from '@/components/personal-center/AbilityRadarSection.vue'
 import AccountSettingsSection from '@/components/personal-center/AccountSettingsSection.vue'
 import MyEssaysSection from '@/components/personal-center/MyEssaysSection.vue'
 import OverviewSection from '@/components/personal-center/OverviewSection.vue'
+import SubscriptionBadge from '@/components/personal-center/SubscriptionBadge.vue'
 import SubscriptionSection from '@/components/personal-center/SubscriptionSection.vue'
 import WritingAssetsSection from '@/components/personal-center/WritingAssetsSection.vue'
 import {
@@ -193,6 +202,7 @@ const route = useRoute()
 
 const profile = ref<MeProfile | null>(null)
 const profileLoading = ref(true)
+const subscriptionStatus = ref<SubscriptionStatus | null>(null)
 const activeSection = ref<PersonalCenterSection>(
   parsePersonalCenterSection(route.query.tab as string | string[] | null | undefined),
 )
@@ -379,6 +389,34 @@ async function refreshProfile() {
   }
 }
 
+async function refreshSubscriptionStatus() {
+  if (isPreviewMode.value) {
+    subscriptionStatus.value = {
+      planCode: 'free',
+      planName: 'Free',
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      quotaPeriod: 'daily',
+      usageDate: '2026-07-27',
+      usageMonth: '2026-07',
+      dailyTokenLimit: 10_000,
+      monthlyTokenLimit: 10_000,
+      tokenLimit: 10_000,
+      tokenUsed: 0,
+      tokenRemaining: 10_000,
+      overLimit: false,
+    }
+    return
+  }
+
+  try {
+    const response = await userApi.getMySubscription()
+    subscriptionStatus.value = response.data ?? null
+  } catch {
+    showToast('加载会员信息失败', 'error')
+  }
+}
+
 watch(
   () => route.query.tab,
   (value) => {
@@ -395,7 +433,12 @@ watch(
   },
 )
 
-onMounted(refreshProfile)
+onMounted(() => {
+  void Promise.all([
+    refreshProfile(),
+    refreshSubscriptionStatus(),
+  ])
+})
 onBeforeUnmount(revokePreviewAvatarUrl)
 </script>
 
