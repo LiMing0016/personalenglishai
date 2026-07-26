@@ -20,6 +20,14 @@ export interface MeProfileResponse {
   data?: MeProfile
 }
 
+export interface AvatarUploadResponse {
+  code?: string
+  message?: string
+  data?: {
+    avatarUrl?: string
+  }
+}
+
 export interface AbilityProfile {
   taskScore: number | null
   coherenceScore: number | null
@@ -77,6 +85,16 @@ export const userApi = {
 
   async updateNickname(nickname: string): Promise<void> {
     await http.patch('/users/me/profile/nickname', { nickname })
+  },
+
+  async uploadAvatar(file: File): Promise<AvatarUploadResponse> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await http.post<AvatarUploadResponse>(
+      '/users/me/profile/avatar',
+      formData,
+    )
+    return res.data
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

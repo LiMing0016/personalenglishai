@@ -5,12 +5,39 @@
         <div class="profile-identity">
           <button
             class="avatar"
+            :class="{ 'avatar--uploading': avatarUploading }"
             type="button"
-            :aria-label="editingNickname ? '正在编辑昵称' : '编辑昵称'"
-            @click="startEditNickname"
+            :aria-label="avatarUploading ? '头像上传中' : '上传头像'"
+            :disabled="avatarUploading"
+            title="更换头像"
+            @click="openAvatarPicker"
           >
-            {{ avatarInitial }}
+            <img
+              v-if="profile?.avatarUrl && !avatarLoadFailed"
+              class="avatar-image"
+              :src="profile.avatarUrl"
+              alt=""
+              @error="avatarLoadFailed = true"
+            />
+            <span v-else class="avatar-initial">{{ avatarInitial }}</span>
+            <span class="avatar-overlay" aria-hidden="true">
+              <LoaderCircle
+                v-if="avatarUploading"
+                class="avatar-loader"
+                :size="20"
+                :stroke-width="2"
+              />
+              <Camera v-else :size="20" :stroke-width="1.9" />
+            </span>
           </button>
+          <input
+            ref="avatarInputRef"
+            class="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            tabindex="-1"
+            @change="handleAvatarSelection"
+          />
 
           <div class="profile-copy">
             <p class="profile-eyebrow">个人中心</p>
@@ -123,15 +150,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
   ArrowRight,
   BadgeCheck,
   CalendarDays,
+  Camera,
   Check,
   ChevronDown,
   GraduationCap,
+  LoaderCircle,
   Mail,
   Pencil,
   ShieldCheck,
@@ -145,6 +174,10 @@ import MyEssaysSection from '@/components/personal-center/MyEssaysSection.vue'
 import OverviewSection from '@/components/personal-center/OverviewSection.vue'
 import SubscriptionSection from '@/components/personal-center/SubscriptionSection.vue'
 import WritingAssetsSection from '@/components/personal-center/WritingAssetsSection.vue'
+import {
+  normalizeAvatarFile,
+  validateAvatarFile,
+} from '@/components/personal-center/avatarImage'
 import { STAGE_OPTIONS, getStageLabel } from '@/constants/stage'
 import { stageCache } from '@/stores/stageCache'
 import { showToast } from '@/utils/toast'
@@ -166,6 +199,10 @@ const activeSection = ref<PersonalCenterSection>(
 const editingNickname = ref(false)
 const nicknameDraft = ref('')
 const nicknameInputRef = ref<HTMLInputElement | null>(null)
+const avatarInputRef = ref<HTMLInputElement | null>(null)
+const avatarUploading = ref(false)
+const avatarLoadFailed = ref(false)
+const previewAvatarObjectUrl = ref('')
 const stageDropdownOpen = ref(false)
 const stageDropdownRef = ref<HTMLElement | null>(null)
 const isPreviewMode = computed(
@@ -198,6 +235,81 @@ function startEditNickname() {
   nicknameDraft.value = profile.value?.nickname ?? ''
   editingNickname.value = true
   void nextTick(() => nicknameInputRef.value?.focus())
+}
+
+function openAvatarPicker() {
+  if (!avatarUploading.value) {
+    avatarInputRef.value?.click()
+  }
+}
+
+async function handleAvatarSelection(event: Event) {
+  const input = event.target as HTMLInputElement
+  const selectedFile = input.files?.[0]
+  if (!selectedFile || avatarUploading.value) {
+    input.value = ''
+    return
+  }
+
+  const validationMessage = validateAvatarFile(selectedFile)
+  if (validationMessage) {
+    showToast(validationMessage, 'error')
+    input.value = ''
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    const normalizedFile = await normalizeAvatarFile(selectedFile)
+    let avatarUrl: string | undefined
+
+    if (isPreviewMode.value) {
+      revokePreviewAvatarUrl()
+      previewAvatarObjectUrl.value = URL.createObjectURL(normalizedFile)
+      avatarUrl = previewAvatarObjectUrl.value
+    } else {
+      const response = await userApi.uploadAvatar(normalizedFile)
+      avatarUrl = response.data?.avatarUrl
+    }
+
+    if (!avatarUrl) {
+      throw new Error('missing avatar url')
+    }
+    if (profile.value) {
+      profile.value.avatarUrl = avatarUrl
+    }
+    avatarLoadFailed.value = false
+    showToast('头像已更新', 'success')
+  } catch (error) {
+    if (isAvatarRateLimited(error)) {
+      showToast('头像更新过于频繁，请稍后再试', 'error')
+    } else if (
+      error instanceof Error
+      && ['头像不能超过 5MB', '图片处理失败，请重新选择'].includes(error.message)
+    ) {
+      showToast(error.message, 'error')
+    } else {
+      showToast('头像上传失败，请稍后重试', 'error')
+    }
+  } finally {
+    avatarUploading.value = false
+    input.value = ''
+  }
+}
+
+function isAvatarRateLimited(error: unknown) {
+  const candidate = error as {
+    response?: { status?: number; data?: { code?: string } }
+  }
+  return candidate?.response?.status === 429
+    || candidate?.response?.data?.code === '429020'
+}
+
+function revokePreviewAvatarUrl() {
+  if (previewAvatarObjectUrl.value) {
+    URL.revokeObjectURL(previewAvatarObjectUrl.value)
+    previewAvatarObjectUrl.value = ''
+  }
 }
 
 function cancelEditNickname() {
@@ -276,7 +388,15 @@ watch(
   },
 )
 
+watch(
+  () => profile.value?.avatarUrl,
+  () => {
+    avatarLoadFailed.value = false
+  },
+)
+
 onMounted(refreshProfile)
+onBeforeUnmount(revokePreviewAvatarUrl)
 </script>
 
 <style scoped>
@@ -317,6 +437,7 @@ onMounted(refreshProfile)
 }
 
 .avatar {
+  position: relative;
   display: grid;
   width: 76px;
   height: 76px;
@@ -332,6 +453,71 @@ onMounted(refreshProfile)
   cursor: pointer;
   font-size: 28px;
   font-weight: 750;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.avatar:hover:not(:disabled) {
+  box-shadow:
+    0 0 0 1px rgba(7, 112, 81, 0.18),
+    0 16px 32px rgba(4, 120, 87, 0.24);
+  transform: translateY(-1px);
+}
+
+.avatar:disabled {
+  cursor: wait;
+}
+
+.avatar-image,
+.avatar-initial {
+  position: absolute;
+  inset: 0;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-initial {
+  display: grid;
+  place-items: center;
+}
+
+.avatar-overlay {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(3, 28, 23, 0.08), rgba(3, 28, 23, 0.64));
+  color: #fff;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.avatar:hover .avatar-overlay,
+.avatar:focus-visible .avatar-overlay,
+.avatar--uploading .avatar-overlay {
+  opacity: 1;
+}
+
+.avatar-loader {
+  animation: spin 800ms linear infinite;
+}
+
+.avatar-file-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .profile-copy {
