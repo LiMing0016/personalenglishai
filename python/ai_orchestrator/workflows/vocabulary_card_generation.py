@@ -20,7 +20,9 @@ from ..schemas.vocabulary_card import (
     VocabularyCore,
     VocabularyCoreFallbackOutput,
     VocabularyGenerationMetadata,
+    VocabularyGenerationUsage,
 )
+from ..services.agent_session_runner import AgentSessionUsage, extract_usage
 
 
 WORKFLOW_NAME = "PEAI Vocabulary Card Generation"
@@ -182,15 +184,18 @@ class VocabularyCardGenerationWorkflow:
     ) -> VocabularyCardGenerationResponse:
         self._validate_request_version_and_strategy(request)
         started_at = self._clock()
+        usages: list[AgentSessionUsage] = []
 
         self._require_remaining_budget(request.timeout_budget_ms, started_at)
-        core_output = await self._run_agent(
+        core_output, core_usage = await self._run_agent(
             agent=self._core_agent,
             agent_input=serialize_core_input(request),
             request=request,
             model_call_number=1,
             started_at=started_at,
         )
+        if core_usage is not None:
+            usages.append(core_usage)
         core = self._validate_core_output(core_output, request)
 
         self._require_remaining_budget(request.timeout_budget_ms, started_at)
@@ -201,7 +206,7 @@ class VocabularyCardGenerationWorkflow:
             blocks_call_started = True
 
         try:
-            blocks_output = await self._run_agent(
+            blocks_output, blocks_usage = await self._run_agent(
                 agent=self._card_blocks_agent,
                 agent_input=serialize_card_blocks_input(request, core),
                 request=request,
@@ -209,13 +214,15 @@ class VocabularyCardGenerationWorkflow:
                 started_at=started_at,
                 on_start=mark_blocks_call_started,
             )
+            if blocks_usage is not None:
+                usages.append(blocks_usage)
             card_blocks = self._validate_card_blocks_output(blocks_output, core)
         except asyncio.CancelledError:
             raise
         except Exception:
             if not blocks_call_started:
                 raise
-            return self._partial_response(request, core)
+            return self._partial_response(request, core, usages)
 
         return VocabularyCardGenerationResponse(
             contractVersion=2,
@@ -225,7 +232,7 @@ class VocabularyCardGenerationWorkflow:
             cardBlocks=card_blocks,
             outcome="complete",
             warning=None,
-            generation=self._metadata(request),
+            generation=self._metadata(request, usages),
         )
 
     def _validate_request_version_and_strategy(
@@ -318,7 +325,7 @@ class VocabularyCardGenerationWorkflow:
         model_call_number: int,
         started_at: float,
         on_start: Callable[[], None] | None = None,
-    ) -> Any:
+    ) -> tuple[Any, AgentSessionUsage | None]:
         timeout_seconds = self._remaining_timeout_seconds(
             request.timeout_budget_ms,
             started_at,
@@ -344,7 +351,9 @@ class VocabularyCardGenerationWorkflow:
             raise
         except Exception as exc:
             raise self._map_model_error(exc) from None
-        return getattr(result, "final_output", None)
+        raw_usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+        usage = extract_usage(result) if raw_usage is not None else None
+        return getattr(result, "final_output", None), usage
 
     def _remaining_timeout_seconds(
         self,
@@ -395,6 +404,7 @@ class VocabularyCardGenerationWorkflow:
         self,
         request: VocabularyCardGenerationRequest,
         core: VocabularyCore,
+        usages: list[AgentSessionUsage],
     ) -> VocabularyCardGenerationResponse:
         return VocabularyCardGenerationResponse(
             contractVersion=2,
@@ -404,12 +414,13 @@ class VocabularyCardGenerationWorkflow:
             cardBlocks={"schemaVersion": 1, "blocks": []},
             outcome="partial",
             warning="card_blocks_unavailable",
-            generation=self._metadata(request),
+            generation=self._metadata(request, usages),
         )
 
     def _metadata(
         self,
         request: VocabularyCardGenerationRequest,
+        usages: list[AgentSessionUsage],
     ) -> VocabularyGenerationMetadata:
         return VocabularyGenerationMetadata(
             provider="openai",
@@ -420,4 +431,19 @@ class VocabularyCardGenerationWorkflow:
             ),
             modelCallCount=2,
             traceId=request.trace_id,
+            usage=self._combined_usage(usages),
+        )
+
+    @staticmethod
+    def _combined_usage(
+        usages: list[AgentSessionUsage],
+    ) -> VocabularyGenerationUsage | None:
+        if not usages:
+            return None
+        return VocabularyGenerationUsage(
+            inputTokens=sum(item.input_tokens for item in usages),
+            cachedInputTokens=sum(item.cached_input_tokens for item in usages),
+            outputTokens=sum(item.output_tokens for item in usages),
+            totalTokens=sum(item.total_tokens for item in usages),
+            requests=sum(item.requests for item in usages),
         )

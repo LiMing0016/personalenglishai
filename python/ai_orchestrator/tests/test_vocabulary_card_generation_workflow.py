@@ -108,6 +108,28 @@ def blocks_output() -> VocabularyCardBlocks:
     return VocabularyCardBlocks.model_validate(blocks_payload())
 
 
+def run_result(
+    output: object,
+    *,
+    input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
+    total_tokens: int,
+) -> SimpleNamespace:
+    usage = SimpleNamespace(
+        requests=1,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        input_tokens_details=SimpleNamespace(cached_tokens=cached_input_tokens),
+        output_tokens_details=SimpleNamespace(reasoning_tokens=0),
+    )
+    return SimpleNamespace(
+        final_output=output,
+        context_wrapper=SimpleNamespace(usage=usage),
+    )
+
+
 class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._environment = patch.dict(
@@ -122,6 +144,36 @@ class VocabularyCardGenerationWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
     def service(self, *, clock: Mock | None = None) -> VocabularyCardGenerationService:
         return VocabularyCardGenerationService(model="test-model", monotonic_clock=clock)
+
+    async def test_generation_sums_trustworthy_usage_from_both_model_calls(self) -> None:
+        with patch(
+            "agents.Runner.run",
+            new_callable=AsyncMock,
+            side_effect=[
+                run_result(
+                    core_output(),
+                    input_tokens=30,
+                    cached_input_tokens=5,
+                    output_tokens=10,
+                    total_tokens=40,
+                ),
+                run_result(
+                    blocks_output(),
+                    input_tokens=20,
+                    cached_input_tokens=4,
+                    output_tokens=8,
+                    total_tokens=28,
+                ),
+            ],
+        ):
+            response = await self.service().generate(request())
+
+        self.assertIsNotNone(response.generation.usage)
+        self.assertEqual(response.generation.usage.requests, 2)
+        self.assertEqual(response.generation.usage.input_tokens, 50)
+        self.assertEqual(response.generation.usage.cached_input_tokens, 9)
+        self.assertEqual(response.generation.usage.output_tokens, 18)
+        self.assertEqual(response.generation.usage.total_tokens, 68)
 
     async def test_generation_always_runs_core_then_blocks(self) -> None:
         with patch(

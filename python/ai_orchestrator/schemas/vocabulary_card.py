@@ -298,6 +298,14 @@ class VocabularyCardBlocks(StrictVocabularyModel):
         return self
 
 
+class VocabularyGenerationUsage(StrictVocabularyModel):
+    input_tokens: int = Field(alias="inputTokens", ge=0)
+    cached_input_tokens: int = Field(alias="cachedInputTokens", ge=0)
+    output_tokens: int = Field(alias="outputTokens", ge=0)
+    total_tokens: int = Field(alias="totalTokens", ge=0)
+    requests: int = Field(ge=0)
+
+
 class VocabularyGenerationMetadata(StrictVocabularyModel):
     provider: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=200)
@@ -309,6 +317,7 @@ class VocabularyGenerationMetadata(StrictVocabularyModel):
         max_length=MAX_OPAQUE_ID_LENGTH,
         pattern=OPAQUE_ID_PATTERN,
     )
+    usage: VocabularyGenerationUsage | None = None
 
 
 class VocabularyCardGenerationResponse(StrictVocabularyModel):

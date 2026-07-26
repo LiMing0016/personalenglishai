@@ -12,6 +12,8 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
+import com.personalenglishai.backend.service.subscription.AiTokenUsageRecord;
+import com.personalenglishai.backend.service.subscription.SubscriptionService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -41,6 +43,7 @@ public class VocabularyGenerationWorker {
     private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyGenerationFinalizer finalizer;
+    private final SubscriptionService subscriptionService;
     private final int leaseSeconds;
     private final long leaseMs;
 
@@ -55,6 +58,7 @@ public class VocabularyGenerationWorker {
             VocabularyCardBlocksCodec cardBlocksCodec,
             ObjectMapper objectMapper,
             VocabularyGenerationFinalizer finalizer,
+            SubscriptionService subscriptionService,
             @Value("${vocabulary.generation.scheduler.lease-ms:300000}") long leaseMs) {
         this.jobs = jobs;
         this.cards = cards;
@@ -66,6 +70,7 @@ public class VocabularyGenerationWorker {
         this.cardBlocksCodec = cardBlocksCodec;
         this.objectMapper = objectMapper;
         this.finalizer = finalizer;
+        this.subscriptionService = subscriptionService;
         this.leaseSeconds = leaseSeconds(leaseMs);
         this.leaseMs = Math.max(1L, leaseMs);
     }
@@ -107,12 +112,46 @@ public class VocabularyGenerationWorker {
             VocabularyCardRevision revision = newRevision(job, card, theme, generated);
             finalizer.finalizeSuccess(
                     job, leaseToken, revision, generated.generationOutcome(), generated.warning());
+            recordUsage(job, card, generated);
         } catch (VocabularyGenerationException exception) {
             recordFailure(job, leaseToken, exception);
         } catch (VocabularyGenerationFinalizer.LeaseLostException exception) {
             log.info(
                     "Vocabulary generation result ignored after lease loss jobUid={} cardUid={}",
                     safeId(job.getJobUid()), safeId(job.getCardUid()));
+        }
+    }
+
+    private void recordUsage(
+            VocabularyGenerationJob job,
+            VocabularyCard card,
+            GeneratedVocabularyCard generated) {
+        VocabularyGenerationMetadata metadata = generated.generationMetadata();
+        if (metadata == null || metadata.usage() == null || card.getUserId() == null) {
+            return;
+        }
+        VocabularyGenerationMetadata.Usage usage = metadata.usage();
+        try {
+            subscriptionService.recordUsage(new AiTokenUsageRecord(
+                    "vocabulary-card:" + job.getJobUid(),
+                    card.getUserId(),
+                    "vocabulary.card-generation",
+                    metadata.provider(),
+                    metadata.model(),
+                    usage.inputTokens(),
+                    usage.cachedInputTokens(),
+                    usage.outputTokens(),
+                    null,
+                    usage.totalTokens(),
+                    metadata.traceId()
+            ));
+        } catch (Exception exception) {
+            log.warn(
+                    "Vocabulary generation usage record failed jobUid={} cardUid={} userId={} reason={}",
+                    safeId(job.getJobUid()),
+                    safeId(card.getCardUid()),
+                    card.getUserId(),
+                    exception.getMessage());
         }
     }
 
