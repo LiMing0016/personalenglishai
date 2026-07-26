@@ -73,6 +73,43 @@ export interface SubscriptionStatus {
   overLimit: boolean
 }
 
+export type AiUsageProductKey =
+  | 'assistant'
+  | 'writing'
+  | 'translation'
+  | 'vocabulary'
+  | 'other'
+
+export interface AiUsageProductTotals {
+  assistant: number
+  writing: number
+  translation: number
+  vocabulary: number
+  other: number
+}
+
+export interface AiUsageDayBucket {
+  date: string
+  total: number
+  byProduct: AiUsageProductTotals
+}
+
+export interface AiUsageActivity {
+  metric: 'ai_tokens'
+  unit: 'token'
+  timezone: string
+  from: string
+  to: string
+  total: number
+  buckets: AiUsageDayBucket[]
+}
+
+export interface AiUsageActivityParams {
+  from: string
+  to: string
+  timezone?: string
+}
+
 export const userApi = {
   async getMyProfile(): Promise<MeProfileResponse> {
     const res = await http.get<MeProfileResponse>('/users/me/profile')
@@ -118,6 +155,19 @@ export const userApi = {
 
   async getMySubscription(): Promise<{ data?: SubscriptionStatus }> {
     const res = await http.get<{ data?: SubscriptionStatus }>('/subscription/me')
+    return res.data
+  },
+
+  async getMyAiUsage(params: AiUsageActivityParams): Promise<{ data?: AiUsageActivity }> {
+    const res = await http.get<{ data?: AiUsageActivity }>('/users/me/usage', {
+      params: {
+        metric: 'ai_tokens',
+        granularity: 'day',
+        timezone: params.timezone ?? 'Asia/Shanghai',
+        from: params.from,
+        to: params.to,
+      },
+    })
     return res.data
   },
 
