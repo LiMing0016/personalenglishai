@@ -15,6 +15,8 @@ import com.personalenglishai.backend.mapper.subscription.UserSubscriptionMapper;
 import com.personalenglishai.backend.service.subscription.dto.CreateRedeemCodesRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -49,6 +51,16 @@ class SubscriptionServiceTest {
         usageMapper = new FakeAiTokenUsageMapper();
         redeemCodeMapper = new FakeSubscriptionRedeemCodeMapper();
         service = new SubscriptionService(planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, FIXED_CLOCK, "test-secret");
+    }
+
+    @Test
+    void usageRecordingUsesIndependentTransactionSoMeteringFailureCannotRollbackFeatureWork() throws Exception {
+        Transactional transactional = SubscriptionService.class
+                .getMethod("recordUsage", AiTokenUsageRecord.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 
     @Test

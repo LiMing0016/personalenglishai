@@ -18,6 +18,7 @@ import com.personalenglishai.backend.service.subscription.dto.SubscriptionStatus
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.Mac;
@@ -225,7 +226,7 @@ public class SubscriptionService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean recordUsage(AiTokenUsageRecord record) {
         if (record == null || record.userId() == null || isBlank(record.usageEventId())) {
             return false;
