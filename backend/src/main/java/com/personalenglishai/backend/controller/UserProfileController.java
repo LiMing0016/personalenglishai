@@ -2,6 +2,7 @@ package com.personalenglishai.backend.controller;
 
 import com.personalenglishai.backend.common.response.ApiResponse;
 import com.personalenglishai.backend.controller.dto.AbilityProfileResponse;
+import com.personalenglishai.backend.controller.dto.AvatarUploadResponse;
 import com.personalenglishai.backend.controller.dto.MeProfileResponse;
 import com.personalenglishai.backend.controller.dto.UpdateNicknameRequest;
 import com.personalenglishai.backend.controller.dto.UserStatsResponse;
@@ -13,10 +14,12 @@ import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.mapper.UserMapper;
 import com.personalenglishai.backend.service.UserAbilityProfileService;
 import com.personalenglishai.backend.service.UserProfileService;
+import com.personalenglishai.backend.service.avatar.AvatarService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.format.DateTimeFormatter;
 
@@ -34,15 +37,18 @@ public class UserProfileController {
     private final UserMapper userMapper;
     private final UserAbilityProfileService userAbilityProfileService;
     private final EssayEvaluationMapper essayEvaluationMapper;
+    private final AvatarService avatarService;
 
     public UserProfileController(UserProfileService userProfileService,
                                  UserMapper userMapper,
                                  UserAbilityProfileService userAbilityProfileService,
-                                 EssayEvaluationMapper essayEvaluationMapper) {
+                                 EssayEvaluationMapper essayEvaluationMapper,
+                                 AvatarService avatarService) {
         this.userProfileService = userProfileService;
         this.userMapper = userMapper;
         this.userAbilityProfileService = userAbilityProfileService;
         this.essayEvaluationMapper = essayEvaluationMapper;
+        this.avatarService = avatarService;
     }
 
     /**
@@ -85,6 +91,20 @@ public class UserProfileController {
             @RequestAttribute("userId") Long userId) {
         userMapper.updateNickname(userId, request.getNickname().trim());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 上传当前用户头像
+     * POST /api/users/me/profile/avatar
+     */
+    @PostMapping("/avatar")
+    public ResponseEntity<ApiResponse<AvatarUploadResponse>> uploadAvatar(
+            @RequestPart("file") MultipartFile file,
+            @RequestAttribute("userId") Long userId) {
+        AvatarUploadResponse data = avatarService.upload(userId, file);
+        ApiResponse<AvatarUploadResponse> body = ApiResponse.success(data);
+        body.setTraceId(MDC.get("traceId"));
+        return ResponseEntity.ok(body);
     }
 
     /**

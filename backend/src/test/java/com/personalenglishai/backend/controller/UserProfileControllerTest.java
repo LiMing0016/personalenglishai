@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
 import com.personalenglishai.backend.entity.User;
 import com.personalenglishai.backend.entity.UserProfile;
+import com.personalenglishai.backend.controller.dto.AvatarUploadResponse;
 import com.personalenglishai.backend.mapper.EssayEvaluationMapper;
 import com.personalenglishai.backend.interceptor.JwtInterceptor;
 import com.personalenglishai.backend.mapper.UserMapper;
 import com.personalenglishai.backend.service.UserAbilityProfileService;
 import com.personalenglishai.backend.service.UserProfileService;
+import com.personalenglishai.backend.service.avatar.AvatarService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -24,6 +27,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +53,9 @@ class UserProfileControllerTest {
 
     @MockBean
     private EssayEvaluationMapper essayEvaluationMapper;
+
+    @MockBean
+    private AvatarService avatarService;
 
     @MockBean
     private JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -113,6 +120,30 @@ class UserProfileControllerTest {
                     .andExpect(status().isNoContent());
 
             verify(userProfileService).updateStudyStage(eq(1L), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/users/me/profile/avatar")
+    class UploadAvatar {
+
+        @Test
+        @DisplayName("uses authenticated user id and returns avatar url")
+        void uploadAvatar_success() throws Exception {
+            MockMultipartFile file = new MockMultipartFile(
+                    "file", "avatar.png", "image/png", new byte[] {1, 2, 3});
+            when(avatarService.upload(eq(1L), any()))
+                    .thenReturn(new AvatarUploadResponse("/uploads/avatars/1/new.png"));
+
+            mockMvc.perform(multipart("/api/users/me/profile/avatar")
+                            .file(file)
+                            .requestAttr("userId", 1L))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value("0"))
+                    .andExpect(jsonPath("$.data.avatarUrl")
+                            .value("/uploads/avatars/1/new.png"));
+
+            verify(avatarService).upload(eq(1L), any());
         }
     }
 

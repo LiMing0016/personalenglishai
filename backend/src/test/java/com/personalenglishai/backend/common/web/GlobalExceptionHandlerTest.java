@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.io.IOException;
@@ -60,6 +61,30 @@ class GlobalExceptionHandlerTest {
         assertThat(timeout.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
         assertThat(outputInvalid.getBody().getCode()).isEqualTo("502050");
         assertThat(timeout.getBody().getCode()).isEqualTo("504050");
+    }
+
+    @Test
+    void handleBiz_mapsAvatarRateLimitToHttp429() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var response = handler.handleBiz(
+                new BizException(ErrorCode.USER_AVATAR_RATE_LIMITED));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(response.getBody().getCode()).isEqualTo("429020");
+    }
+
+    @Test
+    void handleMaxUploadSize_mapsMultipartOverflowToStableHttp400() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        var response = handler.handleMaxUploadSize(
+                new MaxUploadSizeExceededException(6L * 1024 * 1024));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getCode())
+                .isEqualTo(ErrorCode.COMMON_VALIDATION_ERROR.getCode());
+        assertThat(response.getBody().getMessage()).isEqualTo("上传文件大小超过限制");
     }
 
     @Test

@@ -16,6 +16,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.net.SocketTimeoutException;
@@ -68,6 +69,16 @@ public class GlobalExceptionHandler {
         MissingServletRequestPartException e) {
         log.warn("请求缺少 multipart part: {}", e.getRequestPartName());
         return body(ErrorCode.COMMON_VALIDATION_ERROR, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Object>> handleMaxUploadSize(
+            MaxUploadSizeExceededException e) {
+        log.warn("上传文件超过 multipart 配置上限");
+        return body(
+                ErrorCode.COMMON_VALIDATION_ERROR.getCode(),
+                "上传文件大小超过限制",
+                HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
