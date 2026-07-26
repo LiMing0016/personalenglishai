@@ -79,13 +79,43 @@
         </div>
       </div>
 
+      <div v-else-if="mode === 'weekly'" class="weekly-square-scroll">
+        <div class="weekly-square-chart" role="list" aria-label="按周用量趋势">
+          <button
+            v-for="column in weeklyColumns"
+            :key="column.period.key"
+            type="button"
+            class="weekly-square-column"
+            role="listitem"
+            :aria-label="periodAriaLabel(column.period)"
+            :title="`${column.period.label} · ${formatTokens(column.period.total)} Token`"
+            @mouseenter="selectPeriod(column.period)"
+            @mouseleave="clearDetail"
+            @focus="selectPeriod(column.period)"
+            @blur="clearDetail"
+          >
+            <span
+              v-for="cell in 7"
+              :key="cell"
+              class="weekly-square-cell"
+              :class="{ active: cell > 7 - column.filledCells }"
+              aria-hidden="true"
+            ></span>
+          </button>
+        </div>
+        <div class="weekly-month-labels" aria-hidden="true">
+          <span
+            v-for="month in weeklyMonthLabels"
+            :key="`${month.column}-${month.label}`"
+            :style="{ gridColumn: `${month.column + 1}` }"
+          >
+            {{ month.label }}
+          </span>
+        </div>
+      </div>
+
       <div v-else class="bars-scroll">
-        <div
-          class="bars-chart"
-          :class="mode === 'weekly' ? 'weekly-bars' : 'monthly-bars'"
-          role="list"
-          :aria-label="mode === 'weekly' ? '按周用量趋势' : '按自然月用量趋势'"
-        >
+        <div class="bars-chart monthly-bars" role="list" aria-label="按自然月用量趋势">
           <button
             v-for="period in visiblePeriods"
             :key="period.key"
@@ -104,7 +134,7 @@
               :class="{ empty: period.total === 0 }"
               :style="{ height: barHeight(period.total) }"
             ></span>
-            <small v-if="mode === 'cumulative'">{{ period.label.replace(/^\d{4}年/, '') }}</small>
+            <small>{{ period.label.replace(/^\d{4}年/, '') }}</small>
           </button>
         </div>
       </div>
@@ -167,6 +197,7 @@ import {
   buildProductBreakdown,
   buildUsageCalendar,
   buildUsageQueryRange,
+  buildWeeklySquareColumns,
   buildWeeklyUsage,
   type UsageCalendarDay,
   type UsagePeriod,
@@ -204,9 +235,14 @@ const weeklyPeriods = computed(() => (
 const monthlyPeriods = computed(() => (
   activity.value ? buildMonthlyUsage(activity.value) : []
 ))
-const visiblePeriods = computed(() => (
-  mode.value === 'weekly' ? weeklyPeriods.value : monthlyPeriods.value
+const weeklyColumns = computed(() => buildWeeklySquareColumns(weeklyPeriods.value))
+const weeklyMonthLabels = computed(() => (
+  calendar.value.monthLabels.filter((month, index, labels) => {
+    const nextMonth = labels[index + 1]
+    return !nextMonth || nextMonth.column - month.column > 2
+  })
 ))
+const visiblePeriods = computed(() => monthlyPeriods.value)
 const maxPeriodTotal = computed(() => Math.max(
   0,
   ...visiblePeriods.value.map((item) => item.total),
@@ -431,7 +467,8 @@ onMounted(loadActivity)
 }
 
 .calendar-scroll,
-.bars-scroll {
+.bars-scroll,
+.weekly-square-scroll {
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: #cfdad7 transparent;
@@ -513,13 +550,65 @@ onMounted(loadActivity)
     linear-gradient(to top, transparent 65%, rgba(219, 229, 226, 0.55) 66%, transparent 67%);
 }
 
-.weekly-bars {
-  grid-template-columns: repeat(52, minmax(7px, 1fr));
-}
-
 .monthly-bars {
   grid-template-columns: repeat(12, minmax(44px, 1fr));
   gap: 12px;
+}
+
+.weekly-square-scroll {
+  margin-top: 26px;
+  padding: 8px 2px 2px;
+}
+
+.weekly-square-chart,
+.weekly-month-labels {
+  display: grid;
+  grid-template-columns: repeat(53, 10px);
+  gap: 5px;
+  min-width: 790px;
+}
+
+.weekly-square-chart {
+  align-items: stretch;
+}
+
+.weekly-square-column {
+  display: grid;
+  grid-template-rows: repeat(7, 10px);
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.weekly-square-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: #e7eeec;
+}
+
+.weekly-square-cell.active {
+  background: #168a69;
+}
+
+.weekly-square-column:hover .weekly-square-cell.active,
+.weekly-square-column:focus-visible .weekly-square-cell.active {
+  background: #087457;
+}
+
+.weekly-square-column:focus-visible {
+  outline: 2px solid #0b8b67;
+  outline-offset: 3px;
+}
+
+.weekly-month-labels {
+  min-height: 16px;
+  margin-top: 9px;
+  color: #8795a5;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .usage-bar-wrap {

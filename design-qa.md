@@ -178,4 +178,36 @@ Post-fix evidence:
   its 844px content inside the component's own horizontal scroller.
 - The temporary narrow viewport was reset after verification.
 
+## Weekly Square Columns
+
+### Comparison Evidence
+
+- Weekly reference:
+  `C:\Users\Catalina\AppData\Local\Temp\codex-clipboard-963acb70-1428-4e8f-b7c4-1797969eb686.png`
+- Final desktop state:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\weekly-square-desktop-final.png`
+- Reference and implementation comparison:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\weekly-square-comparison.png`
+- Responsive chart state:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\weekly-square-390-chart.png`
+
+### Verification
+
+- The weekly selected state uses 53 columns with 7 square cells per column,
+  matching the reference's bottom-up weekly activity structure.
+- Zero weeks remain neutral; every non-zero week fills at least one cell, and
+  the peak week fills all 7 cells.
+- The signed-in page rendered 371 weekly cells: 50 empty columns and 3 active
+  columns for the current 18,298 Token dataset.
+- Hover, click, and keyboard focus continue to expose the selected week range,
+  total, and product composition. The checked `5/18–5/24` period displayed
+  `655 Token` from the assistant product.
+- Crowded partial-month labels are suppressed, leaving the same 8月–7月 rhythm
+  shown by the reference.
+- Daily mode still renders 371 calendar cells with 365 in-range days.
+- Cumulative mode still renders 13 intersecting natural-month bars.
+- At 390px, the weekly matrix keeps its 794px width inside its own horizontal
+  scroller while the document remains exactly 390px wide.
+- Browser console checks returned no warnings or errors.
+
 final result: passed
