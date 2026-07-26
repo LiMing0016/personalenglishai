@@ -206,9 +206,27 @@ class SubscriptionServiceTest {
 
         var status = service.getCurrentSubscription(1L);
         assertThat(status.getQuotaPeriod()).isEqualTo("daily");
-        assertThat(status.getTokenUsed()).isEqualTo(145L);
-        assertThat(status.getTokenRemaining()).isEqualTo(9_855L);
+        assertThat(status.getTokenUsed()).isEqualTo(140L);
+        assertThat(status.getTokenRemaining()).isEqualTo(9_860L);
         assertThat(usageMapper.monthly).isEmpty();
+    }
+
+    @Test
+    void storesUsageEventTimestampAsUtcRegardlessOfBusinessClockZone() {
+        Clock shanghaiClock = Clock.fixed(
+                Instant.parse("2026-04-29T10:15:30Z"),
+                ZoneId.of("Asia/Shanghai")
+        );
+        service = new SubscriptionService(
+                planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, shanghaiClock, "test-secret");
+
+        service.recordUsage(new AiTokenUsageRecord(
+                "usage-utc-1", 1L, "writing.evaluate", "openai", "gpt-5",
+                10L, 0L, 5L, 0L, 15L, "trace-utc-1"
+        ));
+
+        assertThat(usageMapper.events.get("usage-utc-1").getOccurredAt())
+                .isEqualTo(LocalDateTime.of(2026, 4, 29, 10, 15, 30));
     }
 
     @Test

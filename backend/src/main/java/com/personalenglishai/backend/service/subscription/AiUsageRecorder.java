@@ -65,10 +65,10 @@ public class AiUsageRecorder {
                                     Integer outputTokens,
                                     Integer reasoningTokens,
                                     Integer providerTotalTokens) {
-        if (inputTokens != null || outputTokens != null || reasoningTokens != null) {
-            return (long) defaultInt(inputTokens) + defaultInt(outputTokens) + defaultInt(reasoningTokens);
+        if (providerTotalTokens != null && providerTotalTokens >= 0) {
+            return toLong(providerTotalTokens);
         }
-        return toLong(providerTotalTokens);
+        return (long) defaultInt(inputTokens) + defaultInt(outputTokens);
     }
 
     private static int defaultInt(Integer value) {
