@@ -1,14 +1,10 @@
 <template>
   <section class="activity-card" aria-labelledby="ai-usage-title">
     <header class="activity-header">
-      <div>
-        <p class="activity-eyebrow">过去一年</p>
-        <h3 id="ai-usage-title">全站 AI Token 活动</h3>
-        <p class="activity-description">汇总学习助手、写作、翻译与词汇中的可计量 AI 使用。</p>
-      </div>
+      <h3 id="ai-usage-title">AI Token 活动</h3>
       <div class="activity-total">
-        <span>{{ loading ? '—' : formatTokens(activity?.total ?? 0) }}</span>
-        <small>累计 Token</small>
+        <span>{{ loading ? '—' : formatTokens(headline.total) }}</span>
+        <small>{{ headline.label }}</small>
       </div>
     </header>
 
@@ -196,14 +192,16 @@ import {
   buildMonthlyUsage,
   buildProductBreakdown,
   buildUsageCalendar,
+  buildUsageHeadline,
   buildUsageQueryRange,
   buildWeeklySquareColumns,
   buildWeeklyUsage,
+  type UsageActivityMode,
   type UsageCalendarDay,
   type UsagePeriod,
 } from './usageActivity'
 
-type ViewMode = 'daily' | 'weekly' | 'cumulative'
+type ViewMode = UsageActivityMode
 
 interface ActivityDetail {
   label: string
@@ -249,6 +247,18 @@ const maxPeriodTotal = computed(() => Math.max(
 ))
 const breakdown = computed(() => (
   activity.value ? buildProductBreakdown(activity.value) : []
+))
+const headline = computed(() => (
+  activity.value
+    ? buildUsageHeadline(mode.value, activity.value, today)
+    : {
+        total: 0,
+        label: mode.value === 'daily'
+          ? '今日 Token'
+          : mode.value === 'weekly'
+            ? '本周 Token'
+            : '累计 Token',
+      }
 ))
 
 async function loadActivity() {
@@ -375,17 +385,9 @@ onMounted(loadActivity)
 
 .activity-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-}
-
-.activity-eyebrow {
-  margin: 0 0 6px;
-  color: #0b8b67;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
 }
 
 .activity-header h3 {
@@ -393,12 +395,6 @@ onMounted(loadActivity)
   color: #10243f;
   font-size: 21px;
   line-height: 1.25;
-}
-
-.activity-description {
-  margin: 8px 0 0;
-  color: #718298;
-  font-size: 13px;
 }
 
 .activity-total {
@@ -843,10 +839,6 @@ onMounted(loadActivity)
 
   .activity-header {
     align-items: flex-start;
-  }
-
-  .activity-description {
-    max-width: 240px;
   }
 
   .activity-total span {

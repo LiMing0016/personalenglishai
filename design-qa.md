@@ -211,3 +211,54 @@ Post-fix evidence:
 - Browser console checks returned no warnings or errors.
 
 final result: passed
+
+## Subscription Header And Dynamic Usage Summary
+
+### Comparison Evidence
+
+- Previous signed-in state:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\subscription-header-before.png`
+- Final desktop state:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\subscription-header-desktop.png`
+- Previous and final state comparison:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\subscription-header-comparison.png`
+- Responsive state:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\subscription-header-390.png`
+- Responsive badge detail:
+  `F:\personalenglishai\.worktrees\personal-center-1237\design-qa-artifacts\subscription-badge-390.png`
+
+### Viewport And Visual Findings
+
+- Desktop source and implementation were captured at the same 1043 × 1272
+  viewport. The removed entitlement card made the final page shorter, so the
+  final state naturally returns to the top of the page and exposes the profile
+  header.
+- The large `Free / 0 / 10K` entitlement card is gone. A restrained `Free`
+  pill now sits beside the nickname without competing with the profile
+  hierarchy.
+- Clicking, hovering, or keyboard-focusing the pill reveals the plan and its
+  effective period. The verified Free account displayed
+  `2026-05-15 — 长期有效`.
+- The activity header now contains only `AI Token 活动` and the selected
+  period's numeric summary. The previous eyebrow, site-wide qualifier, and
+  explanatory paragraph were removed.
+- At 390 × 844, the nickname safely truncates, the plan badge remains visible,
+  and its detail popover stays inside the viewport. The existing tab and chart
+  scrollers continue to contain their own horizontal overflow.
+
+### Behavior And Accessibility Verification
+
+- Daily selected state displayed `0 / 今日 Token`, matching the signed-in
+  account's 2026-07-27 bucket.
+- Weekly selected state displayed `0 / 本周 Token`, covering the current
+  natural week from Monday 2026-07-27 through today.
+- Cumulative selected state displayed `18,298 / 累计 Token`, matching the
+  complete 365-day activity response.
+- The plan badge exposes one descriptive accessible name and a tooltip role;
+  Escape dismisses its focus-triggered detail.
+- A fresh signed-in browser tab loaded the final page with no console warnings
+  or errors.
+
+No actionable P0, P1, or P2 findings remain.
+
+final result: passed
