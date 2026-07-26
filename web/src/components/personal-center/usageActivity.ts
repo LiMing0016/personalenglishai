@@ -60,10 +60,46 @@ export interface UsageProductBreakdown {
   percent: number
 }
 
+export type UsageActivityMode = 'daily' | 'weekly' | 'cumulative'
+
+export interface UsageHeadline {
+  total: number
+  label: '今日 Token' | '本周 Token' | '累计 Token'
+}
+
 export function buildUsageQueryRange(today: string): { from: string; to: string } {
   return {
     from: addDays(today, -364),
     to: today,
+  }
+}
+
+export function buildUsageHeadline(
+  mode: UsageActivityMode,
+  activity: AiUsageActivity,
+  today: string,
+): UsageHeadline {
+  if (mode === 'daily') {
+    const todayBucket = activity.buckets.find((bucket) => bucket.date === today)
+    return {
+      total: nonNegative(todayBucket?.total),
+      label: '今日 Token',
+    }
+  }
+
+  if (mode === 'weekly') {
+    const currentWeek = buildWeeklyUsage(activity).find(
+      (period) => period.start <= today && period.end >= today,
+    )
+    return {
+      total: nonNegative(currentWeek?.total),
+      label: '本周 Token',
+    }
+  }
+
+  return {
+    total: nonNegative(activity.total),
+    label: '累计 Token',
   }
 }
 

@@ -7,6 +7,7 @@ import {
   buildProductBreakdown,
   buildUsageQueryRange,
   buildUsageCalendar,
+  buildUsageHeadline,
   buildWeeklySquareColumns,
   buildWeeklyUsage,
 } from './usageActivity.ts'
@@ -96,6 +97,43 @@ test('产品构成稳定排序并把未知或缺失分类收进其他', () => {
     'other',
   ])
   assert.equal(breakdown.find((item) => item.key === 'other')!.percent, 5)
+})
+
+test('每日摘要只展示今天的 Token', () => {
+  const source = activity([
+    day('2026-07-26', 10),
+    day('2026-07-27', 20),
+  ])
+
+  assert.deepEqual(buildUsageHeadline('daily', source, '2026-07-27'), {
+    total: 20,
+    label: '今日 Token',
+  })
+})
+
+test('每周摘要展示本周一到今天的 Token', () => {
+  const source = activity([
+    day('2026-07-19', 7),
+    day('2026-07-20', 10),
+    day('2026-07-26', 40),
+  ])
+
+  assert.deepEqual(buildUsageHeadline('weekly', source, '2026-07-26'), {
+    total: 50,
+    label: '本周 Token',
+  })
+})
+
+test('累计摘要展示活动查询区间内的总 Token', () => {
+  const source = activity([
+    day('2026-07-20', 10),
+    day('2026-07-27', 20),
+  ])
+
+  assert.deepEqual(buildUsageHeadline('cumulative', source, '2026-07-27'), {
+    total: 30,
+    label: '累计 Token',
+  })
 })
 
 function activity(buckets: AiUsageDayBucket[]): AiUsageActivity {
