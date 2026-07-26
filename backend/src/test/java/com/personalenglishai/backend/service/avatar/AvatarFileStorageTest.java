@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class AvatarFileStorageTest {
 
@@ -71,6 +72,18 @@ class AvatarFileStorageTest {
 
         assertThat(otherUser.path()).exists();
         assertThat(sameUserExternalTarget).exists();
+        assertThat(replacement.path()).exists();
+    }
+
+    @Test
+    void malformedPreviousUrlNeverBreaksSuccessfulReplacement() {
+        AvatarFileStorage storage = storage();
+        AvatarFileStorage.StoredAvatar replacement =
+                storage.store(42L, new byte[] {2});
+
+        assertThatCode(() -> storage.deletePreviousIfOwned(
+                42L, "/uploads/avatars/42/old?.png", replacement))
+                .doesNotThrowAnyException();
         assertThat(replacement.path()).exists();
     }
 

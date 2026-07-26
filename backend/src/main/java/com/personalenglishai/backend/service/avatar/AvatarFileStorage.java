@@ -69,15 +69,19 @@ public class AvatarFileStorage {
             return;
         }
 
-        Path userDirectory = userDirectory(userId);
-        Path oldPath = userDirectory.resolve(relativeFilename).toAbsolutePath().normalize();
-        if (!oldPath.startsWith(userDirectory)
-                || oldPath.equals(userDirectory)
-                || (replacement != null && oldPath.equals(replacement.path()))) {
-            return;
-        }
+        try {
+            Path userDirectory = userDirectory(userId);
+            Path oldPath = userDirectory.resolve(relativeFilename).toAbsolutePath().normalize();
+            if (!oldPath.startsWith(userDirectory)
+                    || oldPath.equals(userDirectory)
+                    || (replacement != null && oldPath.equals(replacement.path()))) {
+                return;
+            }
 
-        deleteQuietly(oldPath, "旧头像文件");
+            deleteQuietly(oldPath, "旧头像文件");
+        } catch (RuntimeException e) {
+            log.warn("旧头像地址无法安全解析 userId={}", userId);
+        }
     }
 
     private Path userDirectory(Long userId) {
