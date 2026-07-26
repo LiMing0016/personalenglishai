@@ -3,6 +3,7 @@ package com.personalenglishai.backend.service.assistant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.personalenglishai.backend.controller.dto.assistant.AssistantRequest;
+import com.personalenglishai.backend.controller.dto.assistant.AssistantRunMetadataResponse;
 import com.personalenglishai.backend.entity.assistant.AssistantConversation;
 import com.personalenglishai.backend.entity.assistant.AssistantMessage;
 import com.personalenglishai.backend.mapper.assistant.AssistantConversationMapper;
@@ -26,6 +27,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 
 class AssistantConversationServiceTest {
     private final AssistantProjectMapper projectMapper = mock(AssistantProjectMapper.class);
@@ -36,6 +39,52 @@ class AssistantConversationServiceTest {
     private final AssistantRequestValidator assistantRequestValidator = mock(AssistantRequestValidator.class);
     private final AgentDebugService agentDebugService = mock(AgentDebugService.class);
     private final LearningCaptureService learningCaptureService = mock(LearningCaptureService.class);
+    private final AssistantUsageService assistantUsageService = mock(AssistantUsageService.class);
+
+    @Test
+    void sendAgentMessageChecksQuotaThenRecordsCompletedRunUsage() {
+        AssistantConversationService service = service(new ObjectMapper());
+        when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
+        when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(0);
+        when(messageMapper.selectByConversationUid("conv-history")).thenReturn(List.of());
+        PythonAssistantClient.PythonAssistantReply reply = new PythonAssistantClient.PythonAssistantReply();
+        reply.setReply("完成");
+        AssistantRunMetadataResponse run = run("run-sync");
+        reply.setRun(run);
+        when(pythonAssistantClient.run(any(AssistantRequest.class), eq("Bearer token"))).thenReturn(reply);
+
+        service.sendAgentMessage(4L, "conv-history", request("开始练习"), "Bearer token");
+
+        var ordered = inOrder(assistantUsageService, pythonAssistantClient);
+        ordered.verify(assistantUsageService).assertQuota(4L);
+        ordered.verify(pythonAssistantClient).run(any(AssistantRequest.class), eq("Bearer token"));
+        verify(assistantUsageService).record(4L, run);
+    }
+
+    @Test
+    void writeAgentMessageStreamChecksQuotaAndRecordsRunCompletedUsageOnce() {
+        AssistantConversationService service = service(new ObjectMapper());
+        when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
+        when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(0);
+        when(pythonAssistantClient.streamRun(any(AssistantRequest.class), eq("Bearer token")))
+                .thenReturn(Flux.just(
+                        "{\"type\":\"message.completed\",\"content\":\"完成\",\"parts\":[]}",
+                        "{\"type\":\"run.completed\",\"run\":{\"runId\":\"run-stream\",\"traceId\":\"trace-stream\",\"model\":\"gpt-5\",\"usage\":{\"inputTokens\":10,\"cachedInputTokens\":2,\"outputTokens\":5,\"totalTokens\":15,\"requests\":1}}}"));
+
+        service.writeAgentMessageStream(
+                4L,
+                "conv-history",
+                request("开始练习"),
+                "Bearer token",
+                new ByteArrayOutputStream());
+
+        verify(assistantUsageService).assertQuota(4L);
+        ArgumentCaptor<AssistantRunMetadataResponse> captor =
+                ArgumentCaptor.forClass(AssistantRunMetadataResponse.class);
+        verify(assistantUsageService).record(eq(4L), captor.capture());
+        assertThat(captor.getValue().getRunId()).isEqualTo("run-stream");
+        assertThat(captor.getValue().getUsage().getTotalTokens()).isEqualTo(15);
+    }
 
     @Test
     void sendAgentMessage_persistsAndReturnsStructuredParts() {
@@ -117,7 +166,8 @@ class AssistantConversationServiceTest {
                 assistantRequestValidator,
                 new ObjectMapper(),
                 agentDebugService,
-                learningCaptureService);
+                learningCaptureService,
+                assistantUsageService);
         when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
         when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(5);
         when(messageMapper.selectByConversationUid("conv-history"))
@@ -166,7 +216,8 @@ class AssistantConversationServiceTest {
                 assistantRequestValidator,
                 new ObjectMapper(),
                 agentDebugService,
-                learningCaptureService);
+                learningCaptureService,
+                assistantUsageService);
         when(conversationMapper.findOwnedActiveByUid(4L, "conv-history")).thenReturn(conversation());
         when(messageMapper.selectMaxSortOrder("conv-history")).thenReturn(5);
         when(messageMapper.selectByConversationUid("conv-history"))
@@ -276,7 +327,23 @@ class AssistantConversationServiceTest {
                 assistantRequestValidator,
                 objectMapper,
                 agentDebugService,
-                learningCaptureService);
+                learningCaptureService,
+                assistantUsageService);
+    }
+
+    private AssistantRunMetadataResponse run(String runId) {
+        AssistantRunMetadataResponse.Usage usage = new AssistantRunMetadataResponse.Usage();
+        usage.setInputTokens(10);
+        usage.setCachedInputTokens(2);
+        usage.setOutputTokens(5);
+        usage.setTotalTokens(15);
+        usage.setRequests(1);
+        AssistantRunMetadataResponse run = new AssistantRunMetadataResponse();
+        run.setRunId(runId);
+        run.setTraceId("trace-" + runId);
+        run.setModel("gpt-5");
+        run.setUsage(usage);
+        return run;
     }
 
     private AssistantRequest request(String text) {
