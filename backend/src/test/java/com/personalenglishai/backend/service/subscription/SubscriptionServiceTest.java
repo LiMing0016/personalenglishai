@@ -417,6 +417,18 @@ class SubscriptionServiceTest {
         public Long selectDailyTokenUsed(Long userId, LocalDate usageDate) {
             return daily.get(userId + ":" + usageDate);
         }
+
+        @Override
+        public List<AiTokenUsageEvent> selectEventsByUserAndOccurredAt(
+                Long userId,
+                LocalDateTime fromUtc,
+                LocalDateTime toUtcExclusive) {
+            return events.values().stream()
+                    .filter(event -> userId.equals(event.getUserId()))
+                    .filter(event -> !event.getOccurredAt().isBefore(fromUtc))
+                    .filter(event -> event.getOccurredAt().isBefore(toUtcExclusive))
+                    .toList();
+        }
     }
 
     private static final class FakeSubscriptionRedeemCodeMapper implements SubscriptionRedeemCodeMapper {

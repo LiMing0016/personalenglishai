@@ -5,6 +5,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface AiTokenUsageMapper {
@@ -23,4 +25,9 @@ public interface AiTokenUsageMapper {
 
     Long selectDailyTokenUsed(@Param("userId") Long userId,
                               @Param("usageDate") LocalDate usageDate);
+
+    List<AiTokenUsageEvent> selectEventsByUserAndOccurredAt(
+            @Param("userId") Long userId,
+            @Param("fromUtc") LocalDateTime fromUtc,
+            @Param("toUtcExclusive") LocalDateTime toUtcExclusive);
 }
