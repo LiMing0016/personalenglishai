@@ -123,6 +123,7 @@ export default defineConfig({
             { text: 'Agent Debug', link: '/api/agent-debug' },
             { text: 'Admin 用户', link: '/api/admin-users' },
             { text: 'Admin 订阅与额度', link: '/api/admin-subscription' },
+            { text: '用户 AI 用量活动', link: '/api/user-ai-usage' },
             { text: 'AI Command', link: '/api/ai-command' },
             { text: 'Document', link: '/api/document' },
             { text: 'Learning Notes', link: '/api/learning-notes' },
@@ -152,7 +153,8 @@ export default defineConfig({
           items: [
             { text: '数据总览', link: '/data/' },
             { text: '评分持久化', link: '/data/scoring-persistence-schema' },
-            { text: 'Learning Note', link: '/data/learning-note-schema' }
+            { text: 'Learning Note', link: '/data/learning-note-schema' },
+            { text: '订阅与 AI 用量', link: '/data/subscription-and-ai-usage' }
           ]
         }
       ],
