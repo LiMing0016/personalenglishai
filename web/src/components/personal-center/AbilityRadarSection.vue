@@ -1,10 +1,16 @@
 <template>
   <div class="radar-section">
-    <h2 class="section-title">能力雷达</h2>
+    <div class="section-heading">
+      <p class="section-eyebrow">能力画像</p>
+      <h2 class="section-title">基于写作评测的能力画像</h2>
+      <p class="section-description">当前画像来自你的写作评测数据，后续会逐步纳入阅读、词汇与表达训练。</p>
+    </div>
 
     <!-- Empty State -->
     <div v-if="!loading && !hasData" class="empty-state">
-      完成首次作文评估后，这里将展示你的能力雷达
+      <h3>完成首次写作评测，生成能力画像</h3>
+      <p>我们会从任务完成、连贯衔接、语法、词汇、结构与表达多样性六个维度分析。</p>
+      <RouterLink to="/app/writing">开始写作评测</RouterLink>
     </div>
 
     <!-- Chart -->
@@ -166,11 +172,30 @@ onUnmounted(() => {
   max-width: 800px;
 }
 
+.section-heading {
+  margin-bottom: 24px;
+}
+
+.section-eyebrow {
+  margin: 0 0 5px;
+  color: #7a8da2;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
 .section-title {
   font-size: 22px;
   font-weight: 700;
   color: #1e293b;
-  margin: 0 0 24px;
+  margin: 0;
+}
+
+.section-description {
+  margin: 9px 0 0;
+  color: #6f8297;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .empty-state {
@@ -181,6 +206,31 @@ onUnmounted(() => {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 18px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: #1c334c;
+  font-size: 18px;
+}
+
+.empty-state p {
+  max-width: 560px;
+  margin: 10px auto 20px;
+  color: #73869b;
+  line-height: 1.65;
+}
+
+.empty-state a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  border-radius: 10px;
+  padding: 0 15px;
+  background: #087a59;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .radar-chart {

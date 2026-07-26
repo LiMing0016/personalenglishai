@@ -1,6 +1,10 @@
 <template>
   <div class="subscription-section">
-    <h2 class="section-title">会员订阅</h2>
+    <div class="section-heading">
+      <p class="section-eyebrow">订阅与用量</p>
+      <h2 class="section-title">当前权益与兑换码</h2>
+      <p class="section-description">正式支付上线前，使用兑换码开通或续期；兑换记录将继续保留。</p>
+    </div>
 
     <div class="status-panel">
       <div>
@@ -145,11 +149,29 @@ onMounted(async () => {
   max-width: 860px;
 }
 
+.section-heading {
+  margin-bottom: 24px;
+}
+
+.section-eyebrow {
+  margin: 0 0 5px;
+  color: #7a8da2;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
 .section-title {
   font-size: 22px;
   font-weight: 700;
   color: #1e293b;
-  margin: 0 0 24px;
+  margin: 0;
+}
+
+.section-description {
+  margin: 9px 0 0;
+  color: #6f8297;
+  font-size: 13px;
 }
 
 .status-panel,

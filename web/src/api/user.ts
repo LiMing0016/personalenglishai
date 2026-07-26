@@ -103,11 +103,6 @@ export const userApi = {
     return res.data
   },
 
-  async mockPurchaseSubscription(planCode: 'basic' | 'pro' | 'premium'): Promise<{ data?: SubscriptionStatus }> {
-    const res = await http.post<{ data?: SubscriptionStatus }>('/subscription/mock-purchase', { planCode })
-    return res.data
-  },
-
   async redeemSubscriptionCode(code: string): Promise<{ data?: SubscriptionStatus }> {
     const res = await http.post<{ data?: SubscriptionStatus }>('/subscription/redeem', { code })
     return res.data

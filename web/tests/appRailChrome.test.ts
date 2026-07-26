@@ -34,8 +34,8 @@ assert.match(
   'collapsed fixed rail should reserve its compact width beside the main content',
 )
 assert.ok(
-  appLayoutSource.includes(':collapsed="railCollapsed"'),
-  'app layout should pass the shared collapse state to AppRail',
+  appLayoutSource.includes(':collapsed="effectiveRailCollapsed"'),
+  'app layout should pass the responsive collapse state to AppRail',
 )
 assert.ok(
   appLayoutSource.includes('@toggle-rail="toggleRail"'),

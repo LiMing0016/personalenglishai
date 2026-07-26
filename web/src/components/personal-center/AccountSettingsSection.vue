@@ -1,6 +1,6 @@
 <template>
   <div class="settings-section">
-    <h2 class="section-title">账号设置</h2>
+    <h2 class="section-title">账号安全</h2>
 
     <!-- Info Card -->
     <div class="card info-card">
