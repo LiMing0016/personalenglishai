@@ -18,19 +18,7 @@
       </div>
     </div>
 
-    <div class="usage-panel">
-      <div class="usage-row">
-        <span>{{ usageWindowText }} token 用量</span>
-        <strong>{{ usagePercent }}%</strong>
-      </div>
-      <div class="progress-track">
-        <div class="progress-fill" :class="{ danger: status?.overLimit }" :style="{ width: `${Math.min(usagePercent, 100)}%` }"></div>
-      </div>
-      <div class="usage-meta">
-        <span>已用 {{ formatTokens(status?.tokenUsed ?? 0) }}</span>
-        <span>剩余 {{ formatTokens(status?.tokenRemaining ?? 0) }}</span>
-      </div>
-    </div>
+    <AiUsageActivityPanel />
 
     <form class="redeem-panel" @submit.prevent="redeem">
       <label class="redeem-label" for="subscription-code">兑换会员码</label>
@@ -71,6 +59,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { userApi, type SubscriptionPlan, type SubscriptionStatus } from '@/api/user'
 import { showToast } from '@/utils/toast'
+import AiUsageActivityPanel from './AiUsageActivityPanel.vue'
 
 const plans = ref<SubscriptionPlan[]>([])
 const status = ref<SubscriptionStatus | null>(null)
@@ -83,20 +72,9 @@ const paidPlans = computed(() =>
   plans.value.filter((plan): plan is SubscriptionPlan & { planCode: PaidPlanCode } => plan.planCode !== 'free')
 )
 const effectiveLimit = computed(() => status.value?.tokenLimit ?? status.value?.monthlyTokenLimit ?? 0)
-const usagePercent = computed(() => {
-  const limit = effectiveLimit.value
-  if (limit <= 0) return 0
-  return Math.round(((status.value?.tokenUsed ?? 0) / limit) * 100)
-})
 const periodText = computed(() => {
   if (!status.value?.currentPeriodEnd) return 'Free 档长期有效'
   return `有效期至 ${formatDate(status.value.currentPeriodEnd)}`
-})
-const usageWindowText = computed(() => {
-  if (status.value?.quotaPeriod === 'daily') {
-    return `${status.value.usageDate ?? '今日'} 每日`
-  }
-  return `${status.value?.usageMonth ?? '--'} 每月`
 })
 
 function formatTokens(value: number): string {
@@ -175,7 +153,6 @@ onMounted(async () => {
 }
 
 .status-panel,
-.usage-panel,
 .redeem-panel {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -220,37 +197,6 @@ onMounted(async () => {
 }
 
 .quota-summary small {
-  color: #64748b;
-}
-
-.usage-row,
-.usage-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 14px;
-  color: #334155;
-}
-
-.progress-track {
-  height: 10px;
-  background: #e2e8f0;
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 12px 0 10px;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #047857;
-  transition: width 0.2s ease;
-}
-
-.progress-fill.danger {
-  background: #dc2626;
-}
-
-.usage-meta {
   color: #64748b;
 }
 
