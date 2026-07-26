@@ -7,6 +7,7 @@ import {
   buildProductBreakdown,
   buildUsageQueryRange,
   buildUsageCalendar,
+  buildWeeklySquareColumns,
   buildWeeklyUsage,
 } from './usageActivity.ts'
 
@@ -58,6 +59,20 @@ test('周和自然月聚合包含首尾边界并与日总量守恒', () => {
   assert.equal(buildMonthlyUsage(source).length, 13)
   assert.equal(sum(buildWeeklyUsage(source).map((item) => item.total)), 100)
   assert.equal(sum(buildMonthlyUsage(source).map((item) => item.total)), 100)
+})
+
+test('每周总量离散为从 0 到 7 的方块高度', () => {
+  const periods = [
+    weeklyPeriod('week-empty', 0),
+    weeklyPeriod('week-small', 10),
+    weeklyPeriod('week-middle', 50),
+    weeklyPeriod('week-peak', 100),
+  ]
+
+  assert.deepEqual(
+    buildWeeklySquareColumns(periods).map((item) => item.filledCells),
+    [0, 1, 4, 7],
+  )
 })
 
 test('产品构成稳定排序并把未知或缺失分类收进其他', () => {
@@ -116,4 +131,21 @@ function day(
 
 function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0)
+}
+
+function weeklyPeriod(key: string, total: number) {
+  return {
+    key,
+    label: '7/20–7/26',
+    start: '2026-07-20',
+    end: '2026-07-26',
+    total,
+    byProduct: {
+      assistant: total,
+      writing: 0,
+      translation: 0,
+      vocabulary: 0,
+      other: 0,
+    },
+  }
 }

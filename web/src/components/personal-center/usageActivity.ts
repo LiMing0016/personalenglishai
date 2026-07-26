@@ -48,6 +48,11 @@ export interface UsagePeriod {
   byProduct: AiUsageDayBucket['byProduct']
 }
 
+export interface UsageWeeklySquareColumn {
+  period: UsagePeriod
+  filledCells: number
+}
+
 export interface UsageProductBreakdown {
   key: AiUsageProductKey
   label: string
@@ -128,6 +133,19 @@ export function buildWeeklyUsage(activity: AiUsageActivity): UsagePeriod[] {
       visibleEnd,
       activity.buckets,
     )
+  })
+}
+
+export function buildWeeklySquareColumns(
+  periods: UsagePeriod[],
+): UsageWeeklySquareColumn[] {
+  const peak = Math.max(0, ...periods.map((period) => nonNegative(period.total)))
+  return periods.map((period) => {
+    const total = nonNegative(period.total)
+    const filledCells = total <= 0 || peak <= 0
+      ? 0
+      : Math.min(7, Math.max(1, Math.ceil((total / peak) * 7)))
+    return { period, filledCells }
   })
 }
 
