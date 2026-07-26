@@ -36,6 +36,7 @@ public enum ErrorCode {
     VOCABULARY_THEME_NOT_FOUND("404051", "单词主题不存在"),
     VOCABULARY_THEME_FORBIDDEN("403051", "系统主题不允许修改"),
     VOCABULARY_THEME_CONFLICT("409031", "单词主题版本或名称冲突"),
+    USER_NOT_FOUND("404060", "用户不存在"),
     USER_AVATAR_INVALID("400060", "头像图片不符合要求"),
     USER_AVATAR_RATE_LIMITED("429020", "头像更新过于频繁，请稍后再试"),
     VOCABULARY_IMAGE_INVALID("400052", "图片格式或大小不符合要求"),

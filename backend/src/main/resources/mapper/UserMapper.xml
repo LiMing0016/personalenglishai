@@ -73,6 +73,11 @@
         WHERE id = #{id}
     </update>
 
+    <update id="updateAvatarUrl">
+        UPDATE users SET avatar_url = #{avatarUrl}, updated_at = NOW()
+        WHERE id = #{id}
+    </update>
+
     <update id="updateStatus">
         UPDATE users SET status = #{status}, updated_at = NOW() WHERE id = #{id}
     </update>
