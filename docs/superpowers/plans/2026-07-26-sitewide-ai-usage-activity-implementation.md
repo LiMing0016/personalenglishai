@@ -4,7 +4,7 @@
 
 **Goal:** 将现有 AI Token 事件账本升级为个人中心可查询、可解释的全站用量活动，并补齐学习助手和词汇卡生成的可靠用量归集。
 
-**Architecture:** 保留 `ai_token_usage_event` 作为不可变事实源，新增独立 `/api/users/me/usage` 只读接口，由 Java 服务按请求时区聚合原始事件并通过集中式产品分类器输出稀疏日 bucket。前端只消费日 bucket，并在浏览器内派生每日热力图、52 周趋势、12 月累计和产品构成；订阅额度、兑换码和套餐继续使用原接口。
+**Architecture:** 保留 `ai_token_usage_event` 作为不可变事实源，新增独立 `/api/users/me/usage` 只读接口，由 Java 服务按请求时区聚合原始事件并通过集中式产品分类器输出稀疏日 bucket。前端只消费日 bucket，并在浏览器内派生每日热力图、按周趋势、自然月累计和产品构成；订阅额度、兑换码和套餐继续使用原接口。
 
 **Tech Stack:** Java 17、Spring Boot 3、MyBatis、JUnit 5、Python 3、Pydantic、OpenAI Agents SDK、Vue 3、TypeScript、Node Test Runner、Vite
 
@@ -456,7 +456,7 @@ Create a white 18px-radius card with:
 - “全站 AI Token 活动” title and total.
 - “每日 / 每周 / 累计” segmented tabs.
 - 53 × 7 calendar grid for daily mode.
-- 52-week and 12-month CSS bar charts for aggregate modes.
+- Range-complete weekly and natural-month CSS bar charts for aggregate modes.
 - Keyboard-focusable cells/bars with native title and an in-panel tooltip.
 - Product composition rows below the chart.
 - loading skeleton, empty state and retry action.

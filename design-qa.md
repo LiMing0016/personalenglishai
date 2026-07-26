@@ -141,4 +141,41 @@ Post-fix evidence:
   node with the latest event across assistant, writing, translation, reading,
   listening, and speaking.
 
+## Site-wide AI Usage Activity Extension
+
+### Scope
+
+- Route: `http://127.0.0.1:4173/app/me?tab=subscription`
+- Replaces the single quota progress bar with an AI Token activity surface.
+- Keeps current entitlement, redemption code, and paid-plan cards intact.
+
+### Automated Design Checks
+
+- The daily model always emits 53 × 7 cells and keeps out-of-range padding inert.
+- Non-zero days use quantile levels, so one extreme day cannot flatten all other
+  activity to the empty color.
+- Weekly and monthly totals are derived from the same daily buckets and preserve
+  the daily total.
+- The activity surface uses native CSS grids and bars; no chart dependency was
+  added to the personal-center entry.
+- Calendar cells and bars are keyboard focusable and expose numeric aria labels.
+- Narrow layouts scroll inside the chart instead of widening the personal page.
+
+### Manual Browser Status
+
+- Verified against the branch backend with the signed-in personal-center page.
+- The page loaded 18,298 recorded Tokens and grouped them into assistant,
+  writing, and vocabulary products without falling back to the error state.
+- Daily mode rendered 371 cells (365 in-range days plus calendar padding);
+  weekly mode rendered 53 intersecting calendar-week buckets; cumulative mode
+  rendered 13 intersecting natural-month buckets.
+- Weekly and monthly bucket totals both summed to the same 18,298 Tokens shown
+  by the daily range, including partial boundary periods.
+- Selecting an active day exposed the exact date, total, and product
+  composition through the accessible detail region.
+- At the default 1043px viewport, the document had no horizontal overflow.
+- At a 390px viewport, the document remained 390px wide while the calendar kept
+  its 844px content inside the component's own horizontal scroller.
+- The temporary narrow viewport was reset after verification.
+
 final result: passed

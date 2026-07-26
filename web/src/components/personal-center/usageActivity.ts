@@ -55,6 +55,13 @@ export interface UsageProductBreakdown {
   percent: number
 }
 
+export function buildUsageQueryRange(today: string): { from: string; to: string } {
+  return {
+    from: addDays(today, -364),
+    to: today,
+  }
+}
+
 export function buildUsageCalendar(
   activity: AiUsageActivity,
   today: string,
@@ -106,43 +113,51 @@ export function buildUsageCalendar(
 }
 
 export function buildWeeklyUsage(activity: AiUsageActivity): UsagePeriod[] {
-  const end = addDays(activity.to, 6 - mondayIndex(activity.to))
-  const start = addDays(end, -(52 * 7 - 1))
-  return Array.from({ length: 52 }, (_, index) => {
-    const weekStart = addDays(start, index * 7)
+  const firstWeekStart = addDays(activity.from, -mondayIndex(activity.from))
+  const lastWeekStart = addDays(activity.to, -mondayIndex(activity.to))
+  const weekCount = Math.floor(daysBetween(firstWeekStart, lastWeekStart) / 7) + 1
+  return Array.from({ length: weekCount }, (_, index) => {
+    const weekStart = addDays(firstWeekStart, index * 7)
     const weekEnd = addDays(weekStart, 6)
+    const visibleStart = weekStart < activity.from ? activity.from : weekStart
+    const visibleEnd = weekEnd > activity.to ? activity.to : weekEnd
     return aggregatePeriod(
       `week-${weekStart}`,
-      `${shortDate(weekStart)}–${shortDate(weekEnd)}`,
-      weekStart,
-      weekEnd,
+      `${shortDate(visibleStart)}–${shortDate(visibleEnd)}`,
+      visibleStart,
+      visibleEnd,
       activity.buckets,
     )
   })
 }
 
 export function buildMonthlyUsage(activity: AiUsageActivity): UsagePeriod[] {
+  const from = parseDate(activity.from)
   const to = parseDate(activity.to)
-  const endYear = to.getUTCFullYear()
-  const endMonth = to.getUTCMonth()
-  return Array.from({ length: 12 }, (_, index) => {
-    const monthOffset = index - 11
-    const startDate = new Date(Date.UTC(endYear, endMonth + monthOffset, 1))
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1))
+  const periods: UsagePeriod[] = []
+
+  while (cursor <= to) {
+    const startDate = new Date(cursor)
     const endDate = new Date(Date.UTC(
       startDate.getUTCFullYear(),
       startDate.getUTCMonth() + 1,
       0,
     ))
-    const start = formatDate(startDate)
-    const end = formatDate(endDate)
-    return aggregatePeriod(
-      `month-${start.slice(0, 7)}`,
+    const monthStart = formatDate(startDate)
+    const monthEnd = formatDate(endDate)
+    const visibleStart = monthStart < activity.from ? activity.from : monthStart
+    const visibleEnd = monthEnd > activity.to ? activity.to : monthEnd
+    periods.push(aggregatePeriod(
+      `month-${monthStart.slice(0, 7)}`,
       `${startDate.getUTCFullYear()}年${startDate.getUTCMonth() + 1}月`,
-      start,
-      end,
+      visibleStart,
+      visibleEnd,
       activity.buckets,
-    )
-  })
+    ))
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  }
+  return periods
 }
 
 export function buildProductBreakdown(
@@ -221,6 +236,10 @@ function addDays(value: string, days: number): string {
   const date = parseDate(value)
   date.setUTCDate(date.getUTCDate() + days)
   return formatDate(date)
+}
+
+function daysBetween(from: string, to: string): number {
+  return Math.round((parseDate(to).getTime() - parseDate(from).getTime()) / 86_400_000)
 }
 
 function parseDate(value: string): Date {

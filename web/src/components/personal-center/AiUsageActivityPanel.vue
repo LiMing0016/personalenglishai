@@ -84,7 +84,7 @@
           class="bars-chart"
           :class="mode === 'weekly' ? 'weekly-bars' : 'monthly-bars'"
           role="list"
-          :aria-label="mode === 'weekly' ? '最近 52 周用量趋势' : '最近 12 个月用量趋势'"
+          :aria-label="mode === 'weekly' ? '按周用量趋势' : '按自然月用量趋势'"
         >
           <button
             v-for="period in visiblePeriods"
@@ -166,6 +166,7 @@ import {
   buildMonthlyUsage,
   buildProductBreakdown,
   buildUsageCalendar,
+  buildUsageQueryRange,
   buildWeeklyUsage,
   type UsageCalendarDay,
   type UsagePeriod,
@@ -217,8 +218,7 @@ const breakdown = computed(() => (
 async function loadActivity() {
   loading.value = true
   error.value = false
-  const to = shanghaiToday()
-  const from = addUtcDays(to, -365)
+  const { from, to } = buildUsageQueryRange(shanghaiToday())
   try {
     const response = await userApi.getMyAiUsage({
       from,
@@ -309,17 +309,6 @@ function shanghaiToday(): string {
   }).formatToParts(new Date())
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
   return `${values.year}-${values.month}-${values.day}`
-}
-
-function addUtcDays(value: string, days: number): string {
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1))
-  date.setUTCDate(date.getUTCDate() + days)
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, '0'),
-    String(date.getUTCDate()).padStart(2, '0'),
-  ].join('-')
 }
 
 function formatChineseDate(value: string): string {

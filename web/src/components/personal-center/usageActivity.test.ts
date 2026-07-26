@@ -5,9 +5,17 @@ import type { AiUsageActivity, AiUsageDayBucket } from '@/api/user'
 import {
   buildMonthlyUsage,
   buildProductBreakdown,
+  buildUsageQueryRange,
   buildUsageCalendar,
   buildWeeklyUsage,
 } from './usageActivity.ts'
+
+test('个人中心查询含今天在内的最近 365 个自然日', () => {
+  assert.deepEqual(buildUsageQueryRange('2026-07-27'), {
+    from: '2025-07-28',
+    to: '2026-07-27',
+  })
+})
 
 test('每日活动构造固定 53 × 7 日历并按非零日分位数分级', () => {
   const model = buildUsageCalendar(activity([
@@ -39,12 +47,15 @@ test('单个极值不会把其他所有非零日期压成空白级别', () => {
   assert.ok(new Set(levels).size >= 3)
 })
 
-test('最近 52 周和 12 个月聚合与范围内日总量守恒', () => {
+test('周和自然月聚合包含首尾边界并与日总量守恒', () => {
   const source = activity([
+    day('2025-07-27', 20, { vocabulary: 20 }),
     day('2026-06-30', 30, { writing: 20, translation: 10 }),
-    day('2026-07-01', 70, { assistant: 70 }),
+    day('2026-07-26', 50, { assistant: 50 }),
   ])
 
+  assert.equal(buildWeeklyUsage(source).length, 53)
+  assert.equal(buildMonthlyUsage(source).length, 13)
   assert.equal(sum(buildWeeklyUsage(source).map((item) => item.total)), 100)
   assert.equal(sum(buildMonthlyUsage(source).map((item) => item.total)), 100)
 })
