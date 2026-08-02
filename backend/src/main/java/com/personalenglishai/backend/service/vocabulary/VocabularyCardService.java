@@ -8,6 +8,7 @@ import com.personalenglishai.backend.common.error.BizException;
 import com.personalenglishai.backend.common.error.ErrorCode;
 import com.personalenglishai.backend.dto.admin.AdminPageResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyCardResolutionResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
@@ -35,6 +36,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -62,6 +64,7 @@ public class VocabularyCardService {
     private final VocabularyCardBlocksCodec cardBlocksCodec;
     private final ObjectMapper objectMapper;
     private final VocabularyRevisionWriteService revisionWriter;
+    private final VocabularyTermNormalizer termNormalizer;
 
     public VocabularyCardService(
             VocabularyCardMapper cards,
@@ -75,7 +78,8 @@ public class VocabularyCardService {
             VocabularyCoreContentCodec coreCodec,
             VocabularyCardBlocksCodec cardBlocksCodec,
             ObjectMapper objectMapper,
-            VocabularyRevisionWriteService revisionWriter) {
+            VocabularyRevisionWriteService revisionWriter,
+            VocabularyTermNormalizer termNormalizer) {
         this.cards = cards;
         this.sources = sources;
         this.revisions = revisions;
@@ -88,6 +92,20 @@ public class VocabularyCardService {
         this.cardBlocksCodec = cardBlocksCodec;
         this.objectMapper = objectMapper;
         this.revisionWriter = revisionWriter;
+        this.termNormalizer = termNormalizer;
+    }
+
+    public VocabularyCardResolutionResponse resolve(Long userId, String term, String language) {
+        String normalizedTerm = termNormalizer.normalize(term);
+        String normalizedLanguage = language == null ? "" : language.trim().toLowerCase(Locale.ROOT);
+        if (normalizedTerm.isBlank() || normalizedLanguage.isBlank()) {
+            throw new IllegalArgumentException("term and language are required");
+        }
+        VocabularyCard card = cards.findByIdentityIncludingDeleted(userId, normalizedLanguage, normalizedTerm);
+        if (card == null || card.getDeletedAt() != null) {
+            return VocabularyCardResolutionResponse.notFound();
+        }
+        return VocabularyCardResolutionResponse.found(card.getCardUid());
     }
 
     public VocabularyTemplateCatalogResponse templateCatalog(Long userId) {
