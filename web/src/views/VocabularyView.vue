@@ -403,13 +403,15 @@ const errorMessage = ref('')
 const debugMessage = ref('')
 const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
 const initialVocabularyNavigationFilters = parseVocabularyNavigationQuery(route.query)
-const vocabularyFilters = ref<VocabularyCardFilters>(initialVocabularyNavigationFilters ?? {
-  keyword: legacyVocabularyCardKeyword(),
-  sort: 'recent',
-  page: 1,
-  size: 20,
+const initialVocabularyNavigationMarker = Array.isArray(route.query.vc)
+  ? route.query.vc[0]
+  : route.query.vc
+const initialVocabularyNavigationContext = initialVocabularyNavigationMarker === '1'
+const vocabularyFilters = ref<VocabularyCardFilters>({
+  ...initialVocabularyNavigationFilters,
+  ...(!initialVocabularyNavigationContext ? { keyword: legacyVocabularyCardKeyword() } : {}),
 })
-const vocabularyNavigationContext = ref(Boolean(initialVocabularyNavigationFilters))
+const vocabularyNavigationContext = ref(initialVocabularyNavigationContext)
 const selectedCardUid = ref<string | null>(persistentVocabularyCardUid())
 const previousVocabularyPage = ref<VocabularyCardPage | null>(null)
 const nextVocabularyPage = ref<VocabularyCardPage | null>(null)
@@ -1155,8 +1157,9 @@ function returnToVocabularyCollection() {
 
 function syncVocabularyRoute() {
   const navigationFilters = parseVocabularyNavigationQuery(route.query)
-  vocabularyNavigationContext.value = Boolean(navigationFilters)
-  if (navigationFilters) vocabularyFilters.value = navigationFilters
+  const navigationMarker = Array.isArray(route.query.vc) ? route.query.vc[0] : route.query.vc
+  vocabularyNavigationContext.value = navigationMarker === '1'
+  vocabularyFilters.value = navigationFilters
 
   if (isVocabularyCardRoute()) {
     activeView.value = 'collection'
