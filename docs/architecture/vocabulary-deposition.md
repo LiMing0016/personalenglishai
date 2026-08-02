@@ -69,6 +69,8 @@ Python 无状态且不访问业务数据库。Java 生成 trace，掌握配额�
 
 生成器向词典查询时只使用共享词典信息；不会把 `favorite` 或 `lookupCount` 写入生成内容。词典收藏和单词卡是两个独立的持久化边界。
 
+查词页通过 `GET /api/vocabulary/cards/resolve` 按当前用户、规范化词形和卡片语言精确解析已沉淀卡片，只返回是否命中及 `cardUid`；软删除卡片视为未命中。命中后前端继续复用 `GET /api/vocabulary/cards/{cardUid}` 读取当前激活 revision，因此“我的笔记”展示的是用户实际保存的主题、Card Blocks 或 Markdown 和来源信息，历史 revision 仍只在版本记录中保留。该解析不会把词典查询结果、收藏状态或查询次数复制进单词卡。
+
 ## 数据库部署
 
 Docker Compose 把 `backend/src/main/resources/db/schema.sql` 挂载为 MySQL 的 `001_schema.sql`。全新数据卷首次初始化只执行该全量脚本；脚本直接创建 3 张主题表、主题索引和系统主题种子，并在单词卡相关表中一次性定义 theme/core、Card Blocks、冲突候选、生成结果、warning 和 `generation_metadata_json` 列，不追加同表的第二套定义，也不再补跑下述 migration。
