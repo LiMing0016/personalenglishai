@@ -40,7 +40,6 @@
           />
 
           <div class="profile-copy">
-            <p class="profile-eyebrow">个人中心</p>
             <div v-if="!editingNickname" class="nickname-row">
               <h1>{{ profile?.nickname ?? (profileLoading ? '正在加载' : '英语学习者') }}</h1>
               <SubscriptionBadge
@@ -565,14 +564,6 @@ onBeforeUnmount(revokePreviewAvatarUrl)
 
 .profile-copy {
   min-width: 0;
-}
-
-.profile-eyebrow {
-  margin: 0 0 5px;
-  color: #6b7f95;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
 }
 
 .nickname-row {

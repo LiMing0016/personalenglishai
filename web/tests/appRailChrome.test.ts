@@ -94,4 +94,9 @@ assert.ok(
   appRailSource.includes('rail-profile-link'),
   'shared rail personal center entry should be anchored separately from primary navigation',
 )
+assert.match(
+  appRailSource,
+  /\.app-rail\s*\{[^}]*background:\s*#fff(?:fff)?\s*;/s,
+  'shared rail should use a white surface',
+)
 console.log('app-rail-chrome-ok')
