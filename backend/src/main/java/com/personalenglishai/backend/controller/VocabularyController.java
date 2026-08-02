@@ -7,6 +7,7 @@ import com.personalenglishai.backend.dto.admin.AdminPageResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureRequest;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyCardResolutionResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.UpdateVocabularyCardRequest;
 import com.personalenglishai.backend.dto.vocabulary.ResolveVocabularyConflictRequest;
@@ -220,6 +221,17 @@ public class VocabularyController {
         }
         return ResponseEntity.ok(ApiResponse.success(
                 cardService.list(userId, keyword, status, sourceType, sort, page, size)));
+    }
+
+    @GetMapping("/cards/resolve")
+    public ResponseEntity<ApiResponse<VocabularyCardResolutionResponse>> resolveCard(
+            @RequestAttribute(value = "userId", required = false) Long userId,
+            @RequestParam String term,
+            @RequestParam(defaultValue = "en") String language) {
+        if (userId == null) {
+            return unauthorized();
+        }
+        return ResponseEntity.ok(ApiResponse.success(cardService.resolve(userId, term, language)));
     }
 
     @GetMapping("/cards/{cardUid}")

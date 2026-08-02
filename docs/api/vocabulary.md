@@ -2,7 +2,7 @@
 title: 单词沉淀 API
 status: active
 owner: backend
-last_updated: 2026-07-21
+last_updated: 2026-08-02
 review_cycle: on-change
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/controller/VocabularyController.java
@@ -210,6 +210,45 @@ OCR 请求示例：
 ```
 
 `itemSources` 是兼容性新增字段；省略时旧的 `manual`、`dictionary` 请求保持原语义。OCR 请求必须让 `itemSources.length === terms.length`。`resolution` 只允许 `accepted`、`suggestion_applied`、`original_kept`。metadata 使用严格白名单，禁止 `rawText`、图片字节、base64、Markdown 或额外字段。`clientRequestId` 在同一次重试中保持不变；重复词形返回 `source_merged`，不会创建第二张卡。
+
+## 按词形解析当前用户单词卡
+
+搜索页需要判断当前词是否已有沉淀卡片时，使用精确解析接口；不要使用带 `keyword` 的卡片列表第一页代替，因为列表是模糊搜索并按最近沉淀排序。
+
+```http
+GET /api/vocabulary/cards/resolve?term=Wonder&language=en
+Authorization: Bearer <access_token>
+```
+
+服务端使用与捕获链路相同的词形规范化规则，并按“当前用户 + language + normalized_term”精确查找未软删除的卡片。接口只返回稳定身份，不复制详情读取逻辑。
+
+找到卡片：
+
+```json
+{
+  "code": "0",
+  "message": "OK",
+  "data": {
+    "found": true,
+    "cardUid": "card_wonder"
+  }
+}
+```
+
+未找到或卡片已软删除仍返回 HTTP 200，避免把正常缺失误判为服务故障：
+
+```json
+{
+  "code": "0",
+  "message": "OK",
+  "data": {
+    "found": false,
+    "cardUid": null
+  }
+}
+```
+
+命中后使用 `GET /api/vocabulary/cards/{cardUid}` 读取当前有效版本。未登录返回 HTTP 401；缺少或规范化后为空的 `term`/`language` 返回现有参数错误响应；数据库与服务器异常保持错误状态，客户端不得把这些异常缓存为“没有笔记”。词典的 `en-gb` 和 `en-us` 由 Web 映射为卡片语言 `en`。
 
 ## 产品事件
 

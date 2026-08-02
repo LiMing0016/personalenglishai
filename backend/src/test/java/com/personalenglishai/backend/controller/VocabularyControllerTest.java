@@ -7,6 +7,7 @@ import com.personalenglishai.backend.common.filter.JwtAuthenticationFilter;
 import com.personalenglishai.backend.dto.admin.AdminPageResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCaptureResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardDetailResponse;
+import com.personalenglishai.backend.dto.vocabulary.VocabularyCardResolutionResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyCardSummaryResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateCatalogResponse;
 import com.personalenglishai.backend.dto.vocabulary.VocabularyTemplateResponse;
@@ -464,6 +465,36 @@ class VocabularyControllerTest {
     }
 
     @Test
+    void resolvesOwnedCardByTermAndLanguage() throws Exception {
+        when(cardService.resolve(7L, "Wonder", "en"))
+                .thenReturn(VocabularyCardResolutionResponse.found("card_wonder"));
+
+        mockMvc.perform(get("/api/vocabulary/cards/resolve")
+                        .requestAttr("userId", 7L)
+                        .param("term", "Wonder")
+                        .param("language", "en"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.found").value(true))
+                .andExpect(jsonPath("$.data.cardUid").value("card_wonder"));
+
+        verify(cardService).resolve(7L, "Wonder", "en");
+    }
+
+    @Test
+    void resolvesMissingCardWithoutTurningAbsenceIntoAnError() throws Exception {
+        when(cardService.resolve(7L, "absent", "en"))
+                .thenReturn(VocabularyCardResolutionResponse.notFound());
+
+        mockMvc.perform(get("/api/vocabulary/cards/resolve")
+                        .requestAttr("userId", 7L)
+                        .param("term", "absent")
+                        .param("language", "en"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.found").value(false))
+                .andExpect(jsonPath("$.data.cardUid").doesNotExist());
+    }
+
+    @Test
     void exposesOwnedCardDetail() throws Exception {
         LocalDateTime now = LocalDateTime.of(2026, 7, 10, 12, 0);
         var content = JsonNodeFactory.instance.objectNode().put("term", "innovative");
@@ -523,6 +554,12 @@ class VocabularyControllerTest {
                 .andExpect(jsonPath("$.code").value("401001"))
                 .andExpect(jsonPath("$.message").value("Unauthorized"));
         mockMvc.perform(get("/api/vocabulary/cards"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("401001"))
+                .andExpect(jsonPath("$.message").value("Unauthorized"));
+        mockMvc.perform(get("/api/vocabulary/cards/resolve")
+                        .param("term", "wonder")
+                        .param("language", "en"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("401001"))
                 .andExpect(jsonPath("$.message").value("Unauthorized"));
