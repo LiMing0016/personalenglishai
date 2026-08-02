@@ -9,6 +9,7 @@ import {
   importAnalysisStateAfterInputChange,
   mapVocabularyImportAnalysisCandidates,
   sortImportCandidates,
+  vocabularyImportAnalysisErrorMessage,
 } from '../src/features/vocabulary/importAnalysis'
 
 
@@ -74,6 +75,13 @@ test('only the latest request with matching response, start, and current fingerp
 test('input changes leave a first request idle and make previously successful candidates stale', () => {
   assert.equal(importAnalysisStateAfterInputChange(''), 'idle')
   assert.equal(importAnalysisStateAfterInputChange('a'.repeat(64)), 'stale')
+})
+
+test('reports an unavailable AI analysis service instead of a generic failure for HTTP 503', () => {
+  assert.equal(
+    vocabularyImportAnalysisErrorMessage({ response: { status: 503 } }),
+    'AI 分析服务暂不可用，请稍后重试',
+  )
 })
 
 test('posts unified multipart input with caller signal and 60 second timeout', async () => {
