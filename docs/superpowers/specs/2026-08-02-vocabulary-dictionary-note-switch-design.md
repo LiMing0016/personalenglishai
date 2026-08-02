@@ -38,20 +38,20 @@
 
 `GET /api/vocabulary/cards/resolve?term=<word>&language=en`
 
-接口按“当前用户 + 语言 + 规范化词形”精确查找未删除卡片，并直接返回当前有效详情：
+接口按“当前用户 + 语言 + 规范化词形”精确查找未删除卡片，并只返回稳定身份：
 
-- 找到时：`{ found: true, card: VocabularyCardDetail }`；
-- 未找到时：`{ found: false, card: null }`；
+- 找到时：`{ found: true, cardUid: "card_..." }`；
+- 未找到时：`{ found: false, cardUid: null }`；
 - 鉴权、数据库或服务器异常仍使用现有错误响应，不能被误判为“没有笔记”。
 
-接口复用现有词形规范化、卡片身份唯一约束和详情组装逻辑，不创建第二套读取模型。词典的 `en-gb`、`en-us` 在请求单词卡时统一映射为英语卡片语言 `en`。完整详情页继续复用 `GET /api/vocabulary/cards/{cardUid}`。
+接口复用现有词形规范化和卡片身份唯一约束，不创建第二套详情读取模型。前端命中 `cardUid` 后继续复用 `GET /api/vocabulary/cards/{cardUid}` 读取当前有效详情。词典的 `en-gb`、`en-us` 在请求单词卡时统一映射为英语卡片语言 `en`。
 
 ### 前端查询边界
 
-新增一个面向搜索页的查询封装，调用精确解析接口，输入为当前词典结果词形和词典语言，输出为：
+新增一个面向搜索页的查询封装，先调用精确解析接口，再按命中的 `cardUid` 调用现有详情接口。输入为当前词典结果词形和词典语言，输出为：
 
 - 精确匹配的卡片详情或 `null`；
-- 列表检查与详情加载状态；
+- 精确解析与详情读取各自的加载状态；
 - 可恢复错误和重试方法。
 
 查询使用 TanStack Query 缓存，查询键包含规范化词形和语言。迟到的旧词响应不能覆盖当前搜索词。组件不增加新的 `localStorage`、`sessionStorage` 或 Pinia 镜像状态。
