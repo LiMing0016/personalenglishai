@@ -8,7 +8,7 @@ assert.deepEqual(APP_NAV_ITEMS.map((item) => item.label), [
   '学习助手',
   '写作',
   '翻译',
-  '阅读',
+  '单词',
   '听力',
   '口语',
 ])
