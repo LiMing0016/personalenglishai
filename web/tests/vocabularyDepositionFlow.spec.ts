@@ -727,6 +727,51 @@ test('all Inspector dialogs provide keyboard focus trap inert background Escape 
   )
 })
 
+test('keeps recent and popular searches inside the focused search popover', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  await installApiMocks(page, [])
+  await page.route('**/api/dictionary/lookup?*', (route) => route.fulfill({
+    json: {
+      code: '0',
+      data: {
+        word: 'horizon',
+        language: 'en-gb',
+        source: 'local',
+        phonetics: [{ text: 'həˈraɪzn' }],
+        entries: [{
+          partOfSpeech: 'noun',
+          definitions: ['the line where the sky seems to meet the earth or sea'],
+          examples: [],
+        }],
+        favorite: false,
+        lookupCount: 1,
+      },
+    },
+  }))
+
+  await page.goto('/app/vocabulary')
+  const search = page.getByRole('searchbox', { name: '输入单词、词组或中文释义' })
+  const suggestions = page.getByRole('region', { name: '搜索建议' })
+
+  await expect(page.getByText('查询、学习、一步到位')).toHaveCount(0)
+  await expect(page.getByText('热门搜索')).toHaveCount(0)
+  await search.focus()
+  await expect(suggestions).toBeVisible()
+  await suggestions.getByRole('button', { name: 'innovative' }).click()
+  await expect(search).toHaveValue('innovative')
+  await page.keyboard.press('Escape')
+  await expect(suggestions).toHaveCount(0)
+
+  await search.fill('horizon')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await search.focus()
+  await expect(suggestions.getByRole('button', { name: 'horizon' })).toBeVisible()
+  await suggestions.getByRole('button', { name: '清空' }).click()
+  await expect(suggestions.getByRole('button', { name: 'horizon' })).toHaveCount(0)
+  await expect(suggestions.getByRole('button', { name: 'innovative' })).toBeVisible()
+  await expectCleanRuntime(page, errors)
+})
+
 test('creates a custom default theme, selects it, and captures two words', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   const { requests } = await installApiMocks(page, [])

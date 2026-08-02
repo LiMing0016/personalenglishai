@@ -17,30 +17,74 @@
 
     <section v-if="activeView === 'search'" class="vocabulary-page search-page" aria-label="搜索单词">
       <div class="search-main">
-        <section class="page-heading">
-          <p>Search</p>
-          <h1>搜索单词</h1>
-          <span>查询、学习、一步到位</span>
-        </section>
+        <div
+          class="dictionary-search-shell"
+          @focusout="handleSearchShellFocusOut"
+          @keydown.esc="closeSearchSuggestions"
+        >
+          <form class="dictionary-search" @submit.prevent="submitLookup">
+            <span aria-hidden="true">⌕</span>
+            <input
+              ref="dictionarySearchInput"
+              v-model="query"
+              type="search"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="输入单词、词组或中文释义"
+              aria-label="输入单词、词组或中文释义"
+              aria-controls="dictionary-search-suggestions"
+              aria-haspopup="true"
+              :aria-expanded="searchSuggestionsOpen"
+              @focus="openSearchSuggestions"
+            >
+            <select v-model="language" aria-label="选择词典语言">
+              <option value="en-gb">en-gb</option>
+              <option value="en-us">en-us</option>
+            </select>
+            <button type="submit" :disabled="loading">
+              {{ loading ? '查询中' : '搜索' }}
+            </button>
+          </form>
 
-        <form class="dictionary-search" @submit.prevent="submitLookup">
-          <span aria-hidden="true">⌕</span>
-          <input
-            v-model="query"
-            type="search"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="输入单词、词组或中文释义"
-            aria-label="输入单词、词组或中文释义"
+          <section
+            v-if="searchSuggestionsOpen"
+            id="dictionary-search-suggestions"
+            class="search-suggestions-popover"
+            aria-label="搜索建议"
           >
-          <select v-model="language" aria-label="选择词典语言">
-            <option value="en-gb">en-gb</option>
-            <option value="en-us">en-us</option>
-          </select>
-          <button type="submit" :disabled="loading">
-            {{ loading ? '查询中' : '搜索' }}
-          </button>
-        </form>
+            <div v-if="recentSearches.length" class="search-suggestion-group">
+              <header class="search-suggestion-heading">
+                <div>
+                  <span>History</span>
+                  <h2>最近搜索</h2>
+                </div>
+                <button type="button" class="search-suggestion-clear" @click="clearRecentSearchSuggestions">
+                  清空
+                </button>
+              </header>
+              <div class="search-suggestion-list">
+                <button v-for="item in recentSearches" :key="item" type="button" @click="query = item">
+                  <span aria-hidden="true">↗</span>
+                  {{ item }}
+                </button>
+              </div>
+            </div>
+
+            <div class="search-suggestion-group search-suggestion-group--popular">
+              <header class="search-suggestion-heading">
+                <div>
+                  <span>Discover</span>
+                  <h2>热门推荐</h2>
+                </div>
+              </header>
+              <div class="search-suggestion-list">
+                <button v-for="item in hotSearches" :key="item" type="button" @click="query = item">
+                  {{ item }}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <section v-if="errorMessage" class="lookup-message lookup-message--error">
           <strong>{{ errorMessage }}</strong>
@@ -68,33 +112,6 @@
               <span>查询后这里会展示本次会话最新一次词典结果；刷新页面也会优先恢复最近查询。</span>
             </div>
           </header>
-        </section>
-
-        <section class="search-meta-grid" aria-label="搜索快捷入口">
-          <article class="compact-panel compact-panel--hot">
-            <header>
-              <h2>热门搜索</h2>
-            </header>
-            <div class="chip-list">
-              <button v-for="item in hotSearches" :key="item" type="button" @click="query = item">
-                {{ item }}
-              </button>
-            </div>
-          </article>
-
-          <article class="compact-panel">
-            <header>
-              <h2>最近搜索</h2>
-              <button type="button" :disabled="!recentSearches.length" @click="clearRecentSearches">清空</button>
-            </header>
-            <ul v-if="recentSearches.length" class="recent-list">
-              <li v-for="item in recentSearches" :key="item">
-                <span aria-hidden="true">○</span>
-                <button type="button" @click="query = item">{{ item }}</button>
-              </li>
-            </ul>
-            <p v-else class="recent-empty">暂无最近搜索</p>
-          </article>
         </section>
 
         <section v-if="hasSearchContext" class="results-panel">
@@ -314,7 +331,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { lookupDictionary, setDictionaryFavorite } from '@/api/dictionary'
@@ -396,6 +413,8 @@ const activeView = ref<VocabularyViewKey>(
 )
 const selectedWordId = ref('')
 const query = ref(cachedLookup?.word ?? '')
+const dictionarySearchInput = ref<HTMLInputElement | null>(null)
+const searchSuggestionsOpen = ref(false)
 const language = ref<DictionaryLanguage>(cachedLookup?.language ?? 'en-gb')
 const loading = ref(false)
 const result = ref<DictionaryLookupResponse | null>(cachedLookup?.result ?? null)
@@ -1017,6 +1036,29 @@ function clearRecentSearches() {
   }
 }
 
+function openSearchSuggestions() {
+  searchSuggestionsOpen.value = true
+}
+
+function closeSearchSuggestions() {
+  searchSuggestionsOpen.value = false
+}
+
+function handleSearchShellFocusOut(event: FocusEvent) {
+  const nextTarget = event.relatedTarget
+  if (nextTarget instanceof Node && (event.currentTarget as HTMLElement).contains(nextTarget)) {
+    return
+  }
+  closeSearchSuggestions()
+}
+
+async function clearRecentSearchSuggestions() {
+  clearRecentSearches()
+  searchSuggestionsOpen.value = true
+  await nextTick()
+  dictionarySearchInput.value?.focus()
+}
+
 function createLearningWordFromLookup(lookup: DictionaryLookupResponse): LearningWord {
   const firstEntry = lookup.entries[0]
   const firstDefinition = firstEntry?.definitions[0] || '暂无释义'
@@ -1050,6 +1092,7 @@ function selectStaticWord(wordId: string) {
 }
 
 async function submitLookup() {
+  closeSearchSuggestions()
   const word = query.value.trim()
   if (!word) {
     errorMessage.value = '请输入要查询的单词'
@@ -1445,10 +1488,6 @@ function normalizeError(err: unknown) {
   padding: 26px;
 }
 
-.search-main .page-heading {
-  text-align: center;
-}
-
 .page-heading p,
 .page-heading h1,
 .page-heading span {
@@ -1475,18 +1514,30 @@ function normalizeError(err: unknown) {
   font-size: 14px;
 }
 
+.dictionary-search-shell {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  max-width: 820px;
+  margin-inline: auto;
+}
+
 .dictionary-search {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) 110px 92px;
   align-items: center;
   width: 100%;
-  max-width: 820px;
   min-height: 54px;
-  margin: 24px auto 0;
   overflow: hidden;
   border: 1px solid #10b981;
   border-radius: 8px;
   background: #ffffff;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.dictionary-search:focus-within {
+  border-color: #059669;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1), 0 14px 30px rgba(5, 150, 105, 0.08);
 }
 
 .dictionary-search > span {
@@ -1535,6 +1586,103 @@ function normalizeError(err: unknown) {
 .dictionary-search button:disabled {
   background: #94a3b8;
   box-shadow: none;
+}
+
+.search-suggestions-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 10px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #dce7e1;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.14), 0 8px 24px rgba(5, 150, 105, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.search-suggestion-group {
+  display: grid;
+  gap: 12px;
+}
+
+.search-suggestion-group + .search-suggestion-group {
+  padding-top: 16px;
+  border-top: 1px solid #edf2ef;
+}
+
+.search-suggestion-heading {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.search-suggestion-heading span {
+  display: block;
+  color: #10b981;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.search-suggestion-heading h2 {
+  margin: 3px 0 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.search-suggestion-clear {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.search-suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-suggestion-list button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.search-suggestion-group:not(.search-suggestion-group--popular) .search-suggestion-list button {
+  border-color: #cce9dd;
+  background: #f2fbf7;
+  color: #047857;
+}
+
+.search-suggestion-list button:hover,
+.search-suggestion-list button:focus-visible,
+.search-suggestion-clear:hover,
+.search-suggestion-clear:focus-visible {
+  border-color: #10b981;
+  background: #ecfdf5;
+  color: #047857;
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .lookup-message {
@@ -1587,28 +1735,12 @@ function normalizeError(err: unknown) {
   line-height: 1.5;
 }
 
-.recent-empty {
-  margin: 14px 0 0;
-  color: #94a3b8;
-  font-size: 13px;
-}
-
 .ghost-button {
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid #bbd7ca;
   background: #ffffff;
   color: #047857;
-}
-
-.search-meta-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 12px;
-  width: 100%;
-  max-width: 1080px;
-  margin-top: 12px;
-  margin-inline: auto;
 }
 
 .search-detail-section {
@@ -2237,29 +2369,6 @@ function normalizeError(err: unknown) {
   padding: 16px;
 }
 
-.search-meta-grid .compact-panel {
-  padding: 12px 14px;
-}
-
-.search-meta-grid .compact-panel h2 {
-  font-size: 14px;
-}
-
-.compact-panel--hot {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-}
-
-.compact-panel--hot header {
-  align-items: center;
-}
-
-.compact-panel--hot .chip-list {
-  margin-top: 0;
-}
-
 .compact-panel header,
 .results-panel header,
 .today-plan-card header,
@@ -2297,28 +2406,6 @@ function normalizeError(err: unknown) {
   color: #334155;
   font-size: 12px;
   font-weight: 800;
-}
-
-.recent-list {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.recent-list li {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: center;
-  min-height: 28px;
-}
-
-.recent-list button {
-  min-width: 0;
-  background: transparent;
-  color: #475569;
-  text-align: left;
 }
 
 .results-panel {
@@ -4374,7 +4461,6 @@ function normalizeError(err: unknown) {
   }
 
   .dictionary-search,
-  .search-meta-grid,
   .mode-grid,
   .word-template-card-list,
   .template-field-grid,
@@ -4387,6 +4473,11 @@ function normalizeError(err: unknown) {
 
   .dictionary-search {
     padding: 8px;
+  }
+
+  .search-suggestions-popover {
+    position: static;
+    margin-top: 8px;
   }
 
   .dictionary-search > span {
