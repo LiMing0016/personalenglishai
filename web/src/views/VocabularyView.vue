@@ -105,15 +105,6 @@
           />
         </section>
 
-        <section v-else-if="!errorMessage" class="lookup-message lookup-message--empty">
-          <header>
-            <div>
-              <strong>先搜索一个单词</strong>
-              <span>查询后这里会展示本次会话最新一次词典结果；刷新页面也会优先恢复最近查询。</span>
-            </div>
-          </header>
-        </section>
-
         <section v-if="hasSearchContext" class="results-panel">
           <header>
             <h2>搜索结果 <small>({{ words.length * 32 }})</small></h2>
@@ -1700,10 +1691,6 @@ function normalizeError(err: unknown) {
   border-color: #fecaca;
   background: #fef2f2;
   color: #991b1b;
-}
-
-.lookup-message--empty {
-  color: #334155;
 }
 
 .lookup-message header {
@@ -4443,11 +4430,6 @@ function normalizeError(err: unknown) {
   .collection-page,
   .stats-grid {
     grid-template-columns: 1fr;
-  }
-
-  .vocabulary-nav {
-    justify-content: flex-start;
-    overflow-x: auto;
   }
 
   .word-preview-card {

@@ -727,6 +727,34 @@ test('all Inspector dialogs provide keyboard focus trap inert background Escape 
   )
 })
 
+test('centers vocabulary module navigation at desktop widths', async ({ page }) => {
+  await page.setViewportSize({ width: 1150, height: 900 })
+  await installApiMocks(page, [])
+  await page.goto('/app/vocabulary')
+
+  const topbarBox = await page.locator('.vocabulary-topbar').boundingBox()
+  const navigationButtons = page.getByRole('navigation', { name: '单词学习页面' }).getByRole('button')
+  const firstButtonBox = await navigationButtons.first().boundingBox()
+  const lastButtonBox = await navigationButtons.last().boundingBox()
+
+  expect(topbarBox).not.toBeNull()
+  expect(firstButtonBox).not.toBeNull()
+  expect(lastButtonBox).not.toBeNull()
+  expect(Math.abs(
+    ((firstButtonBox!.x + lastButtonBox!.x + lastButtonBox!.width) / 2)
+      - (topbarBox!.x + topbarBox!.width / 2),
+  )).toBeLessThanOrEqual(2)
+})
+
+test('does not render an empty lookup guidance card', async ({ page }) => {
+  await installApiMocks(page, [])
+  await page.addInitScript(() => window.sessionStorage.removeItem('vocabulary.latestLookup'))
+  await page.goto('/app/vocabulary')
+
+  await expect(page.getByRole('searchbox', { name: '输入单词、词组或中文释义' })).toBeVisible()
+  await expect(page.locator('.lookup-message--empty')).toHaveCount(0)
+})
+
 test('keeps recent and popular searches inside the focused search popover', async ({ page }) => {
   const errors = collectRuntimeErrors(page)
   await installApiMocks(page, [])
