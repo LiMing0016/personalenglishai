@@ -92,17 +92,91 @@
         </section>
 
         <section v-if="selectedWord && !errorMessage" class="search-detail-section" aria-label="当前单词详情">
-          <DictionaryDetail
-            :key="lookupResultWord"
-            :result="result"
-            :word="selectedWord"
-            :source-title="lookupSourceTitle"
-            :last-lookup-at="lastLookupAt"
-            @review="addTodayReview(selectedWord.id)"
-            @master="markSelectedMastered"
-            @play-audio="playAudio"
-            @toggle-favorite="toggleDictionaryFavorite"
-          />
+          <div
+            v-if="noteResolution.resolutionQuery.isError.value"
+            class="note-resolution-notice"
+            role="status"
+          >
+            <span>我的笔记暂不可用</span>
+            <button type="button" @click="noteResolution.retry()">重试</button>
+          </div>
+
+          <div
+            v-if="noteResolution.found.value"
+            class="search-detail-switch"
+          >
+            <div
+              class="search-detail-tabs"
+              role="tablist"
+              aria-label="单词详情视图"
+              @keydown="handleSearchDetailTabKeydown"
+            >
+              <button
+                id="dictionary-detail-tab"
+                ref="dictionaryDetailTab"
+                type="button"
+                role="tab"
+                aria-controls="dictionary-detail-panel"
+                :aria-selected="searchDetailMode === 'dictionary'"
+                :tabindex="searchDetailMode === 'dictionary' ? 0 : -1"
+                @click="selectSearchDetailMode('dictionary')"
+              >
+                词典释义
+              </button>
+              <button
+                id="vocabulary-note-tab"
+                ref="vocabularyNoteTab"
+                type="button"
+                role="tab"
+                aria-controls="vocabulary-note-panel"
+                :aria-selected="searchDetailMode === 'note'"
+                :tabindex="searchDetailMode === 'note' ? 0 : -1"
+                @click="selectSearchDetailMode('note')"
+              >
+                我的笔记
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-show="searchDetailMode === 'dictionary'"
+            id="dictionary-detail-panel"
+            :role="noteResolution.found.value ? 'tabpanel' : undefined"
+            :aria-labelledby="noteResolution.found.value ? 'dictionary-detail-tab' : undefined"
+          >
+            <DictionaryDetail
+              :key="lookupResultWord"
+              :result="result"
+              :word="selectedWord"
+              :source-title="lookupSourceTitle"
+              :last-lookup-at="lastLookupAt"
+              @review="addTodayReview(selectedWord.id)"
+              @master="markSelectedMastered"
+              @play-audio="playAudio"
+              @toggle-favorite="toggleDictionaryFavorite"
+            />
+          </div>
+
+          <div
+            v-if="searchDetailMode === 'note' && noteResolution.found.value"
+            id="vocabulary-note-panel"
+            role="tabpanel"
+            aria-labelledby="vocabulary-note-tab"
+          >
+            <div v-if="noteResolution.detailQuery.isLoading.value" class="note-detail-state" role="status">
+              正在读取我的笔记…
+            </div>
+            <div v-else-if="noteResolution.detailQuery.isError.value" class="note-detail-state note-detail-state--error" role="alert">
+              <span>笔记内容读取失败</span>
+              <button type="button" @click="noteResolution.retry()">重新加载</button>
+            </div>
+            <VocabularyCardNotePreview
+              v-else-if="noteResolution.card.value"
+              :card="noteResolution.card.value"
+              @open="openResolvedVocabularyCard"
+              @pronounce="playAudio"
+            />
+          </div>
         </section>
 
         <section v-if="hasSearchContext" class="results-panel">
@@ -336,6 +410,8 @@ import {
 import VocabularyCapturePanel from '@/components/vocabulary/VocabularyCapturePanel.vue'
 import VocabularyCardInspector from '@/components/vocabulary/VocabularyCardInspector.vue'
 import VocabularyCardList from '@/components/vocabulary/VocabularyCardList.vue'
+import VocabularyCardNotePreview from '@/components/vocabulary/VocabularyCardNotePreview.vue'
+import { useVocabularyCardResolution } from '@/composables/useVocabularyCardResolution'
 import { useVocabularyCards } from '@/composables/useVocabularyCards'
 import { useVocabularyThemes } from '@/composables/useVocabularyThemes'
 import { isVocabularyImportAnalysisEnabled } from '@/features/vocabulary/importAnalysis'
@@ -348,6 +424,7 @@ import {
 import { showToast } from '@/utils/toast'
 
 type VocabularyViewKey = 'search' | 'modes' | 'collection' | 'stats'
+type SearchDetailMode = 'dictionary' | 'note'
 type LearningStatus = '新学' | '学习中' | '复习中' | '已掌握'
 interface LearningWord {
   id: string
@@ -412,6 +489,11 @@ const result = ref<DictionaryLookupResponse | null>(cachedLookup?.result ?? null
 const errorMessage = ref('')
 const debugMessage = ref('')
 const lastLookupAt = ref(cachedLookup?.lastLookupAt ?? '')
+const searchDetailMode = ref<SearchDetailMode>('dictionary')
+const dictionaryDetailTab = ref<HTMLButtonElement | null>(null)
+const vocabularyNoteTab = ref<HTMLButtonElement | null>(null)
+const vocabularyResolutionTerm = computed(() => result.value?.word?.trim() ?? '')
+const noteResolution = useVocabularyCardResolution(vocabularyResolutionTerm, language)
 const initialVocabularyNavigationFilters = parseVocabularyNavigationQuery(route.query)
 const initialVocabularyNavigationMarker = Array.isArray(route.query.vc)
   ? route.query.vc[0]
@@ -683,6 +765,16 @@ const lookupSourceTitle = computed(() => {
     return 'Oxford Dictionaries'
   }
   return result.value?.source || '词典查询'
+})
+
+watch([vocabularyResolutionTerm, language], () => {
+  searchDetailMode.value = 'dictionary'
+})
+
+watch(() => noteResolution.found.value, (found) => {
+  if (!found && searchDetailMode.value === 'note') {
+    searchDetailMode.value = 'dictionary'
+  }
 })
 
 const DictionaryDetail = defineComponent({
@@ -1180,6 +1272,30 @@ function selectVocabularyCard(cardUid: string) {
     params: { cardUid },
     query: buildVocabularyNavigationQuery(vocabularyFilters.value),
   })
+}
+
+function openResolvedVocabularyCard() {
+  const cardUid = noteResolution.card.value?.cardUid
+  if (cardUid) selectVocabularyCard(cardUid)
+}
+
+async function selectSearchDetailMode(mode: SearchDetailMode, focus = false) {
+  searchDetailMode.value = mode
+  if (!focus) return
+  await nextTick()
+  ;(mode === 'dictionary' ? dictionaryDetailTab.value : vocabularyNoteTab.value)?.focus()
+}
+
+function handleSearchDetailTabKeydown(event: KeyboardEvent) {
+  const nextMode = ({
+    ArrowLeft: 'dictionary',
+    ArrowRight: 'note',
+    Home: 'dictionary',
+    End: 'note',
+  } as Partial<Record<string, SearchDetailMode>>)[event.key]
+  if (!nextMode) return
+  event.preventDefault()
+  void selectSearchDetailMode(nextMode, true)
 }
 
 function returnToVocabularyCollection() {
@@ -1736,6 +1852,87 @@ function normalizeError(err: unknown) {
   margin-top: 18px;
   margin-inline: auto;
 }
+
+.note-resolution-notice {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.note-resolution-notice button,
+.note-detail-state button {
+  border: 0;
+  background: transparent;
+  color: #047857;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.note-resolution-notice button:focus-visible,
+.note-detail-state button:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+.search-detail-switch {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.search-detail-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dce7e1;
+  border-radius: 10px;
+  background: #f1f6f4;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.search-detail-tabs button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.search-detail-tabs button[aria-selected="true"] {
+  background: #ffffff;
+  color: #047857;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+}
+
+.search-detail-tabs button:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.24);
+  outline-offset: 1px;
+}
+
+.note-detail-state {
+  display: grid;
+  min-height: 220px;
+  place-content: center;
+  gap: 10px;
+  border: 1px solid #dce7e1;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #64748b;
+  text-align: center;
+}
+
+.note-detail-state--error { color: #b91c1c; }
 
 .dictionary-detail-card {
   padding: 0;
@@ -4471,6 +4668,10 @@ function normalizeError(err: unknown) {
   .dictionary-search button {
     width: 100%;
     margin: 0;
+  }
+
+  .search-detail-tabs {
+    width: 100%;
   }
 
   .word-study-hero {

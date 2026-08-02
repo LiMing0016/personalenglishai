@@ -329,6 +329,17 @@ async function installApiMocks(
       })
       return route.fulfill({ json: { code: '0', data: { items } } })
     }
+    if (path.endsWith('/cards/resolve') && method === 'GET') {
+      const term = url.searchParams.get('term')?.toLocaleLowerCase('en-US') ?? ''
+      const language = url.searchParams.get('language') ?? 'en'
+      const card = cards.find((item) => (
+        item.language === language && item.normalizedTerm === term
+      ))
+      return route.fulfill({ json: { code: '0', data: {
+        found: Boolean(card),
+        cardUid: card?.cardUid ?? null,
+      } } })
+    }
     if (path.endsWith('/cards') && method === 'GET') {
       return route.fulfill({ json: { code: '0', data: { items: cards, total: cards.length, page: 1, size: 20 } } })
     }
@@ -797,6 +808,123 @@ test('keeps recent and popular searches inside the focused search popover', asyn
   await suggestions.getByRole('button', { name: '清空' }).click()
   await expect(suggestions.getByRole('button', { name: 'horizon' })).toHaveCount(0)
   await expect(suggestions.getByRole('button', { name: 'innovative' })).toBeVisible()
+  await expectCleanRuntime(page, errors)
+})
+
+test('在词典释义与我的笔记间切换并打开完整笔记', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  const wonderCard = makeCard({
+    cardUid: 'card_wonder',
+    displayTerm: 'wonder',
+    normalizedTerm: 'wonder',
+    theme: { themeUid: 'theme_exam', name: '考研风格', purpose: '真题语境沉淀' },
+    themeVersion: 3,
+    core: {
+      schemaVersion: 1,
+      term: 'wonder',
+      phonetics: [{ region: 'uk', text: '/ˈwʌndə(r)/', audioUrl: null }],
+      senses: [{
+        partOfSpeech: 'verb',
+        meanings: [{ definitionEn: 'to think about something', definitionZh: '想知道；琢磨' }],
+      }],
+    },
+    markdown: '## 我的考研笔记\n\n这是我修改后保留的当前版本。',
+    sources: [{
+      sourceUid: 'source_wonder',
+      sourceType: 'manual',
+      sourceRef: null,
+      sourceTitle: '真题阅读',
+      sourceUrl: null,
+      contextText: '在真题阅读里标记的原句',
+      rawTerm: 'wonder',
+      metadata: {},
+      capturedAt: '2026-08-01T12:00:00Z',
+      createdAt: '2026-08-01T12:00:00Z',
+    }],
+  })
+  await installApiMocks(page, [wonderCard])
+  await page.addInitScript(() => window.sessionStorage.removeItem('vocabulary.latestLookup'))
+  await page.route('**/api/dictionary/lookup?*', (route) => {
+    const word = new URL(route.request().url()).searchParams.get('word') ?? ''
+    return route.fulfill({ json: { code: '0', data: {
+      word,
+      language: 'en-gb',
+      source: 'oxford',
+      phonetics: [{ text: '/ˈwʌndə(r)/' }],
+      entries: [{
+        partOfSpeech: 'verb',
+        definitions: ['to think about something and try to decide what is true'],
+        examples: ['I wonder who she is.'],
+      }],
+      favorite: false,
+      lookupCount: 2,
+    } } })
+  })
+
+  await page.goto('/app/vocabulary')
+  await page.getByRole('searchbox', { name: '输入单词、词组或中文释义' }).fill('wonder')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+
+  const tabs = page.getByRole('tablist', { name: '单词详情视图' })
+  await expect(tabs).toBeVisible()
+  await expect(tabs.getByRole('tab', { name: '词典释义' })).toHaveAttribute('aria-selected', 'true')
+  await tabs.getByRole('tab', { name: '我的笔记' }).click()
+
+  const note = page.getByRole('tabpanel', { name: '我的笔记' })
+  await expect(note.getByRole('heading', { name: 'wonder', exact: true, level: 2 })).toBeVisible()
+  await expect(note.getByText('考研风格 · v3')).toBeVisible()
+  await expect(note.getByRole('heading', { name: '我的考研笔记' })).toBeVisible()
+  await expect(note.getByText('这是我修改后保留的当前版本。')).toBeVisible()
+  await expect(note.getByText('在真题阅读里标记的原句')).toBeVisible()
+
+  await note.getByRole('button', { name: '打开完整笔记' }).click()
+  await expect(page).toHaveURL(/\/app\/vocabulary\/cards\/card_wonder/)
+  await expectCleanRuntime(page, errors)
+})
+
+test('搜索新词后恢复词典释义且支持键盘切换', async ({ page }) => {
+  const errors = collectRuntimeErrors(page)
+  await installApiMocks(page, [makeCard({
+    cardUid: 'card_wonder',
+    displayTerm: 'wonder',
+    normalizedTerm: 'wonder',
+  })])
+  await page.addInitScript(() => window.sessionStorage.removeItem('vocabulary.latestLookup'))
+  await page.route('**/api/dictionary/lookup?*', (route) => {
+    const word = new URL(route.request().url()).searchParams.get('word') ?? ''
+    return route.fulfill({ json: { code: '0', data: {
+      word,
+      language: 'en-gb',
+      source: 'oxford',
+      phonetics: [],
+      entries: [{ partOfSpeech: 'noun', definitions: [`definition of ${word}`], examples: [] }],
+      favorite: false,
+      lookupCount: 1,
+    } } })
+  })
+
+  await page.goto('/app/vocabulary')
+  const search = page.getByRole('searchbox', { name: '输入单词、词组或中文释义' })
+  await search.fill('wonder')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+
+  const tabs = page.getByRole('tablist', { name: '单词详情视图' })
+  const dictionaryTab = tabs.getByRole('tab', { name: '词典释义' })
+  const noteTab = tabs.getByRole('tab', { name: '我的笔记' })
+  await dictionaryTab.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(noteTab).toBeFocused()
+  await expect(noteTab).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowLeft')
+  await expect(dictionaryTab).toBeFocused()
+  await expect(dictionaryTab).toHaveAttribute('aria-selected', 'true')
+
+  await noteTab.click()
+  await search.fill('absent')
+  await page.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(tabs).toHaveCount(0)
+  await expect(page.getByText('OXFORD DICTIONARY')).toBeVisible()
+  await expect(page.getByText('definition of absent').first()).toBeVisible()
   await expectCleanRuntime(page, errors)
 })
 
