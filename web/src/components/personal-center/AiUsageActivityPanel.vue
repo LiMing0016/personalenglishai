@@ -135,19 +135,17 @@
         </div>
       </div>
 
-      <div class="chart-footer">
+      <div
+        class="chart-footer"
+        :class="{ 'chart-footer--compact': !activeDetail && activity.total > 0 }"
+      >
         <div class="activity-detail" aria-live="polite">
           <template v-if="activeDetail">
             <span>{{ activeDetail.label }}</span>
             <strong>{{ formatTokens(activeDetail.total) }} Token</strong>
             <small>{{ detailComposition(activeDetail.byProduct) }}</small>
           </template>
-          <template v-else-if="activity.total > 0">
-            <span>悬停或聚焦查看详情</span>
-            <strong>{{ activity.timezone }}</strong>
-            <small>日期按当前统计时区归组</small>
-          </template>
-          <template v-else>
+          <template v-else-if="activity.total === 0">
             <span>还没有 AI Token 活动</span>
             <strong>从一次学习开始</strong>
             <small>新的可计量使用会从这里沉淀。</small>
@@ -654,22 +652,29 @@ onMounted(loadActivity)
 
 .chart-footer {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 58px;
+  min-height: 22px;
   margin-top: 18px;
 }
 
+.chart-footer--compact {
+  justify-content: flex-end;
+}
+
 .activity-detail {
-  display: grid;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
   min-width: 0;
   color: #7d8c9d;
   font-size: 11px;
 }
 
 .activity-detail strong {
-  margin: 2px 0;
+  margin: 0;
   overflow: hidden;
   color: #19304c;
   font-size: 14px;
@@ -852,6 +857,10 @@ onMounted(loadActivity)
   .chart-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .chart-footer--compact {
+    align-items: flex-end;
   }
 
   .legend {
