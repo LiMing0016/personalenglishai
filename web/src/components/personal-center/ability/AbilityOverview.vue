@@ -25,7 +25,7 @@
           role="note"
         >
           <p>综合 CEFR 在形成校准证据前保持“待形成”。</p>
-          <p>写作为“待校准”，其他模块为“待测”。</p>
+          <p>有写作证据时显示“待校准”；无证据时显示“待测”。其他模块为“待测”。</p>
         </div>
       </div>
     </header>
@@ -81,8 +81,8 @@
           :key="module.key"
           type="button"
           class="ability-module"
-          :disabled="error"
-          @click="emit('open-module', module.key)"
+          :aria-disabled="error"
+          @click="openModule(module.key)"
         >
           <i class="ability-module-icon" aria-hidden="true">
             <component :is="moduleIcons[module.key]" :size="24" />
@@ -143,7 +143,7 @@ import type {
   AbilityOverviewModel,
 } from './abilityProfileModel'
 
-defineProps<{
+const props = defineProps<{
   model: AbilityOverviewModel
   loading: boolean
   error: boolean
@@ -166,6 +166,10 @@ const moduleIcons: Record<AbilityModuleKey, Component> = {
 
 function formatEvidenceTime(value: string): string {
   return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value
+}
+
+function openModule(key: AbilityModuleKey) {
+  if (!props.error) emit('open-module', key)
 }
 </script>
 
@@ -316,18 +320,17 @@ function formatEvidenceTime(value: string): string {
   content: '';
 }
 
-.ability-module:hover:not(:disabled) .ability-module-icon {
+.ability-module:hover:not([aria-disabled='true']) .ability-module-icon {
   background: #dff2ec;
   transform: translateY(-2px);
 }
 
-.ability-module:hover:not(:disabled) > strong {
+.ability-module:hover:not([aria-disabled='true']) > strong {
   color: #087a59;
 }
 
-.ability-module:disabled {
+.ability-module[aria-disabled='true'] {
   cursor: not-allowed;
-  opacity: 0.72;
 }
 
 .ability-module-icon {
@@ -373,7 +376,7 @@ function formatEvidenceTime(value: string): string {
 }
 
 .ability-module > small.is-unavailable {
-  color: #8a9bad;
+  color: #52677d;
 }
 
 .ability-priority {
@@ -529,13 +532,13 @@ function formatEvidenceTime(value: string): string {
 .ability-priority a:focus-visible,
 .ability-retry:focus-visible,
 .ability-recent-evidence:focus-visible {
-  outline: 3px solid rgba(4, 120, 87, 0.22);
+  outline: 3px solid #087a59;
   outline-offset: 3px;
 }
 
 .ability-module:focus-visible {
   border-radius: 10px;
-  outline: 3px solid rgba(4, 120, 87, 0.22);
+  outline: 3px solid #087a59;
   outline-offset: -3px;
 }
 
