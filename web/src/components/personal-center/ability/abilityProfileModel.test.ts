@@ -58,7 +58,11 @@ test('有写作证据时优先入口打开写作能力详情', () => {
     updatedAt: '2026-08-09T12:00:00+08:00',
   })
 
-  assert.equal(overview.priorityAction.to, '/app/me?tab=profile&module=writing')
+  assert.deepEqual(overview.priorityAction, {
+    label: '查看写作详情',
+    type: 'module',
+    key: 'writing',
+  })
 })
 
 test('写作详情复用六项真实能力并保留原始 0-100 口径', () => {

@@ -100,6 +100,15 @@
         <button v-if="error" type="button" class="ability-retry" @click="emit('retry')">
           重新加载
         </button>
+        <button
+          v-else-if="model.priorityAction.type === 'module'"
+          type="button"
+          class="ability-priority-action"
+          @click="emit('open-module', model.priorityAction.key)"
+        >
+          {{ model.priorityAction.label }}
+          <ArrowRight :size="17" aria-hidden="true" />
+        </button>
         <RouterLink v-else :to="model.priorityAction.to">
           {{ model.priorityAction.label }}
           <ArrowRight :size="17" aria-hidden="true" />
@@ -399,6 +408,7 @@ function openModule(key: AbilityModuleKey) {
 }
 
 .ability-priority a,
+.ability-priority-action,
 .ability-retry {
   display: inline-flex;
   min-height: 42px;
@@ -418,6 +428,7 @@ function openModule(key: AbilityModuleKey) {
 }
 
 .ability-priority a:hover,
+.ability-priority-action:hover,
 .ability-retry:hover {
   background: #066b4f;
 }
@@ -530,6 +541,7 @@ function openModule(key: AbilityModuleKey) {
 
 .ability-explanation-trigger:focus-visible,
 .ability-priority a:focus-visible,
+.ability-priority-action:focus-visible,
 .ability-retry:focus-visible,
 .ability-recent-evidence:focus-visible {
   outline: 3px solid #087a59;
@@ -621,6 +633,7 @@ function openModule(key: AbilityModuleKey) {
   }
 
   .ability-priority a,
+  .ability-priority-action,
   .ability-retry {
     width: 100%;
   }

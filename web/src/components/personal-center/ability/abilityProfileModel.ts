@@ -29,6 +29,10 @@ export interface AbilityModuleSummary {
   actionTo: string
 }
 
+export type AbilityPriorityAction =
+  | { label: string; type: 'module'; key: AbilityModuleKey }
+  | { label: string; type: 'route'; to: string }
+
 export interface AbilityOverviewModel {
   overallLevelLabel: '待形成'
   coverageCount: number
@@ -37,7 +41,7 @@ export interface AbilityOverviewModel {
   confidenceSteps: 0 | 1 | 2 | 3
   modules: AbilityModuleSummary[]
   priorityText: string
-  priorityAction: { label: string; to: string }
+  priorityAction: AbilityPriorityAction
   recentEvidence: { label: string; detail: string; timeLabel: string } | null
 }
 
@@ -60,7 +64,6 @@ export interface AbilityModuleDetail extends AbilityModuleSummary {
   sourceSummary: string
 }
 
-const WRITING_DETAIL_TO = '/app/me?tab=profile&module=writing'
 const WRITING_MODE_TO = '/app/writing/mode'
 
 const writingDimensions = [
@@ -153,7 +156,7 @@ function writingModule(profile: AbilityProfile | null): AbilityModuleSummary {
     evidenceLabel: evidenceExists ? `已收集 ${evidenceCount} 次评测` : '无证据',
     evidenceCount,
     actionLabel: evidenceExists ? '查看详情' : '开始评测',
-    actionTo: evidenceExists ? WRITING_DETAIL_TO : WRITING_MODE_TO,
+    actionTo: evidenceExists ? '' : WRITING_MODE_TO,
   }
 }
 
@@ -181,8 +184,8 @@ export function buildAbilityOverviewModel(
       ? '继续积累写作评测，校准能力画像。'
       : '完成首次写作评测，开始形成能力画像。',
     priorityAction: evidenceExists
-      ? { label: '查看写作详情', to: WRITING_DETAIL_TO }
-      : { label: '开始写作评测', to: WRITING_MODE_TO },
+      ? { label: '查看写作详情', type: 'module', key: 'writing' }
+      : { label: '开始写作评测', type: 'route', to: WRITING_MODE_TO },
     recentEvidence: evidenceExists && profile?.updatedAt
       ? {
           label: '最近写作评测',
