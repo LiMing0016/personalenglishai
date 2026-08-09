@@ -97,6 +97,28 @@ test('写作详情允许 Dashboard 或统计接口部分失败', () => {
   assert.deepEqual(detail.history, [])
 })
 
+test('写作详情下一步继续写作而不是链接当前详情', () => {
+  const detail = buildWritingAbilityDetail(
+    {
+      taskScore: 68,
+      coherenceScore: 72,
+      grammarScore: 61,
+      vocabularyScore: 64,
+      structureScore: 70,
+      varietyScore: 58,
+      assessedScore: 66,
+      confidence: 0.7,
+      sampleCount: 1,
+      updatedAt: '2026-08-09T12:00:00+08:00',
+    },
+    null,
+    null,
+  )
+
+  assert.equal(detail.actionTo, '/app/writing/mode')
+  assert.equal(detail.actionLabel, '继续写作练习')
+})
+
 test('未接入模块沿用统一详情结构但不生成能力结论', () => {
   const detail = buildUnavailableAbilityDetail('vocabulary')
   assert.equal(detail.title, '词汇能力')

@@ -228,6 +228,8 @@ export function buildWritingAbilityDetail(
 
   return {
     ...summary,
+    actionLabel: '继续写作练习',
+    actionTo: WRITING_MODE_TO,
     diagnosis: dashboard?.overview?.insight || (summary.evidenceState === 'collecting'
       ? '写作证据正在收集与校准中，暂不生成 CEFR 等级。'
       : '完成写作评测后，这里会展示写作能力证据。'),
