@@ -60,10 +60,17 @@ export interface AbilityModuleDetail extends AbilityModuleSummary {
   sourceSummary: string
 }
 
-type AbilityProfileInput = AbilityProfile & { confidence?: number | null }
-
 const WRITING_DETAIL_TO = '/app/me?tab=profile&ability=writing'
 const WRITING_MODE_TO = '/app/writing/mode'
+
+const writingDimensions = [
+  ['taskScore', '任务完成'],
+  ['coherenceScore', '连贯衔接'],
+  ['grammarScore', '语法准确'],
+  ['vocabularyScore', '词汇丰富'],
+  ['structureScore', '篇章结构'],
+  ['varietyScore', '表达多样'],
+] as const
 
 const MODULE_TITLES: Record<AbilityModuleKey, string> = {
   writing: '写作',
@@ -80,7 +87,7 @@ function confidencePresentation(value: number | null | undefined) {
   return { label: '较低' as const, steps: 1 as const }
 }
 
-function hasWritingEvidence(profile: AbilityProfileInput | null): boolean {
+function hasWritingEvidence(profile: AbilityProfile | null): boolean {
   return Boolean(
     profile
     && (profile.sampleCount ?? 0) > 0
@@ -108,7 +115,7 @@ function unmeasuredModule(key: Exclude<AbilityModuleKey, 'writing'>): AbilityMod
   }
 }
 
-function writingModule(profile: AbilityProfileInput | null): AbilityModuleSummary {
+function writingModule(profile: AbilityProfile | null): AbilityModuleSummary {
   const evidenceExists = hasWritingEvidence(profile)
   const evidenceCount = evidenceExists ? profile?.sampleCount ?? 0 : 0
   return {
@@ -124,7 +131,7 @@ function writingModule(profile: AbilityProfileInput | null): AbilityModuleSummar
 }
 
 export function buildAbilityOverviewModel(
-  profile: AbilityProfileInput | null,
+  profile: AbilityProfile | null,
 ): AbilityOverviewModel {
   const writing = writingModule(profile)
   const evidenceExists = hasWritingEvidence(profile)
@@ -160,44 +167,54 @@ export function buildAbilityOverviewModel(
 }
 
 export function buildWritingAbilityDetail(
-  profile: AbilityProfileInput | null,
+  profile: AbilityProfile | null,
   dashboard: WritingDashboardResponse | null,
   stats: WritingStatsResponse | null,
 ): AbilityModuleDetail {
   const summary = writingModule(profile)
-  const scoreTrend = dashboard?.growth.essayScoreTrend ?? []
-  const subskillDefinitions: Array<[string, string, number | null | undefined]> = [
-    ['task', '任务完成', profile?.taskScore],
-    ['coherence', '连贯衔接', profile?.coherenceScore],
-    ['grammar', '语法准确', profile?.grammarScore],
-    ['vocabulary', '词汇运用', profile?.vocabularyScore],
-    ['structure', '篇章结构', profile?.structureScore],
-    ['variety', '表达多样性', profile?.varietyScore],
-  ]
-  const subskills: AbilitySubskill[] = subskillDefinitions.map(([key, label, value]) => ({
-    key,
+  const scoreTrend = dashboard?.growth?.essayScoreTrend ?? []
+  const subskills: AbilitySubskill[] = writingDimensions.map(([key, label]) => {
+    const value = profile?.[key] ?? null
+    return {
+      key,
     label,
-    value: value ?? null,
+      value,
     valueLabel: value == null ? '暂无' : `${value}`,
     max: 100,
     confidenceLabel: confidencePresentation(profile?.confidence).label,
-  }))
+    }
+  })
+  const scoredSubskills = subskills.filter((item): item is AbilitySubskill & { value: number } => (
+    item.value != null
+  ))
+  const strength = scoredSubskills.reduce<AbilitySubskill & { value: number } | null>(
+    (current, item) => !current || item.value > current.value ? item : current,
+    null,
+  )
+  const focus = scoredSubskills.reduce<AbilitySubskill & { value: number } | null>(
+    (current, item) => !current || item.value < current.value ? item : current,
+    null,
+  )
+  const aggregateErrorCount = stats
+    ? stats.totalGrammarErrors + stats.totalSpellingErrors + stats.totalVocabularyErrors
+    : null
 
   return {
     ...summary,
-    diagnosis: summary.evidenceState === 'collecting'
+    diagnosis: dashboard?.overview?.insight || (summary.evidenceState === 'collecting'
       ? '写作证据正在收集与校准中，暂不生成 CEFR 等级。'
-      : '完成写作评测后，这里会展示写作能力证据。',
+      : '完成写作评测后，这里会展示写作能力证据。'),
     trendLabel: dashboard?.overview.insight ?? '暂无趋势数据',
     subskills,
-    findings: stats?.avgGrammarScore != null
-      ? [{ tone: 'focus', text: '继续通过写作评测积累可用证据。' }]
-      : [],
+    findings: [
+      ...(strength ? [{ tone: 'strength' as const, text: `${strength.label}是当前相对稳定的能力。` }] : []),
+      ...(focus ? [{ tone: 'focus' as const, text: `优先提升${focus.label}。` }] : []),
+    ],
     evidence: scoreTrend.map((item) => ({
       id: String(item.essayNo),
       title: item.title,
       scoreLabel: `${item.score}`,
-      timeLabel: item.scoredAt,
+      timeLabel: formatWritingDate(item.scoredAt),
     })),
     history: scoreTrend.map((item) => ({
       id: String(item.essayNo),
@@ -205,6 +222,13 @@ export function buildWritingAbilityDetail(
       score: item.score,
       delta: item.delta,
     })),
-    sourceSummary: '来源：写作评测、写作趋势与写作统计。',
+    sourceSummary: profile?.sampleCount != null
+      ? `来源：${profile.sampleCount} 次写作评测、写作趋势${aggregateErrorCount == null ? '' : `与 ${aggregateErrorCount} 项聚合错误统计`}。`
+      : '来源：暂无写作评测样本。',
   }
+}
+
+function formatWritingDate(value: string | null | undefined): string {
+  if (!value || Number.isNaN(new Date(value).getTime())) return '时间未知'
+  return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value
 }

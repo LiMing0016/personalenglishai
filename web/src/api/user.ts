@@ -36,6 +36,7 @@ export interface AbilityProfile {
   structureScore: number | null
   varietyScore: number | null
   assessedScore: number | null
+  confidence: number | null
   sampleCount: number | null
   updatedAt: string | null
 }
