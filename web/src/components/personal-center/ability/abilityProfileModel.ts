@@ -80,6 +80,33 @@ const MODULE_TITLES: Record<AbilityModuleKey, string> = {
   speaking: '口语',
 }
 
+const unavailableModules = {
+  vocabulary: {
+    title: '词汇能力',
+    subskills: ['识别理解', '主动回忆', '语境运用'],
+    actionLabel: '进入单词学习',
+    actionTo: '/app/vocabulary?tab=modes',
+  },
+  reading: {
+    title: '阅读能力',
+    subskills: ['信息定位', '篇章理解', '推断分析'],
+    actionLabel: '导入阅读材料',
+    actionTo: '/app/translation',
+  },
+  listening: {
+    title: '听力能力',
+    subskills: ['语音辨识', '信息理解', '语篇理解'],
+    actionLabel: '进入听力学习',
+    actionTo: '/app/listening',
+  },
+  speaking: {
+    title: '口语能力',
+    subskills: ['发音', '流利度', '表达组织'],
+    actionLabel: '进入口语学习',
+    actionTo: '/app/speaking',
+  },
+} as const
+
 function confidencePresentation(value: number | null | undefined) {
   if (value == null) return { label: '暂无' as const, steps: 0 as const }
   if (value >= 0.8) return { label: '较高' as const, steps: 3 as const }
@@ -225,6 +252,37 @@ export function buildWritingAbilityDetail(
     sourceSummary: profile?.sampleCount != null
       ? `来源：${profile.sampleCount} 次写作评测、写作趋势${aggregateErrorCount == null ? '' : `与 ${aggregateErrorCount} 项聚合错误统计`}。`
       : '来源：暂无写作评测样本。',
+  }
+}
+
+export function buildUnavailableAbilityDetail(
+  key: Exclude<AbilityModuleKey, 'writing'>,
+): AbilityModuleDetail {
+  const config = unavailableModules[key]
+
+  return {
+    key,
+    title: config.title,
+    levelLabel: '待测',
+    evidenceState: 'unmeasured',
+    evidenceLabel: '暂无有效证据',
+    evidenceCount: 0,
+    actionLabel: config.actionLabel,
+    actionTo: config.actionTo,
+    diagnosis: '该模块尚未完成有效评估，当前不生成能力结论。',
+    trendLabel: '暂无趋势数据',
+    subskills: config.subskills.map((label, index) => ({
+      key: `${key}-${index + 1}`,
+      label,
+      value: null,
+      valueLabel: '暂无',
+      max: 100,
+      confidenceLabel: '暂无',
+    })),
+    findings: [],
+    evidence: [],
+    history: [],
+    sourceSummary: '来源：暂无有效评估样本。',
   }
 }
 

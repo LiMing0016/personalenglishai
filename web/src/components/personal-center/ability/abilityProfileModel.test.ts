@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   buildAbilityOverviewModel,
+  buildUnavailableAbilityDetail,
   type AbilityModuleKey,
 } from './abilityProfileModel.ts'
 import { buildWritingAbilityDetail } from './abilityProfileModel.ts'
@@ -94,4 +95,18 @@ test('写作详情允许 Dashboard 或统计接口部分失败', () => {
   assert.equal(detail.subskills.every((item) => item.value == null), true)
   assert.deepEqual(detail.evidence, [])
   assert.deepEqual(detail.history, [])
+})
+
+test('未接入模块沿用统一详情结构但不生成能力结论', () => {
+  const detail = buildUnavailableAbilityDetail('vocabulary')
+  assert.equal(detail.title, '词汇能力')
+  assert.equal(detail.levelLabel, '待测')
+  assert.equal(detail.evidenceState, 'unmeasured')
+  assert.deepEqual(detail.subskills.map((item) => item.label), [
+    '识别理解',
+    '主动回忆',
+    '语境运用',
+  ])
+  assert.equal(detail.subskills.every((item) => item.value == null), true)
+  assert.equal(detail.actionTo, '/app/vocabulary?tab=modes')
 })
