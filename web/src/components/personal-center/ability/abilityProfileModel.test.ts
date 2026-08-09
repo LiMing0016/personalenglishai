@@ -44,6 +44,23 @@ test('写作评测只形成待校准证据，不由前端生成 CEFR', () => {
   assert.equal(overview.modules.find((item) => item.key === 'vocabulary')?.levelLabel, '待测')
 })
 
+test('有写作证据时优先入口打开写作能力详情', () => {
+  const overview = buildAbilityOverviewModel({
+    taskScore: 68,
+    coherenceScore: 72,
+    grammarScore: 61,
+    vocabularyScore: 64,
+    structureScore: 70,
+    varietyScore: 58,
+    assessedScore: 66,
+    confidence: 0.7,
+    sampleCount: 1,
+    updatedAt: '2026-08-09T12:00:00+08:00',
+  })
+
+  assert.equal(overview.priorityAction.to, '/app/me?tab=profile&module=writing')
+})
+
 test('写作详情复用六项真实能力并保留原始 0-100 口径', () => {
   const detail = buildWritingAbilityDetail(
     {

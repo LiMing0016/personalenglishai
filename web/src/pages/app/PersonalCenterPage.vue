@@ -136,7 +136,13 @@
         />
         <MyEssaysSection v-else-if="activeSection === 'records'" />
         <WritingAssetsSection v-else-if="activeSection === 'assets'" />
-        <AbilityRadarSection v-else-if="activeSection === 'profile'" />
+        <AbilityProfileSection
+          v-else-if="activeSection === 'profile'"
+          :selected-module="activeAbilityModule"
+          :preview-mode="isPreviewMode"
+          @open-module="openAbilityModule"
+          @close-module="closeAbilityModule"
+        />
         <SubscriptionSection
           v-else-if="activeSection === 'subscription'"
           :status="subscriptionStatus"
@@ -175,13 +181,13 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import { userApi, type MeProfile, type SubscriptionStatus } from '@/api/user'
-import AbilityRadarSection from '@/components/personal-center/AbilityRadarSection.vue'
 import AccountSettingsSection from '@/components/personal-center/AccountSettingsSection.vue'
 import MyEssaysSection from '@/components/personal-center/MyEssaysSection.vue'
 import OverviewSection from '@/components/personal-center/OverviewSection.vue'
 import SubscriptionBadge from '@/components/personal-center/SubscriptionBadge.vue'
 import SubscriptionSection from '@/components/personal-center/SubscriptionSection.vue'
 import WritingAssetsSection from '@/components/personal-center/WritingAssetsSection.vue'
+import AbilityProfileSection from '@/components/personal-center/ability/AbilityProfileSection.vue'
 import {
   normalizeAvatarFile,
   validateAvatarFile,
@@ -192,7 +198,10 @@ import { showToast } from '@/utils/toast'
 
 import {
   PERSONAL_CENTER_TABS,
+  nextPersonalCenterQuery,
+  parseAbilityModule,
   parsePersonalCenterSection,
+  type AbilityModuleKey,
   type PersonalCenterSection,
 } from './personalCenterModel'
 
@@ -217,6 +226,9 @@ const stageDropdownRef = ref<HTMLElement | null>(null)
 const isPreviewMode = computed(
   () => import.meta.env.DEV && route.meta.personalCenterPreview === true,
 )
+const activeAbilityModule = computed(() => parseAbilityModule(
+  route.query.module as string | string[] | null | undefined,
+))
 
 const avatarInitial = computed(() => {
   const nickname = profile.value?.nickname?.trim()
@@ -227,7 +239,15 @@ const currentStageLabel = computed(() => getStageLabel(profile.value?.studyStage
 
 function switchSection(key: PersonalCenterSection) {
   activeSection.value = key
-  void router.replace({ query: { ...route.query, tab: key } })
+  void router.replace({ query: nextPersonalCenterQuery(route.query, key) })
+}
+
+function openAbilityModule(key: AbilityModuleKey) {
+  void router.push({ query: nextPersonalCenterQuery(route.query, 'profile', key) })
+}
+
+function closeAbilityModule() {
+  void router.push({ query: nextPersonalCenterQuery(route.query, 'profile', null) })
 }
 
 function formatDate(dateString: string) {

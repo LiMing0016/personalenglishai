@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   PERSONAL_CENTER_TABS,
+  nextPersonalCenterQuery,
   parseAbilityModule,
   parsePersonalCenterSection,
 } from './personalCenterModel.ts'
@@ -44,4 +45,19 @@ test('能力模块查询参数只接受固定英语能力', () => {
   assert.equal(parseAbilityModule('assistant'), null)
   assert.equal(parseAbilityModule('unknown'), null)
   assert.equal(parseAbilityModule(undefined), null)
+})
+
+test('离开能力画像时移除 module，进入详情时保留 profile 页签', () => {
+  assert.deepEqual(
+    nextPersonalCenterQuery({ tab: 'profile', module: 'writing', vc: '1' }, 'records'),
+    { tab: 'records', vc: '1' },
+  )
+  assert.deepEqual(
+    nextPersonalCenterQuery({ tab: 'profile', vc: '1' }, 'profile', 'writing'),
+    { tab: 'profile', module: 'writing', vc: '1' },
+  )
+  assert.deepEqual(
+    nextPersonalCenterQuery({ tab: 'profile', module: 'writing' }, 'profile', null),
+    { tab: 'profile' },
+  )
 })

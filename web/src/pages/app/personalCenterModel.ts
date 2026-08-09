@@ -1,3 +1,5 @@
+import type { LocationQuery, LocationQueryRaw } from 'vue-router'
+
 export type PersonalCenterSection =
   | 'overview'
   | 'records'
@@ -64,4 +66,15 @@ export function parseAbilityModule(
   return candidate && ABILITY_MODULE_KEYS.has(candidate as AbilityModuleKey)
     ? candidate as AbilityModuleKey
     : null
+}
+
+export function nextPersonalCenterQuery(
+  current: LocationQuery,
+  section: PersonalCenterSection,
+  module: AbilityModuleKey | null = null,
+): LocationQueryRaw {
+  const next: LocationQueryRaw = { ...current, tab: section }
+  delete next.module
+  if (section === 'profile' && module) next.module = module
+  return next
 }

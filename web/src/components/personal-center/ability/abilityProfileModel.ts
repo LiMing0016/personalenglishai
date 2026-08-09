@@ -60,7 +60,7 @@ export interface AbilityModuleDetail extends AbilityModuleSummary {
   sourceSummary: string
 }
 
-const WRITING_DETAIL_TO = '/app/me?tab=profile&ability=writing'
+const WRITING_DETAIL_TO = '/app/me?tab=profile&module=writing'
 const WRITING_MODE_TO = '/app/writing/mode'
 
 const writingDimensions = [
