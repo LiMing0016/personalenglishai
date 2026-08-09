@@ -6,6 +6,21 @@ export type PersonalCenterSection =
   | 'subscription'
   | 'security'
 
+export type AbilityModuleKey =
+  | 'writing'
+  | 'vocabulary'
+  | 'reading'
+  | 'listening'
+  | 'speaking'
+
+const ABILITY_MODULE_KEYS = new Set<AbilityModuleKey>([
+  'writing',
+  'vocabulary',
+  'reading',
+  'listening',
+  'speaking',
+])
+
 export interface PersonalCenterTab {
   key: PersonalCenterSection
   label: string
@@ -40,4 +55,13 @@ export function parsePersonalCenterSection(
   return candidate && PERSONAL_CENTER_SECTION_KEYS.has(candidate as PersonalCenterSection)
     ? candidate as PersonalCenterSection
     : 'overview'
+}
+
+export function parseAbilityModule(
+  queryValue: string | string[] | null | undefined,
+): AbilityModuleKey | null {
+  const candidate = Array.isArray(queryValue) ? queryValue[0] : queryValue
+  return candidate && ABILITY_MODULE_KEYS.has(candidate as AbilityModuleKey)
+    ? candidate as AbilityModuleKey
+    : null
 }

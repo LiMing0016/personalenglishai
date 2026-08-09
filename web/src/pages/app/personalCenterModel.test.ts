@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   PERSONAL_CENTER_TABS,
+  parseAbilityModule,
   parsePersonalCenterSection,
 } from './personalCenterModel.ts'
 
@@ -35,4 +36,12 @@ test('旧个人中心书签迁移到新的页签命名', () => {
   assert.equal(parsePersonalCenterSection('essays'), 'records')
   assert.equal(parsePersonalCenterSection('radar'), 'profile')
   assert.equal(parsePersonalCenterSection('settings'), 'security')
+})
+
+test('能力模块查询参数只接受固定英语能力', () => {
+  assert.equal(parseAbilityModule('writing'), 'writing')
+  assert.equal(parseAbilityModule(['vocabulary']), 'vocabulary')
+  assert.equal(parseAbilityModule('assistant'), null)
+  assert.equal(parseAbilityModule('unknown'), null)
+  assert.equal(parseAbilityModule(undefined), null)
 })
