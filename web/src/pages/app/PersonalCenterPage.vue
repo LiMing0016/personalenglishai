@@ -107,11 +107,11 @@
           </div>
         </div>
 
-        <RouterLink class="security-link" :to="{ path: '/app/me', query: { tab: 'security' } }">
+        <button class="security-link" type="button" @click="switchSection('security')">
           <ShieldCheck :size="17" :stroke-width="1.8" />
           管理账号安全
           <ArrowRight :size="15" :stroke-width="1.8" />
-        </RouterLink>
+        </button>
       </header>
 
       <nav class="personal-tabs" aria-label="个人中心栏目">
@@ -731,6 +731,8 @@ onBeforeUnmount(revokePreviewAvatarUrl)
   padding: 0 14px;
   background: rgba(255, 255, 255, 0.78);
   color: #41586f;
+  cursor: pointer;
+  font: inherit;
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
