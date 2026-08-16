@@ -1,32 +1,6 @@
 <template>
   <div class="subscription-section">
-    <h2 class="section-title">会员订阅</h2>
-
-    <div class="status-panel">
-      <div>
-        <div class="eyebrow">当前档位</div>
-        <div class="plan-name">{{ status?.planName ?? '--' }}</div>
-        <div class="period">{{ periodText }}</div>
-      </div>
-      <div class="quota-summary">
-        <span>{{ formatTokens(status?.tokenUsed ?? 0) }}</span>
-        <small>/ {{ formatTokens(effectiveLimit) }}</small>
-      </div>
-    </div>
-
-    <div class="usage-panel">
-      <div class="usage-row">
-        <span>{{ usageWindowText }} token 用量</span>
-        <strong>{{ usagePercent }}%</strong>
-      </div>
-      <div class="progress-track">
-        <div class="progress-fill" :class="{ danger: status?.overLimit }" :style="{ width: `${Math.min(usagePercent, 100)}%` }"></div>
-      </div>
-      <div class="usage-meta">
-        <span>已用 {{ formatTokens(status?.tokenUsed ?? 0) }}</span>
-        <span>剩余 {{ formatTokens(status?.tokenRemaining ?? 0) }}</span>
-      </div>
-    </div>
+    <AiUsageActivityPanel />
 
     <form class="redeem-panel" @submit.prevent="redeem">
       <label class="redeem-label" for="subscription-code">兑换会员码</label>
@@ -51,12 +25,12 @@
         v-for="plan in paidPlans"
         :key="plan.planCode"
         class="plan-card"
-        :class="{ active: plan.planCode === status?.planCode }"
+        :class="{ active: plan.planCode === props.status?.planCode }"
       >
         <span class="plan-title">{{ plan.name }}</span>
         <span class="plan-limit">{{ formatTokens(plan.monthlyTokenLimit) }} / 月</span>
         <span class="plan-action">
-          {{ plan.planCode === status?.planCode ? '当前档位' : '使用兑换码开通' }}
+          {{ plan.planCode === props.status?.planCode ? '当前档位' : '使用兑换码开通' }}
         </span>
       </div>
     </div>
@@ -67,9 +41,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { userApi, type SubscriptionPlan, type SubscriptionStatus } from '@/api/user'
 import { showToast } from '@/utils/toast'
+import AiUsageActivityPanel from './AiUsageActivityPanel.vue'
+
+const props = defineProps<{
+  status: SubscriptionStatus | null
+}>()
+const emit = defineEmits<{
+  statusUpdated: [status: SubscriptionStatus]
+}>()
 
 const plans = ref<SubscriptionPlan[]>([])
-const status = ref<SubscriptionStatus | null>(null)
 const redeemCode = ref('')
 const redeeming = ref(false)
 
@@ -78,22 +59,6 @@ type PaidPlanCode = 'basic' | 'pro' | 'premium'
 const paidPlans = computed(() =>
   plans.value.filter((plan): plan is SubscriptionPlan & { planCode: PaidPlanCode } => plan.planCode !== 'free')
 )
-const effectiveLimit = computed(() => status.value?.tokenLimit ?? status.value?.monthlyTokenLimit ?? 0)
-const usagePercent = computed(() => {
-  const limit = effectiveLimit.value
-  if (limit <= 0) return 0
-  return Math.round(((status.value?.tokenUsed ?? 0) / limit) * 100)
-})
-const periodText = computed(() => {
-  if (!status.value?.currentPeriodEnd) return 'Free 档长期有效'
-  return `有效期至 ${formatDate(status.value.currentPeriodEnd)}`
-})
-const usageWindowText = computed(() => {
-  if (status.value?.quotaPeriod === 'daily') {
-    return `${status.value.usageDate ?? '今日'} 每日`
-  }
-  return `${status.value?.usageMonth ?? '--'} 每月`
-})
 
 function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
@@ -101,18 +66,9 @@ function formatTokens(value: number): string {
   return String(value)
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-async function loadSubscription() {
-  const [plansRes, statusRes] = await Promise.all([
-    userApi.getSubscriptionPlans(),
-    userApi.getMySubscription(),
-  ])
+async function loadPlans() {
+  const plansRes = await userApi.getSubscriptionPlans()
   plans.value = plansRes.data ?? []
-  status.value = statusRes.data ?? null
 }
 
 async function redeem() {
@@ -121,7 +77,7 @@ async function redeem() {
   redeeming.value = true
   try {
     const res = await userApi.redeemSubscriptionCode(code)
-    status.value = res.data ?? status.value
+    if (res.data) emit('statusUpdated', res.data)
     redeemCode.value = ''
     showToast('会员码兑换成功', 'success')
   } catch {
@@ -133,7 +89,7 @@ async function redeem() {
 
 onMounted(async () => {
   try {
-    await loadSubscription()
+    await loadPlans()
   } catch {
     showToast('加载会员信息失败', 'error')
   }
@@ -145,91 +101,12 @@ onMounted(async () => {
   max-width: 860px;
 }
 
-.section-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 24px;
-}
-
-.status-panel,
-.usage-panel,
 .redeem-panel {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 16px;
-}
-
-.status-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.eyebrow {
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 6px;
-}
-
-.plan-name {
-  font-size: 28px;
-  font-weight: 700;
-  color: #047857;
-}
-
-.period {
-  margin-top: 6px;
-  font-size: 13px;
-  color: #64748b;
-}
-
-.quota-summary {
-  text-align: right;
-  color: #0f172a;
-}
-
-.quota-summary span {
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.quota-summary small {
-  color: #64748b;
-}
-
-.usage-row,
-.usage-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 14px;
-  color: #334155;
-}
-
-.progress-track {
-  height: 10px;
-  background: #e2e8f0;
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 12px 0 10px;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #047857;
-  transition: width 0.2s ease;
-}
-
-.progress-fill.danger {
-  background: #dc2626;
-}
-
-.usage-meta {
-  color: #64748b;
 }
 
 .redeem-label {
@@ -321,15 +198,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
-  .status-panel {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .quota-summary {
-    text-align: left;
-  }
-
   .plans-grid {
     grid-template-columns: 1fr;
   }

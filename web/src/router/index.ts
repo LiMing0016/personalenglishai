@@ -408,6 +408,24 @@ if (import.meta.env.DEV) {
     component: () => import('@/pages/dev/AdminDevLoginBridge.vue'),
     meta: { public: true },
   })
+  routes.push({
+    path: '/dev/personal-center-preview',
+    component: () => import('@/layouts/AppLayout.vue'),
+    meta: { public: true, skipStageCheck: true },
+    children: [
+      {
+        path: '',
+        name: 'PersonalCenterPreview',
+        component: () => import('@/pages/app/PersonalCenterPage.vue'),
+        meta: {
+          public: true,
+          skipStageCheck: true,
+          immersive: true,
+          personalCenterPreview: true,
+        },
+      },
+    ],
+  })
 }
 
 const router = createRouter({

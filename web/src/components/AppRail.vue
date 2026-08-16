@@ -73,7 +73,7 @@ const isWritingRoute = computed(() => route.path.startsWith('/app/writing'))
   min-height: 0;
   padding: 16px 12px;
   border-right: 1px solid var(--app-sidebar-border, #d9e2ec);
-  background: #eaf4fc;
+  background: #fff;
   color: #0f172a;
   box-sizing: border-box;
   transition:

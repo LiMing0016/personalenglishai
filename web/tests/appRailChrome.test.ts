@@ -34,8 +34,8 @@ assert.match(
   'collapsed fixed rail should reserve its compact width beside the main content',
 )
 assert.ok(
-  appLayoutSource.includes(':collapsed="railCollapsed"'),
-  'app layout should pass the shared collapse state to AppRail',
+  appLayoutSource.includes(':collapsed="effectiveRailCollapsed"'),
+  'app layout should pass the responsive collapse state to AppRail',
 )
 assert.ok(
   appLayoutSource.includes('@toggle-rail="toggleRail"'),
@@ -93,5 +93,10 @@ assert.ok(appRailSource.includes('/app/me'), 'shared rail should keep a personal
 assert.ok(
   appRailSource.includes('rail-profile-link'),
   'shared rail personal center entry should be anchored separately from primary navigation',
+)
+assert.match(
+  appRailSource,
+  /\.app-rail\s*\{[^}]*background:\s*#fff(?:fff)?\s*;/s,
+  'shared rail should use a white surface',
 )
 console.log('app-rail-chrome-ok')

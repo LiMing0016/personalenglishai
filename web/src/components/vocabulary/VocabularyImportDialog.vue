@@ -99,6 +99,7 @@ import {
   importAnalysisStateAfterInputChange,
   isImportAnalysisAbort,
   mapVocabularyImportAnalysisCandidates,
+  vocabularyImportAnalysisErrorMessage,
 } from '@/features/vocabulary/importAnalysis'
 import {
   applySuggestion,
@@ -309,7 +310,7 @@ async function analyzeInput() {
     analysisState.value = 'ready'
   } catch (error) {
     if (isImportAnalysisAbort(error) || request.signal.aborted) return
-    requestError.value = publicAnalysisMessage(error)
+    requestError.value = vocabularyImportAnalysisErrorMessage(error)
     analysisState.value = 'failed'
   } finally {
     if (lifecycle.isCurrent(
@@ -412,18 +413,6 @@ function startAnalysisTimer() {
 function stopAnalysisTimer() {
   if (analysisTimer) clearInterval(analysisTimer)
   analysisTimer = null
-}
-
-function publicAnalysisMessage(error: unknown) {
-  const status = typeof error === 'object' && error && 'response' in error
-    ? (error as { response?: { status?: number } }).response?.status
-    : undefined
-  const code = typeof error === 'object' && error && 'code' in error
-    ? (error as { code?: string }).code
-    : undefined
-  if (status === 400) return '输入已变化，请重新分析'
-  if (status === 504 || code === 'ECONNABORTED') return 'AI 分析超时，请重试'
-  return 'AI 分析失败，请重试'
 }
 
 function publicCaptureMessage(error: unknown) {

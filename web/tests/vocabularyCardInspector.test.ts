@@ -2,17 +2,18 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 
-const inspector = fs.readFileSync(
+function readSource(url: URL) {
+  return fs.readFileSync(url, 'utf8').replace(/\r\n/g, '\n')
+}
+
+const inspector = readSource(
   new URL('../src/components/vocabulary/VocabularyCardInspector.vue', import.meta.url),
-  'utf8',
 )
-const markdownEditor = fs.readFileSync(
+const markdownEditor = readSource(
   new URL('../src/components/vocabulary/VocabularyMarkdownEditor.vue', import.meta.url),
-  'utf8',
 )
-const vocabularyArchitecture = fs.readFileSync(
+const vocabularyArchitecture = readSource(
   new URL('../../docs/architecture/vocabulary-deposition.md', import.meta.url),
-  'utf8',
 )
 
 test('draft reset depends only on card and active revision identity', async () => {

@@ -53,8 +53,14 @@ export function buildVocabularyNavigationQuery(filters: VocabularyCardFilters): 
   return query
 }
 
-export function parseVocabularyNavigationQuery(query: RouteQueryLike): VocabularyCardFilters | null {
-  if (firstQueryValue(query.vc) !== '1') return null
+export function parseVocabularyNavigationQuery(query: RouteQueryLike): VocabularyCardFilters {
+  if (firstQueryValue(query.vc) !== '1') {
+    return {
+      sort: 'recent',
+      page: 1,
+      size: 20,
+    }
+  }
 
   const keyword = firstQueryValue(query.keyword)?.trim()
   const statusValue = firstQueryValue(query.status)
@@ -71,6 +77,17 @@ export function parseVocabularyNavigationQuery(query: RouteQueryLike): Vocabular
     page: positiveInteger(query.page, 1),
     size: positiveInteger(query.size, 20, 100),
   }
+}
+
+export function vocabularyCardEmptyMessage(filters: VocabularyCardFilters): string {
+  const hasActiveFilters = Boolean(
+    filters.keyword?.trim()
+    || filters.status
+    || filters.sourceType?.trim(),
+  )
+  return hasActiveFilters
+    ? '未找到匹配的单词卡，请清除或调整筛选条件。'
+    : '暂无沉淀单词，先录入一组需要学习的单词。'
 }
 
 function target(card: VocabularyCardSummary | undefined): VocabularyCardSequenceTarget | null {

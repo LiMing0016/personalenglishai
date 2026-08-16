@@ -7,6 +7,7 @@ import { http } from '../src/api/http'
 import {
   deleteVocabularyCard,
   regenerateVocabularyCard,
+  resolveVocabularyCard,
   updateVocabularyCard,
   VocabularyConflictError,
   type VocabularyConflictResponse,
@@ -105,6 +106,26 @@ const originalAdapter = http.defaults.adapter
 
 test.afterEach(() => {
   http.defaults.adapter = originalAdapter
+})
+
+test('resolves an owned vocabulary card through the exact term endpoint', async () => {
+  http.defaults.adapter = async (config) => {
+    assert.equal(config.method, 'get')
+    assert.equal(config.url, '/vocabulary/cards/resolve')
+    assert.deepEqual(config.params, { term: 'wonder', language: 'en' })
+    return {
+      config,
+      data: { code: '0', data: { found: true, cardUid: 'card_wonder' } },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    }
+  }
+
+  assert.deepEqual(await resolveVocabularyCard('wonder', 'en'), {
+    found: true,
+    cardUid: 'card_wonder',
+  })
 })
 
 test('returns undefined when deleting a vocabulary card succeeds with missing or null data', async () => {

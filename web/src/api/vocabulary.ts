@@ -311,6 +311,11 @@ export interface VocabularyCardDetail extends VocabularyCardSummary {
   candidateContent: unknown
 }
 
+export interface VocabularyCardResolution {
+  found: boolean
+  cardUid: string | null
+}
+
 export interface VocabularyCardFilters {
   keyword?: string
   status?: VocabularyCardStatus
@@ -511,6 +516,11 @@ export const analyzeVocabularyImport = ({
 
 export const listVocabularyCards = (params: VocabularyCardFilters) =>
   unwrap<VocabularyCardPage>(http.get('/vocabulary/cards', { params }))
+
+export const resolveVocabularyCard = (term: string, language: string) =>
+  unwrap<VocabularyCardResolution>(http.get('/vocabulary/cards/resolve', {
+    params: { term, language },
+  }))
 
 export const getVocabularyCard = (cardUid: string) =>
   unwrap<VocabularyCardDetail>(http.get(`/vocabulary/cards/${encodeURIComponent(cardUid)}`))

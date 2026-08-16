@@ -25,6 +25,8 @@ import com.personalenglishai.backend.mapper.vocabulary.VocabularyCardMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyGenerationJobMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularySourceMapper;
 import com.personalenglishai.backend.mapper.vocabulary.VocabularyThemeMapper;
+import com.personalenglishai.backend.service.subscription.AiTokenUsageRecord;
+import com.personalenglishai.backend.service.subscription.SubscriptionService;
 import com.personalenglishai.backend.support.VocabularyTestFixtures;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,6 +48,7 @@ class VocabularyGenerationWorkerTest {
     @Mock private VocabularyCardGenerator generator;
     @Mock private VocabularyGenerationFinalizer finalizer;
     @Mock private VocabularyThemeMapper themes;
+    @Mock private SubscriptionService subscriptionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private VocabularyTemplateRegistry templates;
@@ -57,7 +60,43 @@ class VocabularyGenerationWorkerTest {
         worker = new VocabularyGenerationWorker(
                 jobs, cards, sources, generator, templates, themes,
                 new VocabularyCoreContentCodec(objectMapper), new VocabularyCardBlocksCodec(),
-                objectMapper, finalizer, 300_000L);
+                objectMapper, finalizer, subscriptionService, 300_000L);
+    }
+
+    @Test
+    void recordsSuccessfulPythonGenerationUsageForTheCardOwner() {
+        VocabularyGenerationJob job = VocabularyTestFixtures.pendingJob("job_usage", "card_1", null, 0);
+        VocabularyCard card = VocabularyTestFixtures.generating("card_1", null);
+        card.setUserId(7L);
+        GeneratedVocabularyCard complete = VocabularyTestFixtures.basicGeneratedCard();
+        VocabularyGenerationMetadata metadata = new VocabularyGenerationMetadata(
+                "python",
+                "python-model",
+                "vocabulary-card-blocks-v1",
+                2,
+                "job_usage_attempt_1",
+                new VocabularyGenerationMetadata.Usage(40L, 10L, 20L, 60L, 2));
+        when(jobs.selectClaimable(10)).thenReturn(List.of(job));
+        when(jobs.markRunning(eq("job_usage"), anyString(), eq(300))).thenReturn(1);
+        when(cards.findByUidIncludingDeleted("card_1")).thenReturn(card);
+        when(sources.listSources("card_1")).thenReturn(List.of());
+        when(generator.generate(any(), anyList(), any(), eq("job_usage"), any()))
+                .thenReturn(new GeneratedVocabularyCard(
+                        complete.core(), complete.cardBlocks(), complete.cardBlocksSchemaVersion(), null,
+                        complete.contentFormatVersion(), complete.model(), complete.changeSummary(),
+                        false, "complete", null, metadata));
+
+        worker.processPendingJobs(10);
+
+        ArgumentCaptor<AiTokenUsageRecord> captor = ArgumentCaptor.forClass(AiTokenUsageRecord.class);
+        verify(subscriptionService).recordUsage(captor.capture());
+        assertEquals("vocabulary-card:job_usage", captor.getValue().usageEventId());
+        assertEquals(7L, captor.getValue().userId());
+        assertEquals("vocabulary.card-generation", captor.getValue().featureKey());
+        assertEquals("python", captor.getValue().provider());
+        assertEquals("python-model", captor.getValue().model());
+        assertEquals(60L, captor.getValue().totalTokens());
+        assertEquals("job_usage_attempt_1", captor.getValue().traceId());
     }
 
     @Test

@@ -1,12 +1,22 @@
 <template>
   <div class="essays-section">
-    <h2 class="section-title">我的作文</h2>
+    <div class="section-heading">
+      <div>
+        <p class="section-eyebrow">学习记录</p>
+        <h2 class="section-title">写作记录</h2>
+      </div>
+      <RouterLink class="start-writing-link" to="/app/writing">开始新写作</RouterLink>
+    </div>
 
     <!-- Loading -->
     <div v-if="loading" class="loading-state">加载中...</div>
 
     <!-- Empty -->
-    <div v-else-if="items.length === 0" class="empty-state">暂无作文记录</div>
+    <div v-else-if="items.length === 0" class="empty-state">
+      <h3>还没有写作记录</h3>
+      <p>完成一次写作与评测后，分数、反馈和能力变化会沉淀在这里。</p>
+      <RouterLink to="/app/writing">开始第一次写作</RouterLink>
+    </div>
 
     <!-- Essay Cards -->
     <div v-else class="essay-list">
@@ -150,22 +160,75 @@ onMounted(() => {
 
 <style scoped>
 .essays-section {
-  max-width: 800px;
+  max-width: 980px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.section-eyebrow {
+  margin: 0 0 5px;
+  color: #7a8da2;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
 }
 
 .section-title {
   font-size: 22px;
   font-weight: 700;
   color: #1e293b;
-  margin: 0 0 24px;
+  margin: 0;
+}
+
+.start-writing-link,
+.empty-state a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: #087a59;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.start-writing-link:focus-visible,
+.empty-state a:focus-visible {
+  outline: 3px solid rgba(4, 120, 87, 0.22);
+  outline-offset: 3px;
 }
 
 .loading-state,
 .empty-state {
   text-align: center;
-  padding: 40px 0;
+  padding: 54px 24px;
   color: #94a3b8;
   font-size: 14px;
+  background: #fff;
+  border: 1px dashed #cfdce6;
+  border-radius: 18px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: #1c334c;
+  font-size: 18px;
+}
+
+.empty-state p {
+  max-width: 520px;
+  margin: 10px auto 20px;
+  color: #73869b;
+  line-height: 1.65;
 }
 
 .essay-list {

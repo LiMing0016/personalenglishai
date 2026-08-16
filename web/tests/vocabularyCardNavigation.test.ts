@@ -6,6 +6,7 @@ import {
   buildVocabularyNavigationQuery,
   parseVocabularyNavigationQuery,
   resolveVocabularyCardSequence,
+  vocabularyCardEmptyMessage,
 } from '../src/features/vocabulary/vocabularyCardNavigation'
 
 function card(cardUid: string, displayTerm: string): VocabularyCardSummary {
@@ -64,8 +65,15 @@ test('navigation query round-trips every collection filter', () => {
   })
 })
 
-test('navigation query requires its marker and sanitizes unsupported values', () => {
-  assert.equal(parseVocabularyNavigationQuery({}), null)
+test('collection route without navigation state resets to unfiltered defaults', () => {
+  assert.deepEqual(parseVocabularyNavigationQuery({ tab: 'collection' }), {
+    sort: 'recent',
+    page: 1,
+    size: 20,
+  })
+})
+
+test('navigation query sanitizes unsupported values', () => {
   assert.deepEqual(parseVocabularyNavigationQuery({
     vc: ['1'],
     keyword: [' receive '],
@@ -81,6 +89,13 @@ test('navigation query requires its marker and sanitizes unsupported values', ()
     page: 1,
     size: 100,
   })
+})
+
+test('filtered empty collection reports that no cards match', () => {
+  assert.equal(
+    vocabularyCardEmptyMessage({ keyword: 'provocative' }),
+    '未找到匹配的单词卡，请清除或调整筛选条件。',
+  )
 })
 
 test('sequence resolves same-page neighbors and absolute position', () => {

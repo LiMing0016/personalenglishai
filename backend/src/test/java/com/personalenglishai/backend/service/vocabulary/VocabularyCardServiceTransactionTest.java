@@ -123,7 +123,8 @@ class VocabularyCardServiceTransactionTest {
                 VocabularyRevisionWriteService revisionWriter) {
             return new VocabularyCardService(
                     cards, sources, revisions, jobs, preferences, themeService, themes,
-                    templateRegistry, coreCodec, cardBlocksCodec, objectMapper, revisionWriter);
+                    templateRegistry, coreCodec, cardBlocksCodec, objectMapper, revisionWriter,
+                    new VocabularyTermNormalizer());
         }
     }
 

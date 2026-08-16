@@ -82,6 +82,7 @@ public class AssistantConversationService {
     private final ObjectMapper objectMapper;
     private final AgentDebugService agentDebugService;
     private final LearningCaptureService learningCaptureService;
+    private final AssistantUsageService assistantUsageService;
 
     public AssistantConversationService(
             AssistantProjectMapper projectMapper,
@@ -92,7 +93,8 @@ public class AssistantConversationService {
             AssistantRequestValidator assistantRequestValidator,
             ObjectMapper objectMapper,
             AgentDebugService agentDebugService,
-            LearningCaptureService learningCaptureService) {
+            LearningCaptureService learningCaptureService,
+            AssistantUsageService assistantUsageService) {
         this.projectMapper = projectMapper;
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
@@ -102,6 +104,7 @@ public class AssistantConversationService {
         this.objectMapper = objectMapper;
         this.agentDebugService = agentDebugService;
         this.learningCaptureService = learningCaptureService;
+        this.assistantUsageService = assistantUsageService;
     }
 
     public List<AssistantProjectResponse> listProjects(Long userId) {
@@ -212,6 +215,7 @@ public class AssistantConversationService {
         AssistantConversation conversation = ensureConversation(userId, conversationUid);
         request.setAppConversationId(conversationUid);
         assistantRequestValidator.validateForAgentRun(request);
+        assistantUsageService.assertQuota(userId);
 
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
@@ -225,6 +229,7 @@ public class AssistantConversationService {
             throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
         }
         agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
+        assistantUsageService.record(userId, reply.getRun());
 
         AssistantMessage assistantMessage = buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1);
         assistantMessage.setPartsJson(writePartsJson(reply.getParts()));
@@ -243,6 +248,7 @@ public class AssistantConversationService {
         AssistantConversation conversation = ensureConversation(userId, conversationUid);
         request.setAppConversationId(conversationUid);
         assistantRequestValidator.validateForAgentRun(request);
+        assistantUsageService.assertQuota(userId);
 
         String prompt = displayPrompt(request);
         int nextOrder = nextSortOrder(conversationUid);
@@ -273,6 +279,7 @@ public class AssistantConversationService {
         String replyText = !completedContent.isEmpty() ? completedContent.toString() : deltaContent.toString();
         if (!failed.get() && !replyText.isBlank()) {
             agentDebugService.recordAssistantRun(userId, conversationUid, prompt, runMetadataHolder.run, replyText);
+            assistantUsageService.record(userId, runMetadataHolder.run);
             AssistantMessage assistantMessage = buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1);
             assistantMessage.setPartsJson(writePartsJson(runMetadataHolder.parts));
             persistAndCaptureMessage(assistantMessage);
@@ -295,6 +302,7 @@ public class AssistantConversationService {
             }
             prompt = "请查看我上传的 " + files.size() + " 个文件，并结合它回答。";
         }
+        assistantUsageService.assertQuota(userId);
         int nextOrder = nextSortOrder(conversationUid);
 
         AssistantMessage userMessage = buildMessage(userId, conversationUid, "user", prompt, nextOrder);
@@ -313,6 +321,7 @@ public class AssistantConversationService {
             throw new BizException(ErrorCode.ASSISTANT_UPSTREAM_UNAVAILABLE);
         }
         agentDebugService.recordAssistantRun(userId, conversationUid, prompt, reply.getRun(), replyText);
+        assistantUsageService.record(userId, reply.getRun());
 
         persistAndCaptureMessage(buildMessage(userId, conversationUid, "assistant", replyText, nextOrder + 1));
         String title = shouldAutoTitle(conversation) ? buildTitle(prompt) : conversation.getTitle();

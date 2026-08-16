@@ -96,6 +96,19 @@ export function isImportAnalysisAbort(error: unknown): boolean {
     )
 }
 
+export function vocabularyImportAnalysisErrorMessage(error: unknown): string {
+  const status = typeof error === 'object' && error && 'response' in error
+    ? (error as { response?: { status?: number } }).response?.status
+    : undefined
+  const code = typeof error === 'object' && error && 'code' in error
+    ? (error as { code?: string }).code
+    : undefined
+  if (status === 400) return '输入已变化，请重新分析'
+  if (status === 503) return 'AI 分析服务暂不可用，请稍后重试'
+  if (status === 504 || code === 'ECONNABORTED') return 'AI 分析超时，请重试'
+  return 'AI 分析失败，请重试'
+}
+
 export function mapVocabularyImportAnalysisCandidates(
   response: VocabularyImportAnalysisResponse,
   fileName: string | null,

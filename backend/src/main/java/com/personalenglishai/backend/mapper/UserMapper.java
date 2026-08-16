@@ -55,6 +55,11 @@ public interface UserMapper {
      */
     int updateNickname(@Param("id") Long id, @Param("nickname") String nickname);
 
+    /**
+     * 更新头像公开地址
+     */
+    int updateAvatarUrl(@Param("id") Long id, @Param("avatarUrl") String avatarUrl);
+
     int updateStatus(@Param("id") Long id, @Param("status") String status);
 
     int updateRole(@Param("id") Long id, @Param("role") String role);

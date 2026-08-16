@@ -2,7 +2,7 @@
 title: 接口
 status: active
 owner: project
-last_updated: 2026-07-21
+last_updated: 2026-07-26
 review_cycle: monthly
 related_code:
   - backend/src/main/java/com/personalenglishai/backend/controller/
@@ -20,6 +20,7 @@ related_docs: []
 - [Agent Debug API](./agent-debug.md)
 - [Admin 用户 API](./admin-users.md)
 - [Admin 订阅与额度 API](./admin-subscription.md)
+- [用户 AI 用量活动 API](./user-ai-usage.md)
 - [Document API](./document.md)
 - [Learning Notes API](./learning-notes.md)
 - [考试写作题目 API](./writing-ai-exam-prompt.md)

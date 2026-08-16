@@ -20,6 +20,14 @@ export interface MeProfileResponse {
   data?: MeProfile
 }
 
+export interface AvatarUploadResponse {
+  code?: string
+  message?: string
+  data?: {
+    avatarUrl?: string
+  }
+}
+
 export interface AbilityProfile {
   taskScore: number | null
   coherenceScore: number | null
@@ -28,6 +36,7 @@ export interface AbilityProfile {
   structureScore: number | null
   varietyScore: number | null
   assessedScore: number | null
+  confidence: number | null
   sampleCount: number | null
   updatedAt: string | null
 }
@@ -65,6 +74,43 @@ export interface SubscriptionStatus {
   overLimit: boolean
 }
 
+export type AiUsageProductKey =
+  | 'assistant'
+  | 'writing'
+  | 'translation'
+  | 'vocabulary'
+  | 'other'
+
+export interface AiUsageProductTotals {
+  assistant: number
+  writing: number
+  translation: number
+  vocabulary: number
+  other: number
+}
+
+export interface AiUsageDayBucket {
+  date: string
+  total: number
+  byProduct: AiUsageProductTotals
+}
+
+export interface AiUsageActivity {
+  metric: 'ai_tokens'
+  unit: 'token'
+  timezone: string
+  from: string
+  to: string
+  total: number
+  buckets: AiUsageDayBucket[]
+}
+
+export interface AiUsageActivityParams {
+  from: string
+  to: string
+  timezone?: string
+}
+
 export const userApi = {
   async getMyProfile(): Promise<MeProfileResponse> {
     const res = await http.get<MeProfileResponse>('/users/me/profile')
@@ -77,6 +123,16 @@ export const userApi = {
 
   async updateNickname(nickname: string): Promise<void> {
     await http.patch('/users/me/profile/nickname', { nickname })
+  },
+
+  async uploadAvatar(file: File): Promise<AvatarUploadResponse> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await http.post<AvatarUploadResponse>(
+      '/users/me/profile/avatar',
+      formData,
+    )
+    return res.data
   },
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
@@ -103,8 +159,16 @@ export const userApi = {
     return res.data
   },
 
-  async mockPurchaseSubscription(planCode: 'basic' | 'pro' | 'premium'): Promise<{ data?: SubscriptionStatus }> {
-    const res = await http.post<{ data?: SubscriptionStatus }>('/subscription/mock-purchase', { planCode })
+  async getMyAiUsage(params: AiUsageActivityParams): Promise<{ data?: AiUsageActivity }> {
+    const res = await http.get<{ data?: AiUsageActivity }>('/users/me/usage', {
+      params: {
+        metric: 'ai_tokens',
+        granularity: 'day',
+        timezone: params.timezone ?? 'Asia/Shanghai',
+        from: params.from,
+        to: params.to,
+      },
+    })
     return res.data
   },
 

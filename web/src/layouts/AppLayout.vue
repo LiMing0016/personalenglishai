@@ -5,8 +5,9 @@
       immersive,
       'app-layout--writing': isWritingRoute,
       'app-layout--assistant': isAssistantRoute,
-      'app-layout--rail-collapsed': railCollapsed && !isAssistantRoute,
-      'app-layout--rail-expanded': !railCollapsed && !isAssistantRoute,
+      'app-layout--personal-center': isPersonalCenterRoute,
+      'app-layout--rail-collapsed': effectiveRailCollapsed && !isAssistantRoute,
+      'app-layout--rail-expanded': !effectiveRailCollapsed && !isAssistantRoute,
     }"
     @mouseup="handleSelectionChange"
     @keyup="handleSelectionChange"
@@ -24,7 +25,7 @@
 
     <AppRail
       v-if="!isAssistantRoute"
-      :collapsed="railCollapsed"
+      :collapsed="effectiveRailCollapsed"
       @open-assistant-drawer="openAssistantDrawer"
       @toggle-rail="toggleRail"
     />
@@ -36,6 +37,7 @@
 
 <script setup lang="ts">
 import { computed, provide, reactive, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppRail from '@/components/AppRail.vue'
@@ -46,6 +48,7 @@ import {
   PENDING_ASSISTANT_SELECTION_KEY,
 } from '@/pages/app/assistantMessageActions.ts'
 import { shouldOpenAssistantDrawerForSelection } from './appSelectionToolbar.ts'
+import { resolveAppRailCollapsed } from './appRailResponsive'
 
 const RAIL_COLLAPSED_STORAGE_KEY = 'peai:app-rail-collapsed'
 const route = useRoute()
@@ -53,6 +56,8 @@ const router = useRouter()
 const immersiveOverride = ref<boolean | null>(null)
 const assistantDrawerOpen = ref(false)
 const railCollapsed = ref(readRailCollapsedPreference())
+const personalCenterRailExpanded = ref(false)
+const narrowViewport = useMediaQuery('(max-width: 720px)')
 const selectionToolbar = reactive({
   visible: false,
   text: '',
@@ -66,6 +71,17 @@ const immersive = computed(() =>
 )
 const isWritingRoute = computed(() => route.path.startsWith('/app/writing'))
 const isAssistantRoute = computed(() => route.path.startsWith('/app/assistant'))
+const isPersonalCenterRoute = computed(
+  () => route.path === '/app/me' || route.path === '/dev/personal-center-preview',
+)
+const effectiveRailCollapsed = computed(() =>
+  resolveAppRailCollapsed({
+    routePath: route.path,
+    narrowViewport: narrowViewport.value,
+    personalCenterExpanded: personalCenterRailExpanded.value,
+    storedCollapsed: railCollapsed.value,
+  }),
+)
 const selectionToolbarStyle = computed(() => ({
   left: `${selectionToolbar.left}px`,
   top: `${selectionToolbar.top}px`,
@@ -88,6 +104,10 @@ function persistRailCollapsedPreference(collapsed: boolean) {
 }
 
 function toggleRail() {
+  if (isPersonalCenterRoute.value && narrowViewport.value) {
+    personalCenterRailExpanded.value = effectiveRailCollapsed.value
+    return
+  }
   railCollapsed.value = !railCollapsed.value
   persistRailCollapsedPreference(railCollapsed.value)
 }
@@ -196,6 +216,12 @@ function askAssistantWithSelection() {
 }
 .app-layout:not(.immersive) .app-main {
   height: 100vh;
+}
+
+@media (max-width: 720px) {
+  .app-layout--personal-center.app-layout--rail-expanded .app-main {
+    margin-left: 72px;
+  }
 }
 
 .selection-toolbar {

@@ -22,7 +22,7 @@
 
     <div v-if="loading" class="card-list-state">正在加载沉淀单词...</div>
     <div v-else-if="error" class="card-list-state card-list-state--error">{{ error }}</div>
-    <div v-else-if="!items.length" class="card-list-state">暂无沉淀单词，先录入一组需要学习的单词。</div>
+    <div v-else-if="!items.length" class="card-list-state">{{ emptyMessage }}</div>
     <div v-else class="card-list-rows" role="list">
       <button
         v-for="card in items"
@@ -59,9 +59,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { VocabularyCardFilters, VocabularyCardStatus, VocabularyCardSummary } from '@/api/vocabulary'
+import { vocabularyCardEmptyMessage } from '@/features/vocabulary/vocabularyCardNavigation'
 
 const props = defineProps<{
   filters: VocabularyCardFilters
@@ -84,6 +85,7 @@ const status = ref(props.filters.status ?? '')
 const sourceType = ref(props.filters.sourceType ?? '')
 const sort = ref<'recent' | 'az'>(props.filters.sort ?? 'recent')
 const pageCount = ref(Math.max(1, Math.ceil(props.total / props.size)))
+const emptyMessage = computed(() => vocabularyCardEmptyMessage(props.filters))
 
 watch(() => props.filters, (filters) => {
   keyword.value = filters.keyword ?? ''

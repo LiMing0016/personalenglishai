@@ -1,16 +1,52 @@
 <template>
   <div class="assets-section">
     <div v-if="!selectedDocId" class="assets-list-view">
+      <div class="learning-assets-heading">
+        <div>
+          <p class="section-eyebrow">学习资产</p>
+          <h2 class="section-title">把每次练习沉淀为可复用能力</h2>
+          <p>个人中心统一承接写作档案、词汇卡片和翻译精读，不再只围绕作文组织。</p>
+        </div>
+      </div>
+
+      <div class="asset-categories">
+        <div class="asset-category active">
+          <span class="category-icon category-icon--writing"><PenLine :size="20" :stroke-width="1.8" /></span>
+          <div>
+            <strong>作文档案</strong>
+            <small>{{ total }} 篇已归档作文</small>
+          </div>
+        </div>
+        <RouterLink class="asset-category" to="/app/vocabulary">
+          <span class="category-icon category-icon--vocabulary"><BookMarked :size="20" :stroke-width="1.8" /></span>
+          <div>
+            <strong>词汇卡片</strong>
+            <small>查看与复习已沉淀词汇</small>
+          </div>
+        </RouterLink>
+        <RouterLink class="asset-category" to="/app/translation">
+          <span class="category-icon category-icon--translation"><Languages :size="20" :stroke-width="1.8" /></span>
+          <div>
+            <strong>翻译精读</strong>
+            <small>继续处理文档与双语内容</small>
+          </div>
+        </RouterLink>
+      </div>
+
       <div class="assets-heading">
         <div>
-          <h2 class="section-title">作文资产</h2>
+          <h3>作文档案</h3>
           <p>集中查看已归档作文，继续修改、复盘和沉淀高分表达。</p>
         </div>
         <span>{{ total }} 篇</span>
       </div>
 
       <div v-if="loading" class="loading-state">加载中...</div>
-      <div v-else-if="items.length === 0" class="empty-state">暂无归档作文</div>
+      <div v-else-if="items.length === 0" class="empty-state">
+        <h3>还没有归档作文</h3>
+        <p>完成写作后将有价值的作品归档，就可以在这里继续复盘和编辑。</p>
+        <button type="button" class="asset-primary" @click="router.push('/app/writing')">开始写作</button>
+      </div>
 
       <div v-else class="asset-list">
         <article v-for="item in items" :key="item.docId" class="asset-card">
@@ -259,6 +295,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { BookMarked, Languages, PenLine } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import {
   getWritingDocuments,
@@ -499,6 +536,99 @@ onMounted(loadAssets)
   max-width: 1120px;
 }
 
+.learning-assets-heading {
+  margin-bottom: 22px;
+}
+
+.section-eyebrow {
+  margin: 0 0 5px;
+  color: #7a8da2;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+.learning-assets-heading p:last-child {
+  max-width: 720px;
+  margin: 9px 0 0;
+  color: #6f8297;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.asset-categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.asset-category {
+  display: grid;
+  min-height: 82px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  border: 1px solid #dfe7ef;
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+  color: #63768c;
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.asset-category:not(.active):hover {
+  border-color: #a8c8bc;
+  transform: translateY(-1px);
+}
+
+.asset-category.active {
+  border-color: #9fc8b9;
+  background: #f1faf6;
+}
+
+.category-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+}
+
+.category-icon--writing {
+  background: #e2f4ed;
+  color: #087a59;
+}
+
+.category-icon--vocabulary {
+  background: #edf2fb;
+  color: #41628f;
+}
+
+.category-icon--translation {
+  background: #f5f0fb;
+  color: #755293;
+}
+
+.asset-category strong,
+.asset-category small {
+  display: block;
+}
+
+.asset-category strong {
+  color: #1c334c;
+  font-size: 14px;
+}
+
+.asset-category small {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .assets-heading {
   display: flex;
   align-items: flex-start;
@@ -508,10 +638,16 @@ onMounted(loadAssets)
 }
 
 .section-title {
-  margin: 0 0 8px;
+  margin: 0;
   color: #1e293b;
   font-size: 22px;
   font-weight: 700;
+}
+
+.assets-heading h3 {
+  margin: 0 0 8px;
+  color: #1e293b;
+  font-size: 18px;
 }
 
 .assets-heading p {
@@ -537,6 +673,18 @@ onMounted(loadAssets)
   color: #94a3b8;
   font-size: 14px;
   text-align: center;
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: #1c334c;
+  font-size: 17px;
+}
+
+.empty-state p {
+  margin: 9px 0 18px;
+  color: #73869b;
+  line-height: 1.6;
 }
 
 .asset-list {
@@ -1264,6 +1412,10 @@ onMounted(loadAssets)
 }
 
 @media (max-width: 760px) {
+  .asset-categories {
+    grid-template-columns: 1fr;
+  }
+
   .asset-card,
   .assets-heading {
     flex-direction: column;

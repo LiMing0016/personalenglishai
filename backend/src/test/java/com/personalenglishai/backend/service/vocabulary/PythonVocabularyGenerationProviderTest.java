@@ -63,6 +63,23 @@ class PythonVocabularyGenerationProviderTest {
     }
 
     @Test
+    void preservesPythonUsageMetadataForTheWorker() {
+        VocabularyGenerationMetadata metadata = new VocabularyGenerationMetadata(
+                "python",
+                "python-model",
+                "vocabulary-card-blocks-v1",
+                2,
+                "job_usage_attempt_1",
+                new VocabularyGenerationMetadata.Usage(40L, 10L, 20L, 60L, 2));
+        when(client.generate(any())).thenReturn(complete("record", metadata));
+
+        GeneratedVocabularyCard generated = provider.generate(input("job_usage_attempt_1"));
+
+        assertEquals(60L, generated.generationMetadata().usage().totalTokens());
+        assertEquals(2, generated.generationMetadata().usage().requests());
+    }
+
+    @Test
     void convertsPartialResponseWithoutInventingBlocks() {
         VocabularyGenerationMetadata metadata = metadata("job_partial");
         when(client.generate(any())).thenReturn(partial("record", metadata));

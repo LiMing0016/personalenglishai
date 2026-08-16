@@ -18,6 +18,7 @@ import com.personalenglishai.backend.service.subscription.dto.SubscriptionStatus
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.Mac;
@@ -28,6 +29,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -224,7 +226,7 @@ public class SubscriptionService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean recordUsage(AiTokenUsageRecord record) {
         if (record == null || record.userId() == null || isBlank(record.usageEventId())) {
             return false;
@@ -246,7 +248,7 @@ public class SubscriptionService {
         event.setReasoningTokens(defaultLong(record.reasoningTokens()));
         event.setTotalTokens(totalTokens);
         event.setTraceId(record.traceId());
-        event.setOccurredAt(LocalDateTime.now(clock));
+        event.setOccurredAt(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
 
         int inserted = usageMapper.insertIgnoreEvent(event);
         if (inserted <= 0) {
@@ -394,8 +396,7 @@ public class SubscriptionService {
             return record.totalTokens();
         }
         return defaultLong(record.inputTokens())
-                + defaultLong(record.outputTokens())
-                + defaultLong(record.reasoningTokens());
+                + defaultLong(record.outputTokens());
     }
 
     private static Long defaultLong(Long value) {

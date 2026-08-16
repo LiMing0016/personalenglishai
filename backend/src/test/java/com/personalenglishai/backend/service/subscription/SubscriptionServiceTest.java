@@ -15,6 +15,8 @@ import com.personalenglishai.backend.mapper.subscription.UserSubscriptionMapper;
 import com.personalenglishai.backend.service.subscription.dto.CreateRedeemCodesRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -49,6 +51,16 @@ class SubscriptionServiceTest {
         usageMapper = new FakeAiTokenUsageMapper();
         redeemCodeMapper = new FakeSubscriptionRedeemCodeMapper();
         service = new SubscriptionService(planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, FIXED_CLOCK, "test-secret");
+    }
+
+    @Test
+    void usageRecordingUsesIndependentTransactionSoMeteringFailureCannotRollbackFeatureWork() throws Exception {
+        Transactional transactional = SubscriptionService.class
+                .getMethod("recordUsage", AiTokenUsageRecord.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional).isNotNull();
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 
     @Test
@@ -206,9 +218,27 @@ class SubscriptionServiceTest {
 
         var status = service.getCurrentSubscription(1L);
         assertThat(status.getQuotaPeriod()).isEqualTo("daily");
-        assertThat(status.getTokenUsed()).isEqualTo(145L);
-        assertThat(status.getTokenRemaining()).isEqualTo(9_855L);
+        assertThat(status.getTokenUsed()).isEqualTo(140L);
+        assertThat(status.getTokenRemaining()).isEqualTo(9_860L);
         assertThat(usageMapper.monthly).isEmpty();
+    }
+
+    @Test
+    void storesUsageEventTimestampAsUtcRegardlessOfBusinessClockZone() {
+        Clock shanghaiClock = Clock.fixed(
+                Instant.parse("2026-04-29T10:15:30Z"),
+                ZoneId.of("Asia/Shanghai")
+        );
+        service = new SubscriptionService(
+                planMapper, subscriptionMapper, usageMapper, redeemCodeMapper, shanghaiClock, "test-secret");
+
+        service.recordUsage(new AiTokenUsageRecord(
+                "usage-utc-1", 1L, "writing.evaluate", "openai", "gpt-5",
+                10L, 0L, 5L, 0L, 15L, "trace-utc-1"
+        ));
+
+        assertThat(usageMapper.events.get("usage-utc-1").getOccurredAt())
+                .isEqualTo(LocalDateTime.of(2026, 4, 29, 10, 15, 30));
     }
 
     @Test
@@ -398,6 +428,18 @@ class SubscriptionServiceTest {
         @Override
         public Long selectDailyTokenUsed(Long userId, LocalDate usageDate) {
             return daily.get(userId + ":" + usageDate);
+        }
+
+        @Override
+        public List<AiTokenUsageEvent> selectEventsByUserAndOccurredAt(
+                Long userId,
+                LocalDateTime fromUtc,
+                LocalDateTime toUtcExclusive) {
+            return events.values().stream()
+                    .filter(event -> userId.equals(event.getUserId()))
+                    .filter(event -> !event.getOccurredAt().isBefore(fromUtc))
+                    .filter(event -> event.getOccurredAt().isBefore(toUtcExclusive))
+                    .toList();
         }
     }
 

@@ -201,6 +201,24 @@ def response_payload(
 
 
 class VocabularyCardSchemasTest(unittest.TestCase):
+    def test_generation_metadata_accepts_strict_nullable_usage(self) -> None:
+        payload = response_payload()
+        payload["generation"]["usage"] = {
+            "inputTokens": 40,
+            "cachedInputTokens": 10,
+            "outputTokens": 20,
+            "totalTokens": 60,
+            "requests": 2,
+        }
+
+        parsed = VocabularyCardGenerationResponse.model_validate(payload)
+
+        self.assertIsNotNone(parsed.generation.usage)
+        self.assertEqual(parsed.generation.usage.total_tokens, 60)
+        payload["generation"]["usage"]["totalTokens"] = -1
+        with self.assertRaises(ValidationError):
+            VocabularyCardGenerationResponse.model_validate(payload)
+
     def test_core_v2_requires_stable_sense_and_meaning_ids(self) -> None:
         parsed = VocabularyCore.model_validate(core_payload())
         self.assertEqual(parsed.schema_version, 2)

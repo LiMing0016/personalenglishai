@@ -69,7 +69,42 @@ class VocabularyCardServiceTest {
         service = new VocabularyCardService(
                 cards, sources, revisions, jobs, preferences, themeService, themes,
                 templateRegistry, new VocabularyCoreContentCodec(objectMapper),
-                new VocabularyCardBlocksCodec(), objectMapper, revisionWriter);
+                new VocabularyCardBlocksCodec(), objectMapper, revisionWriter,
+                new VocabularyTermNormalizer());
+    }
+
+    @Test
+    void resolvesTheCurrentUsersExactNormalizedCardIdentity() {
+        VocabularyCard card = VocabularyTestFixtures.ready("card_wonder", 7L, "wonder", "rev_1");
+        when(cards.findByIdentityIncludingDeleted(7L, "en", "wonder")).thenReturn(card);
+
+        var result = service.resolve(7L, "  Wonder!  ", "EN");
+
+        assertTrue(result.found());
+        assertEquals("card_wonder", result.cardUid());
+        verify(cards).findByIdentityIncludingDeleted(7L, "en", "wonder");
+    }
+
+    @Test
+    void returnsNotFoundWhenNoExactCardExists() {
+        when(cards.findByIdentityIncludingDeleted(7L, "en", "absent")).thenReturn(null);
+
+        var result = service.resolve(7L, "absent", "en");
+
+        assertFalse(result.found());
+        assertNull(result.cardUid());
+    }
+
+    @Test
+    void doesNotResolveASoftDeletedCard() {
+        VocabularyCard deleted = VocabularyTestFixtures.ready("card_deleted", 7L, "deleted", "rev_1");
+        deleted.setDeletedAt(LocalDateTime.of(2026, 8, 1, 12, 0));
+        when(cards.findByIdentityIncludingDeleted(7L, "en", "deleted")).thenReturn(deleted);
+
+        var result = service.resolve(7L, "deleted", "en");
+
+        assertFalse(result.found());
+        assertNull(result.cardUid());
     }
 
     @Test
